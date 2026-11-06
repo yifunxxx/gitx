@@ -651,3 +651,112 @@ pub struct ResetPreview {
     pub dirty_tracked: Vec<String>,
     pub will_discard_local: bool,
 }
+
+// ─── M6: Changelists / Stash / Shelf / Patch / Ignore ───────────────────────
+
+/// Content-anchor for per-hunk changelist assignment (#52).
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HunkAnchor {
+    pub before: Vec<String>,
+    pub after: Vec<String>,
+    pub change_hash: String,
+    pub old_start: u32,
+    pub old_lines: u32,
+    pub new_start: u32,
+    pub new_lines: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PathAssignment {
+    pub path: String,
+    pub list_id: String,
+    /// Empty = whole file belongs to list_id.
+    #[serde(default)]
+    pub hunk_ranges: Vec<HunkAnchor>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangelistInfo {
+    pub id: String,
+    pub name: String,
+    pub comment: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangelistsState {
+    pub lists: Vec<ChangelistInfo>,
+    pub assignments: Vec<PathAssignment>,
+}
+
+impl Default for ChangelistsState {
+    fn default() -> Self {
+        Self {
+            lists: vec![ChangelistInfo {
+                id: "default".into(),
+                name: "Changes".into(),
+                comment: String::new(),
+                active: true,
+            }],
+            assignments: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StashEntry {
+    pub index: u32,
+    pub sha: String,
+    pub message: String,
+    pub branch: Option<String>,
+    pub time: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfEntry {
+    pub id: String,
+    pub message: String,
+    pub created_at: i64,
+    pub base_sha: String,
+    pub paths: Vec<String>,
+    pub source_changelist: Option<String>,
+    pub binary: bool,
+    pub system: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchCreateResult {
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IgnoreAddResult {
+    pub ignore_file: String,
+    pub patterns: Vec<String>,
+    pub verified: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialFileSelection {
+    pub path: String,
+    /// 1-based new-side line numbers to include from worktree vs base.
+    pub selected_lines: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum CleanTreeMethod {
+    #[default]
+    Stash,
+    Shelve,
+}

@@ -1,17 +1,20 @@
 import type { Backend } from "./index";
 import type {
   AppSettings,
+  ChangelistsState,
   CommitDetails,
   DiffFileResult,
   DiffHunk,
   FileChange,
   JobHandle,
   LogCommit,
+  ShelfEntry,
+  StashEntry,
   StatusSnapshot,
 } from "./bindings";
 
 const defaultSettings: AppSettings = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   appearance: {
     theme: "system",
     palette: "pearl",
@@ -20,7 +23,8 @@ const defaultSettings: AppSettings = {
   locale: "en",
   gitExecutable: null,
   recentWorkspaces: ["/tmp/demo-repo"],
-  stagingMode: true,
+  stagingMode: false,
+  showIgnoredFiles: false,
   logIndexing: true,
   git: {
     updateMethod: "merge",
@@ -36,6 +40,9 @@ const defaultSettings: AppSettings = {
     showRecentBranches: true,
     showTags: true,
     cherryPickSuffixProtected: true,
+    cleanTreeMethod: "stash",
+    combineStashesAndShelves: true,
+    allowPerHunkChangelists: true,
   },
 };
 
@@ -64,6 +71,13 @@ const files: FileChange[] = [
     indexStatus: "?",
     worktreeStatus: "?",
     kind: "untracked",
+  },
+  {
+    path: "build/tmp.o",
+    origPath: null,
+    indexStatus: "!",
+    worktreeStatus: "!",
+    kind: "ignored",
   },
 ];
 
@@ -123,8 +137,39 @@ let mockTags: { name: string; sha: string }[] = [{ name: "v0.1", sha: "bbbbbbbcc
 let mockAhead = 1;
 let hasFetched = false;
 let mockBehind = 0;
+let mockChangelists: ChangelistsState = {
+  lists: [
+    { id: "default", name: "Changes", comment: "", active: true },
+  ],
+  assignments: [],
+};
+let mockStashes: StashEntry[] = [
+  {
+    index: 0,
+    sha: "ccccccccddddddddeeeeeeeeffffffffaaaaaaa",
+    message: "WIP on main: stash demo",
+    branch: "main",
+    time: 1_704_100_000,
+  },
+];
+let mockShelves: ShelfEntry[] = [
+  {
+    id: "shelf-1",
+    message: "Shelved notes",
+    createdAt: 1_704_100_000,
+    baseSha: "bbbbbbbccccccccccccccccccccccccccccccc",
+    paths: ["notes.txt"],
+    sourceChangelist: null,
+    binary: false,
+    system: false,
+  },
+];
+let nextShelfId = 2;
 
-function statusSnapshot(path: string): StatusSnapshot {
+function statusSnapshot(path: string, includeIgnored = false): StatusSnapshot {
+  const list = includeIgnored
+    ? files
+    : files.filter((f) => f.kind !== "ignored" && f.indexStatus !== "!");
   return {
     repoId: path,
     version: Date.now(),
@@ -135,7 +180,7 @@ function statusSnapshot(path: string): StatusSnapshot {
       behind: mockBehind,
       detached: false,
     },
-    files: structuredClone(files),
+    files: structuredClone(list),
   };
 }
 
@@ -211,7 +256,7 @@ export const mockBackend: Backend = {
   },
   async statusGet(req) {
     emitConsole("cmd", `git status --porcelain=v2 # ${req.path}`);
-    return statusSnapshot(req.path);
+    return statusSnapshot(req.path, !!req.includeIgnored);
   },
   async stagePaths(req) {
     emitConsole("cmd", `git add -A -- ${req.paths.join(" ")}`);
@@ -1015,5 +1060,243 @@ export const mockBackend: Backend = {
       conflictFiles: [],
       backupRef: "refs/gitx/backup/drop-changes-0",
     };
+  },
+  async stageLines(req) {
+    emitConsole("cmd", `# stage lines ${req.lines.join(",")} on ${req.filePath}`);
+    return this.stagePaths({
+      repoId: req.repoId,
+      path: req.path,
+      paths: [req.filePath],
+    });
+  },
+  async unstageLines(req) {
+    emitConsole("cmd", `# unstage lines ${req.lines.join(",")} on ${req.filePath}`);
+    return this.unstagePaths({
+      repoId: req.repoId,
+      path: req.path,
+      paths: [req.filePath],
+    });
+  },
+  async revertLines(req) {
+    emitConsole("cmd", `# revert lines ${req.lines.join(",")} on ${req.filePath}`);
+    return null;
+  },
+  async changelistList() {
+    return structuredClone(mockChangelists);
+  },
+  async changelistCreate(req) {
+    const id = `cl-${Date.now()}`;
+    if (req.setActive) {
+      for (const l of mockChangelists.lists) l.active = false;
+    }
+    mockChangelists.lists.push({
+      id,
+      name: req.name,
+      comment: req.comment ?? "",
+      active: !!req.setActive,
+    });
+    if (!mockChangelists.lists.some((l) => l.active)) {
+      mockChangelists.lists[0]!.active = true;
+    }
+    return structuredClone(mockChangelists);
+  },
+  async changelistRename(req) {
+    const l = mockChangelists.lists.find((x) => x.id === req.id);
+    if (l) l.name = req.name;
+    return structuredClone(mockChangelists);
+  },
+  async changelistDelete(req) {
+    mockChangelists.lists = mockChangelists.lists.filter((l) => l.id !== req.id);
+    if (req.moveTo) {
+      for (const a of mockChangelists.assignments) {
+        if (a.listId === req.id) a.listId = req.moveTo;
+      }
+    } else {
+      mockChangelists.assignments = mockChangelists.assignments.filter((a) => a.listId !== req.id);
+    }
+    if (!mockChangelists.lists.some((l) => l.active) && mockChangelists.lists[0]) {
+      mockChangelists.lists[0].active = true;
+    }
+    return structuredClone(mockChangelists);
+  },
+  async changelistSetActive(req) {
+    for (const l of mockChangelists.lists) l.active = l.id === req.id;
+    return structuredClone(mockChangelists);
+  },
+  async changelistMove(req) {
+    for (const p of req.paths) {
+      const existing = mockChangelists.assignments.find((a) => a.path === p);
+      if (existing) existing.listId = req.targetListId;
+      else mockChangelists.assignments.push({ path: p, listId: req.targetListId, hunkRanges: [] });
+    }
+    return structuredClone(mockChangelists);
+  },
+  async stashList() {
+    return structuredClone(mockStashes);
+  },
+  async stashCreate(req) {
+    mockStashes.unshift({
+      index: 0,
+      sha: `${Date.now().toString(16).padStart(40, "c")}`,
+      message: req.message,
+      branch: mockBranch,
+      time: Math.floor(Date.now() / 1000),
+    });
+    mockStashes.forEach((s, i) => {
+      s.index = i;
+    });
+    emitConsole("cmd", `git stash push -m ${JSON.stringify(req.message)}`);
+    return null;
+  },
+  async stashApply(req) {
+    emitConsole("cmd", `git stash apply ${req.stashRef}`);
+    return null;
+  },
+  async stashPop(req) {
+    emitConsole("cmd", `git stash pop ${req.stashRef}`);
+    const idx = Number(req.stashRef.replace("stash@{", "").replace("}", "")) || 0;
+    mockStashes = mockStashes.filter((s) => s.index !== idx);
+    mockStashes.forEach((s, i) => {
+      s.index = i;
+    });
+    return null;
+  },
+  async stashDrop(req) {
+    emitConsole("cmd", `git stash drop ${req.stashRef}`);
+    const idx = Number(req.stashRef.replace("stash@{", "").replace("}", "")) || 0;
+    mockStashes = mockStashes.filter((s) => s.index !== idx);
+    mockStashes.forEach((s, i) => {
+      s.index = i;
+    });
+    return null;
+  },
+  async stashClear() {
+    mockStashes = [];
+    emitConsole("cmd", "git stash clear");
+    return null;
+  },
+  async stashBranch(req) {
+    emitConsole("cmd", `git stash branch ${req.branch} ${req.stashRef}`);
+    if (!mockBranches.includes(req.branch)) mockBranches.push(req.branch);
+    mockBranch = req.branch;
+    return null;
+  },
+  async stashRestore(req) {
+    mockStashes.unshift({
+      index: 0,
+      sha: req.sha,
+      message: req.message,
+      branch: mockBranch,
+      time: Math.floor(Date.now() / 1000),
+    });
+    mockStashes.forEach((s, i) => {
+      s.index = i;
+    });
+    return null;
+  },
+  async shelfList() {
+    return structuredClone(mockShelves.filter((s) => !s.system));
+  },
+  async shelfListDeleted() {
+    return [];
+  },
+  async shelfCreate(req) {
+    const entry: ShelfEntry = {
+      id: `shelf-${nextShelfId++}`,
+      message: req.message,
+      createdAt: Math.floor(Date.now() / 1000),
+      baseSha: "bbbbbbbccccccccccccccccccccccccccccccc",
+      paths: [...req.paths],
+      sourceChangelist: req.sourceChangelist ?? null,
+      binary: false,
+      system: !!req.system,
+    };
+    mockShelves.unshift(entry);
+    return structuredClone(entry);
+  },
+  async shelfUnshelve(req) {
+    const entry = mockShelves.find((s) => s.id === req.id);
+    if (req.removeApplied !== false) {
+      mockShelves = mockShelves.filter((s) => s.id !== req.id);
+    }
+    return { applied: entry?.paths ?? [], failed: [] };
+  },
+  async shelfDelete(req) {
+    mockShelves = mockShelves.filter((s) => s.id !== req.id);
+    return null;
+  },
+  async shelfRestore(req) {
+    const entry = mockShelves.find((s) => s.id === req.id);
+    if (!entry) throw { code: "notFound", message: "shelf not found" };
+    return structuredClone(entry);
+  },
+  async shelfRename(req) {
+    const entry = mockShelves.find((s) => s.id === req.id);
+    if (!entry) throw { code: "notFound", message: "shelf not found" };
+    entry.message = req.message;
+    return structuredClone(entry);
+  },
+  async shelfImport(req) {
+    const entry: ShelfEntry = {
+      id: `shelf-${nextShelfId++}`,
+      message: req.message,
+      createdAt: Math.floor(Date.now() / 1000),
+      baseSha: "bbbbbbbccccccccccccccccccccccccccccccc",
+      paths: [req.patchFile],
+      sourceChangelist: null,
+      binary: false,
+      system: false,
+    };
+    mockShelves.unshift(entry);
+    return structuredClone(entry);
+  },
+  async ignoreAdd(req) {
+    emitConsole("cmd", `# ignore_add → ${req.ignoreFile}`);
+    for (const pattern of req.patterns) {
+      const f = files.find((x) => x.path === pattern || x.path.endsWith(pattern));
+      if (f) {
+        f.kind = "ignored";
+        f.indexStatus = "!";
+        f.worktreeStatus = "!";
+      }
+    }
+    return { ignoreFile: req.ignoreFile, patterns: req.patterns, verified: true };
+  },
+  async ignoreSuggestPatterns(req) {
+    return req.files.map((f) => {
+      if (req.ignoreDir) {
+        return f.startsWith(`${req.ignoreDir}/`) ? f.slice(req.ignoreDir.length + 1) : f;
+      }
+      return f;
+    });
+  },
+  async excludeOpen(req) {
+    return `${req.path}/.git/info/exclude`;
+  },
+  async rmCached(req) {
+    emitConsole("cmd", `git rm --cached -- ${req.paths.join(" ")}`);
+    for (const p of req.paths) {
+      const f = files.find((x) => x.path === p);
+      if (f) {
+        f.kind = "untracked";
+        f.indexStatus = "?";
+        f.worktreeStatus = "?";
+      }
+    }
+    return null;
+  },
+  async patchCreate(req) {
+    const out = req.output ?? `${req.path}/changes.patch`;
+    emitConsole("cmd", `git diff --binary > ${out}`);
+    return { path: out, bytes: 128 };
+  },
+  async patchApply(req) {
+    emitConsole("cmd", `git apply ${req.patchFile}`);
+    return null;
+  },
+  async patchApplyClipboard(req) {
+    emitConsole("cmd", "git apply <clipboard>");
+    void req;
+    return null;
   },
 };

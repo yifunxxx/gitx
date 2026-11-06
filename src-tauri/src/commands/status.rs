@@ -11,6 +11,8 @@ use tokio_util::sync::CancellationToken;
 pub struct StatusGetReq {
     pub repo_id: String,
     pub path: String,
+    #[serde(default)]
+    pub include_ignored: bool,
 }
 
 #[tauri::command]
@@ -29,5 +31,10 @@ pub async fn status_get(
     let version = state.next_version(&req.repo_id).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.status_get(&path, &req.repo_id, version, &cancel).await
+    if req.include_ignored {
+        git.status_get_with_ignored(&path, &req.repo_id, version, true, &cancel)
+            .await
+    } else {
+        git.status_get(&path, &req.repo_id, version, &cancel).await
+    }
 }

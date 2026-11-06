@@ -18,6 +18,7 @@ export type AppearanceSettings = {
 export type UpdateMethod = "merge" | "rebase" | "reset"
 export type FetchTagsPolicy = "auto" | "syncAndPrune" | "always" | "never"
 export type IncomingCheckPolicy = "auto" | "always" | "never"
+export type CleanTreeMethod = "stash" | "shelve"
 export type GitSettings = {
   updateMethod: UpdateMethod
   fetchTags: FetchTagsPolicy
@@ -32,6 +33,9 @@ export type GitSettings = {
   showRecentBranches: boolean
   showTags: boolean
   cherryPickSuffixProtected: boolean
+  cleanTreeMethod?: CleanTreeMethod
+  combineStashesAndShelves?: boolean
+  allowPerHunkChangelists?: boolean
 }
 export type AppSettings = {
   schemaVersion: number
@@ -39,7 +43,9 @@ export type AppSettings = {
   locale: string
   gitExecutable: string | null
   recentWorkspaces: string[]
+  /** false = IDEA changelist mode (M6 default); true = staging mode */
   stagingMode: boolean
+  showIgnoredFiles?: boolean
   logIndexing: boolean
   git?: GitSettings
 }
@@ -67,7 +73,7 @@ export type WorkspaceRecentRes = { paths: string[] }
 export type StatusProbeReq = { path: string }
 export type InitRunReq = { path: string; initialBranch: string | null }
 export type VcsEnableReq = { path: string; initialBranch: string | null }
-export type StatusGetReq = { repoId: string; path: string }
+export type StatusGetReq = { repoId: string; path: string; includeIgnored?: boolean }
 export type FileChangeKind =
   | "modified"
   | "added"
@@ -255,12 +261,18 @@ export type IndexStatus = {
 }
 export type IndexStatusReq = { path: string }
 export type IndexRebuildReq = { path: string }
+export type PartialFileSelection = {
+  path: string
+  selectedLines: number[]
+}
 export type CommitCreateReq = {
   repoId: string
   path: string
   message: string
   amend?: boolean
   noVerify?: boolean
+  paths?: string[] | null
+  partial?: PartialFileSelection[] | null
 }
 export type CommitResult = { sha: string; subject: string; amended: boolean }
 export type HeadMessageReq = { path: string }
@@ -612,6 +624,145 @@ export type PartialChangesReq = {
   message?: string | null
 }
 
+// --- M6 ---
+export type HunkAnchor = {
+  before: string[]
+  after: string[]
+  changeHash: string
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+}
+export type PathAssignment = {
+  path: string
+  listId: string
+  hunkRanges?: HunkAnchor[]
+}
+export type ChangelistInfo = {
+  id: string
+  name: string
+  comment: string
+  active: boolean
+}
+export type ChangelistsState = {
+  lists: ChangelistInfo[]
+  assignments: PathAssignment[]
+}
+export type StashEntry = {
+  index: number
+  sha: string
+  message: string
+  branch: string | null
+  time: number
+}
+export type ShelfEntry = {
+  id: string
+  message: string
+  createdAt: number
+  baseSha: string
+  paths: string[]
+  sourceChangelist: string | null
+  binary: boolean
+  system: boolean
+}
+export type PatchCreateResult = { path: string; bytes: number }
+export type IgnoreAddResult = {
+  ignoreFile: string
+  patterns: string[]
+  verified: boolean
+}
+export type LinesReq = {
+  repoId: string
+  path: string
+  filePath: string
+  lines: number[]
+}
+export type ChangelistPathReq = { path: string }
+export type ChangelistCreateReq = {
+  path: string
+  name: string
+  comment?: string
+  setActive?: boolean
+}
+export type ChangelistIdReq = { path: string; id: string }
+export type ChangelistRenameReq = { path: string; id: string; name: string }
+export type ChangelistDeleteReq = {
+  path: string
+  id: string
+  moveTo?: string | null
+}
+export type ChangelistMoveReq = {
+  path: string
+  paths: string[]
+  targetListId: string
+}
+export type StashPathReq = { path: string }
+export type StashCreateReq = {
+  path: string
+  message: string
+  keepIndex?: boolean
+  includeUntracked?: boolean
+  paths?: string[] | null
+}
+export type StashRefReq = {
+  path: string
+  stashRef: string
+  reinstateIndex?: boolean
+}
+export type StashBranchReq = { path: string; branch: string; stashRef: string }
+export type StashRestoreReq = { path: string; sha: string; message: string }
+export type ShelfPathReq = { path: string }
+export type ShelfCreateReq = {
+  path: string
+  message: string
+  paths: string[]
+  keepChanges?: boolean
+  sourceChangelist?: string | null
+  system?: boolean
+}
+export type ShelfIdReq = { path: string; id: string }
+export type ShelfUnshelveReq = {
+  path: string
+  id: string
+  removeApplied?: boolean
+}
+export type ShelfUnshelveResult = { applied: string[]; failed: string[] }
+export type ShelfRenameReq = { path: string; id: string; message: string }
+export type ShelfImportReq = { path: string; patchFile: string; message: string }
+export type IgnoreAddReq = {
+  path: string
+  ignoreFile: string
+  patterns: string[]
+}
+export type IgnoreSuggestReq = {
+  path: string
+  files: string[]
+  ignoreDir?: string
+}
+export type ExcludePathReq = { path: string }
+export type RmCachedReq = {
+  path: string
+  paths: string[]
+  addToGitignore?: boolean
+}
+export type PatchCreateReq = {
+  path: string
+  paths?: string[]
+  output?: string | null
+  base?: string | null
+}
+export type PatchApplyReq = {
+  path: string
+  patchFile: string
+  threeWay?: boolean
+}
+export type PatchApplyClipboardReq = {
+  path: string
+  patchText: string
+  threeWay?: boolean
+}
+
 
 export const commands = {
   async appInfo(): Promise<AppInfo> {
@@ -907,6 +1058,103 @@ export const commands = {
   },
   async dropChanges(req: PartialChangesReq): Promise<RewriteResult> {
     return invoke("drop_changes", { req })
+  },
+  // M6
+  async stageLines(req: LinesReq): Promise<null> {
+    return invoke("stage_lines", { req })
+  },
+  async unstageLines(req: LinesReq): Promise<null> {
+    return invoke("unstage_lines", { req })
+  },
+  async revertLines(req: LinesReq): Promise<null> {
+    return invoke("revert_lines", { req })
+  },
+  async changelistList(req: ChangelistPathReq): Promise<ChangelistsState> {
+    return invoke("changelist_list", { req })
+  },
+  async changelistCreate(req: ChangelistCreateReq): Promise<ChangelistsState> {
+    return invoke("changelist_create", { req })
+  },
+  async changelistRename(req: ChangelistRenameReq): Promise<ChangelistsState> {
+    return invoke("changelist_rename", { req })
+  },
+  async changelistDelete(req: ChangelistDeleteReq): Promise<ChangelistsState> {
+    return invoke("changelist_delete", { req })
+  },
+  async changelistSetActive(req: ChangelistIdReq): Promise<ChangelistsState> {
+    return invoke("changelist_set_active", { req })
+  },
+  async changelistMove(req: ChangelistMoveReq): Promise<ChangelistsState> {
+    return invoke("changelist_move", { req })
+  },
+  async stashList(req: StashPathReq): Promise<StashEntry[]> {
+    return invoke("stash_list", { req })
+  },
+  async stashCreate(req: StashCreateReq): Promise<null> {
+    return invoke("stash_create", { req })
+  },
+  async stashApply(req: StashRefReq): Promise<null> {
+    return invoke("stash_apply", { req })
+  },
+  async stashPop(req: StashRefReq): Promise<null> {
+    return invoke("stash_pop", { req })
+  },
+  async stashDrop(req: StashRefReq): Promise<null> {
+    return invoke("stash_drop", { req })
+  },
+  async stashClear(req: StashPathReq): Promise<null> {
+    return invoke("stash_clear", { req })
+  },
+  async stashBranch(req: StashBranchReq): Promise<null> {
+    return invoke("stash_branch", { req })
+  },
+  async stashRestore(req: StashRestoreReq): Promise<null> {
+    return invoke("stash_restore", { req })
+  },
+  async shelfList(req: ShelfPathReq): Promise<ShelfEntry[]> {
+    return invoke("shelf_list", { req })
+  },
+  async shelfListDeleted(req: ShelfPathReq): Promise<ShelfEntry[]> {
+    return invoke("shelf_list_deleted", { req })
+  },
+  async shelfCreate(req: ShelfCreateReq): Promise<ShelfEntry> {
+    return invoke("shelf_create", { req })
+  },
+  async shelfUnshelve(req: ShelfUnshelveReq): Promise<ShelfUnshelveResult> {
+    return invoke("shelf_unshelve", { req })
+  },
+  async shelfDelete(req: ShelfIdReq): Promise<null> {
+    return invoke("shelf_delete", { req })
+  },
+  async shelfRestore(req: ShelfIdReq): Promise<ShelfEntry> {
+    return invoke("shelf_restore", { req })
+  },
+  async shelfRename(req: ShelfRenameReq): Promise<ShelfEntry> {
+    return invoke("shelf_rename", { req })
+  },
+  async shelfImport(req: ShelfImportReq): Promise<ShelfEntry> {
+    return invoke("shelf_import", { req })
+  },
+  async ignoreAdd(req: IgnoreAddReq): Promise<IgnoreAddResult> {
+    return invoke("ignore_add", { req })
+  },
+  async ignoreSuggestPatterns(req: IgnoreSuggestReq): Promise<string[]> {
+    return invoke("ignore_suggest_patterns", { req })
+  },
+  async excludeOpen(req: ExcludePathReq): Promise<string> {
+    return invoke("exclude_open", { req })
+  },
+  async rmCached(req: RmCachedReq): Promise<null> {
+    return invoke("rm_cached", { req })
+  },
+  async patchCreate(req: PatchCreateReq): Promise<PatchCreateResult> {
+    return invoke("patch_create", { req })
+  },
+  async patchApply(req: PatchApplyReq): Promise<null> {
+    return invoke("patch_apply", { req })
+  },
+  async patchApplyClipboard(req: PatchApplyClipboardReq): Promise<null> {
+    return invoke("patch_apply_clipboard", { req })
   },
 }
 

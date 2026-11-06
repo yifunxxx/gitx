@@ -1,7 +1,8 @@
+use crate::CleanTreeMethod;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
+pub const SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +81,15 @@ pub struct GitSettings {
     /// Add `(cherry picked from commit …)` when source is on a protected remote branch.
     #[serde(default = "default_true")]
     pub cherry_pick_suffix_protected: bool,
+    /// Clean working tree using Stash or Shelve (#114).
+    #[serde(default)]
+    pub clean_tree_method: CleanTreeMethod,
+    /// Combine Stashes & Shelves into one Git TW tab (#113).
+    #[serde(default = "default_true")]
+    pub combine_stashes_and_shelves: bool,
+    /// Allow putting changes within one file into different changelists (#52).
+    #[serde(default = "default_true")]
+    pub allow_per_hunk_changelists: bool,
 }
 
 fn default_update_method() -> UpdateMethod {
@@ -110,6 +120,9 @@ impl Default for GitSettings {
             show_recent_branches: true,
             show_tags: true,
             cherry_pick_suffix_protected: true,
+            clean_tree_method: CleanTreeMethod::Stash,
+            combine_stashes_and_shelves: true,
+            allow_per_hunk_changelists: true,
         }
     }
 }
@@ -124,9 +137,12 @@ pub struct AppSettings {
     /// Recent workspace roots (newest first), max 20.
     #[serde(default)]
     pub recent_workspaces: Vec<String>,
-    /// M1 ships staging mode first (changelist mode lands in M6).
+    /// M6 default: IDEA Changelist mode (`false`). Staging mode when `true`.
     #[serde(default = "default_staging_mode")]
     pub staging_mode: bool,
+    /// Show Ignored Files node in Commit TW (#49).
+    #[serde(default)]
+    pub show_ignored_files: bool,
     /// Enable SQLite Log indexing (#103). Default on.
     #[serde(default = "default_log_indexing")]
     pub log_indexing: bool,
@@ -135,7 +151,8 @@ pub struct AppSettings {
 }
 
 fn default_staging_mode() -> bool {
-    true
+    // After M6: Changelist mode is the default (IDEA-aligned).
+    false
 }
 
 fn default_log_indexing() -> bool {
@@ -150,7 +167,8 @@ impl Default for AppSettings {
             locale: "en".into(),
             git_executable: None,
             recent_workspaces: Vec::new(),
-            staging_mode: true,
+            staging_mode: false,
+            show_ignored_files: false,
             log_indexing: true,
             git: GitSettings::default(),
         }

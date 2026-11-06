@@ -110,11 +110,39 @@ import type {
   ResetPreview,
   ResetPreviewReq,
   ResetRunReq,
-  ResetMode,
   UndoRewriteReq,
   PartialChangesReq,
-  RebaseTodoAction,
-  RebaseTodoItem,
+  LinesReq,
+  ChangelistPathReq,
+  ChangelistCreateReq,
+  ChangelistRenameReq,
+  ChangelistDeleteReq,
+  ChangelistIdReq,
+  ChangelistMoveReq,
+  ChangelistsState,
+  StashPathReq,
+  StashCreateReq,
+  StashRefReq,
+  StashBranchReq,
+  StashRestoreReq,
+  StashEntry,
+  ShelfPathReq,
+  ShelfCreateReq,
+  ShelfIdReq,
+  ShelfUnshelveReq,
+  ShelfUnshelveResult,
+  ShelfRenameReq,
+  ShelfImportReq,
+  ShelfEntry,
+  IgnoreAddReq,
+  IgnoreSuggestReq,
+  IgnoreAddResult,
+  ExcludePathReq,
+  RmCachedReq,
+  PatchCreateReq,
+  PatchApplyReq,
+  PatchApplyClipboardReq,
+  PatchCreateResult,
 } from "./bindings";
 import { commands } from "./bindings";
 import { mockBackend } from "./mock";
@@ -221,6 +249,39 @@ export type Backend = {
   undoRewrite(req: UndoRewriteReq): Promise<RewriteResult>;
   extractChanges(req: PartialChangesReq): Promise<RewriteResult>;
   dropChanges(req: PartialChangesReq): Promise<RewriteResult>;
+  // M6
+  stageLines(req: LinesReq): Promise<null>;
+  unstageLines(req: LinesReq): Promise<null>;
+  revertLines(req: LinesReq): Promise<null>;
+  changelistList(req: ChangelistPathReq): Promise<ChangelistsState>;
+  changelistCreate(req: ChangelistCreateReq): Promise<ChangelistsState>;
+  changelistRename(req: ChangelistRenameReq): Promise<ChangelistsState>;
+  changelistDelete(req: ChangelistDeleteReq): Promise<ChangelistsState>;
+  changelistSetActive(req: ChangelistIdReq): Promise<ChangelistsState>;
+  changelistMove(req: ChangelistMoveReq): Promise<ChangelistsState>;
+  stashList(req: StashPathReq): Promise<StashEntry[]>;
+  stashCreate(req: StashCreateReq): Promise<null>;
+  stashApply(req: StashRefReq): Promise<null>;
+  stashPop(req: StashRefReq): Promise<null>;
+  stashDrop(req: StashRefReq): Promise<null>;
+  stashClear(req: StashPathReq): Promise<null>;
+  stashBranch(req: StashBranchReq): Promise<null>;
+  stashRestore(req: StashRestoreReq): Promise<null>;
+  shelfList(req: ShelfPathReq): Promise<ShelfEntry[]>;
+  shelfListDeleted(req: ShelfPathReq): Promise<ShelfEntry[]>;
+  shelfCreate(req: ShelfCreateReq): Promise<ShelfEntry>;
+  shelfUnshelve(req: ShelfUnshelveReq): Promise<ShelfUnshelveResult>;
+  shelfDelete(req: ShelfIdReq): Promise<null>;
+  shelfRestore(req: ShelfIdReq): Promise<ShelfEntry>;
+  shelfRename(req: ShelfRenameReq): Promise<ShelfEntry>;
+  shelfImport(req: ShelfImportReq): Promise<ShelfEntry>;
+  ignoreAdd(req: IgnoreAddReq): Promise<IgnoreAddResult>;
+  ignoreSuggestPatterns(req: IgnoreSuggestReq): Promise<string[]>;
+  excludeOpen(req: ExcludePathReq): Promise<string>;
+  rmCached(req: RmCachedReq): Promise<null>;
+  patchCreate(req: PatchCreateReq): Promise<PatchCreateResult>;
+  patchApply(req: PatchApplyReq): Promise<null>;
+  patchApplyClipboard(req: PatchApplyClipboardReq): Promise<null>;
 };
 
 export const tauriBackend: Backend = {
@@ -320,6 +381,38 @@ export const tauriBackend: Backend = {
   undoRewrite: (req) => commands.undoRewrite(req),
   extractChanges: (req) => commands.extractChanges(req),
   dropChanges: (req) => commands.dropChanges(req),
+  stageLines: (req) => commands.stageLines(req),
+  unstageLines: (req) => commands.unstageLines(req),
+  revertLines: (req) => commands.revertLines(req),
+  changelistList: (req) => commands.changelistList(req),
+  changelistCreate: (req) => commands.changelistCreate(req),
+  changelistRename: (req) => commands.changelistRename(req),
+  changelistDelete: (req) => commands.changelistDelete(req),
+  changelistSetActive: (req) => commands.changelistSetActive(req),
+  changelistMove: (req) => commands.changelistMove(req),
+  stashList: (req) => commands.stashList(req),
+  stashCreate: (req) => commands.stashCreate(req),
+  stashApply: (req) => commands.stashApply(req),
+  stashPop: (req) => commands.stashPop(req),
+  stashDrop: (req) => commands.stashDrop(req),
+  stashClear: (req) => commands.stashClear(req),
+  stashBranch: (req) => commands.stashBranch(req),
+  stashRestore: (req) => commands.stashRestore(req),
+  shelfList: (req) => commands.shelfList(req),
+  shelfListDeleted: (req) => commands.shelfListDeleted(req),
+  shelfCreate: (req) => commands.shelfCreate(req),
+  shelfUnshelve: (req) => commands.shelfUnshelve(req),
+  shelfDelete: (req) => commands.shelfDelete(req),
+  shelfRestore: (req) => commands.shelfRestore(req),
+  shelfRename: (req) => commands.shelfRename(req),
+  shelfImport: (req) => commands.shelfImport(req),
+  ignoreAdd: (req) => commands.ignoreAdd(req),
+  ignoreSuggestPatterns: (req) => commands.ignoreSuggestPatterns(req),
+  excludeOpen: (req) => commands.excludeOpen(req),
+  rmCached: (req) => commands.rmCached(req),
+  patchCreate: (req) => commands.patchCreate(req),
+  patchApply: (req) => commands.patchApply(req),
+  patchApplyClipboard: (req) => commands.patchApplyClipboard(req),
 };
 
 export function getBackend(): Backend {

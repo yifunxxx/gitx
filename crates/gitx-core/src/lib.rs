@@ -11,4 +11,5 @@ pub use settings::{
     AppSettings, AppearanceSettings, FetchTagsPolicy, GitSettings, IncomingCheckPolicy,
     UpdateMethod, SETTINGS_SCHEMA_VERSION,
 };
+// CleanTreeMethod lives in vcs and is re-exported via `pub use vcs::*`.
 pub use vcs::*;

@@ -405,6 +405,226 @@ pub fn apply_unstage_hunks_to_index(
     out
 }
 
+/// Apply selected *new-side* line numbers (1-based) from worktree onto base.
+///
+/// For each hunk between base→worktree, only the `+` lines whose new-side line
+/// number is in `selected_new_lines` are applied; other worktree changes stay out.
+pub fn apply_selected_lines_to_base(
+    base: &str,
+    worktree: &str,
+    selected_new_lines: &[u32],
+) -> String {
+    if selected_new_lines.is_empty() {
+        return base.to_string();
+    }
+    let selected: std::collections::HashSet<u32> = selected_new_lines.iter().copied().collect();
+    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
+
+    // Collect hunk indexes that contain at least one selected new line.
+    let mut partial_by_hunk: Vec<(u32, Vec<u32>)> = Vec::new();
+    for h in &hunks {
+        let mut lines_in_hunk = Vec::new();
+        let mut new_line = h.new_start;
+        for line in &h.lines {
+            if line.starts_with('+') {
+                if selected.contains(&new_line) {
+                    lines_in_hunk.push(new_line);
+                }
+                new_line += 1;
+            } else if line.starts_with(' ') {
+                new_line += 1;
+            }
+            // '-' does not advance new_line
+        }
+        if !lines_in_hunk.is_empty() {
+            // If every + line in the hunk is selected, apply whole hunk.
+            let total_plus = h.lines.iter().filter(|l| l.starts_with('+')).count() as u32;
+            if lines_in_hunk.len() as u32 == total_plus && h.old_lines > 0 {
+                partial_by_hunk.push((h.index, Vec::new())); // empty = whole hunk
+            } else if lines_in_hunk.len() as u32 == total_plus && h.old_lines == 0 {
+                partial_by_hunk.push((h.index, Vec::new()));
+            } else {
+                partial_by_hunk.push((h.index, lines_in_hunk));
+            }
+        }
+    }
+
+    // Whole-hunk path for fully selected hunks.
+    let whole: Vec<u32> = partial_by_hunk
+        .iter()
+        .filter(|(_, lines)| lines.is_empty())
+        .map(|(idx, _)| *idx)
+        .collect();
+    let mut result = if whole.is_empty() {
+        base.to_string()
+    } else {
+        apply_selected_hunks_to_base(base, worktree, &whole)
+    };
+
+    // Partial hunks: surgically insert only selected + lines.
+    let mut partials: Vec<&DiffHunk> = hunks
+        .iter()
+        .filter(|h| {
+            partial_by_hunk
+                .iter()
+                .any(|(idx, lines)| *idx == h.index && !lines.is_empty())
+        })
+        .collect();
+    partials.sort_by_key(|h| std::cmp::Reverse(h.old_start));
+
+    for hunk in partials {
+        let sel_lines: Vec<u32> = partial_by_hunk
+            .iter()
+            .find(|(idx, _)| *idx == hunk.index)
+            .map(|(_, l)| l.clone())
+            .unwrap_or_default();
+        let sel_set: std::collections::HashSet<u32> = sel_lines.iter().copied().collect();
+
+        let mut result_lines: Vec<String> = if result.is_empty() {
+            Vec::new()
+        } else {
+            result
+                .split_inclusive('\n')
+                .map(|l| l.trim_end_matches('\n').to_string())
+                .collect()
+        };
+        if result.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
+            result_lines.pop();
+        }
+
+        // Build replacement for this hunk region: keep '-' (old) unless we have a
+        // selected '+' that replaces; for pure additions, insert selected + lines
+        // after the old_start position without deleting old lines that aren't paired.
+        let start = if hunk.old_start == 0 {
+            0
+        } else {
+            (hunk.old_start as usize).saturating_sub(1)
+        };
+        let end = start + hunk.old_lines as usize;
+
+        let mut replacement: Vec<String> = Vec::new();
+        let mut new_line = hunk.new_start;
+        for line in &hunk.lines {
+            if let Some(rest) = line.strip_prefix('+') {
+                if sel_set.contains(&new_line) {
+                    replacement.push(rest.to_string());
+                }
+                new_line += 1;
+            } else if let Some(rest) = line.strip_prefix(' ') {
+                replacement.push(rest.to_string());
+                new_line += 1;
+            } else if let Some(rest) = line.strip_prefix('-') {
+                // Keep deleted line in base unless every change in hunk is selected
+                // (handled by whole-hunk path). For partial, keep the old line.
+                replacement.push(rest.to_string());
+            }
+        }
+
+        if end > result_lines.len() {
+            result_lines.extend(replacement);
+        } else {
+            result_lines.splice(start..end, replacement);
+        }
+
+        if result_lines.is_empty() {
+            result = String::new();
+        } else {
+            let mut out = result_lines.join("\n");
+            if worktree.ends_with('\n') || base.ends_with('\n') {
+                out.push('\n');
+            }
+            result = out;
+        }
+    }
+
+    result
+}
+
+/// Build target worktree text by reverting selected new-side lines toward base.
+pub fn revert_selected_lines_to_base(
+    base: &str,
+    worktree: &str,
+    selected_new_lines: &[u32],
+) -> String {
+    // Inverse of staging selected lines: keep worktree except selected changes → base.
+    if selected_new_lines.is_empty() {
+        return worktree.to_string();
+    }
+    let selected: std::collections::HashSet<u32> = selected_new_lines.iter().copied().collect();
+    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
+
+    let mut result_lines: Vec<String> = if worktree.is_empty() {
+        Vec::new()
+    } else {
+        worktree
+            .split_inclusive('\n')
+            .map(|l| l.trim_end_matches('\n').to_string())
+            .collect()
+    };
+    if worktree.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
+        result_lines.pop();
+    }
+
+    let mut selected_hunks: Vec<&DiffHunk> = hunks
+        .iter()
+        .filter(|h| {
+            let mut new_line = h.new_start;
+            for line in &h.lines {
+                if line.starts_with('+') {
+                    if selected.contains(&new_line) {
+                        return true;
+                    }
+                    new_line += 1;
+                } else if line.starts_with(' ') {
+                    new_line += 1;
+                }
+            }
+            // Also: pure deletions (no +) — treat entire hunk as selected if any
+            // overlapping concept; for line-level we only handle + lines here.
+            false
+        })
+        .collect();
+    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.new_start));
+
+    for hunk in selected_hunks {
+        let start = if hunk.new_start == 0 {
+            0
+        } else {
+            (hunk.new_start as usize).saturating_sub(1)
+        };
+        let end = start + hunk.new_lines as usize;
+        let mut replacement: Vec<String> = Vec::new();
+        let mut new_line = hunk.new_start;
+        for line in &hunk.lines {
+            if let Some(rest) = line.strip_prefix('-') {
+                replacement.push(rest.to_string());
+            } else if let Some(rest) = line.strip_prefix(' ') {
+                replacement.push(rest.to_string());
+                new_line += 1;
+            } else if let Some(rest) = line.strip_prefix('+') {
+                if !selected.contains(&new_line) {
+                    replacement.push(rest.to_string());
+                }
+                new_line += 1;
+            }
+        }
+        if end > result_lines.len() {
+            result_lines = replacement;
+        } else {
+            result_lines.splice(start..end, replacement);
+        }
+    }
+
+    if result_lines.is_empty() {
+        return String::new();
+    }
+    let mut out = result_lines.join("\n");
+    if worktree.ends_with('\n') || base.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
 /// Three-way merge (line-based). Non-overlapping edits auto-merge; overlaps → Conflict.
 pub fn merge3(
     base: Option<&str>,

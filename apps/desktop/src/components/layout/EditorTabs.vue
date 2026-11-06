@@ -7,6 +7,7 @@ import FileHistoryView from "@/features/history/FileHistoryView.vue";
 import RepoAtRevisionView from "@/features/history/RepoAtRevisionView.vue";
 import CompareView from "@/features/compare/CompareView.vue";
 import MergeViewer from "@/features/merge/MergeViewer.vue";
+import FileViewer from "@/features/file/FileViewer.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useDiffStore } from "@/stores/diffStore";
@@ -14,6 +15,7 @@ import { useHistoryStore } from "@/stores/historyStore";
 import { useCompareStore } from "@/stores/compareStore";
 import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
 import { useConflictsStore } from "@/stores/conflictsStore";
+import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 
 const workspace = useWorkspaceStore();
@@ -22,6 +24,7 @@ const history = useHistoryStore();
 const compare = useCompareStore();
 const repoAtRev = useRepoAtRevStore();
 const conflicts = useConflictsStore();
+const fileViewer = useFileViewerStore();
 const layout = useLayoutStore();
 
 const activeDiff = computed(() =>
@@ -35,6 +38,9 @@ const activeCompare = computed(() =>
 );
 const activeRepo = computed(() =>
   repoAtRev.activeId ? repoAtRev.tabs.find((t) => t.id === repoAtRev.activeId) : null,
+);
+const activeFile = computed(() =>
+  fileViewer.activeId ? fileViewer.tabs.find((t) => t.id === fileViewer.activeId) : null,
 );
 
 watch(
@@ -50,6 +56,7 @@ function showWorkspace() {
   compare.activeId = null;
   repoAtRev.activeId = null;
   conflicts.activeMergeId = null;
+  fileViewer.activeId = null;
   layout.activeEditorKind = "welcome";
 }
 </script>
@@ -169,6 +176,26 @@ function showWorkspace() {
           <X class="h-3 w-3" />
         </span>
       </button>
+      <button
+        v-for="tab in fileViewer.tabs"
+        :key="tab.id"
+        type="button"
+        class="group flex items-center gap-1 rounded-sm px-2 py-0.5"
+        :class="
+          layout.activeEditorKind === 'file' && fileViewer.activeId === tab.id
+            ? 'bg-background text-foreground ring-1 ring-border'
+            : 'text-muted-foreground hover:bg-accent'
+        "
+        @click="fileViewer.activeId = tab.id; layout.activeEditorKind = 'file'"
+      >
+        <span class="max-w-[160px] truncate">{{ tab.title }}</span>
+        <span
+          class="rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-100"
+          @click.stop="fileViewer.closeTab(tab.id)"
+        >
+          <X class="h-3 w-3" />
+        </span>
+      </button>
     </div>
 
     <div class="min-h-0 flex-1">
@@ -189,6 +216,10 @@ function showWorkspace() {
         :tab-id="activeRepo.id"
       />
       <MergeViewer v-else-if="layout.activeEditorKind === 'merge'" />
+      <FileViewer
+        v-else-if="layout.activeEditorKind === 'file' && activeFile"
+        :tab-id="activeFile.id"
+      />
       <WelcomeView v-else-if="!workspace.folderPath" />
       <div v-else class="space-y-2 p-6 text-sm">
         <div class="font-medium">Workspace</div>

@@ -7,6 +7,10 @@ use commands::app::{
     app_info, git_detect, git_test_executable, log_frontend, settings_get, settings_reload,
     settings_set,
 };
+use commands::changelist::{
+    changelist_create, changelist_delete, changelist_list, changelist_move, changelist_rename,
+    changelist_set_active,
+};
 use commands::clone_cmd::{clone_check_url, clone_run, repo_state_get, unshallow_run};
 use commands::commit::{commit_create, commit_head_message};
 use commands::compare::{diff_combined, diff_file_at, diff_refs};
@@ -19,8 +23,21 @@ use commands::history::{
     blame_file, blob_read, checkout_path_from_rev, file_history, list_refs, log_changed_files,
     log_commit_details, log_index_rebuild, log_index_status, log_query, tree_list,
 };
-use commands::index_ops::{add_paths, stage_hunks, stage_paths, unstage_hunks, unstage_paths};
+use commands::ignore::{exclude_open, ignore_add, ignore_suggest_patterns, rm_cached};
+use commands::index_ops::{
+    add_paths, revert_lines, stage_hunks, stage_lines, stage_paths, unstage_hunks, unstage_lines,
+    unstage_paths,
+};
 use commands::jobs::{job_cancel, job_list};
+use commands::patch::{patch_apply, patch_apply_clipboard, patch_create};
+use commands::shelf::{
+    shelf_create, shelf_delete, shelf_import, shelf_list, shelf_list_deleted, shelf_rename,
+    shelf_restore, shelf_unshelve,
+};
+use commands::stash::{
+    stash_apply, stash_branch, stash_clear, stash_create, stash_drop, stash_list, stash_pop,
+    stash_restore,
+};
 use commands::refs::{
     branch_checkout, branch_create, branch_delete, branch_rename, branch_restore, branch_update,
     compare_branches, favorites_set, refs_list, tag_create, tag_delete, tag_push,
@@ -157,6 +174,39 @@ pub fn run() {
             undo_rewrite,
             extract_changes,
             drop_changes,
+            // M6
+            stage_lines,
+            unstage_lines,
+            revert_lines,
+            changelist_list,
+            changelist_create,
+            changelist_rename,
+            changelist_delete,
+            changelist_set_active,
+            changelist_move,
+            stash_list,
+            stash_create,
+            stash_apply,
+            stash_pop,
+            stash_drop,
+            stash_clear,
+            stash_branch,
+            stash_restore,
+            shelf_list,
+            shelf_list_deleted,
+            shelf_create,
+            shelf_unshelve,
+            shelf_delete,
+            shelf_restore,
+            shelf_rename,
+            shelf_import,
+            ignore_add,
+            ignore_suggest_patterns,
+            exclude_open,
+            rm_cached,
+            patch_create,
+            patch_apply,
+            patch_apply_clipboard,
         ]);
 
     #[cfg(debug_assertions)]

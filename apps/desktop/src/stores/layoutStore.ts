@@ -8,9 +8,11 @@ export const useLayoutStore = defineStore("layout", () => {
   const bottomOpen = ref(true);
   const leftSize = ref(28);
   const bottomSize = ref(32);
-  const activeBottomTab = ref<"console" | "log" | "update">("log");
+  const activeBottomTab = ref<
+    "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves"
+  >("log");
   const activeEditorKind = ref<
-    "welcome" | "diff" | "history" | "compare" | "repoAtRev" | "blame" | "merge"
+    "welcome" | "diff" | "history" | "compare" | "repoAtRev" | "blame" | "merge" | "file"
   >("welcome");
   const findActionOpen = ref(false);
   const vcsPopupOpen = ref(false);

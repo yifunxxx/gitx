@@ -2,6 +2,12 @@
 
 #![allow(clippy::result_large_err)]
 
+mod changelists;
+mod shelf;
+
+pub use changelists::*;
+pub use shelf::*;
+
 use gitx_core::{AppError, AppSettings, ErrorCode};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,6 +54,9 @@ pub fn save_app_settings(path: &Path, settings: &AppSettings) -> Result<(), AppE
 }
 
 fn migrate_settings(mut settings: AppSettings) -> AppSettings {
+    // v1 → v2: flip default staging mode only when still at schema 1 and user never
+    // customized (we cannot know; leave staging_mode as deserialized with new default
+    // only for missing field — serde default handles that).
     settings.schema_version = gitx_core::SETTINGS_SCHEMA_VERSION;
     settings
 }

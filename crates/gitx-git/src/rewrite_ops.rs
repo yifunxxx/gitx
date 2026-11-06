@@ -881,7 +881,7 @@ impl GitRunner {
         Ok(backup)
     }
 
-    pub(crate) async fn git_dir(
+    pub async fn git_dir(
         &self,
         cwd: &Path,
         cancel: &CancellationToken,
