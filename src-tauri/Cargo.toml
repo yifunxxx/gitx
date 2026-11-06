@@ -20,6 +20,8 @@ gitx-git = { workspace = true }
 gitx-meta = { workspace = true }
 gitx-watch = { workspace = true }
 gitx-read = { workspace = true }
+gitx-diff = { workspace = true }
+gitx-graph = { workspace = true }
 
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

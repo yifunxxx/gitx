@@ -1,0 +1,188 @@
+use crate::state::AppState;
+use gitx_core::{AppError, DiffSide, ErrorCode};
+use gitx_diff::{apply_selected_hunks_to_base, apply_unstage_hunks_to_index, decode_lossy};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::path::PathBuf;
+use tauri::{AppHandle, Emitter, State};
+use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PathsReq {
+    pub repo_id: String,
+    pub path: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HunksReq {
+    pub repo_id: String,
+    pub path: String,
+    pub file_path: String,
+    pub hunk_indexes: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AddPathsReq {
+    pub repo_id: String,
+    pub path: String,
+    pub paths: Vec<String>,
+    pub force: bool,
+}
+
+async fn emit_cmd(app: &AppHandle, line: String) {
+    let _ = app.emit(
+        "console://line",
+        serde_json::json!({ "stream": "cmd", "line": line }),
+    );
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn stage_paths(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: PathsReq,
+) -> Result<(), AppError> {
+    let cwd = PathBuf::from(&req.path);
+    emit_cmd(&app, format!("git add -A -- {} paths", req.paths.len())).await;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.stage_paths(&cwd, &req.paths, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn unstage_paths(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: PathsReq,
+) -> Result<(), AppError> {
+    let cwd = PathBuf::from(&req.path);
+    emit_cmd(
+        &app,
+        format!("git restore --staged -- {} paths", req.paths.len()),
+    )
+    .await;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.unstage_paths(&cwd, &req.paths, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn add_paths(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: AddPathsReq,
+) -> Result<(), AppError> {
+    let cwd = PathBuf::from(&req.path);
+    emit_cmd(
+        &app,
+        format!(
+            "git add {} -- {} paths",
+            if req.force { "-f" } else { "" },
+            req.paths.len()
+        ),
+    )
+    .await;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.add_paths(&cwd, &req.paths, req.force, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn stage_hunks(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: HunksReq,
+) -> Result<(), AppError> {
+    let cwd = PathBuf::from(&req.path);
+    emit_cmd(
+        &app,
+        format!("# stage hunks {:?} on {}", req.hunk_indexes, req.file_path),
+    )
+    .await;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let index_bytes = git
+        .read_blob_side(&cwd, &req.file_path, DiffSide::Index, &cancel)
+        .await?;
+    let work_bytes = git
+        .read_blob_side(&cwd, &req.file_path, DiffSide::Worktree, &cancel)
+        .await?;
+    let index_text = decode_lossy(index_bytes.as_deref()).unwrap_or_default();
+    let work_text = decode_lossy(work_bytes.as_deref()).unwrap_or_default();
+    if work_bytes.as_ref().is_some_and(|b| b.contains(&0)) {
+        return Err(AppError::new(
+            ErrorCode::GitCommandFailed,
+            "binary files must be staged as a whole file",
+        ));
+    }
+    let new_index = apply_selected_hunks_to_base(&index_text, &work_text, &req.hunk_indexes);
+    let mode = git
+        .file_mode_in_index(&cwd, &req.file_path, &cancel)
+        .await
+        .unwrap_or_else(|_| "100644".into());
+    // If file not in index yet, intent-to-add via add first for mode, then update.
+    if index_bytes.is_none() {
+        git.add_paths(&cwd, std::slice::from_ref(&req.file_path), false, &cancel)
+            .await?;
+        // Re-write index content to selected hunks only (from empty base).
+        let new_index = apply_selected_hunks_to_base("", &work_text, &req.hunk_indexes);
+        let mode = git
+            .file_mode_in_index(&cwd, &req.file_path, &cancel)
+            .await
+            .unwrap_or_else(|_| "100644".into());
+        return git
+            .stage_hunk_text(&cwd, &req.file_path, &new_index, &mode, &cancel)
+            .await;
+    }
+    git.stage_hunk_text(&cwd, &req.file_path, &new_index, &mode, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn unstage_hunks(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: HunksReq,
+) -> Result<(), AppError> {
+    let cwd = PathBuf::from(&req.path);
+    emit_cmd(
+        &app,
+        format!(
+            "# unstage hunks {:?} on {}",
+            req.hunk_indexes, req.file_path
+        ),
+    )
+    .await;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let head_bytes = git
+        .read_blob_side(&cwd, &req.file_path, DiffSide::Head, &cancel)
+        .await?;
+    let index_bytes = git
+        .read_blob_side(&cwd, &req.file_path, DiffSide::Index, &cancel)
+        .await?;
+    let head_text = decode_lossy(head_bytes.as_deref()).unwrap_or_default();
+    let index_text = decode_lossy(index_bytes.as_deref()).unwrap_or_default();
+    let new_index = apply_unstage_hunks_to_index(&head_text, &index_text, &req.hunk_indexes);
+    if new_index.is_empty() && head_bytes.is_none() {
+        // Fully unstage new file.
+        return git
+            .unstage_paths(&cwd, std::slice::from_ref(&req.file_path), &cancel)
+            .await;
+    }
+    let mode = git
+        .file_mode_in_index(&cwd, &req.file_path, &cancel)
+        .await
+        .unwrap_or_else(|_| "100644".into());
+    git.stage_hunk_text(&cwd, &req.file_path, &new_index, &mode, &cancel)
+        .await
+}

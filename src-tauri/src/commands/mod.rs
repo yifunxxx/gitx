@@ -1,3 +1,8 @@
 pub mod app;
+pub mod commit;
+pub mod diff;
+pub mod history;
+pub mod index_ops;
 pub mod jobs;
+pub mod status;
 pub mod workspace;

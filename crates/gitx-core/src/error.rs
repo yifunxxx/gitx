@@ -15,6 +15,11 @@ pub enum ErrorCode {
     FsError,
     Internal,
     GitCommandFailed,
+    NothingToCommit,
+    EmptyCommitMessage,
+    HookFailed,
+    UnsafeRepository,
+    AlreadyRepository,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]

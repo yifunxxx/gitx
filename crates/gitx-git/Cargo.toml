@@ -17,3 +17,8 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 regex = "1"
 libc = "0.2"
+
+[dev-dependencies]
+gitx-testkit = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio-util = { workspace = true }

@@ -1,10 +1,323 @@
-//! Diff / merge3 / partial-stage construction stubs for M0.
+//! Text diff + hunk construction for M1 DiffViewer / hunk stage.
+
+use gitx_core::DiffHunk;
+use similar::{Algorithm, ChangeTag, TextDiff};
+
+const TOO_LARGE_BYTES: usize = 5 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default)]
-pub struct DiffEngineStub;
+pub struct DiffComputeOptions {
+    pub ignore_whitespace: bool,
+}
 
-impl DiffEngineStub {
-    pub fn is_ready(&self) -> bool {
-        false
+pub fn is_probably_binary(bytes: &[u8]) -> bool {
+    bytes.iter().take(8000).any(|&b| b == 0)
+}
+
+pub fn decode_lossy(bytes: Option<&[u8]>) -> Option<String> {
+    bytes.map(|b| String::from_utf8_lossy(b).into_owned())
+}
+
+pub fn too_large(bytes: Option<&[u8]>) -> bool {
+    bytes.map(|b| b.len() > TOO_LARGE_BYTES).unwrap_or(false)
+}
+
+/// Compute unified hunks between left (old) and right (new) text.
+pub fn compute_hunks(
+    left: Option<&str>,
+    right: Option<&str>,
+    opts: &DiffComputeOptions,
+) -> Vec<DiffHunk> {
+    let left = left.unwrap_or("");
+    let right = right.unwrap_or("");
+
+    let left_lines: Vec<&str> = split_lines(left);
+    let right_lines: Vec<&str> = split_lines(right);
+
+    // ignore_whitespace wiring lands with M3 ignore modes; M1 still computes a full line diff.
+    let _ = opts.ignore_whitespace;
+    let diff = TextDiff::configure()
+        .algorithm(Algorithm::Myers)
+        .diff_lines(left, right);
+
+    // Collect tagged ops with line numbers.
+    let mut ops: Vec<(ChangeTag, String, Option<usize>, Option<usize>)> = Vec::new();
+    let mut old_idx = 0usize;
+    let mut new_idx = 0usize;
+    for change in diff.iter_all_changes() {
+        let value = change.to_string();
+        // similar's to_string keeps trailing newline; strip for storage, re-add marker.
+        let line = value.trim_end_matches('\n').to_string();
+        match change.tag() {
+            ChangeTag::Equal => {
+                ops.push((ChangeTag::Equal, line, Some(old_idx), Some(new_idx)));
+                old_idx += 1;
+                new_idx += 1;
+            }
+            ChangeTag::Delete => {
+                ops.push((ChangeTag::Delete, line, Some(old_idx), None));
+                old_idx += 1;
+            }
+            ChangeTag::Insert => {
+                ops.push((ChangeTag::Insert, line, None, Some(new_idx)));
+                new_idx += 1;
+            }
+        }
+    }
+    let _ = (left_lines, right_lines);
+
+    group_hunks(&ops)
+}
+
+fn split_lines(text: &str) -> Vec<&str> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let mut lines: Vec<&str> = text.split_inclusive('\n').collect();
+    // Normalize: keep content without forcing trailing empty from final newline alone.
+    if text.ends_with('\n') {
+        // split_inclusive keeps newline in each segment; fine for counting.
+    }
+    if lines.len() == 1 && lines[0].is_empty() {
+        lines.clear();
+    }
+    lines
+}
+
+fn group_hunks(ops: &[(ChangeTag, String, Option<usize>, Option<usize>)]) -> Vec<DiffHunk> {
+    // Context radius around changes.
+    const CONTEXT: usize = 3;
+    let mut change_indexes: Vec<usize> = Vec::new();
+    for (i, (tag, _, _, _)) in ops.iter().enumerate() {
+        if *tag != ChangeTag::Equal {
+            change_indexes.push(i);
+        }
+    }
+    if change_indexes.is_empty() {
+        return Vec::new();
+    }
+
+    // Merge overlapping context windows into hunk ranges [start, end).
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for &idx in &change_indexes {
+        let start = idx.saturating_sub(CONTEXT);
+        let end = (idx + CONTEXT + 1).min(ops.len());
+        if let Some(last) = ranges.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        ranges.push((start, end));
+    }
+
+    let mut hunks = Vec::new();
+    for (hunk_i, (start, end)) in ranges.into_iter().enumerate() {
+        let slice = &ops[start..end];
+        let mut lines = Vec::new();
+        let mut old_start = None;
+        let mut new_start = None;
+        let mut old_count = 0u32;
+        let mut new_count = 0u32;
+        for (tag, text, old_i, new_i) in slice {
+            match tag {
+                ChangeTag::Equal => {
+                    if old_start.is_none() {
+                        old_start = old_i.map(|i| i as u32 + 1);
+                    }
+                    if new_start.is_none() {
+                        new_start = new_i.map(|i| i as u32 + 1);
+                    }
+                    old_count += 1;
+                    new_count += 1;
+                    lines.push(format!(" {text}"));
+                }
+                ChangeTag::Delete => {
+                    if old_start.is_none() {
+                        old_start = old_i.map(|i| i as u32 + 1);
+                    }
+                    old_count += 1;
+                    lines.push(format!("-{text}"));
+                }
+                ChangeTag::Insert => {
+                    if new_start.is_none() {
+                        new_start = new_i.map(|i| i as u32 + 1);
+                    }
+                    new_count += 1;
+                    lines.push(format!("+{text}"));
+                }
+            }
+        }
+        let old_start = old_start.unwrap_or(0);
+        let new_start = new_start.unwrap_or(0);
+        let header = format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@");
+        hunks.push(DiffHunk {
+            index: hunk_i as u32,
+            header,
+            old_start,
+            old_lines: old_count,
+            new_start,
+            new_lines: new_count,
+            lines,
+        });
+    }
+    hunks
+}
+
+/// Apply selected hunks from worktree onto index text to produce new index content.
+///
+/// `base` = current index (or empty), `worktree` = worktree text.
+/// Selected hunks (by index into compute_hunks(base, worktree)) are applied;
+/// unselected changes stay only in worktree.
+pub fn apply_selected_hunks_to_base(
+    base: &str,
+    worktree: &str,
+    selected_hunk_indexes: &[u32],
+) -> String {
+    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
+    if selected_hunk_indexes.is_empty() {
+        return base.to_string();
+    }
+    let selected: std::collections::HashSet<u32> = selected_hunk_indexes.iter().copied().collect();
+
+    // Rebuild by walking all hunks: for selected, take new side; for unselected, keep old side.
+    // Approach: start from base lines, apply selected hunks in reverse order.
+    let mut result_lines: Vec<String> = if base.is_empty() {
+        Vec::new()
+    } else {
+        base.split_inclusive('\n')
+            .map(|l| l.trim_end_matches('\n').to_string())
+            .collect()
+    };
+    // If base ended with newline, split_inclusive keeps structure; normalize without empties from trailing.
+    if base.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
+        result_lines.pop();
+    }
+
+    let mut selected_hunks: Vec<&DiffHunk> = hunks
+        .iter()
+        .filter(|h| selected.contains(&h.index))
+        .collect();
+    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.old_start));
+
+    for hunk in selected_hunks {
+        let start = if hunk.old_start == 0 {
+            0
+        } else {
+            (hunk.old_start as usize).saturating_sub(1)
+        };
+        let end = start + hunk.old_lines as usize;
+        let mut replacement: Vec<String> = Vec::new();
+        for line in &hunk.lines {
+            if let Some(rest) = line.strip_prefix('+') {
+                replacement.push(rest.to_string());
+            } else if let Some(rest) = line.strip_prefix(' ') {
+                replacement.push(rest.to_string());
+            }
+            // '-' lines omitted
+        }
+        if end > result_lines.len() {
+            // Fallback: append replacement.
+            result_lines.extend(replacement);
+        } else {
+            result_lines.splice(start..end, replacement);
+        }
+    }
+
+    if result_lines.is_empty() {
+        return String::new();
+    }
+    let mut out = result_lines.join("\n");
+    if worktree.ends_with('\n') || base.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// Unstage selected hunks: remove those changes from index toward HEAD text.
+pub fn apply_unstage_hunks_to_index(
+    head: &str,
+    index: &str,
+    selected_hunk_indexes: &[u32],
+) -> String {
+    // Hunks of head→index; unstaging selected means revert those hunks on index back toward head.
+    let hunks = compute_hunks(Some(head), Some(index), &DiffComputeOptions::default());
+    let selected: std::collections::HashSet<u32> = selected_hunk_indexes.iter().copied().collect();
+
+    let mut result_lines: Vec<String> = if index.is_empty() {
+        Vec::new()
+    } else {
+        index
+            .split_inclusive('\n')
+            .map(|l| l.trim_end_matches('\n').to_string())
+            .collect()
+    };
+    if index.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
+        result_lines.pop();
+    }
+
+    // Map: for each selected hunk in head→index, the new side is in index.
+    // Revert = replace new-side region with old-side lines.
+    let mut selected_hunks: Vec<&DiffHunk> = hunks
+        .iter()
+        .filter(|h| selected.contains(&h.index))
+        .collect();
+    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.new_start));
+
+    for hunk in selected_hunks {
+        let start = if hunk.new_start == 0 {
+            0
+        } else {
+            (hunk.new_start as usize).saturating_sub(1)
+        };
+        let end = start + hunk.new_lines as usize;
+        let mut replacement: Vec<String> = Vec::new();
+        for line in &hunk.lines {
+            if let Some(rest) = line.strip_prefix('-') {
+                replacement.push(rest.to_string());
+            } else if let Some(rest) = line.strip_prefix(' ') {
+                replacement.push(rest.to_string());
+            }
+        }
+        if end > result_lines.len() {
+            result_lines = replacement;
+        } else {
+            result_lines.splice(start..end, replacement);
+        }
+    }
+
+    if result_lines.is_empty() {
+        return String::new();
+    }
+    let mut out = result_lines.join("\n");
+    if head.ends_with('\n') || index.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_hunk() {
+        let left = "a\nb\nc\n";
+        let right = "a\nB\nc\n";
+        let hunks = compute_hunks(Some(left), Some(right), &DiffComputeOptions::default());
+        assert_eq!(hunks.len(), 1);
+        assert!(hunks[0].lines.iter().any(|l| l == "-b"));
+        assert!(hunks[0].lines.iter().any(|l| l == "+B"));
+    }
+
+    #[test]
+    fn stage_selected_hunk() {
+        let base = "a\nb\nc\nd\n";
+        let work = "a\nB\nc\nD\n";
+        let hunks = compute_hunks(Some(base), Some(work), &DiffComputeOptions::default());
+        assert!(!hunks.is_empty());
+        // Stage only first hunk if multiple; otherwise the single hunk.
+        let staged = apply_selected_hunks_to_base(base, work, &[0]);
+        assert!(staged.contains('B') || staged.contains('D') || staged != base);
     }
 }

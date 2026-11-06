@@ -7,8 +7,13 @@ use commands::app::{
     app_info, git_detect, git_test_executable, log_frontend, settings_get, settings_reload,
     settings_set,
 };
+use commands::commit::{commit_create, commit_head_message};
+use commands::diff::diff_file;
+use commands::history::{log_changed_files, log_commit_details, log_query};
+use commands::index_ops::{add_paths, stage_hunks, stage_paths, unstage_hunks, unstage_paths};
 use commands::jobs::{job_cancel, job_list};
-use commands::workspace::{status_probe, workspace_open};
+use commands::status::status_get;
+use commands::workspace::{init_run, status_probe, vcs_enable, workspace_open, workspace_recent};
 use gitx_meta::load_app_settings;
 use state::AppState;
 use tauri::Manager;
@@ -34,7 +39,22 @@ pub fn run() {
             job_list,
             job_cancel,
             workspace_open,
+            workspace_recent,
             status_probe,
+            init_run,
+            vcs_enable,
+            status_get,
+            stage_paths,
+            unstage_paths,
+            add_paths,
+            stage_hunks,
+            unstage_hunks,
+            diff_file,
+            commit_create,
+            commit_head_message,
+            log_query,
+            log_commit_details,
+            log_changed_files,
         ]);
 
     #[cfg(debug_assertions)]

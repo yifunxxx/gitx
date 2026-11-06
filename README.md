@@ -36,4 +36,4 @@ cargo build -p gitx-helper
 
 ## Milestone
 
-Current scaffold targets **M0 Framework Skeleton**. See `docs/dev-plan/08-milestones.md`.
+**M1 First Vertical Slice** — Welcome → Open/Init → Changes (staging) → Diff → Stage → Commit (hooks/amend) → basic Log. See `docs/dev-plan/08-milestones.md`.

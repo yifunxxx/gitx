@@ -55,6 +55,7 @@ function onConsoleLine(payload: { stream: string; line: string }) {
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
   await settings.load();
+  await workspace.loadRecent();
   try {
     await workspace.detectGit();
     consoleStore.append("cmd", `# git detected: ${workspace.gitPath}`);
