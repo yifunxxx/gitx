@@ -1,0 +1,12 @@
+[package]
+name = "gitx-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Deterministic git fixture builder for tests"
+
+[dependencies]
+gitx-core = { workspace = true }
+tempfile = "3"
+thiserror = { workspace = true }

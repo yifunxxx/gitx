@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+  "src-tauri",
+  "crates/gitx-core",
+  "crates/gitx-git",
+  "crates/gitx-read",
+  "crates/gitx-graph",
+  "crates/gitx-diff",
+  "crates/gitx-index",
+  "crates/gitx-watch",
+  "crates/gitx-meta",
+  "crates/gitx-helper",
+  "crates/gitx-testkit",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.90"
+
+[workspace.dependencies]
+gitx-core = { path = "crates/gitx-core" }
+gitx-git = { path = "crates/gitx-git" }
+gitx-read = { path = "crates/gitx-read" }
+gitx-graph = { path = "crates/gitx-graph" }
+gitx-diff = { path = "crates/gitx-diff" }
+gitx-index = { path = "crates/gitx-index" }
+gitx-watch = { path = "crates/gitx-watch" }
+gitx-meta = { path = "crates/gitx-meta" }
+gitx-testkit = { path = "crates/gitx-testkit" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+specta = { version = "2.0.0-rc.22", features = ["derive", "serde", "serde_json", "chrono", "uuid"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

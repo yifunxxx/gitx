@@ -1,0 +1,37 @@
+[package]
+name = "gitx"
+version.workspace = true
+description = "gitx desktop app (Tauri 2)"
+authors = ["gitx"]
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "gitx_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+gitx-core = { workspace = true }
+gitx-git = { workspace = true }
+gitx-meta = { workspace = true }
+gitx-watch = { workspace = true }
+gitx-read = { workspace = true }
+
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { workspace = true }
+specta = { workspace = true }
+specta-typescript = "0.0.9"
+tauri-specta = { version = "2.0.0-rc.21", features = ["derive", "typescript"] }
+thiserror = { workspace = true }

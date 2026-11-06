@@ -1,0 +1,12 @@
+[package]
+name = "gitx-watch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Filesystem watcher skeleton"
+
+[dependencies]
+gitx-core = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }

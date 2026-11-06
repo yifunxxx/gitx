@@ -1,0 +1,83 @@
+:root {
+  --background: 255 255 255;
+  --foreground: 10 10 10;
+  --card: 255 255 255;
+  --card-foreground: 10 10 10;
+  --popover: 255 255 255;
+  --popover-foreground: 10 10 10;
+  --primary: 23 23 23;
+  --primary-foreground: 250 250 250;
+  --secondary: 245 245 245;
+  --secondary-foreground: 23 23 23;
+  --muted: 245 245 245;
+  --muted-foreground: 115 115 115;
+  --accent: 245 245 245;
+  --accent-foreground: 23 23 23;
+  --destructive: 231 0 11;
+  --destructive-foreground: 231 0 11;
+  --border: 229 229 229;
+  --input: 229 229 229;
+  --ring: 161 161 161;
+  --sidebar: 250 250 250;
+  --sidebar-foreground: 10 10 10;
+  --success: 22 163 74;
+  --warning: 217 119 6;
+  --info: 37 99 235;
+  --dbx-chrome: 245 245 245;
+  --dbx-content: 255 255 255;
+  --background-solid: 255 255 255;
+
+  --dbx-radius-sm: 4px;
+  --dbx-radius-md: 4px;
+  --dbx-radius-lg: 6px;
+  --dbx-radius-xl: 6px;
+  --dbx-dialog-top-z-index: 50;
+  --dbx-floating-layer-z-index: 51;
+  --dbx-viewport-height: 100vh;
+
+  --font-sans: "Geist Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Fira Code", "Cascadia Code", "Cascadia Mono", "JetBrains Mono", ui-monospace,
+    SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.dark {
+  --background: 19 20 22;
+  --foreground: 215 215 219;
+  --card: 27 27 30;
+  --card-foreground: 215 215 219;
+  --popover: 30 30 32;
+  --popover-foreground: 215 215 219;
+  --primary: 208 208 214;
+  --primary-foreground: 19 20 22;
+  --secondary: 42 42 45;
+  --secondary-foreground: 215 215 219;
+  --muted: 42 42 45;
+  --muted-foreground: 151 152 157;
+  --accent: 46 47 51;
+  --accent-foreground: 215 215 219;
+  --destructive: 243 98 95;
+  --destructive-foreground: 243 98 95;
+  --border: 110 110 114 / 0.28;
+  --input: 110 110 114 / 0.28;
+  --ring: 110 110 114;
+  --sidebar: 25 25 28;
+  --sidebar-foreground: 215 215 219;
+  --dbx-chrome: 27 27 30;
+  --dbx-content: 19 20 22;
+  --background-solid: 19 20 22;
+}
+
+html[data-corner-style="large"] {
+  --dbx-radius-sm: 6px;
+  --dbx-radius-md: 6px;
+  --dbx-radius-lg: 10px;
+  --dbx-radius-xl: 14px;
+}
+
+html[data-corner-style="none"] {
+  --dbx-radius-sm: 0;
+  --dbx-radius-md: 0;
+  --dbx-radius-lg: 0;
+  --dbx-radius-xl: 0;
+}
