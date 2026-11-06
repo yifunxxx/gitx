@@ -1,15 +1,34 @@
 <script setup lang="ts">
-import { onMounted, watch } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
+import { Eye, Filter, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useCompareStore } from "@/stores/compareStore";
+import { useHistoryStore } from "@/stores/historyStore";
+import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
+import { useDiffStore } from "@/stores/diffStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
+import { Button } from "@/components/ui/button";
 import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind } from "@/lib/backend";
+import { toast } from "@/composables/useToast";
 
 const log = useLogStore();
 const workspace = useWorkspaceStore();
+const compare = useCompareStore();
+const history = useHistoryStore();
+const repoAtRev = useRepoAtRevStore();
+const diffs = useDiffStore();
+const layout = useLayoutStore();
+
+const textDraft = ref("");
+const authorDraft = ref("");
+const revDraft = ref("");
+const pathDraft = ref("");
+const ctx = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
 
 onMounted(() => {
   if (workspace.isRepo) void log.load(true);
@@ -51,110 +70,334 @@ function mapStatus(s: string): FileChangeKind {
 function laneColor(color: number) {
   return `rgb(var(--graph-lane-${color % 12}))`;
 }
+
+function visibleRefs(refs: string[]) {
+  const list = log.showTagNames ? refs : refs.filter((r) => !r.startsWith("tag:"));
+  return log.compactRefs ? list.slice(0, 2) : list;
+}
+
+async function applySearch() {
+  log.setTextFilter(textDraft.value);
+  log.setAuthorFilter(authorDraft.value);
+  log.setRevisions(revDraft.value.trim() ? [revDraft.value.trim()] : []);
+  log.setPathsFilter(pathDraft.value.trim() ? [pathDraft.value.trim()] : []);
+  await log.applyFilters();
+}
+
+function onCommitClick(sha: string, e: MouseEvent) {
+  void log.select(sha, e.metaKey || e.ctrlKey);
+}
+
+function onCommitContext(sha: string, e: MouseEvent) {
+  e.preventDefault();
+  if (!log.selectedShas.includes(sha)) void log.select(sha, false);
+  ctx.value = { open: true, x: e.clientX, y: e.clientY };
+}
+
+function closeCtx() {
+  ctx.value = { ...ctx.value, open: false };
+}
+
+async function ctxCopy() {
+  log.copySelectedSha();
+  toast({ title: "Copied revision" });
+  closeCtx();
+}
+
+async function ctxCompareLocal() {
+  if (!log.selectedSha) return;
+  await compare.compareWithLocal(log.selectedSha);
+  closeCtx();
+}
+
+async function ctxCompareVersions() {
+  if (log.selectedShas.length < 2) {
+    toast({ title: "Select two commits (Ctrl/Cmd-click)" });
+    return;
+  }
+  await compare.compareVersions(log.selectedShas[0]!, log.selectedShas[1]!);
+  closeCtx();
+}
+
+async function ctxRepoAtRev() {
+  if (!log.selectedSha) return;
+  await repoAtRev.open(log.selectedSha);
+  closeCtx();
+}
+
+async function ctxCombined() {
+  if (!log.selectedSha) return;
+  const tab = await (async () => {
+    await compare.compareVersions(log.selectedSha!, `${log.selectedSha}^`);
+    const t = compare.tabs.find((x) => x.left === log.selectedSha || x.right === log.selectedSha);
+    if (t) await compare.showCombined(t);
+    return t;
+  })();
+  if (tab) layout.activeEditorKind = "compare";
+  closeCtx();
+}
+
+async function openChangedFile(path: string, origPath: string | null) {
+  if (!log.selectedSha) return;
+  await diffs.openRevDiff(path, `${log.selectedSha}^`, log.selectedSha, origPath ?? undefined);
+  layout.activeEditorKind = "diff";
+}
+
+async function showFileHistory(path: string) {
+  await history.openFileHistory(path);
+}
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
+  <div class="flex h-full min-h-0 flex-col" @click="closeCtx">
     <EmptyState
       v-if="!workspace.isRepo"
       title="No repository"
       description="Open or create a Git repository to see history."
     />
     <ErrorState v-else-if="log.error" title="Log failed" :message="log.error" />
-    <EmptyState
-      v-else-if="!log.loading && !log.commits.length"
-      title="No commits yet"
-      description="Make your first commit from the Commit tool window."
-    />
-    <Splitpanes v-else class="h-full">
-      <Pane :size="58" min-size="30">
-        <div class="flex h-full min-h-0 flex-col">
-          <div
-            class="grid h-7 shrink-0 grid-cols-[56px_1fr_120px_140px] items-center border-b px-2 text-[11px] text-muted-foreground"
-          >
-            <span>Graph</span>
-            <span>Message</span>
-            <span>Author</span>
-            <span>Date</span>
-          </div>
-          <div class="min-h-0 flex-1 overflow-auto">
-            <button
-              v-for="c in log.commits"
-              :key="c.sha"
-              type="button"
-              class="grid h-[22px] w-full grid-cols-[56px_1fr_120px_140px] items-center px-2 text-left text-[12.5px]"
-              :class="log.selectedSha === c.sha ? 'bg-accent' : 'hover:bg-accent/40'"
-              @click="log.select(c.sha)"
-            >
-              <span class="relative flex h-full items-center justify-center">
-                <span
-                  class="h-2.5 w-2.5 rounded-full ring-2 ring-background"
-                  :style="{ background: laneColor(c.graph.color) }"
-                />
-              </span>
-              <span class="flex min-w-0 items-center gap-1 truncate">
-                <span
-                  v-for="refName in c.refs.slice(0, 2)"
-                  :key="refName"
-                  class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
-                >
-                  {{ refName }}
-                </span>
-                <span class="truncate">{{ c.subject }}</span>
-              </span>
-              <span class="truncate text-muted-foreground">{{ c.author }}</span>
-              <span class="truncate text-muted-foreground">{{ formatTime(c.authorTime) }}</span>
-            </button>
-            <button
-              v-if="log.truncated"
-              type="button"
-              class="w-full py-2 text-xs text-muted-foreground hover:text-foreground"
-              @click="log.loadMore()"
-            >
-              Load more…
-            </button>
-          </div>
+    <template v-else>
+      <div class="flex flex-wrap items-center gap-1 border-b bg-dbx-chrome px-2 py-1 text-[11px]">
+        <Filter class="h-3.5 w-3.5 text-muted-foreground" />
+        <input
+          v-model="textDraft"
+          class="h-6 w-36 rounded border bg-background px-1.5"
+          placeholder="Search message / hash"
+          @keydown.enter="applySearch"
+        />
+        <input
+          v-model="authorDraft"
+          class="h-6 w-24 rounded border bg-background px-1.5"
+          placeholder="User"
+          @keydown.enter="applySearch"
+        />
+        <input
+          v-model="revDraft"
+          class="h-6 w-28 rounded border bg-background px-1.5"
+          placeholder="Branch / a..b"
+          @keydown.enter="applySearch"
+        />
+        <input
+          v-model="pathDraft"
+          class="h-6 w-28 rounded border bg-background px-1.5"
+          placeholder="Paths"
+          @keydown.enter="applySearch"
+        />
+        <select
+          class="h-6 rounded border bg-background px-1"
+          @change="
+            log.setDatePreset(($event.target as HTMLSelectElement).value as '24h' | '7d' | 'all');
+            applySearch();
+          "
+        >
+          <option value="all">Any date</option>
+          <option value="24h">Last 24h</option>
+          <option value="7d">Last 7 days</option>
+        </select>
+        <Button size="xs" variant="secondary" @click="applySearch">Apply</Button>
+        <Button size="xs" variant="ghost" @click="log.clearAllFilters(); applySearch()">
+          Clear
+        </Button>
+        <div class="mx-1 h-4 w-px bg-border" />
+        <Button
+          size="xs"
+          variant="ghost"
+          :class="log.showGraphOptions ? 'bg-accent' : ''"
+          @click="log.showGraphOptions = !log.showGraphOptions"
+        >
+          <Eye class="mr-1 h-3 w-3" />
+          Graph
+        </Button>
+        <div class="flex flex-1 items-center gap-1">
+          <Search class="h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            v-model="log.goToInput"
+            class="h-6 min-w-[8rem] flex-1 rounded border bg-background px-1.5"
+            placeholder="Go to Hash / Branch / Tag"
+            @keydown.enter="log.goToHashOrRef()"
+          />
         </div>
-      </Pane>
-      <Pane :size="42" min-size="24">
-        <Splitpanes horizontal class="h-full">
-          <Pane :size="45">
-            <div class="flex h-full min-h-0 flex-col">
-              <div class="border-b px-2 py-1 text-[11px] font-medium">Changed Files</div>
-              <div class="min-h-0 flex-1 overflow-auto text-[12px]">
-                <div
-                  v-for="f in log.changedFiles"
-                  :key="f.path"
-                  class="truncate px-2 py-0.5"
-                  :class="statusClass(mapStatus(f.status))"
-                >
-                  {{ f.origPath ? `${f.origPath} → ${f.path}` : f.path }}
+        <span
+          v-if="log.indexStatus"
+          class="truncate text-muted-foreground"
+          :title="log.indexStatus.message"
+        >
+          {{ log.indexStatus.message }}
+        </span>
+        <Button size="xs" variant="ghost" @click="log.rebuildIndex()">Rebuild index</Button>
+      </div>
+
+      <div
+        v-if="log.showGraphOptions"
+        class="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-[11px]"
+      >
+        <label class="flex items-center gap-1">
+          Sort
+          <select
+            class="h-6 rounded border bg-background px-1"
+            :value="log.filters.order ?? 'date'"
+            @change="
+              log.setOrder(($event.target as HTMLSelectElement).value as 'date' | 'topo');
+              applySearch();
+            "
+          >
+            <option value="date">Date</option>
+            <option value="topo">Topological</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1">
+          <input type="checkbox" :checked="!!log.filters.firstParent" @change="log.toggleFirstParent(); applySearch()" />
+          First parent
+        </label>
+        <label class="flex items-center gap-1">
+          <input type="checkbox" :checked="!!log.filters.noMerges" @change="log.toggleNoMerges(); applySearch()" />
+          No merges
+        </label>
+        <label class="flex items-center gap-1">
+          <input v-model="log.compactRefs" type="checkbox" />
+          Compact references
+        </label>
+        <label class="flex items-center gap-1">
+          <input v-model="log.showTagNames" type="checkbox" />
+          Tag names
+        </label>
+      </div>
+
+      <div v-if="log.activeFilterChips.length" class="flex flex-wrap gap-1 border-b px-2 py-1">
+        <button
+          v-for="chip in log.activeFilterChips"
+          :key="chip.key"
+          type="button"
+          class="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] hover:bg-accent"
+          @click="log.clearFilter(chip.key); applySearch()"
+        >
+          {{ chip.label }} ×
+        </button>
+      </div>
+
+      <EmptyState
+        v-if="!log.loading && !log.commits.length"
+        title="No commits matching filters"
+        description="Clear filters or adjust Branch / User / Date / Paths."
+      />
+      <Splitpanes v-else class="min-h-0 flex-1">
+        <Pane :size="58" min-size="30">
+          <div class="flex h-full min-h-0 flex-col">
+            <div
+              class="grid h-7 shrink-0 grid-cols-[56px_1fr_120px_140px] items-center border-b px-2 text-[11px] text-muted-foreground"
+            >
+              <span>Graph</span>
+              <span>Message</span>
+              <span>Author</span>
+              <span>Date</span>
+            </div>
+            <div class="min-h-0 flex-1 overflow-auto">
+              <button
+                v-for="c in log.commits"
+                :key="c.sha"
+                type="button"
+                class="grid h-[22px] w-full grid-cols-[56px_1fr_120px_140px] items-center px-2 text-left text-[12.5px]"
+                :class="
+                  log.selectedShas.includes(c.sha) ? 'bg-accent' : 'hover:bg-accent/40'
+                "
+                @click="onCommitClick(c.sha, $event)"
+                @contextmenu="onCommitContext(c.sha, $event)"
+              >
+                <span class="relative flex h-full items-center justify-center">
+                  <span
+                    class="h-2.5 w-2.5 rounded-full ring-2 ring-background"
+                    :style="{ background: laneColor(c.graph.color) }"
+                  />
+                </span>
+                <span class="flex min-w-0 items-center gap-1 truncate">
+                  <span
+                    v-for="refName in visibleRefs(c.refs)"
+                    :key="refName"
+                    class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
+                  >
+                    {{ refName }}
+                  </span>
+                  <span class="truncate">{{ c.subject }}</span>
+                </span>
+                <span class="truncate text-muted-foreground">{{ c.author }}</span>
+                <span class="truncate text-muted-foreground">{{ formatTime(c.authorTime) }}</span>
+              </button>
+              <button
+                v-if="log.truncated"
+                type="button"
+                class="w-full py-2 text-xs text-muted-foreground hover:text-foreground"
+                @click="log.loadMore()"
+              >
+                Load more…
+              </button>
+            </div>
+          </div>
+        </Pane>
+        <Pane :size="42" min-size="24">
+          <Splitpanes horizontal class="h-full">
+            <Pane :size="45">
+              <div class="flex h-full min-h-0 flex-col">
+                <div class="border-b px-2 py-1 text-[11px] font-medium">Changed Files</div>
+                <div class="min-h-0 flex-1 overflow-auto text-[12px]">
+                  <div
+                    v-for="f in log.changedFiles"
+                    :key="f.path"
+                    class="flex cursor-default items-center gap-1 truncate px-2 py-0.5 hover:bg-accent/50"
+                    :class="statusClass(mapStatus(f.status))"
+                    @dblclick="openChangedFile(f.path, f.origPath)"
+                    @contextmenu.prevent="showFileHistory(f.path)"
+                  >
+                    {{ f.origPath ? `${f.origPath} → ${f.path}` : f.path }}
+                  </div>
                 </div>
               </div>
-            </div>
-          </Pane>
-          <Pane :size="55">
-            <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
-              <div class="font-mono text-[11px] text-muted-foreground">{{ log.details.sha }}</div>
-              <div class="mt-1 font-medium">{{ log.details.subject }}</div>
-              <pre
-                v-if="log.details.body"
-                class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
-              >{{ log.details.body }}</pre>
-              <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                <dt>Author</dt>
-                <dd>{{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;</dd>
-                <dt>Date</dt>
-                <dd>{{ formatTime(log.details.authorTime) }}</dd>
-                <dt>Parents</dt>
-                <dd class="font-mono">
-                  {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
-                </dd>
-              </dl>
-            </div>
-          </Pane>
-        </Splitpanes>
-      </Pane>
-    </Splitpanes>
+            </Pane>
+            <Pane :size="55">
+              <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
+                <div class="font-mono text-[11px] text-muted-foreground">{{ log.details.sha }}</div>
+                <div class="mt-1 font-medium">{{ log.details.subject }}</div>
+                <pre
+                  v-if="log.details.body"
+                  class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
+                >{{ log.details.body }}</pre>
+                <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <dt>Author</dt>
+                  <dd>{{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;</dd>
+                  <dt>Date</dt>
+                  <dd>{{ formatTime(log.details.authorTime) }}</dd>
+                  <dt>Parents</dt>
+                  <dd class="font-mono">
+                    {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
+                  </dd>
+                </dl>
+              </div>
+            </Pane>
+          </Splitpanes>
+        </Pane>
+      </Splitpanes>
+    </template>
+
+    <div
+      v-if="ctx.open"
+      class="fixed z-[9999] min-w-48 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
+      :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }"
+      @click.stop
+    >
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCopy">
+        Copy Revision Number
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareLocal">
+        Compare with Local
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareVersions">
+        Compare Versions
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCombined">
+        Show All Changes
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRepoAtRev">
+        Show Repository at Revision
+      </button>
+    </div>
   </div>
 </template>

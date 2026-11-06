@@ -14,6 +14,9 @@ export function registerDefaultGroups() {
       "Git.Stage.Add",
       "Git.Stage.Reset",
       "Diff.ShowDiff",
+      "Git.ShowHistory",
+      "Git.Compare.With.Branch",
+      "Vcs.ShowRepositoryAtRevision",
       "CheckinProject",
       "-",
       "Git.Demo.Hello",
@@ -25,6 +28,7 @@ export function registerDefaultGroups() {
     title: "Changes",
     children: [
       "Diff.ShowDiff",
+      "Git.ShowHistory",
       "Git.Stage.Add",
       "Git.Stage.Reset",
       "Git.Add",
@@ -44,11 +48,14 @@ export function registerDefaultGroups() {
       "Git.RefreshStatus",
       "CheckinProject",
       "Diff.ShowDiff",
+      "Git.ShowHistory",
+      "Git.Compare.With.Branch",
+      "Vcs.ShowRepositoryAtRevision",
       "Git.Demo.Hello",
     ],
   });
   registerGroup({
     id: "MainToolbar.VcsQuickActions",
-    children: ["Git.RefreshStatus", "CheckinProject"],
+    children: ["Git.RefreshStatus", "CheckinProject", "Git.ShowHistory"],
   });
 }

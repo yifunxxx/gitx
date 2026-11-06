@@ -9,6 +9,9 @@ export const useLayoutStore = defineStore("layout", () => {
   const leftSize = ref(28);
   const bottomSize = ref(32);
   const activeBottomTab = ref<"console" | "log">("log");
+  const activeEditorKind = ref<"welcome" | "diff" | "history" | "compare" | "repoAtRev" | "blame">(
+    "welcome",
+  );
   const findActionOpen = ref(false);
   const vcsPopupOpen = ref(false);
 
@@ -47,6 +50,7 @@ export const useLayoutStore = defineStore("layout", () => {
     leftSize,
     bottomSize,
     activeBottomTab,
+    activeEditorKind,
     findActionOpen,
     vcsPopupOpen,
   };

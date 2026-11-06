@@ -30,5 +30,12 @@
     "amend": "Amend",
     "runHooks": "运行 Git hooks",
     "messagePlaceholder": "Commit 消息"
+  },
+  "history": {
+    "showHistory": "显示历史",
+    "compare": "比较",
+    "repoAtRevision": "在修订版浏览仓库",
+    "filters": "过滤",
+    "graphOptions": "图选项"
   }
 }

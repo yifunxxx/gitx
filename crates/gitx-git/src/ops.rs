@@ -3,8 +3,9 @@
 use crate::runner::{GitInvocation, GitRunner, OpKind};
 use crate::status::parse_status_porcelain_v2;
 use gitx_core::{
-    AppError, BranchInfo, ChangedFile, CommitDetails, CommitResult, DiffSide, ErrorCode,
-    StatusSnapshot,
+    AppError, BlameLine, BlameResult, BlobContent, BranchInfo, ChangedFile, CommitDetails,
+    CommitResult, DiffSide, ErrorCode, HistoryCommit, HistoryPage, LogFilters, LogOrder,
+    StatusSnapshot, TreeEntry,
 };
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
@@ -323,29 +324,80 @@ impl GitRunner {
         cwd: &Path,
         offset: u32,
         limit: u32,
+        filters: &LogFilters,
         cancel: &CancellationToken,
     ) -> Result<(Vec<RawLogCommit>, bool), AppError> {
         let skip = offset.to_string();
         let max = (limit + 1).to_string();
-        // Record separator = \x1e, field sep = \x00
-        let inv = GitInvocation::new(
-            cwd,
-            [
-                "log",
-                &format!("--skip={skip}"),
-                &format!("--max-count={max}"),
-                "--date-order",
-                "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%D%x1e",
-            ],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone())
-        .timeout(Some(std::time::Duration::from_secs(60)));
+        let mut args: Vec<String> = vec![
+            "log".into(),
+            format!("--skip={skip}"),
+            format!("--max-count={max}"),
+            "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%D%x1e".into(),
+        ];
+        match filters.order {
+            LogOrder::Date => args.push("--date-order".into()),
+            LogOrder::Topo => args.push("--topo-order".into()),
+        }
+        if filters.first_parent {
+            args.push("--first-parent".into());
+        }
+        if filters.no_merges {
+            args.push("--no-merges".into());
+        }
+        if let Some(since) = &filters.since {
+            if !since.is_empty() {
+                args.push(format!("--since={since}"));
+            }
+        }
+        if let Some(until) = &filters.until {
+            if !until.is_empty() {
+                args.push(format!("--until={until}"));
+            }
+        }
+        for author in &filters.authors {
+            if !author.is_empty() {
+                args.push(format!("--author={author}"));
+            }
+        }
+        if let Some(text) = &filters.text {
+            if !text.is_empty() {
+                if filters.regex {
+                    args.push(format!("--grep={text}"));
+                    args.push("-E".into());
+                } else {
+                    args.push(format!("--grep={text}"));
+                    args.push("-F".into());
+                }
+                if !filters.match_case {
+                    args.push("-i".into());
+                }
+                // Also match sha prefix via `--all-match` off; include fixed string on hash via OR:
+                // git log can't OR grep with sha easily — when text looks like a sha, add as revision tip.
+                if looks_like_sha(text) {
+                    args.push(text.clone());
+                }
+            }
+        }
+        for rev in &filters.revisions {
+            if !rev.is_empty() {
+                args.push(rev.clone());
+            }
+        }
+        if !filters.paths.is_empty() {
+            args.push("--".into());
+            args.extend(filters.paths.iter().cloned());
+        }
+
+        let inv = GitInvocation::new(cwd, args)
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone())
+            .timeout(Some(std::time::Duration::from_secs(60)));
 
         let out = match self.run(inv, cancel).await {
             Ok(o) => o,
             Err(err) if err.exit_code == Some(128) => {
-                // unborn / no commits
+                // unborn / no commits / bad revision
                 return Ok((Vec::new(), false));
             }
             Err(err) => return Err(err),
@@ -396,6 +448,352 @@ impl GitRunner {
             commits.truncate(limit as usize);
         }
         Ok((commits, truncated))
+    }
+
+    pub async fn diff_refs_name_status(
+        &self,
+        cwd: &Path,
+        left: &str,
+        right: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<ChangedFile>, AppError> {
+        // right empty / WORKTREE → diff against working tree
+        let mut args = vec![
+            "diff".to_string(),
+            "--name-status".into(),
+            "-z".into(),
+            "-M".into(),
+        ];
+        if right.eq_ignore_ascii_case("WORKTREE") || right.is_empty() {
+            args.push(left.to_string());
+        } else {
+            args.push(left.to_string());
+            args.push(right.to_string());
+        }
+        let inv = GitInvocation::new(cwd, args)
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
+        let out = self.run(inv, cancel).await?;
+        Ok(parse_name_status_z(&out.stdout))
+    }
+
+    pub async fn read_blob_at(
+        &self,
+        cwd: &Path,
+        rev: &str,
+        path: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<Vec<u8>>, AppError> {
+        if rev.eq_ignore_ascii_case("WORKTREE") || rev.is_empty() {
+            return self
+                .read_blob_side(cwd, path, DiffSide::Worktree, cancel)
+                .await;
+        }
+        if rev.eq_ignore_ascii_case("INDEX") || rev == ":0" {
+            return self
+                .read_blob_side(cwd, path, DiffSide::Index, cancel)
+                .await;
+        }
+        let spec = format!("{rev}:{path}");
+        let inv = GitInvocation::new(cwd, ["show", &spec])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
+        match self.run(inv, cancel).await {
+            Ok(out) => Ok(Some(out.stdout)),
+            Err(err) if err.exit_code == Some(128) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub async fn file_history(
+        &self,
+        cwd: &Path,
+        path: &str,
+        offset: u32,
+        limit: u32,
+        all_branches: bool,
+        cancel: &CancellationToken,
+    ) -> Result<HistoryPage, AppError> {
+        let skip = offset.to_string();
+        let max = (limit + 1).to_string();
+        let mut args: Vec<String> = vec![
+            "log".into(),
+            format!("--skip={skip}"),
+            format!("--max-count={max}"),
+            "--follow".into(),
+            "--name-status".into(),
+            "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x1e".into(),
+        ];
+        if all_branches {
+            args.push("--all".into());
+        }
+        args.push("--".into());
+        args.push(path.to_string());
+
+        let inv = GitInvocation::new(cwd, args)
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone())
+            .timeout(Some(std::time::Duration::from_secs(120)));
+        let out = match self.run(inv, cancel).await {
+            Ok(o) => o,
+            Err(err) if err.exit_code == Some(128) => {
+                return Ok(HistoryPage {
+                    commits: Vec::new(),
+                    truncated: false,
+                    next_offset: offset,
+                });
+            }
+            Err(err) => return Err(err),
+        };
+
+        let text = String::from_utf8_lossy(&out.stdout);
+        // git prints: <format…\x1e>\n\n<name-status>\n<format…\x1e>\n\n…
+        // so name-status for commit i sits at the start of split-part i+1.
+        let parts: Vec<&str> = text.split('\x1e').collect();
+        let mut commits = Vec::new();
+        for i in 0..parts.len() {
+            let header_src = parts[i];
+            // First part is pure header; later parts start with name-status for previous commit.
+            let header_line = if i == 0 {
+                header_src.trim_matches('\n')
+            } else {
+                // Skip leading status lines; header is the first line containing NULs.
+                header_src
+                    .lines()
+                    .find(|l| l.contains('\0'))
+                    .unwrap_or("")
+                    .trim()
+            };
+            if header_line.is_empty() {
+                continue;
+            }
+            let fields: Vec<&str> = header_line.split('\0').collect();
+            if fields.len() < 6 {
+                continue;
+            }
+            let mut status = None;
+            let mut path_at = path.to_string();
+            let mut orig_path = None;
+            if let Some(next) = parts.get(i + 1) {
+                for line in next.lines() {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    if line.contains('\0') {
+                        break; // hit next header
+                    }
+                    let cols: Vec<&str> = line.split('\t').collect();
+                    if cols.is_empty() {
+                        continue;
+                    }
+                    let st = cols[0].chars().next().unwrap_or('M').to_string();
+                    status = Some(st.clone());
+                    if (st.starts_with('R') || st.starts_with('C')) && cols.len() >= 3 {
+                        orig_path = Some(cols[1].to_string());
+                        path_at = cols[2].to_string();
+                    } else if cols.len() >= 2 {
+                        path_at = cols[1].to_string();
+                    }
+                }
+            }
+            let sha = fields[0].to_string();
+            let short_sha: String = sha.chars().take(7).collect();
+            let parents = if fields[1].is_empty() {
+                Vec::new()
+            } else {
+                fields[1]
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect()
+            };
+            commits.push(HistoryCommit {
+                sha,
+                short_sha,
+                parents,
+                subject: fields[5].to_string(),
+                author: fields[2].to_string(),
+                author_email: fields[3].to_string(),
+                author_time: fields[4].parse().unwrap_or(0),
+                path_at_commit: path_at,
+                status,
+                orig_path,
+            });
+        }
+
+        let truncated = commits.len() as u32 > limit;
+        if truncated {
+            commits.truncate(limit as usize);
+        }
+        Ok(HistoryPage {
+            next_offset: offset + commits.len() as u32,
+            truncated,
+            commits,
+        })
+    }
+
+    pub async fn blame_file(
+        &self,
+        cwd: &Path,
+        path: &str,
+        rev: &str,
+        ignore_whitespace: bool,
+        cancel: &CancellationToken,
+    ) -> Result<BlameResult, AppError> {
+        let mut args = vec!["blame".to_string(), "--line-porcelain".into()];
+        if ignore_whitespace {
+            args.push("-w".into());
+        }
+        if !rev.is_empty() && !rev.eq_ignore_ascii_case("WORKTREE") {
+            args.push(rev.to_string());
+        }
+        args.push("--".into());
+        args.push(path.to_string());
+
+        let inv = GitInvocation::new(cwd, args)
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone())
+            .timeout(Some(std::time::Duration::from_secs(120)));
+        let out = match self.run(inv, cancel).await {
+            Ok(o) => o,
+            Err(err) if err.exit_code == Some(128) => {
+                return Ok(BlameResult {
+                    path: path.to_string(),
+                    rev: rev.to_string(),
+                    lines: Vec::new(),
+                });
+            }
+            Err(err) => return Err(err),
+        };
+
+        Ok(BlameResult {
+            path: path.to_string(),
+            rev: if rev.is_empty() {
+                "HEAD".into()
+            } else {
+                rev.to_string()
+            },
+            lines: parse_blame_porcelain(&out.stdout),
+        })
+    }
+
+    pub async fn tree_list(
+        &self,
+        cwd: &Path,
+        rev: &str,
+        dir: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<TreeEntry>, AppError> {
+        let prefix = if dir.is_empty() || dir == "/" {
+            String::new()
+        } else {
+            let mut d = dir.trim_matches('/').to_string();
+            if !d.ends_with('/') {
+                d.push('/');
+            }
+            d
+        };
+        let spec = if prefix.is_empty() {
+            rev.to_string()
+        } else {
+            let dir_no_slash = prefix.trim_end_matches('/');
+            format!("{rev}:{dir_no_slash}")
+        };
+        let inv = GitInvocation::new(cwd, ["ls-tree", "-z", "--long", &spec])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
+        let out = match self.run(inv, cancel).await {
+            Ok(o) => o,
+            Err(err) if err.exit_code == Some(128) => return Ok(Vec::new()),
+            Err(err) => return Err(err),
+        };
+        Ok(parse_ls_tree_z(&out.stdout, &prefix))
+    }
+
+    pub async fn blob_read(
+        &self,
+        cwd: &Path,
+        rev: &str,
+        path: &str,
+        cancel: &CancellationToken,
+    ) -> Result<BlobContent, AppError> {
+        let bytes = self.read_blob_at(cwd, rev, path, cancel).await?;
+        let size = bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
+        let binary = bytes.as_ref().is_some_and(|b| b.iter().take(8000).any(|&c| c == 0));
+        let too_large = size > 5 * 1024 * 1024;
+        let text = if binary || too_large || bytes.is_none() {
+            None
+        } else {
+            bytes.map(|b| String::from_utf8_lossy(&b).into_owned())
+        };
+        Ok(BlobContent {
+            path: path.to_string(),
+            rev: rev.to_string(),
+            text,
+            binary,
+            too_large,
+            size,
+        })
+    }
+
+    pub async fn checkout_path_from_rev(
+        &self,
+        cwd: &Path,
+        rev: &str,
+        path: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let inv = GitInvocation::new(cwd, ["checkout", rev, "--", path])
+            .kind(OpKind::Write)
+            .git_bin(self.git_bin.clone());
+        self.run(inv, cancel).await?;
+        Ok(())
+    }
+
+    pub async fn list_refs(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<String>, AppError> {
+        let inv = GitInvocation::new(
+            cwd,
+            [
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/heads",
+                "refs/tags",
+                "refs/remotes",
+            ],
+        )
+        .kind(OpKind::Read)
+        .git_bin(self.git_bin.clone());
+        let out = match self.run(inv, cancel).await {
+            Ok(o) => o,
+            Err(_) => return Ok(Vec::new()),
+        };
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    }
+
+    pub async fn git_common_dir(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<std::path::PathBuf, AppError> {
+        let inv = GitInvocation::new(cwd, ["rev-parse", "--git-common-dir"])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
+        let out = self.run(inv, cancel).await?;
+        let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let path = std::path::PathBuf::from(&p);
+        if path.is_absolute() {
+            Ok(path)
+        } else {
+            Ok(cwd.join(path))
+        }
     }
 
     pub async fn log_commit_details(
@@ -524,6 +922,102 @@ fn pathspec_nul(paths: &[String]) -> Vec<u8> {
         buf.push(0);
     }
     buf
+}
+
+fn looks_like_sha(s: &str) -> bool {
+    let len = s.len();
+    (7..=40).contains(&len) && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn parse_blame_porcelain(stdout: &[u8]) -> Vec<BlameLine> {
+    let text = String::from_utf8_lossy(stdout);
+    let mut lines = Vec::new();
+    let mut current_sha = String::new();
+    let mut author = String::new();
+    let mut author_time: i64 = 0;
+    let mut summary = String::new();
+    let mut original_path = None;
+    let mut line_no: u32 = 0;
+    let mut not_committed = false;
+
+    for raw in text.lines() {
+        if raw.starts_with('\t') {
+            lines.push(BlameLine {
+                line: line_no,
+                sha: current_sha.clone(),
+                author: author.clone(),
+                author_time,
+                summary: summary.clone(),
+                original_path: original_path.clone(),
+                not_committed,
+            });
+            continue;
+        }
+        if raw.is_empty() {
+            continue;
+        }
+        let mut parts = raw.split_whitespace();
+        let first = parts.next().unwrap_or("");
+        if looks_like_sha(first) && first.len() >= 40 {
+            current_sha = first.to_string();
+            // <sha> <orig> <final> [<num>]
+            let _orig = parts.next();
+            if let Some(final_line) = parts.next() {
+                line_no = final_line.parse().unwrap_or(line_no + 1);
+            } else {
+                line_no += 1;
+            }
+            not_committed = current_sha.chars().all(|c| c == '0');
+            continue;
+        }
+        if let Some(rest) = raw.strip_prefix("author ") {
+            author = rest.to_string();
+        } else if let Some(rest) = raw.strip_prefix("author-time ") {
+            author_time = rest.parse().unwrap_or(0);
+        } else if let Some(rest) = raw.strip_prefix("summary ") {
+            summary = rest.to_string();
+        } else if let Some(rest) = raw.strip_prefix("filename ") {
+            original_path = Some(rest.to_string());
+        }
+    }
+    lines
+}
+
+fn parse_ls_tree_z(stdout: &[u8], prefix: &str) -> Vec<TreeEntry> {
+    let text = String::from_utf8_lossy(stdout);
+    let mut out = Vec::new();
+    for entry in text.split('\0') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        // format: <mode> <type> <object> <size>\t<name>
+        let Some((meta, name)) = entry.split_once('\t') else {
+            continue;
+        };
+        let parts: Vec<&str> = meta.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let mode = parts[0].to_string();
+        let kind = parts[1].to_string();
+        let sha = parts[2].to_string();
+        let size = if parts.len() >= 4 && parts[3] != "-" {
+            parts[3].parse().ok()
+        } else {
+            None
+        };
+        let path = format!("{prefix}{name}");
+        out.push(TreeEntry {
+            name: name.to_string(),
+            path,
+            kind,
+            mode,
+            size,
+            sha: Some(sha),
+        });
+    }
+    out
 }
 
 fn parse_name_status_z(stdout: &[u8]) -> Vec<ChangedFile> {

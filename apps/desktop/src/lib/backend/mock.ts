@@ -21,6 +21,7 @@ const defaultSettings: AppSettings = {
   gitExecutable: null,
   recentWorkspaces: ["/tmp/demo-repo"],
   stagingMode: true,
+  logIndexing: true,
 };
 
 let settings = structuredClone(defaultSettings);
@@ -272,7 +273,22 @@ export const mockBackend: Backend = {
     return amendMessage;
   },
   async logQuery(req) {
-    const all = mockLog();
+    let all = mockLog();
+    const f = req.filters;
+    if (f?.text) {
+      const q = f.text.toLowerCase();
+      all = all.filter(
+        (c) => c.subject.toLowerCase().includes(q) || c.sha.toLowerCase().startsWith(q),
+      );
+    }
+    if (f?.authors?.length) {
+      all = all.filter((c) =>
+        f.authors!.some((a) => c.author.toLowerCase().includes(a.toLowerCase())),
+      );
+    }
+    if (f?.noMerges) {
+      all = all.filter((c) => c.parents.length <= 1);
+    }
     const offset = req.offset ?? 0;
     const limit = req.limit ?? 100;
     const slice = all.slice(offset, offset + limit);
@@ -303,5 +319,152 @@ export const mockBackend: Backend = {
       { path: "README.md", status: "M", origPath: null },
       { path: "src/app.ts", status: "A", origPath: null },
     ];
+  },
+  async fileHistory(req) {
+    const all = mockLog().map((c) => ({
+      sha: c.sha,
+      shortSha: c.shortSha,
+      parents: c.parents,
+      subject: c.subject,
+      author: c.author,
+      authorEmail: c.authorEmail,
+      authorTime: c.authorTime,
+      pathAtCommit: req.filePath,
+      status: "M",
+      origPath: null as string | null,
+    }));
+    const offset = req.offset ?? 0;
+    const limit = req.limit ?? 100;
+    const slice = all.slice(offset, offset + limit);
+    return {
+      commits: slice,
+      truncated: offset + limit < all.length,
+      nextOffset: offset + slice.length,
+    };
+  },
+  async blameFile(req) {
+    return {
+      path: req.filePath,
+      rev: req.rev || "HEAD",
+      lines: [
+        {
+          line: 1,
+          sha: mockLog()[1]!.sha,
+          author: "gitx",
+          authorTime: 1_704_000_000,
+          summary: "Initial commit",
+          originalPath: req.filePath,
+          notCommitted: false,
+        },
+        {
+          line: 2,
+          sha: mockLog()[0]!.sha,
+          author: "gitx",
+          authorTime: 1_704_067_200,
+          summary: "Add staging Changes UI",
+          originalPath: req.filePath,
+          notCommitted: false,
+        },
+      ],
+    };
+  },
+  async treeList(req) {
+    if (req.dir && req.dir !== "" && req.dir !== "/") {
+      return [
+        {
+          name: "app.ts",
+          path: `${req.dir.replace(/\/$/, "")}/app.ts`,
+          kind: "blob",
+          mode: "100644",
+          size: 42,
+          sha: "deadbeef",
+        },
+      ];
+    }
+    return [
+      {
+        name: "README.md",
+        path: "README.md",
+        kind: "blob",
+        mode: "100644",
+        size: 12,
+        sha: "abcd1234",
+      },
+      {
+        name: "src",
+        path: "src",
+        kind: "tree",
+        mode: "040000",
+        size: null,
+        sha: "tree0001",
+      },
+    ];
+  },
+  async blobRead(req) {
+    return {
+      path: req.filePath,
+      rev: req.rev,
+      text: `# ${req.filePath}\ncontent at ${req.rev}\n`,
+      binary: false,
+      tooLarge: false,
+      size: 32,
+    };
+  },
+  async checkoutPathFromRev(req) {
+    emitConsole("cmd", `git checkout ${req.rev} -- ${req.filePath}`);
+    return null;
+  },
+  async listRefs() {
+    return ["main", "feature", "v0.1", "origin/main"];
+  },
+  async logIndexStatus() {
+    return {
+      enabled: true,
+      ready: true,
+      progress: 1,
+      commitCount: 2,
+      message: "Indexed 2 commits (mock)",
+    };
+  },
+  async logIndexRebuild() {
+    return this.logIndexStatus({ path: "/tmp/demo-repo" });
+  },
+  async diffFileAt(req) {
+    return {
+      path: req.filePath,
+      leftLabel: req.leftRev.slice(0, 7),
+      rightLabel: req.rightRev.slice(0, 7),
+      leftText: "# gitx\nhello\n",
+      rightText: "# gitx\nhello world\n",
+      binary: false,
+      tooLarge: false,
+      hunks: mockHunks(),
+      encoding: "utf-8",
+    };
+  },
+  async diffRefs(req) {
+    return {
+      left: req.left,
+      right: req.right,
+      files: [
+        { path: "README.md", status: "M", origPath: null },
+        { path: "src/app.ts", status: "A", origPath: null },
+      ],
+    };
+  },
+  async diffCombined(req) {
+    return {
+      left: req.left,
+      right: req.right ?? `${req.left}^`,
+      files: [
+        {
+          path: "README.md",
+          status: "M",
+          origPath: null,
+          hunks: mockHunks(),
+          binary: false,
+        },
+      ],
+    };
   },
 };

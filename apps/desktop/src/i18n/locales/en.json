@@ -30,5 +30,12 @@
     "amend": "Amend",
     "runHooks": "Run Git hooks",
     "messagePlaceholder": "Commit message"
+  },
+  "history": {
+    "showHistory": "Show History",
+    "compare": "Compare",
+    "repoAtRevision": "Repository at Revision",
+    "filters": "Filters",
+    "graphOptions": "Graph Options"
   }
 }

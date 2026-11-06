@@ -36,4 +36,4 @@ cargo build -p gitx-helper
 
 ## Milestone
 
-**M1 First Vertical Slice** — Welcome → Open/Init → Changes (staging) → Diff → Stage → Commit (hooks/amend) → basic Log. See `docs/dev-plan/08-milestones.md`.
+**M3 History & Compare** (on top of M0+M1) — Log filters / graph options / indexing, File History, Compare revisions/branches/commits, Diff whitespace modes + CodeMirror, Repository at Revision, blame backend. Host-agnostic only; parallel with M2. See `docs/dev-plan/08-milestones.md`.

@@ -34,9 +34,16 @@ pub struct AppSettings {
     /// M1 ships staging mode first (changelist mode lands in M6).
     #[serde(default = "default_staging_mode")]
     pub staging_mode: bool,
+    /// Enable SQLite Log indexing (#103). Default on.
+    #[serde(default = "default_log_indexing")]
+    pub log_indexing: bool,
 }
 
 fn default_staging_mode() -> bool {
+    true
+}
+
+fn default_log_indexing() -> bool {
     true
 }
 
@@ -49,6 +56,7 @@ impl Default for AppSettings {
             git_executable: None,
             recent_workspaces: Vec::new(),
             staging_mode: true,
+            log_indexing: true,
         }
     }
 }

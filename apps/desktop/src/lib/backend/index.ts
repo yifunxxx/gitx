@@ -1,16 +1,33 @@
 import type {
   AppInfo,
   AppSettings,
+  BlameReq,
+  BlameResult,
+  BlobContent,
+  BlobReadReq,
+  ChangedFile,
+  CheckoutPathReq,
+  CombinedDiffReq,
+  CombinedDiffResult,
   CommitCreateReq,
   CommitDetails,
   CommitResult,
+  DiffFileAtReq,
   DiffFileReq,
   DiffFileResult,
+  DiffRefsReq,
+  DiffRefsResult,
+  FileHistoryReq,
   GitDetectDto,
   HeadMessageReq,
+  HistoryPage,
   HunksReq,
+  IndexRebuildReq,
+  IndexStatus,
+  IndexStatusReq,
   JobHandle,
   JobInfo,
+  ListRefsReq,
   LogChangedFilesReq,
   LogCommitDetailsReq,
   LogPage,
@@ -20,12 +37,13 @@ import type {
   StatusGetReq,
   StatusProbeReq,
   StatusSnapshot,
+  TreeEntry,
+  TreeListReq,
   WorkspaceOpenReq,
   WorkspaceOpenRes,
   WorkspaceRecentRes,
   InitRunReq,
   VcsEnableReq,
-  ChangedFile,
 } from "./bindings";
 import { commands } from "./bindings";
 import { mockBackend } from "./mock";
@@ -51,11 +69,22 @@ export type Backend = {
   stageHunks(req: HunksReq): Promise<null>;
   unstageHunks(req: HunksReq): Promise<null>;
   diffFile(req: DiffFileReq): Promise<DiffFileResult>;
+  diffFileAt(req: DiffFileAtReq): Promise<DiffFileResult>;
+  diffRefs(req: DiffRefsReq): Promise<DiffRefsResult>;
+  diffCombined(req: CombinedDiffReq): Promise<CombinedDiffResult>;
   commitCreate(req: CommitCreateReq): Promise<CommitResult>;
   commitHeadMessage(req: HeadMessageReq): Promise<string>;
   logQuery(req: LogQueryReq): Promise<LogPage>;
   logCommitDetails(req: LogCommitDetailsReq): Promise<CommitDetails>;
   logChangedFiles(req: LogChangedFilesReq): Promise<ChangedFile[]>;
+  fileHistory(req: FileHistoryReq): Promise<HistoryPage>;
+  blameFile(req: BlameReq): Promise<BlameResult>;
+  treeList(req: TreeListReq): Promise<TreeEntry[]>;
+  blobRead(req: BlobReadReq): Promise<BlobContent>;
+  checkoutPathFromRev(req: CheckoutPathReq): Promise<null>;
+  listRefs(req: ListRefsReq): Promise<string[]>;
+  logIndexStatus(req: IndexStatusReq): Promise<IndexStatus>;
+  logIndexRebuild(req: IndexRebuildReq): Promise<IndexStatus>;
 };
 
 export const tauriBackend: Backend = {
@@ -78,11 +107,22 @@ export const tauriBackend: Backend = {
   stageHunks: (req) => commands.stageHunks(req),
   unstageHunks: (req) => commands.unstageHunks(req),
   diffFile: (req) => commands.diffFile(req),
+  diffFileAt: (req) => commands.diffFileAt(req),
+  diffRefs: (req) => commands.diffRefs(req),
+  diffCombined: (req) => commands.diffCombined(req),
   commitCreate: (req) => commands.commitCreate(req),
   commitHeadMessage: (req) => commands.commitHeadMessage(req),
   logQuery: (req) => commands.logQuery(req),
   logCommitDetails: (req) => commands.logCommitDetails(req),
   logChangedFiles: (req) => commands.logChangedFiles(req),
+  fileHistory: (req) => commands.fileHistory(req),
+  blameFile: (req) => commands.blameFile(req),
+  treeList: (req) => commands.treeList(req),
+  blobRead: (req) => commands.blobRead(req),
+  checkoutPathFromRev: (req) => commands.checkoutPathFromRev(req),
+  listRefs: (req) => commands.listRefs(req),
+  logIndexStatus: (req) => commands.logIndexStatus(req),
+  logIndexRebuild: (req) => commands.logIndexRebuild(req),
 };
 
 export function getBackend(): Backend {
