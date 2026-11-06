@@ -19,7 +19,21 @@
     "pull": "Pull…",
     "push": "Push…",
     "updateProject": "Update Project…",
-    "manageRemotes": "管理 Remotes…"
+    "manageRemotes": "管理 Remotes…",
+    "merge": "合并…",
+    "rebase": "变基…",
+    "cherryPick": "拣选",
+    "resolveConflicts": "解决冲突…",
+    "abortMerge": "中止合并",
+    "abortRebase": "中止变基",
+    "continueRebase": "继续变基"
+  },
+  "merge": {
+    "conflicts": "冲突",
+    "acceptYours": "接受己方",
+    "acceptTheirs": "接受对方",
+    "smartMerge": "智能合并",
+    "dirtyTitle": "本地修改将被覆盖"
   },
   "toolWindows": {
     "commit": "Commit",

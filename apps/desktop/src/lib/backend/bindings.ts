@@ -31,6 +31,7 @@ export type GitSettings = {
   groupBranchesByDirectory: boolean
   showRecentBranches: boolean
   showTags: boolean
+  cherryPickSuffixProtected: boolean
 }
 export type AppSettings = {
   schemaVersion: number
@@ -463,6 +464,104 @@ export type UnshallowReq = { path: string; remote?: string | null }
 export type RepoStateReq = { path: string }
 export type RepoStateRes = { isShallow: boolean }
 
+// --- M4 ---
+export type RepoOpKind = "normal" | "merge" | "rebase" | "cherryPick" | "revert"
+export type RepoOpPhase = "normal" | "inProgress" | "conflicted" | "readyToContinue" | "stoppedForEdit"
+export type RepoOpState = {
+  kind: RepoOpKind
+  phase: RepoOpPhase
+  step: number | null
+  total: number | null
+  conflictCount: number
+  yoursLabel: string
+  theirsLabel: string
+  summary: string
+  headBranch: string | null
+  subject: string | null
+}
+export type RewriteOutcome = "success" | "alreadyUpToDate" | "fastForward" | "conflicts" | "nothingToCommit"
+export type RewriteResult = {
+  oldHead: string
+  newHead: string
+  outcome: RewriteOutcome
+  message: string
+  conflictFiles: string[]
+  backupRef: string | null
+}
+export type ConflictKind = "content" | "deleteModify" | "addAdd" | "rename" | "binary" | "submodule"
+export type ConflictSideStatus = "modified" | "deleted" | "added" | "none"
+export type ConflictEntry = {
+  path: string
+  kind: ConflictKind
+  yours: ConflictSideStatus
+  theirs: ConflictSideStatus
+}
+export type ConflictsList = {
+  entries: ConflictEntry[]
+  yoursLabel: string
+  theirsLabel: string
+  title: string
+}
+export type ConflictSide = "ours" | "theirs"
+export type ConflictVersions = {
+  path: string
+  base: string | null
+  ours: string | null
+  theirs: string | null
+  isBinary: boolean
+}
+export type Merge3BlockKind = "equal" | "onlyOurs" | "onlyTheirs" | "bothSame" | "conflict"
+export type Merge3Block = {
+  kind: Merge3BlockKind
+  baseLines: string[]
+  oursLines: string[]
+  theirsLines: string[]
+  resultLines: string[]
+  isSimple: boolean
+}
+export type Merge3Result = { blocks: Merge3Block[]; conflictCount: number }
+export type RewritePathReq = { path: string }
+export type MergeRunReq = {
+  path: string
+  branches: string[]
+  noFf: boolean
+  ffOnly: boolean
+  squash: boolean
+  message?: string | null
+  noCommit: boolean
+  noVerify: boolean
+  allowUnrelated: boolean
+  smart: boolean
+}
+export type MergeCommitReq = { path: string; message?: string | null }
+export type RebaseRunReq = {
+  path: string
+  upstream: string
+  onto?: string | null
+  branch?: string | null
+  rebaseMerges: boolean
+  keepEmpty: boolean
+  root: boolean
+  updateRefs: boolean
+  autosquash: boolean
+  interactive: boolean
+  smart: boolean
+}
+export type CherryPickRunReq = {
+  path: string
+  shas: string[]
+  mainline?: number | null
+  addSuffix?: boolean | null
+  allowEmpty: boolean
+  smart: boolean
+}
+export type ConflictsPathReq = { path: string }
+export type ConflictAcceptReq = { path: string; paths: string[]; side: ConflictSide }
+export type ConflictFileReq = { path: string; filePath: string }
+export type ConflictSaveReq = { path: string; filePath: string; content: string }
+export type ConflictMarkReq = { path: string; paths: string[] }
+
+
 export const commands = {
   async appInfo(): Promise<AppInfo> {
     return invoke("app_info")
@@ -656,7 +755,65 @@ export const commands = {
   async repoStateGet(req: RepoStateReq): Promise<RepoStateRes> {
     return invoke("repo_state_get", { req })
   },
+  async repoOpStateGet(req: RewritePathReq): Promise<RepoOpState> {
+    return invoke("repo_op_state_get", { req })
+  },
+  async mergeRun(req: MergeRunReq): Promise<RewriteResult> {
+    return invoke("merge_run", { req })
+  },
+  async mergeAbort(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("merge_abort", { req })
+  },
+  async mergeCommit(req: MergeCommitReq): Promise<RewriteResult> {
+    return invoke("merge_commit", { req })
+  },
+  async rebaseRun(req: RebaseRunReq): Promise<RewriteResult> {
+    return invoke("rebase_run", { req })
+  },
+  async rebaseContinue(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("rebase_continue", { req })
+  },
+  async rebaseSkip(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("rebase_skip", { req })
+  },
+  async rebaseAbort(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("rebase_abort", { req })
+  },
+  async cherryPickRun(req: CherryPickRunReq): Promise<RewriteResult> {
+    return invoke("cherry_pick_run", { req })
+  },
+  async cherryPickContinue(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("cherry_pick_continue", { req })
+  },
+  async cherryPickSkip(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("cherry_pick_skip", { req })
+  },
+  async cherryPickAbort(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("cherry_pick_abort", { req })
+  },
+  async conflictsList(req: ConflictsPathReq): Promise<ConflictsList> {
+    return invoke("conflicts_list", { req })
+  },
+  async conflictAcceptSide(req: ConflictAcceptReq): Promise<null> {
+    return invoke("conflict_accept_side", { req })
+  },
+  async conflictVersions(req: ConflictFileReq): Promise<ConflictVersions> {
+    return invoke("conflict_versions", { req })
+  },
+  async conflictMerge3(req: ConflictFileReq): Promise<Merge3Result> {
+    return invoke("conflict_merge3", { req })
+  },
+  async conflictSaveResult(req: ConflictSaveReq): Promise<null> {
+    return invoke("conflict_save_result", { req })
+  },
+  async conflictMarkResolved(req: ConflictMarkReq): Promise<null> {
+    return invoke("conflict_mark_resolved", { req })
+  },
+  async conflictResolveSimple(req: ConflictsPathReq): Promise<number> {
+    return invoke("conflict_resolve_simple", { req })
+  },
 }
+
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke: tauriInvoke } = await import("@tauri-apps/api/core")

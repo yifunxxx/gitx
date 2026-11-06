@@ -9,6 +9,7 @@ import { useHistoryStore } from "@/stores/historyStore";
 import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
 import { useDiffStore } from "@/stores/diffStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useRewriteStore } from "@/stores/rewriteStore";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ const history = useHistoryStore();
 const repoAtRev = useRepoAtRevStore();
 const diffs = useDiffStore();
 const layout = useLayoutStore();
+const rewrite = useRewriteStore();
 
 const textDraft = ref("");
 const authorDraft = ref("");
@@ -145,6 +147,17 @@ async function openChangedFile(path: string, origPath: string | null) {
 
 async function showFileHistory(path: string) {
   await history.openFileHistory(path);
+}
+
+async function ctxCherryPick() {
+  const shas = log.selectedShas.length
+    ? [...log.selectedShas]
+    : log.selectedSha
+      ? [log.selectedSha]
+      : [];
+  if (!shas.length) return;
+  closeCtx();
+  await rewrite.cherryPick({ shas });
 }
 </script>
 
@@ -385,6 +398,9 @@ async function showFileHistory(path: string) {
     >
       <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCopy">
         Copy Revision Number
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCherryPick">
+        Cherry-Pick
       </button>
       <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareLocal">
         Compare with Local

@@ -3,12 +3,14 @@
 #![allow(clippy::result_large_err)]
 
 mod clone_ops;
+mod conflict_ops;
 mod detect;
 mod jobs;
 mod ops;
 mod progress;
 mod refs_ops;
 mod remote_ops;
+mod rewrite_ops;
 mod runner;
 mod scheduler;
 mod status;

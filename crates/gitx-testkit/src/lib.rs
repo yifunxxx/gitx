@@ -82,6 +82,21 @@ impl FixtureBuilder {
                     let sha = git_stdout(&root, &["rev-parse", "HEAD~1"])?;
                     git(&root, &["checkout", "--detach", sha.trim()])?;
                 }
+                "merge-conflict" => {
+                    write(&root, "file.txt", "base\nline2\nline3\n")?;
+                    git(&root, &["add", "file.txt"])?;
+                    git(&root, &["commit", "-m", "initial"])?;
+                    git(&root, &["checkout", "-b", "feature"])?;
+                    write(&root, "file.txt", "base\nfeature-change\nline3\n")?;
+                    git(&root, &["add", "file.txt"])?;
+                    git(&root, &["commit", "-m", "feature edit"])?;
+                    git(&root, &["checkout", "main"])?;
+                    write(&root, "file.txt", "base\nmain-change\nline3\n")?;
+                    git(&root, &["add", "file.txt"])?;
+                    git(&root, &["commit", "-m", "main edit"])?;
+                    // Leave conflict unmerged for callers that want in-progress state:
+                    // scenario builds divergent branches only; tests start the merge.
+                }
                 other => {
                     return Err(TestkitError::Git(format!("unknown scenario: {other}")));
                 }

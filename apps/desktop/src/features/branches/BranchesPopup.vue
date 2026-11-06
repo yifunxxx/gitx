@@ -24,12 +24,16 @@ import CreateTagDialog from "./CreateTagDialog.vue";
 import { buildRefTree } from "./buildRefTree";
 import type { RefEntry } from "@/lib/backend";
 import { runAction } from "@/actions";
+import { useRewriteStore } from "@/stores/rewriteStore";
+import { useSyncStore } from "@/stores/syncStore";
 
 const branches = useBranchesStore();
 const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
 const log = useLogStore();
+const rewrite = useRewriteStore();
+const sync = useSyncStore();
 
 const menuFor = ref<RefEntry | null>(null);
 const groupByDir = computed(
@@ -156,6 +160,36 @@ async function onNewTag() {
 
 function findLocal(name: string): RefEntry | undefined {
   return branches.filteredLocal.find((r) => r.name === name);
+}
+
+async function onMergeIntoCurrent(entry: RefEntry) {
+  await rewrite.merge({ branches: [entry.name] });
+  await afterBranchChange();
+  branches.closePopup();
+}
+
+async function onRebaseCurrentOnto(entry: RefEntry) {
+  await rewrite.rebase({ upstream: entry.name });
+  await afterBranchChange();
+  branches.closePopup();
+}
+
+async function onCheckoutAndRebase(entry: RefEntry) {
+  const current = branches.refs?.current;
+  if (!current) return;
+  // git rebase <current> <entry> checks out entry and rebases onto current
+  await rewrite.rebase({ upstream: current, branch: entry.name });
+  await afterBranchChange();
+  branches.closePopup();
+}
+
+async function onPullUsing(entry: RefEntry, rebase: boolean) {
+  const parts = entry.name.split("/");
+  const remote = parts[0] ?? "origin";
+  const branch = parts.slice(1).join("/") || entry.name;
+  await sync.pull({ remote, branch, rebase });
+  await afterBranchChange();
+  branches.closePopup();
 }
 </script>
 
@@ -291,6 +325,46 @@ function findLocal(name: string): RefEntry | undefined {
       >
         <button type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onCheckout(menuFor!); menuFor = null">Checkout</button>
         <button v-if="menuFor.kind === 'localBranch'" type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onRename(menuFor!); menuFor = null">Rename…</button>
+        <button
+          v-if="!menuFor.isHead"
+          type="button"
+          class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
+          @click="onMergeIntoCurrent(menuFor!); menuFor = null"
+        >
+          Merge '{{ menuFor.name }}' into Current
+        </button>
+        <button
+          v-if="!menuFor.isHead"
+          type="button"
+          class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
+          @click="onRebaseCurrentOnto(menuFor!); menuFor = null"
+        >
+          Rebase Current onto '{{ menuFor.name }}'
+        </button>
+        <button
+          v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
+          type="button"
+          class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
+          @click="onCheckoutAndRebase(menuFor!); menuFor = null"
+        >
+          Checkout and Rebase onto Current
+        </button>
+        <button
+          v-if="menuFor.kind === 'remoteBranch'"
+          type="button"
+          class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
+          @click="onPullUsing(menuFor!, false); menuFor = null"
+        >
+          Pull into Current Using Merge
+        </button>
+        <button
+          v-if="menuFor.kind === 'remoteBranch'"
+          type="button"
+          class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
+          @click="onPullUsing(menuFor!, true); menuFor = null"
+        >
+          Pull into Current Using Rebase
+        </button>
         <button type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onCompare(menuFor!); menuFor = null">Compare with current</button>
         <button type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onCopy(menuFor!); menuFor = null">Copy Branch Name</button>
         <button v-if="menuFor.kind === 'localBranch' && !menuFor.isHead" type="button" class="block w-full rounded px-2 py-1 text-left text-destructive hover:bg-accent" @click="onDelete(menuFor!); menuFor = null">Delete</button>

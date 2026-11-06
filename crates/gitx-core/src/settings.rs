@@ -77,6 +77,9 @@ pub struct GitSettings {
     pub show_recent_branches: bool,
     #[serde(default = "default_true")]
     pub show_tags: bool,
+    /// Add `(cherry picked from commit …)` when source is on a protected remote branch.
+    #[serde(default = "default_true")]
+    pub cherry_pick_suffix_protected: bool,
 }
 
 fn default_update_method() -> UpdateMethod {
@@ -106,6 +109,7 @@ impl Default for GitSettings {
             group_branches_by_directory: true,
             show_recent_branches: true,
             show_tags: true,
+            cherry_pick_suffix_protected: true,
         }
     }
 }

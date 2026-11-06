@@ -19,7 +19,21 @@
     "pull": "Pull…",
     "push": "Push…",
     "updateProject": "Update Project…",
-    "manageRemotes": "Manage Remotes…"
+    "manageRemotes": "Manage Remotes…",
+    "merge": "Merge…",
+    "rebase": "Rebase…",
+    "cherryPick": "Cherry-Pick",
+    "resolveConflicts": "Resolve Conflicts…",
+    "abortMerge": "Abort Merge",
+    "abortRebase": "Abort Rebase",
+    "continueRebase": "Continue Rebase"
+  },
+  "merge": {
+    "conflicts": "Conflicts",
+    "acceptYours": "Accept Yours",
+    "acceptTheirs": "Accept Theirs",
+    "smartMerge": "Smart Merge",
+    "dirtyTitle": "Local changes would be overwritten"
   },
   "toolWindows": {
     "commit": "Commit",

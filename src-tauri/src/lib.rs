@@ -10,6 +10,10 @@ use commands::app::{
 use commands::clone_cmd::{clone_check_url, clone_run, repo_state_get, unshallow_run};
 use commands::commit::{commit_create, commit_head_message};
 use commands::compare::{diff_combined, diff_file_at, diff_refs};
+use commands::conflicts::{
+    conflict_accept_side, conflict_mark_resolved, conflict_merge3, conflict_resolve_simple,
+    conflict_save_result, conflict_versions, conflicts_list,
+};
 use commands::diff::diff_file;
 use commands::history::{
     blame_file, blob_read, checkout_path_from_rev, file_history, list_refs, log_changed_files,
@@ -23,6 +27,11 @@ use commands::refs::{
 };
 use commands::remotes::{
     remote_add, remote_edit, remote_list, remote_remove, remote_remove_preview,
+};
+use commands::rewrite::{
+    cherry_pick_abort, cherry_pick_continue, cherry_pick_run, cherry_pick_skip, merge_abort,
+    merge_commit, merge_run, rebase_abort, rebase_continue, rebase_run, rebase_skip,
+    repo_op_state_get,
 };
 use commands::status::status_get;
 use commands::sync::{
@@ -110,6 +119,26 @@ pub fn run() {
             clone_run,
             unshallow_run,
             repo_state_get,
+            // M4
+            repo_op_state_get,
+            merge_run,
+            merge_abort,
+            merge_commit,
+            rebase_run,
+            rebase_continue,
+            rebase_skip,
+            rebase_abort,
+            cherry_pick_run,
+            cherry_pick_continue,
+            cherry_pick_skip,
+            cherry_pick_abort,
+            conflicts_list,
+            conflict_accept_side,
+            conflict_versions,
+            conflict_merge3,
+            conflict_save_result,
+            conflict_mark_resolved,
+            conflict_resolve_simple,
         ]);
 
     #[cfg(debug_assertions)]

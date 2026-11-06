@@ -448,3 +448,152 @@ pub struct CompareRange {
     pub left_only: Vec<String>,
     pub right_only: Vec<String>,
 }
+
+// --- M4: merge / rebase / cherry-pick / conflicts ---
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RepoOpKind {
+    Normal,
+    Merge,
+    Rebase,
+    CherryPick,
+    Revert,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RepoOpPhase {
+    Normal,
+    InProgress,
+    Conflicted,
+    ReadyToContinue,
+    StoppedForEdit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoOpState {
+    pub kind: RepoOpKind,
+    pub phase: RepoOpPhase,
+    pub step: Option<u32>,
+    pub total: Option<u32>,
+    pub conflict_count: u32,
+    pub yours_label: String,
+    pub theirs_label: String,
+    pub summary: String,
+    pub head_branch: Option<String>,
+    pub subject: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RewriteOutcome {
+    Success,
+    AlreadyUpToDate,
+    FastForward,
+    Conflicts,
+    NothingToCommit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RewriteResult {
+    pub old_head: String,
+    pub new_head: String,
+    pub outcome: RewriteOutcome,
+    pub message: String,
+    pub conflict_files: Vec<String>,
+    pub backup_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictKind {
+    Content,
+    DeleteModify,
+    AddAdd,
+    Rename,
+    Binary,
+    Submodule,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictSideStatus {
+    Modified,
+    Deleted,
+    Added,
+    None,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictEntry {
+    pub path: String,
+    pub kind: ConflictKind,
+    pub yours: ConflictSideStatus,
+    pub theirs: ConflictSideStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictsList {
+    pub entries: Vec<ConflictEntry>,
+    pub yours_label: String,
+    pub theirs_label: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictSide {
+    Ours,
+    Theirs,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictVersions {
+    pub path: String,
+    pub base: Option<String>,
+    pub ours: Option<String>,
+    pub theirs: Option<String>,
+    pub is_binary: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum Merge3BlockKind {
+    Equal,
+    OnlyOurs,
+    OnlyTheirs,
+    BothSame,
+    Conflict,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Merge3Block {
+    pub kind: Merge3BlockKind,
+    pub base_lines: Vec<String>,
+    pub ours_lines: Vec<String>,
+    pub theirs_lines: Vec<String>,
+    /// Suggested merge for non-conflicting / simple blocks.
+    pub result_lines: Vec<String>,
+    pub is_simple: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Merge3Result {
+    pub blocks: Vec<Merge3Block>,
+    pub conflict_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DirtyWorktreeInfo {
+    pub files: Vec<String>,
+    pub operation: String,
+}

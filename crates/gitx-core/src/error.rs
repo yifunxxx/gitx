@@ -31,6 +31,14 @@ pub enum ErrorCode {
     NetworkError,
     DivergentBranches,
     NothingToPush,
+    // M4
+    DirtyWorktreeWouldBeOverwritten,
+    UntrackedWouldBeOverwritten,
+    MergeConflict,
+    RebaseConflict,
+    CherryPickConflict,
+    OperationInProgress,
+    UnrelatedHistories,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -90,6 +98,11 @@ impl AppError {
 
     pub fn with_recover(mut self, actions: Vec<RecoverAction>) -> Self {
         self.recover = actions;
+        self
+    }
+
+    pub fn with_args(mut self, args: serde_json::Value) -> Self {
+        self.args = Some(args);
         self
     }
 }

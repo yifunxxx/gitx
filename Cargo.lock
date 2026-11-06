@@ -1356,6 +1356,7 @@ name = "gitx-git"
 version = "0.1.0"
 dependencies = [
  "gitx-core",
+ "gitx-diff",
  "gitx-testkit",
  "libc",
  "regex",

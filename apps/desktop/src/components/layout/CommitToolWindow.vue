@@ -7,25 +7,34 @@ import Skeleton from "@/components/common/Skeleton.vue";
 import { Button } from "@/components/ui/button";
 import ChangesTree from "@/features/commit/ChangesTree.vue";
 import CommitMessageEditor from "@/features/commit/CommitMessageEditor.vue";
+import RepoStateBanner from "@/features/merge/RepoStateBanner.vue";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
 import { useDiffStore } from "@/stores/diffStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useRewriteStore } from "@/stores/rewriteStore";
 import { toast } from "@/composables/useToast";
 
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
 const diffs = useDiffStore();
 const layout = useLayoutStore();
+const rewrite = useRewriteStore();
 
 onMounted(() => {
-  if (workspace.isRepo) void changes.refresh();
+  if (workspace.isRepo) {
+    void changes.refresh();
+    void rewrite.refreshOpState();
+  }
 });
 
 watch(
   () => workspace.repoPath,
   () => {
-    if (workspace.isRepo) void changes.refresh();
+    if (workspace.isRepo) {
+      void changes.refresh();
+      void rewrite.refreshOpState();
+    }
   },
 );
 
@@ -126,6 +135,7 @@ function onContext(payload: { path: string; section: ChangesSection; x: number; 
       <Button size="sm" variant="outline" @click="changes.refresh()">Retry</Button>
     </ErrorState>
     <template v-else>
+      <RepoStateBanner />
       <div v-if="changes.loading && !changes.snapshot" class="space-y-2 p-2">
         <Skeleton class="h-4 w-2/3" />
         <Skeleton class="h-4 w-1/2" />
