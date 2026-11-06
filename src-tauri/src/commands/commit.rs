@@ -16,6 +16,12 @@ pub struct CommitCreateReq {
     pub amend: bool,
     #[serde(default)]
     pub no_verify: bool,
+    /// Changelist / pathspec commit (#60/#66).
+    #[serde(default)]
+    pub paths: Option<Vec<String>>,
+    /// Line-level partial commit (#66).
+    #[serde(default)]
+    pub partial: Option<Vec<gitx_core::PartialFileSelection>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -46,7 +52,15 @@ pub async fn commit_create(
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
     let result = git
-        .commit_create(&cwd, &req.message, req.amend, req.no_verify, &cancel)
+        .commit_create_ex(
+            &cwd,
+            &req.message,
+            req.amend,
+            req.no_verify,
+            req.paths.as_deref(),
+            req.partial.as_deref(),
+            &cancel,
+        )
         .await?;
     let _ = app.emit(
         "console://line",

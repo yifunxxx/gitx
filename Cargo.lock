@@ -1357,6 +1357,7 @@ version = "0.1.0"
 dependencies = [
  "gitx-core",
  "gitx-diff",
+ "gitx-meta",
  "gitx-testkit",
  "libc",
  "regex",
@@ -1402,6 +1403,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

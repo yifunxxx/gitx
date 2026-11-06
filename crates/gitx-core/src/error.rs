@@ -44,6 +44,12 @@ pub enum ErrorCode {
     CommitNotOnBranch,
     MergeCommitNotAllowed,
     AlreadyPushed,
+    // M6
+    InvalidArgument,
+    NotFound,
+    StashFailed,
+    ShelfFailed,
+    PatchFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
