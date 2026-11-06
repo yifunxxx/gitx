@@ -4,21 +4,51 @@ export function registerDefaultGroups() {
   registerGroup({
     id: "Git.MainMenu",
     title: "Git",
-    children: ["Git.RefreshStatus", "Git.Demo.Hello", "-", "Vcs.Operations.Popup"],
+    children: [
+      "File.OpenFolder",
+      "Git.Init",
+      "Start.Use.Vcs",
+      "-",
+      "Git.RefreshStatus",
+      "Git.Add",
+      "Git.Stage.Add",
+      "Git.Stage.Reset",
+      "Diff.ShowDiff",
+      "CheckinProject",
+      "-",
+      "Git.Demo.Hello",
+      "Vcs.Operations.Popup",
+    ],
   });
   registerGroup({
     id: "Git.ContextMenu.Changes",
     title: "Changes",
-    children: ["Git.RefreshStatus", "Git.Demo.Hello"],
+    children: [
+      "Diff.ShowDiff",
+      "Git.Stage.Add",
+      "Git.Stage.Reset",
+      "Git.Add",
+      "-",
+      "Git.RefreshStatus",
+    ],
   });
   registerGroup({
     id: "Vcs.Operations.Popup",
     title: "VCS Operations",
     popup: true,
-    children: ["Git.RefreshStatus", "Git.Demo.Hello"],
+    children: [
+      "File.OpenFolder",
+      "Git.Init",
+      "Start.Use.Vcs",
+      "-",
+      "Git.RefreshStatus",
+      "CheckinProject",
+      "Diff.ShowDiff",
+      "Git.Demo.Hello",
+    ],
   });
   registerGroup({
     id: "MainToolbar.VcsQuickActions",
-    children: ["Git.RefreshStatus"],
+    children: ["Git.RefreshStatus", "CheckinProject"],
   });
 }

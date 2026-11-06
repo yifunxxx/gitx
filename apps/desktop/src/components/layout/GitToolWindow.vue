@@ -2,13 +2,14 @@
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { computed } from "vue";
+import LogView from "@/features/log/LogView.vue";
 
 const layout = useLayoutStore();
 const consoleStore = useConsoleStore();
 
 const tabs = [
-  { id: "console" as const, label: "Console" },
   { id: "log" as const, label: "Log" },
+  { id: "console" as const, label: "Console" },
 ];
 
 const lines = computed(() => consoleStore.lines);
@@ -33,6 +34,7 @@ const lines = computed(() => consoleStore.lines);
       </button>
       <div class="flex-1" />
       <button
+        v-if="layout.activeBottomTab === 'console'"
         type="button"
         class="px-2 text-[11px] text-muted-foreground hover:text-foreground"
         @click="consoleStore.clear()"
@@ -41,9 +43,12 @@ const lines = computed(() => consoleStore.lines);
       </button>
     </div>
 
-    <div v-if="layout.activeBottomTab === 'console'" class="min-h-0 flex-1 overflow-auto p-2 font-mono text-[11px]">
+    <div
+      v-if="layout.activeBottomTab === 'console'"
+      class="min-h-0 flex-1 overflow-auto p-2 font-mono text-[11px]"
+    >
       <div v-if="!lines.length" class="text-muted-foreground">
-        Console is empty. Open a folder and run Refresh Status.
+        Console is empty. Git commands appear here as you work.
       </div>
       <div
         v-for="line in lines"
@@ -58,8 +63,8 @@ const lines = computed(() => consoleStore.lines);
         <span class="mr-2 opacity-50">{{ line.stream }}</span>{{ line.line }}
       </div>
     </div>
-    <div v-else class="flex flex-1 items-center justify-center text-xs text-muted-foreground">
-      Log tool window — M1
+    <div v-else class="min-h-0 flex-1">
+      <LogView />
     </div>
   </div>
 </template>

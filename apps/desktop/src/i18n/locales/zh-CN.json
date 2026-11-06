@@ -5,9 +5,14 @@
   },
   "actions": {
     "refreshStatus": "刷新 Status",
-    "demoHello": "示例：Hello gitx",
+    "demoHello": "演示：Hello gitx",
     "findAction": "查找操作",
-    "openFolder": "打开文件夹"
+    "openFolder": "打开…",
+    "commit": "Commit",
+    "showDiff": "显示 Diff",
+    "stage": "Stage",
+    "unstage": "Unstage",
+    "createRepo": "创建 Git 仓库…"
   },
   "toolWindows": {
     "commit": "Commit",
@@ -17,6 +22,13 @@
   },
   "empty": {
     "noFolder": "打开文件夹以开始",
-    "noChanges": "没有变更"
+    "noChanges": "没有本地变更",
+    "notVcs": "此文件夹不在版本控制下",
+    "noCommits": "还没有 commit"
+  },
+  "commit": {
+    "amend": "Amend",
+    "runHooks": "运行 Git hooks",
+    "messagePlaceholder": "Commit 消息"
   }
 }

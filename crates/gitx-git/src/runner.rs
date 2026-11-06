@@ -57,6 +57,16 @@ impl GitInvocation {
         self
     }
 
+    pub fn stdin(mut self, bytes: impl Into<Vec<u8>>) -> Self {
+        self.stdin = Some(bytes.into());
+        self
+    }
+
+    pub fn env(self, _key: impl Into<String>, _value: impl Into<String>) -> Self {
+        // Extra env reserved for askpass/editor; stored via optional map later.
+        self
+    }
+
     pub fn display_command(&self) -> String {
         let mut parts = vec![self.git_bin.clone()];
         for a in &self.args {
@@ -107,11 +117,16 @@ impl GitRunner {
         let mut cmd = Command::new(&inv.git_bin);
         cmd.args(&inv.args)
             .current_dir(&inv.cwd)
-            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("LC_ALL", "C");
+
+        if inv.stdin.is_some() {
+            cmd.stdin(Stdio::piped());
+        } else {
+            cmd.stdin(Stdio::null());
+        }
 
         // Standard CLI-first flags from the framework plan.
         // Callers still pass their own args; we inject safe defaults via -c.
@@ -129,10 +144,24 @@ impl GitRunner {
             });
         }
 
-        let child = cmd.spawn().map_err(|e| {
+        let mut child = cmd.spawn().map_err(|e| {
             AppError::new(ErrorCode::FsError, format!("failed to spawn git: {e}"))
                 .with_command(command.clone())
         })?;
+
+        if let Some(bytes) = inv.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(&bytes).await.map_err(|e| {
+                    AppError::new(
+                        ErrorCode::FsError,
+                        format!("failed to write git stdin: {e}"),
+                    )
+                    .with_command(command.clone())
+                })?;
+                stdin.shutdown().await.ok();
+            }
+        }
 
         let pid = child.id();
         let timeout = inv.timeout.unwrap_or(Duration::from_secs(30));

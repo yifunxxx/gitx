@@ -28,6 +28,16 @@ pub struct AppSettings {
     pub appearance: AppearanceSettings,
     pub locale: String,
     pub git_executable: Option<String>,
+    /// Recent workspace roots (newest first), max 20.
+    #[serde(default)]
+    pub recent_workspaces: Vec<String>,
+    /// M1 ships staging mode first (changelist mode lands in M6).
+    #[serde(default = "default_staging_mode")]
+    pub staging_mode: bool,
+}
+
+fn default_staging_mode() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -37,6 +47,8 @@ impl Default for AppSettings {
             appearance: AppearanceSettings::default(),
             locale: "en".into(),
             git_executable: None,
+            recent_workspaces: Vec::new(),
+            staging_mode: true,
         }
     }
 }

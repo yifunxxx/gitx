@@ -19,9 +19,13 @@ import type { ActionContext } from "@/actions";
 import { computed } from "vue";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
+import { useChangesStore } from "@/stores/changesStore";
+import { useLogStore } from "@/stores/logStore";
 
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
+const changes = useChangesStore();
+const log = useLogStore();
 
 const ctx = computed<ActionContext>(() => ({
   repoIds: workspace.toplevel ? [workspace.toplevel] : [],
@@ -30,6 +34,16 @@ const ctx = computed<ActionContext>(() => ({
   place: "MainToolbar",
   folderPath: workspace.folderPath,
 }));
+
+const branchLabel = computed(() => {
+  if (!workspace.isRepo) return "—";
+  const b = workspace.branch;
+  if (!b) return "…";
+  if (b.detached) return `HEAD (${b.head})`;
+  const ahead = b.ahead ? ` ↑${b.ahead}` : "";
+  const behind = b.behind ? ` ↓${b.behind}` : "";
+  return `${b.head}${behind}${ahead}`;
+});
 
 async function openFolder() {
   let path: string | null = null;
@@ -43,6 +57,11 @@ async function openFolder() {
   if (!path) return;
   await workspace.openFolder(path);
   toast({ title: "Folder opened", description: path });
+  if (workspace.isRepo) {
+    await changes.refresh();
+    await log.load(true);
+    layout.activeBottomTab = "log";
+  }
   await runAction("Git.RefreshStatus", { ...ctx.value, folderPath: path, source: "toolbar" });
 }
 
@@ -71,25 +90,30 @@ const demo = computed(() => getAction("Git.Demo.Hello"));
 
     <div
       class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground"
-      title="VCS Widget placeholder"
+      title="Current branch (read-only in M1)"
     >
       <GitBranch class="h-3.5 w-3.5" />
-      <span>{{ workspace.isRepo ? "main" : "—" }}</span>
+      <span>{{ branchLabel }}</span>
     </div>
 
     <div class="flex-1" data-tauri-drag-region />
 
     <div class="flex items-center gap-0.5">
-      <Button variant="ghost" size="sm" title="Update (stub)">
+      <Button variant="ghost" size="sm" title="Update (M2)" disabled>
         <RotateCcw class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="sm" title="Commit (stub)">
+      <Button variant="ghost" size="sm" title="Commit" @click="run('CheckinProject')">
         <Check class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="sm" title="Push (stub)">
+      <Button variant="ghost" size="sm" title="Push (M2)" disabled>
         <Upload class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="sm" title="History (stub)">
+      <Button
+        variant="ghost"
+        size="sm"
+        title="History"
+        @click="layout.bottomOpen = true; layout.activeBottomTab = 'log'"
+      >
         <History class="h-3.5 w-3.5" />
       </Button>
       <Button
@@ -104,7 +128,7 @@ const demo = computed(() => getAction("Git.Demo.Hello"));
       <Button variant="ghost" size="icon" title="Find Action" @click="layout.findActionOpen = true">
         <Search class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="icon" title="Settings (stub)">
+      <Button variant="ghost" size="icon" title="Settings (M8)" disabled>
         <Settings class="h-3.5 w-3.5" />
       </Button>
     </div>

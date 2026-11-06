@@ -1,0 +1,227 @@
+import {
+  Check,
+  FileDiff,
+  FolderOpen,
+  GitBranchPlus,
+  Plus,
+  RefreshCw,
+  Minus,
+} from "@lucide/vue";
+import { registerAction } from "../registry";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useChangesStore } from "@/stores/changesStore";
+import { useCommitStore } from "@/stores/commitStore";
+import { useDiffStore } from "@/stores/diffStore";
+import { useLogStore } from "@/stores/logStore";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { getBackend } from "@/lib/backend";
+import { toast } from "@/composables/useToast";
+import { isTauri } from "@/lib/utils";
+
+export function registerVcsActions() {
+  registerAction({
+    id: "Git.RefreshStatus",
+    title: "Refresh Status",
+    description: "Refresh Changes and probe git status into Console",
+    icon: RefreshCw,
+    defaultShortcuts: {
+      mac: ["mod+r"],
+      win: ["mod+r"],
+      linux: ["mod+r"],
+    },
+    scope: "global",
+    async run(ctx) {
+      const workspace = useWorkspaceStore();
+      const changes = useChangesStore();
+      const path = ctx.folderPath ?? workspace.folderPath;
+      if (!path) {
+        toast({ title: "No folder open" });
+        return;
+      }
+      const backend = getBackend();
+      await backend.statusProbe({ path });
+      if (workspace.isRepo) {
+        await changes.refresh();
+        await useLogStore().load(true);
+      }
+    },
+  });
+
+  registerAction({
+    id: "File.OpenFolder",
+    title: "Open…",
+    description: "Open a folder / repository",
+    icon: FolderOpen,
+    defaultShortcuts: {
+      mac: ["mod+o"],
+      win: ["mod+o"],
+      linux: ["mod+o"],
+    },
+    scope: "global",
+    async run() {
+      let path: string | null = null;
+      if (isTauri()) {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({ directory: true, multiple: false });
+        path = typeof selected === "string" ? selected : null;
+      } else {
+        path = window.prompt("Folder path") || null;
+      }
+      if (!path) return;
+      const workspace = useWorkspaceStore();
+      await workspace.openFolder(path);
+      toast({ title: "Opened", description: path });
+      if (workspace.isRepo) {
+        await useChangesStore().refresh();
+        await useLogStore().load(true);
+        useLayoutStore().activeBottomTab = "log";
+      }
+    },
+  });
+
+  registerAction({
+    id: "Git.Init",
+    title: "Create Git Repository…",
+    description: "git init in a chosen directory",
+    icon: GitBranchPlus,
+    scope: "global",
+    async run() {
+      let path: string | null = null;
+      if (isTauri()) {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({ directory: true, multiple: false });
+        path = typeof selected === "string" ? selected : null;
+      } else {
+        path = window.prompt("Directory for new repository") || null;
+      }
+      if (!path) return;
+      const workspace = useWorkspaceStore();
+      await workspace.initRepo(path, "main");
+      toast({ title: "Repository created", description: path });
+      await useChangesStore().refresh();
+      await useLogStore().load(true);
+    },
+  });
+
+  registerAction({
+    id: "Start.Use.Vcs",
+    title: "Enable Version Control Integration…",
+    description: "Initialize Git in the current folder",
+    icon: GitBranchPlus,
+    scope: "global",
+    enabled: (ctx) => !!ctx.folderPath,
+    async run() {
+      const workspace = useWorkspaceStore();
+      await workspace.enableVcs("main");
+      toast({ title: "Git enabled" });
+      await useChangesStore().refresh();
+    },
+  });
+
+  registerAction({
+    id: "Git.Add",
+    title: "Add to VCS",
+    description: "git add selected unversioned files",
+    icon: Plus,
+    defaultShortcuts: {
+      mac: ["mod+alt+a"],
+      win: ["ctrl+alt+a"],
+      linux: ["ctrl+alt+a"],
+    },
+    scope: "changes",
+    async run() {
+      const changes = useChangesStore();
+      const paths = changes.selectedPaths;
+      if (!paths.length) return;
+      await changes.add(paths);
+      toast({ title: "Added to VCS" });
+    },
+  });
+
+  registerAction({
+    id: "Git.Stage.Add",
+    title: "Stage",
+    description: "Stage selected files",
+    icon: Plus,
+    scope: "changes",
+    async run() {
+      const changes = useChangesStore();
+      if (!changes.selectedPaths.length) return;
+      await changes.stage(changes.selectedPaths);
+      toast({ title: "Staged" });
+    },
+  });
+
+  registerAction({
+    id: "Git.Stage.Reset",
+    title: "Unstage",
+    description: "Unstage selected files",
+    icon: Minus,
+    scope: "changes",
+    async run() {
+      const changes = useChangesStore();
+      if (!changes.selectedPaths.length) return;
+      await changes.unstage(changes.selectedPaths);
+      toast({ title: "Unstaged" });
+    },
+  });
+
+  registerAction({
+    id: "Diff.ShowDiff",
+    title: "Show Diff",
+    description: "Open Diff for the selected change",
+    icon: FileDiff,
+    defaultShortcuts: {
+      mac: ["mod+d"],
+      win: ["ctrl+d"],
+      linux: ["ctrl+d"],
+    },
+    scope: "changes",
+    async run() {
+      const changes = useChangesStore();
+      const path = changes.selectedPaths[0];
+      if (!path || !changes.selectedSection) {
+        toast({ title: "Select a file first" });
+        return;
+      }
+      const diffs = useDiffStore();
+      if (changes.selectedSection === "staged") {
+        await diffs.openFileDiff(path, "head", "index");
+      } else {
+        await diffs.openFileDiff(path, "index", "worktree");
+      }
+    },
+  });
+
+  registerAction({
+    id: "CheckinProject",
+    title: "Commit…",
+    description: "Focus Commit message / create commit",
+    icon: Check,
+    defaultShortcuts: {
+      mac: ["mod+k"],
+      win: ["ctrl+k"],
+      linux: ["ctrl+k"],
+    },
+    scope: "global",
+    async run() {
+      const layout = useLayoutStore();
+      layout.leftOpen = true;
+      const changes = useChangesStore();
+      if (!changes.staged.length && !useCommitStore().amend) {
+        toast({ title: "Nothing to commit" });
+        return;
+      }
+      // Message box is already visible; committing requires explicit Commit button
+      // or a second Ctrl+K when message is non-empty (IDEA focuses first).
+      const commit = useCommitStore();
+      if (commit.message.trim()) {
+        await commit.commit();
+        await useLogStore().load(true);
+        useLayoutStore().activeBottomTab = "log";
+      } else {
+        toast({ title: "Enter a commit message" });
+      }
+    },
+  });
+}
