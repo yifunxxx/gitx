@@ -55,10 +55,10 @@ const rightText = computed(() => {
 
 const enableInline = computed(() => countHunkLines(visibleHunks.value) <= 900);
 
-/** Forces CodeMirror remount when tab / loaded content changes (no tool-window flip). */
+/** Forces CodeMirror remount when IPC result lands or selection changes (GIT-34). */
 const paintKey = computed(
   () =>
-    `${props.tabId}|${tab.value?.contentKey ?? ""}|${tab.value?.collapseUnchanged ? "c" : "e"}|${tab.value?.unified ? "u" : "s"}`,
+    `${props.tabId}|e${diffs.paintEpoch}|${tab.value?.contentKey ?? ""}|${tab.value?.path ?? ""}|${tab.value?.collapseUnchanged ? "c" : "e"}|${tab.value?.unified ? "u" : "s"}`,
 );
 
 async function stageHunk(index: number) {

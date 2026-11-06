@@ -164,7 +164,10 @@ function onClick(row: FileRow, e: MouseEvent) {
   }
   const file = node.file?.change;
   if (!file) return;
-  changes.select(file.path, row.section, e.metaKey || e.ctrlKey);
+  const multi = e.metaKey || e.ctrlKey;
+  changes.select(file.path, row.section, multi);
+  // IDEA-like: single-click selection updates Diff immediately (GIT-34).
+  if (!multi) emit("openDiff", file.path, row.section);
 }
 
 function onDblClick(row: FileRow) {

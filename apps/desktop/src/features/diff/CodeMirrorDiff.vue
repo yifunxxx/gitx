@@ -298,10 +298,19 @@ function attachResize(el: HTMLElement) {
   resizeObserver.observe(el);
 }
 
+function forceHostLayout(el: HTMLElement) {
+  // WebView2/Tauri sometimes keeps a stale compositor layer until reflow
+  // (tool-window tab flip). Nudge layout + visibility after every remount.
+  void el.offsetHeight;
+  const prev = el.style.transform;
+  el.style.transform = "translateZ(0)";
+  void el.offsetHeight;
+  el.style.transform = prev;
+}
+
 function mountNow() {
   const hostEl = hostRef.value;
   if (!hostEl) {
-    // Host not attached yet — retry on next frame (avoids silent stale pane).
     const token = mountToken;
     requestAnimationFrame(() => {
       if (token !== mountToken) return;
@@ -313,12 +322,17 @@ function mountNow() {
   const content = contentForProps();
   if (view && fp === lastFingerprint && view.state.doc.toString() === content) {
     view.requestMeasure();
+    forceHostLayout(hostEl);
     return;
   }
   lastFingerprint = fp;
 
   detachScroll();
   view?.destroy();
+  view = null;
+  // Clear any leftover CM DOM from a prior view before recreating.
+  hostEl.replaceChildren();
+
   const unified = !!(props.unified || props.side === "unified");
   const deco = buildDecorations(content, props.hunks, props.side, unified);
   const gutters = buildGutterMarkers(content, props.hunks, props.side, unified);
@@ -342,21 +356,17 @@ function mountNow() {
   attachScroll();
   attachResize(hostEl);
   view.requestMeasure();
+  forceHostLayout(hostEl);
 }
 
-function scheduleMount(immediate: boolean) {
+function scheduleMount() {
   const token = ++mountToken;
-  const run = () => {
+  // flush:post watch already ran after DOM update — mount synchronously so
+  // selection changes paint in the same frame, not after a tab flip.
+  queueMicrotask(() => {
     if (token !== mountToken) return;
     mountNow();
-  };
-  if (immediate) {
-    // Prop / selection changes must paint without waiting for a tool-window tab flip.
-    queueMicrotask(run);
-  } else {
-    // First mount: yield so the tab chrome paints first.
-    requestAnimationFrame(run);
-  }
+  });
 }
 
 function attachScroll() {
@@ -393,7 +403,7 @@ function applyScroll(left: number, top: number) {
 
 defineExpose({ getScroller, applyScroll });
 
-onMounted(() => scheduleMount(false));
+onMounted(() => scheduleMount());
 onBeforeUnmount(() => {
   mountToken += 1;
   detachScroll();
@@ -413,7 +423,8 @@ watch(
       props.lineMap,
       props.enableInline,
     ] as const,
-  () => scheduleMount(true),
+  () => scheduleMount(),
+  { flush: "post" },
 );
 </script>
 
