@@ -1,0 +1,104 @@
+use crate::state::AppState;
+use gitx_core::{AppError, AppSettings};
+use gitx_git::detect_git;
+use gitx_meta::{load_app_settings, save_app_settings};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use tauri::State;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub name: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDetectDto {
+    pub path: String,
+    pub version: String,
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+    pub supported: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn app_info() -> Result<AppInfo, AppError> {
+    Ok(AppInfo {
+        name: "gitx".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn git_detect(state: State<'_, AppState>) -> Result<GitDetectDto, AppError> {
+    let settings = state.settings.read().await;
+    let preferred = settings.git_executable.as_deref();
+    let result = detect_git(preferred)?;
+    Ok(GitDetectDto {
+        path: result.path,
+        version: result.version,
+        major: result.major,
+        minor: result.minor,
+        patch: result.patch,
+        supported: result.supported,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn git_test_executable(path: String) -> Result<GitDetectDto, AppError> {
+    let result = detect_git(Some(path.as_str()))?;
+    Ok(GitDetectDto {
+        path: result.path,
+        version: result.version,
+        major: result.major,
+        minor: result.minor,
+        patch: result.patch,
+        supported: result.supported,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn settings_get(state: State<'_, AppState>) -> Result<AppSettings, AppError> {
+    Ok(state.settings.read().await.clone())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn settings_set(
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> Result<AppSettings, AppError> {
+    save_app_settings(&state.settings_path, &settings)?;
+    if let Some(ref bin) = settings.git_executable {
+        *state.git.write().await = gitx_git::GitRunner::new(bin.clone());
+    }
+    *state.settings.write().await = settings.clone();
+    Ok(settings)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn settings_reload(state: State<'_, AppState>) -> Result<AppSettings, AppError> {
+    let settings = load_app_settings(&state.settings_path)?;
+    *state.settings.write().await = settings.clone();
+    Ok(settings)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn log_frontend(level: String, message: String) -> Result<(), AppError> {
+    match level.as_str() {
+        "error" => tracing::error!(target: "frontend", "{message}"),
+        "warn" => tracing::warn!(target: "frontend", "{message}"),
+        "debug" => tracing::debug!(target: "frontend", "{message}"),
+        _ => tracing::info!(target: "frontend", "{message}"),
+    }
+    Ok(())
+}

@@ -1,0 +1,10 @@
+[package]
+name = "gitx-index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Git Log Indexing (SQLite) stub"
+
+[dependencies]
+gitx-core = { workspace = true }

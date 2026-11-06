@@ -1,0 +1,10 @@
+[package]
+name = "gitx-diff"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Text diff / merge3 / partial-stage stubs"
+
+[dependencies]
+gitx-core = { workspace = true }

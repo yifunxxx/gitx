@@ -1,0 +1,35 @@
+{
+  "name": "gitx",
+  "private": true,
+  "version": "0.1.0",
+  "description": "gitx — IDEA-aligned desktop Git GUI",
+  "type": "module",
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @gitx/desktop dev",
+    "dev:web": "pnpm --filter @gitx/desktop dev:web",
+    "build": "pnpm --filter @gitx/desktop build",
+    "preview": "pnpm --filter @gitx/desktop preview",
+    "typecheck": "pnpm --filter @gitx/desktop typecheck",
+    "test": "pnpm --filter @gitx/desktop test",
+    "lint": "oxlint apps/desktop/src && cargo fmt --check && cargo clippy -p gitx -- -D warnings",
+    "format": "oxfmt apps/desktop/src && cargo fmt",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "bindings:check": "pnpm --filter @gitx/desktop bindings:check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.0",
+    "oxfmt": "^0.76.0",
+    "oxlint": "^1.91.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

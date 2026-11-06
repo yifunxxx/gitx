@@ -1,0 +1,22 @@
+{
+  "app": {
+    "name": "gitx",
+    "welcome": "欢迎使用 gitx"
+  },
+  "actions": {
+    "refreshStatus": "刷新 Status",
+    "demoHello": "示例：Hello gitx",
+    "findAction": "查找操作",
+    "openFolder": "打开文件夹"
+  },
+  "toolWindows": {
+    "commit": "Commit",
+    "git": "Git",
+    "console": "Console",
+    "log": "Log"
+  },
+  "empty": {
+    "noFolder": "打开文件夹以开始",
+    "noChanges": "没有变更"
+  }
+}
