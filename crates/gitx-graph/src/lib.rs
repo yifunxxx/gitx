@@ -129,7 +129,10 @@ mod tests {
         assert_eq!(rows.len(), 3);
         assert!(rows.iter().all(|r| r.lane == 0));
         // Tip → parent continues on lane 0.
-        assert!(rows[0].edges.iter().any(|e| e.from_lane == 0 && e.to_lane == 0));
+        assert!(rows[0]
+            .edges
+            .iter()
+            .any(|e| e.from_lane == 0 && e.to_lane == 0));
     }
 
     #[test]
@@ -179,7 +182,10 @@ mod tests {
         // While walking `a`, lane for `b` should still be through.
         let a_row = &rows[1];
         assert!(
-            a_row.edges.iter().any(|e| e.from_lane != a_row.lane && e.from_lane == e.to_lane),
+            a_row
+                .edges
+                .iter()
+                .any(|e| e.from_lane != a_row.lane && e.from_lane == e.to_lane),
             "expected through-edge on sibling lane: {:?}",
             a_row.edges
         );
