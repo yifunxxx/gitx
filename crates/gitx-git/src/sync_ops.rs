@@ -101,6 +101,7 @@ impl GitRunner {
         Ok(map)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn pull_run(
         &self,
         cwd: &Path,
@@ -314,6 +315,7 @@ impl GitRunner {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn push_run(
         &self,
         cwd: &Path,
@@ -598,16 +600,14 @@ impl GitRunner {
         let mut i = 0;
         while i < parts.len() {
             let status = parts[i];
-            if status.starts_with('R') || status.starts_with('C') {
-                if i + 2 < parts.len() {
-                    files.push(ChangedFile {
-                        path: parts[i + 2].to_string(),
-                        status: status.to_string(),
-                        orig_path: Some(parts[i + 1].to_string()),
-                    });
-                    i += 3;
-                    continue;
-                }
+            if (status.starts_with('R') || status.starts_with('C')) && i + 2 < parts.len() {
+                files.push(ChangedFile {
+                    path: parts[i + 2].to_string(),
+                    status: status.to_string(),
+                    orig_path: Some(parts[i + 1].to_string()),
+                });
+                i += 3;
+                continue;
             }
             if i + 1 < parts.len() {
                 files.push(ChangedFile {

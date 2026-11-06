@@ -41,13 +41,13 @@ In PowerShell or Git Bash (after installing the prerequisites above):
 # Enable corepack or install pnpm 10, then:
 pnpm install
 pnpm tauri:dev        # run the desktop app
-pnpm tauri:build      # produce NSIS .exe + MSI under src-tauri/target/release/bundle/
+pnpm tauri:build      # produce NSIS .exe + MSI under target/release/bundle/
 ```
 
-Installers land at:
+Installers land at (Cargo workspace root `target/`):
 
-- `src-tauri/target/release/bundle/nsis/*-setup.exe`
-- `src-tauri/target/release/bundle/msi/*.msi`
+- `target/release/bundle/nsis/*-setup.exe`
+- `target/release/bundle/msi/*.msi`
 
 Unsigned builds may show SmartScreen — choose **More info** → **Run anyway**.
 
