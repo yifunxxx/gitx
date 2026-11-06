@@ -8,6 +8,7 @@ description = "GitRunner, RepoScheduler, progress/stderr parsers (CLI-first)"
 
 [dependencies]
 gitx-core = { workspace = true }
+gitx-diff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

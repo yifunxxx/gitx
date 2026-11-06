@@ -84,6 +84,21 @@ import type {
   WorkspaceRecentRes,
   InitRunReq,
   VcsEnableReq,
+  RepoOpState,
+  RewriteResult,
+  RewritePathReq,
+  MergeRunReq,
+  MergeCommitReq,
+  RebaseRunReq,
+  CherryPickRunReq,
+  ConflictsList,
+  ConflictsPathReq,
+  ConflictAcceptReq,
+  ConflictVersions,
+  ConflictFileReq,
+  ConflictSaveReq,
+  ConflictMarkReq,
+  Merge3Result,
 } from "./bindings";
 import { commands } from "./bindings";
 import { mockBackend } from "./mock";
@@ -154,6 +169,26 @@ export type Backend = {
   cloneRun(req: CloneRunReq): Promise<CloneResult>;
   unshallowRun(req: UnshallowReq): Promise<null>;
   repoStateGet(req: RepoStateReq): Promise<RepoStateRes>;
+  // M4
+  repoOpStateGet(req: RewritePathReq): Promise<RepoOpState>;
+  mergeRun(req: MergeRunReq): Promise<RewriteResult>;
+  mergeAbort(req: RewritePathReq): Promise<RewriteResult>;
+  mergeCommit(req: MergeCommitReq): Promise<RewriteResult>;
+  rebaseRun(req: RebaseRunReq): Promise<RewriteResult>;
+  rebaseContinue(req: RewritePathReq): Promise<RewriteResult>;
+  rebaseSkip(req: RewritePathReq): Promise<RewriteResult>;
+  rebaseAbort(req: RewritePathReq): Promise<RewriteResult>;
+  cherryPickRun(req: CherryPickRunReq): Promise<RewriteResult>;
+  cherryPickContinue(req: RewritePathReq): Promise<RewriteResult>;
+  cherryPickSkip(req: RewritePathReq): Promise<RewriteResult>;
+  cherryPickAbort(req: RewritePathReq): Promise<RewriteResult>;
+  conflictsList(req: ConflictsPathReq): Promise<ConflictsList>;
+  conflictAcceptSide(req: ConflictAcceptReq): Promise<null>;
+  conflictVersions(req: ConflictFileReq): Promise<ConflictVersions>;
+  conflictMerge3(req: ConflictFileReq): Promise<Merge3Result>;
+  conflictSaveResult(req: ConflictSaveReq): Promise<null>;
+  conflictMarkResolved(req: ConflictMarkReq): Promise<null>;
+  conflictResolveSimple(req: ConflictsPathReq): Promise<number>;
 };
 
 export const tauriBackend: Backend = {
@@ -219,6 +254,25 @@ export const tauriBackend: Backend = {
   cloneRun: (req) => commands.cloneRun(req),
   unshallowRun: (req) => commands.unshallowRun(req),
   repoStateGet: (req) => commands.repoStateGet(req),
+  repoOpStateGet: (req) => commands.repoOpStateGet(req),
+  mergeRun: (req) => commands.mergeRun(req),
+  mergeAbort: (req) => commands.mergeAbort(req),
+  mergeCommit: (req) => commands.mergeCommit(req),
+  rebaseRun: (req) => commands.rebaseRun(req),
+  rebaseContinue: (req) => commands.rebaseContinue(req),
+  rebaseSkip: (req) => commands.rebaseSkip(req),
+  rebaseAbort: (req) => commands.rebaseAbort(req),
+  cherryPickRun: (req) => commands.cherryPickRun(req),
+  cherryPickContinue: (req) => commands.cherryPickContinue(req),
+  cherryPickSkip: (req) => commands.cherryPickSkip(req),
+  cherryPickAbort: (req) => commands.cherryPickAbort(req),
+  conflictsList: (req) => commands.conflictsList(req),
+  conflictAcceptSide: (req) => commands.conflictAcceptSide(req),
+  conflictVersions: (req) => commands.conflictVersions(req),
+  conflictMerge3: (req) => commands.conflictMerge3(req),
+  conflictSaveResult: (req) => commands.conflictSaveResult(req),
+  conflictMarkResolved: (req) => commands.conflictMarkResolved(req),
+  conflictResolveSimple: (req) => commands.conflictResolveSimple(req),
 };
 
 export function getBackend(): Backend {

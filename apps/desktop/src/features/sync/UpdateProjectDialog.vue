@@ -30,6 +30,7 @@ async function ok() {
           groupBranchesByDirectory: true,
           showRecentBranches: true,
           showTags: true,
+          cherryPickSuffixProtected: true,
         }),
         showOptionsBeforeUpdate: false,
         updateMethod: strategy.value,

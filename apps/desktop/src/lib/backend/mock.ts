@@ -35,6 +35,7 @@ const defaultSettings: AppSettings = {
     groupBranchesByDirectory: true,
     showRecentBranches: true,
     showTags: true,
+    cherryPickSuffixProtected: true,
   },
 };
 
@@ -693,5 +694,170 @@ export const mockBackend: Backend = {
   async repoStateGet() {
     return { isShallow: false };
   },
-
+  async repoOpStateGet() {
+    return {
+      kind: "normal" as const,
+      phase: "normal" as const,
+      step: null,
+      total: null,
+      conflictCount: 0,
+      yoursLabel: "Yours",
+      theirsLabel: "Theirs",
+      summary: "",
+      headBranch: "main",
+      subject: null,
+    };
+  },
+  async mergeRun(req) {
+    emitConsole("cmd", `git merge ${req.branches.join(" ")}`);
+    return {
+      oldHead: "bbbbbbbccccccccccccccccccccccccccccccc",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: `Merged ${req.branches.join(", ")} into main`,
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async mergeAbort() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "Merge aborted",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async mergeCommit() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Merge committed",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async rebaseRun(req) {
+    emitConsole("cmd", `git rebase ${req.upstream}`);
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: `Rebased onto ${req.upstream}`,
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async rebaseContinue() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "rebase --continue",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async rebaseSkip() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "rebase --skip",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async rebaseAbort() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "rebase --abort",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async cherryPickRun(req) {
+    emitConsole("cmd", `git cherry-pick ${req.shas.join(" ")}`);
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: `Cherry-picked ${req.shas.length} commit(s)`,
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async cherryPickContinue() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "cherry-pick --continue",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async cherryPickSkip() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "cherry-pick --skip",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async cherryPickAbort() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "cherry-pick --abort",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async conflictsList() {
+    return { entries: [], yoursLabel: "Yours", theirsLabel: "Theirs", title: "Conflicts" };
+  },
+  async conflictAcceptSide() {
+    return null;
+  },
+  async conflictVersions(req) {
+    return {
+      path: req.filePath,
+      base: "base\n",
+      ours: "ours\n",
+      theirs: "theirs\n",
+      isBinary: false,
+    };
+  },
+  async conflictMerge3() {
+    return {
+      blocks: [
+        {
+          kind: "conflict" as const,
+          baseLines: ["base"],
+          oursLines: ["ours"],
+          theirsLines: ["theirs"],
+          resultLines: [],
+          isSimple: false,
+        },
+      ],
+      conflictCount: 1,
+    };
+  },
+  async conflictSaveResult() {
+    return null;
+  },
+  async conflictMarkResolved() {
+    return null;
+  },
+  async conflictResolveSimple() {
+    return 0;
+  },
 };
