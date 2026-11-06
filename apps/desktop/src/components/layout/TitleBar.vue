@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import WindowControls from "./WindowControls.vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useBranchesStore } from "@/stores/branchesStore";
 import { runAction, getAction } from "@/actions";
 import type { ActionContext } from "@/actions";
 import { computed } from "vue";
@@ -24,6 +25,7 @@ import { useLogStore } from "@/stores/logStore";
 
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
+const branches = useBranchesStore();
 const changes = useChangesStore();
 const log = useLogStore();
 
@@ -41,8 +43,24 @@ const branchLabel = computed(() => {
   if (!b) return "…";
   if (b.detached) return `HEAD (${b.head})`;
   const ahead = b.ahead ? ` ↑${b.ahead}` : "";
-  const behind = b.behind ? ` ↓${b.behind}` : "";
+  const behind = b.behind
+    ? branches.hasUnfetched
+      ? ` ↓${b.behind}•`
+      : ` ↓${b.behind}`
+    : branches.hasUnfetched
+      ? " ↓•"
+      : "";
   return `${b.head}${behind}${ahead}`;
+});
+
+const branchTitle = computed(() => {
+  const b = workspace.branch;
+  if (!b) return "Branches";
+  const up = b.upstream ? `Upstream: ${b.upstream}` : "No upstream branch — Push to set";
+  const fetched = branches.lastFetchAt
+    ? `Last fetch: ${new Date(branches.lastFetchAt).toLocaleTimeString()}`
+    : "Not fetched yet";
+  return `${up}\n${fetched}`;
 });
 
 async function openFolder() {
@@ -60,6 +78,7 @@ async function openFolder() {
   if (workspace.isRepo) {
     await changes.refresh();
     await log.load(true);
+    await branches.refresh();
     layout.activeBottomTab = "log";
   }
   await runAction("Git.RefreshStatus", { ...ctx.value, folderPath: path, source: "toolbar" });
@@ -88,24 +107,39 @@ const demo = computed(() => getAction("Git.Demo.Hello"));
       </span>
     </Button>
 
-    <div
-      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground"
-      title="Current branch (read-only in M1)"
+    <button
+      type="button"
+      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+      :title="branchTitle"
+      :disabled="!workspace.isRepo"
+      @click="branches.openPopup()"
     >
       <GitBranch class="h-3.5 w-3.5" />
       <span>{{ branchLabel }}</span>
-    </div>
+    </button>
 
     <div class="flex-1" data-tauri-drag-region />
 
     <div class="flex items-center gap-0.5">
-      <Button variant="ghost" size="sm" title="Update (M2)" disabled>
+      <Button
+        variant="ghost"
+        size="sm"
+        title="Update Project"
+        :disabled="!workspace.isRepo"
+        @click="run('Vcs.UpdateProject')"
+      >
         <RotateCcw class="h-3.5 w-3.5" />
       </Button>
       <Button variant="ghost" size="sm" title="Commit" @click="run('CheckinProject')">
         <Check class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="sm" title="Push (M2)" disabled>
+      <Button
+        variant="ghost"
+        size="sm"
+        title="Push"
+        :disabled="!workspace.isRepo"
+        @click="run('Git.Push')"
+      >
         <Upload class="h-3.5 w-3.5" />
       </Button>
       <Button

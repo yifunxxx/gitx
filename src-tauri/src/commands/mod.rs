@@ -1,8 +1,12 @@
 pub mod app;
+pub mod clone_cmd;
 pub mod commit;
 pub mod diff;
 pub mod history;
 pub mod index_ops;
 pub mod jobs;
+pub mod refs;
+pub mod remotes;
 pub mod status;
+pub mod sync;
 pub mod workspace;

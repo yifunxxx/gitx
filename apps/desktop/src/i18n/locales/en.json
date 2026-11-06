@@ -12,13 +12,21 @@
     "showDiff": "Show Diff",
     "stage": "Stage",
     "unstage": "Unstage",
-    "createRepo": "Create Git Repository…"
+    "createRepo": "Create Git Repository…",
+    "clone": "Clone Repository…",
+    "branches": "Branches…",
+    "fetch": "Fetch",
+    "pull": "Pull…",
+    "push": "Push…",
+    "updateProject": "Update Project…",
+    "manageRemotes": "Manage Remotes…"
   },
   "toolWindows": {
     "commit": "Commit",
     "git": "Git",
     "console": "Console",
-    "log": "Log"
+    "log": "Log",
+    "updateInfo": "Update Info"
   },
   "empty": {
     "noFolder": "Open a folder to get started",
@@ -30,5 +38,12 @@
     "amend": "Amend",
     "runHooks": "Run Git hooks",
     "messagePlaceholder": "Commit message"
+  },
+  "branches": {
+    "search": "Search branches…",
+    "local": "Local",
+    "remote": "Remote",
+    "tags": "Tags",
+    "recent": "Recent"
   }
 }

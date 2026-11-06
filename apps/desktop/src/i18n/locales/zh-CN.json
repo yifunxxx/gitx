@@ -4,31 +4,46 @@
     "welcome": "欢迎使用 gitx"
   },
   "actions": {
-    "refreshStatus": "刷新 Status",
+    "refreshStatus": "刷新状态",
     "demoHello": "演示：Hello gitx",
     "findAction": "查找操作",
     "openFolder": "打开…",
-    "commit": "Commit",
+    "commit": "提交",
     "showDiff": "显示 Diff",
     "stage": "Stage",
     "unstage": "Unstage",
-    "createRepo": "创建 Git 仓库…"
+    "createRepo": "创建 Git 仓库…",
+    "clone": "Clone 仓库…",
+    "branches": "Branches…",
+    "fetch": "Fetch",
+    "pull": "Pull…",
+    "push": "Push…",
+    "updateProject": "Update Project…",
+    "manageRemotes": "管理 Remotes…"
   },
   "toolWindows": {
     "commit": "Commit",
     "git": "Git",
     "console": "Console",
-    "log": "Log"
+    "log": "Log",
+    "updateInfo": "Update Info"
   },
   "empty": {
-    "noFolder": "打开文件夹以开始",
+    "noFolder": "打开文件夹开始使用",
     "noChanges": "没有本地变更",
     "notVcs": "此文件夹不在版本控制下",
-    "noCommits": "还没有 commit"
+    "noCommits": "尚无提交"
   },
   "commit": {
     "amend": "Amend",
     "runHooks": "运行 Git hooks",
-    "messagePlaceholder": "Commit 消息"
+    "messagePlaceholder": "提交说明"
+  },
+  "branches": {
+    "search": "搜索分支…",
+    "local": "Local",
+    "remote": "Remote",
+    "tags": "Tags",
+    "recent": "Recent"
   }
 }
