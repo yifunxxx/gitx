@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { DiffFileResult, DiffSide, IgnoreWhitespace } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
+import { useLayoutStore } from "./layoutStore";
 
 export type DiffTab = {
   id: string;
@@ -82,6 +83,7 @@ export const useDiffStore = defineStore("diff", () => {
       tabs.value = [...tabs.value, tab];
     }
     activeId.value = id;
+    useLayoutStore().activeEditorKind = "diff";
 
     // Instant reactivation from cache. Soft refresh only when forced (e.g. after stage).
     if (tab.result) {
@@ -120,6 +122,7 @@ export const useDiffStore = defineStore("diff", () => {
       tabs.value = [...tabs.value, tab];
     }
     activeId.value = id;
+    useLayoutStore().activeEditorKind = "diff";
     if (tab.result) return;
     await reloadTab(tab, { leftPath });
   }

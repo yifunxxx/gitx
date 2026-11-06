@@ -314,6 +314,8 @@ export type DiffFileResult = {
   tooLarge: boolean
   hunks: DiffHunk[]
   encoding: string
+  /** Left/right use different EOL (LF vs CRLF); compare normalizes so equals stay uncolored. */
+  eolMismatch: boolean
 }
 export type HistoryCommit = {
   sha: string

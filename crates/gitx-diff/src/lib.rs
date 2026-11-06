@@ -50,14 +50,79 @@ fn trim_nl(line: &str) -> &str {
     line.trim_end_matches('\n').trim_end_matches('\r')
 }
 
+/// Normalize CR/LF so identical visible lines are not treated as delete+add.
+/// `diff_lines` splits on `\n` only; a trailing `\r` would otherwise make every
+/// CRLF line differ from the LF counterpart even when text matches.
+pub fn normalize_newlines(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.as_bytes().contains(&b'\r') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    std::borrow::Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EolStyle {
+    Lf,
+    Crlf,
+    Mixed,
+    None,
+}
+
+/// Detect dominant end-of-line style (ignores final EOF without newline).
+pub fn detect_eol_style(text: &str) -> EolStyle {
+    let mut lf = 0u32;
+    let mut crlf = 0u32;
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\r' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                crlf += 1;
+                i += 2;
+            } else {
+                // Lone CR counts as mixed/legacy.
+                crlf += 1;
+                i += 1;
+            }
+        } else if bytes[i] == b'\n' {
+            lf += 1;
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    match (lf > 0, crlf > 0) {
+        (false, false) => EolStyle::None,
+        (true, false) => EolStyle::Lf,
+        (false, true) => EolStyle::Crlf,
+        (true, true) => EolStyle::Mixed,
+    }
+}
+
+/// True when both sides have content and disagree on EOL (LF vs CRLF/mixed).
+pub fn eol_mismatch(left: &str, right: &str) -> bool {
+    let l = detect_eol_style(left);
+    let r = detect_eol_style(right);
+    if l == EolStyle::None || r == EolStyle::None {
+        return false;
+    }
+    l != r
+}
+
 /// Compute unified hunks between left (old) and right (new) text.
 pub fn compute_hunks(
     left: Option<&str>,
     right: Option<&str>,
     opts: &DiffComputeOptions,
 ) -> Vec<DiffHunk> {
-    let left = left.unwrap_or("");
-    let right = right.unwrap_or("");
+    let left_raw = left.unwrap_or("");
+    let right_raw = right.unwrap_or("");
+    // Always compare on LF-normalized text so "Do not ignore" whitespace still
+    // treats visually identical lines as equal across CRLF/LF (GIT-33).
+    let left_cow = normalize_newlines(left_raw);
+    let right_cow = normalize_newlines(right_raw);
+    let left = left_cow.as_ref();
+    let right = right_cow.as_ref();
 
     let left_lines: Vec<&str> = split_lines(left);
     let right_lines: Vec<&str> = split_lines(right);
@@ -1030,6 +1095,55 @@ mod tests {
             elapsed < Duration::from_millis(80),
             "identical huge file took {elapsed:?}"
         );
+    }
+
+    #[test]
+    fn crlf_vs_lf_identical_lines_not_marked_changed() {
+        // Staged (CRLF) vs Local (LF): package/import lines look identical but
+        // must not become a full-file delete+add (GIT-33 false highlights).
+        let left = "package com.aurora.controller;\r\n\r\nimport a.A;\r\nimport b.B;\r\n\r\nclass C {\r\n  @Autowired\r\n  Svc s;\r\n}\r\n";
+        let right = "package com.aurora.controller;\n\nimport a.A;\nimport b.B;\nimport c.AnnotationApi;\n\nclass C {\n  new AnnotationApi();\n  Svc s;\n}\n";
+        let hunks = compute_hunks(Some(left), Some(right), &DiffComputeOptions::default());
+        assert!(!hunks.is_empty());
+        let body: Vec<&str> = hunks
+            .iter()
+            .flat_map(|h| h.lines.iter().map(String::as_str))
+            .collect();
+        // Pre-fix imports must be equal context, never delete+add of the whole block.
+        assert!(
+            body.iter().any(|l| *l == " import a.A;"),
+            "identical import should be context: {body:?}"
+        );
+        assert!(
+            !body.iter().any(|l| l.starts_with("-package ")
+                || *l == "-import a.A;"
+                || *l == "-import b.B;"),
+            "identical lines must not be deletes: {body:?}"
+        );
+        assert!(
+            !body
+                .iter()
+                .any(|l| *l == "+import a.A;" || *l == "+import b.B;"),
+            "identical lines must not be inserts: {body:?}"
+        );
+        assert!(
+            body.iter().any(|l| *l == "+import c.AnnotationApi;"),
+            "real insert missing: {body:?}"
+        );
+        assert!(eol_mismatch(left, right));
+        assert!(!eol_mismatch(left, left));
+    }
+
+    #[test]
+    fn same_text_different_eol_yields_empty_hunks() {
+        let lf = "a\nb\nc\n";
+        let crlf = "a\r\nb\r\nc\r\n";
+        let hunks = compute_hunks(Some(lf), Some(crlf), &DiffComputeOptions::default());
+        assert!(
+            hunks.is_empty(),
+            "EOL-only difference must not paint changes: {hunks:?}"
+        );
+        assert!(eol_mismatch(lf, crlf));
     }
 
     #[test]

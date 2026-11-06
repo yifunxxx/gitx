@@ -215,6 +215,11 @@ pub struct DiffFileResult {
     pub too_large: bool,
     pub hunks: Vec<DiffHunk>,
     pub encoding: String,
+    /// True when left/right texts use different end-of-line styles (LF vs CRLF).
+    /// Diff compare normalizes EOL so identical visible lines stay uncolored;
+    /// the UI surfaces this flag instead of painting whole blocks red/green.
+    #[serde(default)]
+    pub eol_mismatch: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

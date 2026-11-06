@@ -3,7 +3,10 @@ use gitx_core::{
     AppError, CombinedDiffFile, CombinedDiffResult, DiffFileResult, DiffRefsResult, ErrorCode,
     IgnoreWhitespace,
 };
-use gitx_diff::{compute_hunks, decode_lossy, is_probably_binary, too_large, DiffComputeOptions};
+use gitx_diff::{
+    compute_hunks, decode_lossy, eol_mismatch as texts_eol_mismatch, is_probably_binary, too_large,
+    DiffComputeOptions,
+};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -143,11 +146,16 @@ pub async fn diff_file_at(
             too_large: large,
             hunks: Vec::new(),
             encoding: "utf-8".into(),
+            eol_mismatch: false,
         });
     }
 
     let left_text = decode_lossy(left_bytes.as_deref());
     let right_text = decode_lossy(right_bytes.as_deref());
+    let eol_mismatch = texts_eol_mismatch(
+        left_text.as_deref().unwrap_or(""),
+        right_text.as_deref().unwrap_or(""),
+    );
     let ignore = req.ignore_whitespace;
     let left_for_diff = left_text.clone();
     let right_for_diff = right_text.clone();
@@ -173,6 +181,7 @@ pub async fn diff_file_at(
         too_large: false,
         hunks,
         encoding: "utf-8".into(),
+        eol_mismatch,
     })
 }
 

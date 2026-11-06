@@ -432,6 +432,7 @@ export const mockBackend: Backend = {
       tooLarge: false,
       hunks: mockHunks(),
       encoding: "utf-8",
+      eolMismatch: false,
     };
   },
   async commitCreate(req) {
@@ -639,6 +640,7 @@ export const mockBackend: Backend = {
       tooLarge: false,
       hunks: mockHunks(),
       encoding: "utf-8",
+      eolMismatch: false,
     };
   },
   async diffRefs(req) {

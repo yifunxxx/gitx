@@ -205,6 +205,7 @@ function showWorkspace() {
     <div class="min-h-0 flex-1">
       <DiffViewer
         v-if="layout.activeEditorKind === 'diff' && activeDiff"
+        :key="activeDiff.id"
         :tab-id="activeDiff.id"
       />
       <FileHistoryView

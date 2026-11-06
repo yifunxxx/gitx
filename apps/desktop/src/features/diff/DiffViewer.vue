@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
+import { normalizeEolForDisplay } from "./diffPaint";
 
 const props = defineProps<{ tabId: string }>();
 const diffs = useDiffStore();
@@ -44,14 +45,21 @@ const collapsed = computed(() => {
 
 const leftText = computed(() => {
   if (collapsed.value) return collapsed.value.left.text;
-  return result.value?.leftText ?? "";
+  // Display uses LF so visually identical lines match; compare already normalizes EOL.
+  return normalizeEolForDisplay(result.value?.leftText ?? "");
 });
 const rightText = computed(() => {
   if (collapsed.value) return collapsed.value.right.text;
-  return result.value?.rightText ?? "";
+  return normalizeEolForDisplay(result.value?.rightText ?? "");
 });
 
 const enableInline = computed(() => countHunkLines(visibleHunks.value) <= 900);
+
+/** Forces CodeMirror remount when tab / loaded content changes (no tool-window flip). */
+const paintKey = computed(
+  () =>
+    `${props.tabId}|${tab.value?.contentKey ?? ""}|${tab.value?.collapseUnchanged ? "c" : "e"}|${tab.value?.unified ? "u" : "s"}`,
+);
 
 async function stageHunk(index: number) {
   if (!tab.value) return;
@@ -173,8 +181,11 @@ const wsModes: { id: IgnoreWhitespace; label: string }[] = [
         Show anyway
       </button>
     </div>
-    <div v-else-if="result && !result.hunks.length" class="p-4 text-xs text-muted-foreground">
-      No differences
+    <div v-else-if="result && !result.hunks.length" class="space-y-2 p-4 text-xs text-muted-foreground">
+      <div>No differences</div>
+      <div v-if="result.eolMismatch">
+        Line endings differ (CRLF vs LF). Visible text matches after normalizing EOL.
+      </div>
     </div>
     <div v-else-if="result" class="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -183,22 +194,33 @@ const wsModes: { id: IgnoreWhitespace; label: string }[] = [
       >
         Refreshing…
       </div>
+      <div
+        v-if="result.eolMismatch"
+        class="shrink-0 border-b bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
+      >
+        Line endings differ (CRLF vs LF). Visible text is compared after normalizing EOL — identical
+        lines stay uncolored.
+      </div>
       <div v-if="tab.unified" class="min-h-0 flex-1">
         <CodeMirrorDiff
+          :key="`${paintKey}-u`"
           side="unified"
           unified
           :text="''"
           :hunks="visibleHunks"
+          :paint-key="paintKey"
           :enable-inline="enableInline"
         />
       </div>
       <div v-else class="grid min-h-0 flex-1 grid-cols-2">
         <div class="min-h-0 border-r">
           <CodeMirrorDiff
+            :key="`${paintKey}-L`"
             ref="leftPane"
             side="left"
             :text="leftText"
             :hunks="visibleHunks"
+            :paint-key="paintKey"
             :changed-lines="collapsed?.left.changed ?? null"
             :line-map="collapsed?.left.lineMap ?? null"
             :enable-inline="enableInline"
@@ -207,10 +229,12 @@ const wsModes: { id: IgnoreWhitespace; label: string }[] = [
         </div>
         <div class="min-h-0">
           <CodeMirrorDiff
+            :key="`${paintKey}-R`"
             ref="rightPane"
             side="right"
             :text="rightText"
             :hunks="visibleHunks"
+            :paint-key="paintKey"
             :changed-lines="collapsed?.right.changed ?? null"
             :line-map="collapsed?.right.lineMap ?? null"
             :enable-inline="enableInline"

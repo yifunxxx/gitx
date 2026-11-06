@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { EditorState, RangeSetBuilder } from "@codemirror/state";
 import {
   EditorView,
@@ -16,6 +16,7 @@ import {
   type CharRange,
 } from "./inlineDiff";
 import { countHunkLines } from "./collapsedDiff";
+import { contentFingerprint } from "./diffPaint";
 
 const props = defineProps<{
   text: string;
@@ -28,18 +29,22 @@ const props = defineProps<{
   lineMap?: number[] | null;
   /** Skip expensive char-level highlights for huge diffs. */
   enableInline?: boolean;
+  /** External remount token (tab id + content key) so selection changes always refresh. */
+  paintKey?: string;
 }>();
 
 const emit = defineEmits<{
   scroll: [pos: { left: number; top: number }];
 }>();
 
+const hostRef = ref<HTMLDivElement | null>(null);
+
 let view: EditorView | null = null;
-let hostEl: HTMLDivElement | null = null;
 let syncing = false;
 let onScroll: (() => void) | null = null;
 let mountToken = 0;
 let lastFingerprint = "";
+let resizeObserver: ResizeObserver | null = null;
 
 const insertLine = Decoration.line({ class: "cm-diff-insert" });
 const deleteLine = Decoration.line({ class: "cm-diff-delete" });
@@ -248,19 +253,17 @@ function theme() {
 }
 
 function fingerprint(): string {
-  const mapKey = props.lineMap ? props.lineMap.length : 0;
-  const chKey = props.changedLines ? props.changedLines.size : 0;
-  return [
-    props.side,
-    props.unified ? "u" : "s",
-    props.text.length,
-    props.hunks.length,
-    props.hunks[0]?.header ?? "",
-    props.hunks[props.hunks.length - 1]?.header ?? "",
-    mapKey,
-    chKey,
-    props.enableInline === false ? "0" : "1",
-  ].join("|");
+  const content = contentForProps();
+  return contentFingerprint({
+    paintKey: props.paintKey ?? "",
+    side: props.side,
+    unified: !!(props.unified || props.side === "unified"),
+    content,
+    hunks: props.hunks,
+    changedCount: props.changedLines?.size ?? 0,
+    lineMapLen: props.lineMap?.length ?? 0,
+    enableInline: props.enableInline !== false,
+  });
 }
 
 function contentForProps(): string {
@@ -279,12 +282,39 @@ function lineNumberExt() {
   });
 }
 
+function detachResize() {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+}
+
+function attachResize(el: HTMLElement) {
+  detachResize();
+  if (typeof ResizeObserver === "undefined") return;
+  resizeObserver = new ResizeObserver(() => {
+    // Zero-height first paint (flex/splitpane) left CM blank until a tab flip
+    // resized the pane — remeasure as soon as the host gets a real size.
+    view?.requestMeasure();
+  });
+  resizeObserver.observe(el);
+}
+
 function mountNow() {
-  if (!hostEl) return;
+  const hostEl = hostRef.value;
+  if (!hostEl) {
+    // Host not attached yet — retry on next frame (avoids silent stale pane).
+    const token = mountToken;
+    requestAnimationFrame(() => {
+      if (token !== mountToken) return;
+      if (hostRef.value) mountNow();
+    });
+    return;
+  }
   const fp = fingerprint();
   const content = contentForProps();
-  // Avoid full remount when nothing meaningful changed.
-  if (view && fp === lastFingerprint && view.state.doc.toString() === content) return;
+  if (view && fp === lastFingerprint && view.state.doc.toString() === content) {
+    view.requestMeasure();
+    return;
+  }
   lastFingerprint = fp;
 
   detachScroll();
@@ -310,15 +340,23 @@ function mountNow() {
     }),
   });
   attachScroll();
+  attachResize(hostEl);
+  view.requestMeasure();
 }
 
-function mount() {
+function scheduleMount(immediate: boolean) {
   const token = ++mountToken;
-  // Defer heavy CodeMirror init so tab switch / click paint first.
-  requestAnimationFrame(() => {
+  const run = () => {
     if (token !== mountToken) return;
     mountNow();
-  });
+  };
+  if (immediate) {
+    // Prop / selection changes must paint without waiting for a tool-window tab flip.
+    queueMicrotask(run);
+  } else {
+    // First mount: yield so the tab chrome paints first.
+    requestAnimationFrame(run);
+  }
 }
 
 function attachScroll() {
@@ -338,10 +376,6 @@ function detachScroll() {
   onScroll = null;
 }
 
-function setHost(el: unknown) {
-  hostEl = el instanceof HTMLDivElement ? el : null;
-}
-
 function getScroller() {
   return view?.scrollDOM ?? null;
 }
@@ -359,16 +393,18 @@ function applyScroll(left: number, top: number) {
 
 defineExpose({ getScroller, applyScroll });
 
-onMounted(mount);
+onMounted(() => scheduleMount(false));
 onBeforeUnmount(() => {
   mountToken += 1;
   detachScroll();
+  detachResize();
   view?.destroy();
   view = null;
 });
 watch(
   () =>
     [
+      props.paintKey,
       props.text,
       props.hunks,
       props.side,
@@ -377,10 +413,10 @@ watch(
       props.lineMap,
       props.enableInline,
     ] as const,
-  () => mount(),
+  () => scheduleMount(true),
 );
 </script>
 
 <template>
-  <div :ref="setHost" class="h-full min-h-0 overflow-hidden" />
+  <div ref="hostRef" class="h-full min-h-0 overflow-hidden" />
 </template>
