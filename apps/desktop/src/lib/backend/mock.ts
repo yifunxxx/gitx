@@ -860,4 +860,160 @@ export const mockBackend: Backend = {
   async conflictResolveSimple() {
     return 0;
   },
+  async rebaseInteractivePlan() {
+    return {
+      base: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      onto: null,
+      items: [
+        {
+          action: "pick" as const,
+          sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          subject: "mock commit",
+          message: null,
+          author: "mock",
+          authorTime: 0,
+        },
+      ],
+      rebaseMerges: false,
+      autosquash: false,
+    };
+  },
+  async rebaseInteractiveStart() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Rebase finished",
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/rebase-interactive-0",
+    };
+  },
+  async rewordCommit() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Reworded commit",
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/reword-0",
+    };
+  },
+  async squashCommits() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Squashed commits",
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/squash-0",
+    };
+  },
+  async dropCommits(req) {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: `Dropped ${req.shas.length} commit(s)`,
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/drop-0",
+    };
+  },
+  async fixupInto(req) {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: req.squash ? "Squashed into commit" : "Fixed up into commit",
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/fixup-0",
+    };
+  },
+  async uncommit() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Undid commit — changes kept staged",
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/uncommit-0",
+    };
+  },
+  async revertRun(req) {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: `Reverted ${req.shas.length} commit(s)`,
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/revert-0",
+    };
+  },
+  async revertContinue() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "revert --continue",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async revertAbort() {
+    return {
+      oldHead: "",
+      newHead: "",
+      outcome: "success" as const,
+      message: "revert --abort",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async resetPreview(req) {
+    return {
+      target: req.target,
+      commitsAffected: 1,
+      dirtyTracked: [],
+      willDiscardLocal: false,
+    };
+  },
+  async resetRun(req) {
+    return {
+      oldHead: "",
+      newHead: req.target,
+      outcome: "success" as const,
+      message: `Reset to ${req.target.slice(0, 7)} (${req.mode})`,
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/reset-0",
+    };
+  },
+  async undoRewrite() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Restored previous HEAD",
+      conflictFiles: [],
+      backupRef: null,
+    };
+  },
+  async extractChanges() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Extracted selected changes",
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/extract-0",
+    };
+  },
+  async dropChanges() {
+    return {
+      oldHead: "",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      outcome: "success" as const,
+      message: "Dropped selected changes",
+      conflictFiles: [],
+      backupRef: "refs/gitx/backup/drop-changes-0",
+    };
+  },
 };

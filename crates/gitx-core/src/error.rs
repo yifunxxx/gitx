@@ -39,6 +39,11 @@ pub enum ErrorCode {
     CherryPickConflict,
     OperationInProgress,
     UnrelatedHistories,
+    // M5
+    RewriteConflict,
+    CommitNotOnBranch,
+    MergeCommitNotAllowed,
+    AlreadyPushed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]

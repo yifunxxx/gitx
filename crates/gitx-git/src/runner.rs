@@ -24,6 +24,7 @@ pub struct GitInvocation {
     pub stdin: Option<Vec<u8>>,
     pub timeout: Option<Duration>,
     pub git_bin: String,
+    pub env: Vec<(String, String)>,
 }
 
 impl GitInvocation {
@@ -39,6 +40,7 @@ impl GitInvocation {
             stdin: None,
             timeout: Some(Duration::from_secs(30)),
             git_bin: "git".into(),
+            env: Vec::new(),
         }
     }
 
@@ -62,8 +64,8 @@ impl GitInvocation {
         self
     }
 
-    pub fn env(self, _key: impl Into<String>, _value: impl Into<String>) -> Self {
-        // Extra env reserved for askpass/editor; stored via optional map later.
+    pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env.push((key.into(), value.into()));
         self
     }
 
@@ -121,6 +123,10 @@ impl GitRunner {
             .stderr(Stdio::piped())
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("LC_ALL", "C");
+
+        for (k, v) in &inv.env {
+            cmd.env(k, v);
+        }
 
         if inv.stdin.is_some() {
             cmd.stdin(Stdio::piped());

@@ -97,6 +97,18 @@ impl FixtureBuilder {
                     // Leave conflict unmerged for callers that want in-progress state:
                     // scenario builds divergent branches only; tests start the merge.
                 }
+                "linear-history" => {
+                    // A→B→C on main for rewrite tests (reword/squash/drop/reset).
+                    write(&root, "a.txt", "a\n")?;
+                    git(&root, &["add", "a.txt"])?;
+                    git(&root, &["commit", "-m", "commit-a"])?;
+                    write(&root, "b.txt", "b\n")?;
+                    git(&root, &["add", "b.txt"])?;
+                    git(&root, &["commit", "-m", "commit-b"])?;
+                    write(&root, "c.txt", "c\n")?;
+                    git(&root, &["add", "c.txt"])?;
+                    git(&root, &["commit", "-m", "commit-c"])?;
+                }
                 other => {
                     return Err(TestkitError::Git(format!("unknown scenario: {other}")));
                 }

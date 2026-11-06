@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { Button } from "@/components/ui/button";
-import { closeDialog } from "@/composables/useDialog";
+import { closeDialog, openDialog } from "@/composables/useDialog";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import InteractiveRebaseEditor from "@/features/merge/InteractiveRebaseEditor.vue";
 
 const branches = useBranchesStore();
 const rewrite = useRewriteStore();
@@ -45,12 +46,12 @@ onMounted(async () => {
 });
 
 async function ok() {
+  if (!root.value && !upstream.value) return;
   if (interactive.value) {
-    // M5 — surface clearly
     closeDialog(false);
+    await openDialog(InteractiveRebaseEditor, { upstream: upstream.value });
     return;
   }
-  if (!root.value && !upstream.value) return;
   await rewrite.rebase({
     upstream: upstream.value,
     onto: useOnto.value ? onto.value : null,
@@ -85,20 +86,22 @@ async function ok() {
       </div>
       <div class="mt-3 text-[11px] font-medium text-muted-foreground">Modify options</div>
       <div class="mt-1 grid grid-cols-2 gap-1 text-xs">
-        <label class="flex items-center gap-2"><input v-model="interactive" type="checkbox" /> --interactive (M5)</label>
+        <label class="flex items-center gap-2"><input v-model="interactive" type="checkbox" /> --interactive</label>
         <label class="flex items-center gap-2"><input v-model="rebaseMerges" type="checkbox" /> --rebase-merges</label>
         <label class="flex items-center gap-2"><input v-model="keepEmpty" type="checkbox" /> --keep-empty</label>
         <label class="flex items-center gap-2"><input v-model="root" type="checkbox" /> --root</label>
         <label class="flex items-center gap-2"><input v-model="updateRefs" type="checkbox" /> --update-refs</label>
         <label class="flex items-center gap-2"><input v-model="autosquash" type="checkbox" /> --autosquash</label>
       </div>
-      <p v-if="interactive" class="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
-        Interactive rebase ships in M5. Uncheck to run a plain rebase.
+      <p v-if="interactive" class="mt-2 text-[11px] text-muted-foreground">
+        Opens the interactive rebase editor for the commits after upstream.
       </p>
       <div class="mt-3 rounded bg-muted px-2 py-1 font-mono text-[11px]">{{ preview }}</div>
       <div class="mt-4 flex justify-end gap-2">
         <Button variant="ghost" size="sm" @click="closeDialog(false)">Cancel</Button>
-        <Button size="sm" :disabled="interactive || (!root && !upstream)" @click="ok">Rebase</Button>
+        <Button size="sm" :disabled="!root && !upstream" @click="ok">
+          {{ interactive ? "Edit…" : "Rebase" }}
+        </Button>
       </div>
     </div>
   </div>
