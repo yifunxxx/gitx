@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
-import { Folder, File } from "@lucide/vue";
 import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useDiffStore } from "@/stores/diffStore";
@@ -9,6 +8,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { Button } from "@/components/ui/button";
+import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
 import { toast } from "@/composables/useToast";
 
 const props = defineProps<{ tabId: string }>();
@@ -68,13 +68,15 @@ async function compareLocal() {
             v-for="e in tab.entries"
             :key="e.path"
             type="button"
-            class="flex w-full items-center gap-1 px-2 py-0.5 text-left hover:bg-accent/50"
+            class="flex w-full cursor-pointer items-center gap-1 px-2 py-0.5 text-left hover:bg-accent/50"
             :class="tab.selectedPath === e.path ? 'bg-accent' : ''"
             @click="store.openEntry(tab, e)"
             @dblclick="store.openEntry(tab, e)"
           >
-            <Folder v-if="e.kind === 'tree'" class="h-3.5 w-3.5 text-muted-foreground" />
-            <File v-else class="h-3.5 w-3.5 text-muted-foreground" />
+            <FileTypeIcon
+              :name="e.name"
+              :kind="e.kind === 'tree' ? 'folder' : 'file'"
+            />
             <span class="truncate">{{ e.name }}</span>
           </button>
         </div>

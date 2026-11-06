@@ -15,7 +15,7 @@ const props = defineProps<DropdownMenuCheckboxItemProps & { class?: string }>();
     v-bind="props"
     :class="
       cn(
-        'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-[13px] leading-4 outline-none data-[highlighted]:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        'relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-[13px] leading-4 outline-none data-[highlighted]:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
         props.class,
       )
     "

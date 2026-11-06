@@ -11,7 +11,7 @@ const props = defineProps<SelectTriggerProps & { class?: string }>();
     v-bind="props"
     :class="
       cn(
-        'flex h-8 w-full items-center justify-between gap-2 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
         props.class,
       )
     "

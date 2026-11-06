@@ -24,6 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import PathTreeList from "@/components/files/PathTreeList.vue";
+import type { ChangedFile } from "@/lib/backend";
 import CommitGraphCell from "./CommitGraphCell.vue";
 
 const log = useLogStore();
@@ -489,18 +491,13 @@ async function ctxExtract() {
             <Pane :size="45">
               <div class="flex h-full min-h-0 flex-col">
                 <div class="border-b px-2 py-1 text-[11px] font-medium">Changed Files</div>
-                <div class="min-h-0 flex-1 overflow-auto text-[12px]">
-                  <div
-                    v-for="f in log.changedFiles"
-                    :key="f.path"
-                    class="flex cursor-default items-center gap-1 truncate px-2 py-0.5 hover:bg-accent/50"
-                    :class="statusClass(mapStatus(f.status))"
-                    @dblclick="openChangedFile(f.path, f.origPath)"
-                    @contextmenu.prevent="showFileHistory(f.path)"
-                  >
-                    {{ f.origPath ? `${f.origPath} → ${f.path}` : f.path }}
-                  </div>
-                </div>
+                <PathTreeList
+                  :files="log.changedFiles"
+                  :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
+                  empty-text=""
+                  @open="(f) => openChangedFile(f.path, f.origPath)"
+                  @context="({ file }) => showFileHistory(file.path)"
+                />
               </div>
             </Pane>
             <Pane :size="55">

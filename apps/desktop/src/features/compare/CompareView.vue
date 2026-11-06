@@ -4,8 +4,9 @@ import { Pane, Splitpanes } from "splitpanes";
 import { useCompareStore } from "@/stores/compareStore";
 import { Button } from "@/components/ui/button";
 import { statusClass } from "@/features/commit/statusColor";
-import type { FileChangeKind } from "@/lib/backend";
+import type { ChangedFile, FileChangeKind } from "@/lib/backend";
 import CodeMirrorDiff from "@/features/diff/CodeMirrorDiff.vue";
+import PathTreeList from "@/components/files/PathTreeList.vue";
 
 const props = defineProps<{ tabId: string }>();
 const compare = useCompareStore();
@@ -24,6 +25,11 @@ function mapStatus(s: string): FileChangeKind {
     default:
       return "modified";
   }
+}
+
+function openCompareFile(f: ChangedFile) {
+  if (!tab.value) return;
+  compare.openFile(tab.value, f.path, f.origPath);
 }
 </script>
 
@@ -71,21 +77,13 @@ function mapStatus(s: string): FileChangeKind {
       <Pane :size="tab.mode === 'refs' ? 28 : 40" min-size="20">
         <div class="flex h-full min-h-0 flex-col">
           <div class="border-b px-2 py-1 text-[11px] font-medium">Changed Files</div>
-          <div class="min-h-0 flex-1 overflow-auto text-[12px]">
-            <button
-              v-for="f in tab.files"
-              :key="f.path"
-              type="button"
-              class="block w-full truncate px-2 py-0.5 text-left hover:bg-accent/50"
-              :class="statusClass(mapStatus(f.status))"
-              @click="compare.openFile(tab, f.path, f.origPath)"
-            >
-              {{ f.origPath ? `${f.origPath} → ${f.path}` : f.path }}
-            </button>
-            <div v-if="!tab.files.length" class="px-2 py-4 text-xs text-muted-foreground">
-              Branches are identical / no file differences
-            </div>
-          </div>
+          <PathTreeList
+            :files="tab.files"
+            :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
+            empty-text="Branches are identical / no file differences"
+            @select="openCompareFile"
+            @open="openCompareFile"
+          />
         </div>
       </Pane>
       <Pane v-if="tab.combined" :size="tab.mode === 'refs' ? 36 : 60">

@@ -23,11 +23,24 @@ export type DiffTab = {
 export const useDiffStore = defineStore("diff", () => {
   const tabs = ref<DiffTab[]>([]);
   const activeId = ref<string | null>(null);
+  /** Per-tab load generation — stale responses are dropped. */
+  const loadGen = new Map<string, number>();
+
+  function bumpGen(id: string): number {
+    const g = (loadGen.get(id) ?? 0) + 1;
+    loadGen.set(id, g);
+    return g;
+  }
+
+  function isCurrent(id: string, gen: number) {
+    return loadGen.get(id) === gen;
+  }
 
   async function openFileDiff(
     filePath: string,
     left: DiffSide = "index",
     right: DiffSide = "worktree",
+    opts?: { force?: boolean },
   ) {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath || !workspace.repoId) return;
@@ -51,6 +64,13 @@ export const useDiffStore = defineStore("diff", () => {
       tabs.value = [...tabs.value, tab];
     }
     activeId.value = id;
+
+    // Instant reactivation from cache; soft refresh keeps the previous paint.
+    if (tab.result) {
+      if (opts?.force) await reloadTab(tab, { soft: true });
+      else void reloadTab(tab, { soft: true });
+      return;
+    }
     await reloadTab(tab);
   }
 
@@ -83,40 +103,37 @@ export const useDiffStore = defineStore("diff", () => {
       tabs.value = [...tabs.value, tab];
     }
     activeId.value = id;
-    tab.loading = true;
-    try {
-      const backend = getBackend();
-      tab.result = await backend.diffFileAt({
-        repoId: workspace.repoId,
-        path: workspace.repoPath,
-        filePath,
-        leftRev,
-        rightRev,
-        leftPath: leftPath ?? null,
-        ignoreWhitespace: tab.ignoreWhitespace,
-      });
-    } finally {
-      tab.loading = false;
+    if (tab.result) {
+      void reloadTab(tab, { soft: true });
+      return;
     }
+    await reloadTab(tab, { leftPath });
   }
 
-  async function reloadTab(tab: DiffTab) {
+  async function reloadTab(
+    tab: DiffTab,
+    opts?: { soft?: boolean; leftPath?: string | null },
+  ) {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath || !workspace.repoId) return;
-    tab.loading = true;
+    const gen = bumpGen(tab.id);
+    // Soft refresh keeps existing paint; only show skeleton when nothing to show.
+    if (!opts?.soft || !tab.result) tab.loading = true;
     try {
       const backend = getBackend();
+      let result: DiffFileResult;
       if (tab.leftRev && tab.rightRev) {
-        tab.result = await backend.diffFileAt({
+        result = await backend.diffFileAt({
           repoId: workspace.repoId,
           path: workspace.repoPath,
           filePath: tab.path,
           leftRev: tab.leftRev,
           rightRev: tab.rightRev,
+          leftPath: opts?.leftPath ?? null,
           ignoreWhitespace: tab.ignoreWhitespace,
         });
       } else {
-        tab.result = await backend.diffFile({
+        result = await backend.diffFile({
           repoId: workspace.repoId,
           path: workspace.repoPath,
           filePath: tab.path,
@@ -125,13 +142,17 @@ export const useDiffStore = defineStore("diff", () => {
           ignoreWhitespace: tab.ignoreWhitespace,
         });
       }
+      if (!isCurrent(tab.id, gen)) return;
+      tab.result = result;
     } finally {
-      tab.loading = false;
+      if (isCurrent(tab.id, gen)) tab.loading = false;
     }
   }
 
   function closeTab(id: string) {
+    bumpGen(id);
     tabs.value = tabs.value.filter((t) => t.id !== id);
+    loadGen.delete(id);
     if (activeId.value === id) {
       activeId.value = tabs.value[tabs.value.length - 1]?.id ?? null;
     }

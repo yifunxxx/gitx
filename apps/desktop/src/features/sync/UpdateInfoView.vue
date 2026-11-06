@@ -1,7 +1,26 @@
 <script setup lang="ts">
 import { useSyncStore } from "@/stores/syncStore";
+import PathTreeList from "@/components/files/PathTreeList.vue";
+import type { ChangedFile } from "@/lib/backend";
+import { statusClass } from "@/features/commit/statusColor";
+import type { FileChangeKind } from "@/lib/backend";
 
 const sync = useSyncStore();
+
+function mapStatus(s: string): FileChangeKind {
+  switch (s) {
+    case "A":
+      return "added";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    default:
+      return "modified";
+  }
+}
 </script>
 
 <template>
@@ -12,24 +31,29 @@ const sync = useSyncStore();
     <template v-else>
       <div class="border-b px-2 py-1 text-xs text-muted-foreground">
         {{ sync.lastUpdate.strategy }} · {{ sync.lastUpdate.message }}
-        <span class="font-mono"> ({{ sync.lastUpdate.oldHead.slice(0, 7) }} → {{ sync.lastUpdate.newHead.slice(0, 7) }})</span>
+        <span class="font-mono">
+          ({{ sync.lastUpdate.oldHead.slice(0, 7) }} → {{ sync.lastUpdate.newHead.slice(0, 7) }})
+        </span>
       </div>
       <div class="grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-hidden p-2">
-        <div class="min-h-0 overflow-auto rounded border p-2">
-          <div class="mb-1 text-[11px] font-medium uppercase text-muted-foreground">Files</div>
-          <div v-if="!sync.lastUpdate.updatedFiles.length" class="text-xs text-muted-foreground">No file changes</div>
-          <div
-            v-for="f in sync.lastUpdate.updatedFiles"
-            :key="f.path"
-            class="font-mono text-[11px]"
-          >
-            <span class="mr-2 text-muted-foreground">{{ f.status }}</span>{{ f.path }}
+        <div class="flex min-h-0 flex-col overflow-hidden rounded-md border">
+          <div class="border-b px-2 py-1 text-[11px] font-medium uppercase text-muted-foreground">
+            Files
           </div>
+          <PathTreeList
+            :files="sync.lastUpdate.updatedFiles"
+            :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
+            empty-text="No file changes"
+          />
         </div>
-        <div class="min-h-0 overflow-auto rounded border p-2">
+        <div class="min-h-0 overflow-auto rounded-md border p-2">
           <div class="mb-1 text-[11px] font-medium uppercase text-muted-foreground">Commits</div>
-          <div v-if="!sync.lastUpdate.commits.length" class="text-xs text-muted-foreground">No commits</div>
-          <div v-for="c in sync.lastUpdate.commits" :key="c" class="font-mono text-[11px]">{{ c }}</div>
+          <div v-if="!sync.lastUpdate.commits.length" class="text-xs text-muted-foreground">
+            No commits
+          </div>
+          <div v-for="c in sync.lastUpdate.commits" :key="c" class="font-mono text-[11px]">
+            {{ c }}
+          </div>
         </div>
       </div>
     </template>

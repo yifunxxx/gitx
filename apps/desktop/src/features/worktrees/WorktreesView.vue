@@ -100,7 +100,7 @@ function shortHead(sha: string) {
       <div
         v-for="w in store.items"
         :key="w.path"
-        class="flex cursor-default items-center gap-2 border-b border-border/40 px-2 py-1.5 hover:bg-accent/50"
+        class="flex cursor-pointer items-center gap-2 border-b border-border/40 px-2 py-1.5 hover:bg-accent/50"
         :class="store.selectedPath === w.path ? 'bg-accent' : ''"
         @click="store.selectedPath = w.path"
         @dblclick="store.openWorktree(w.path, true)"

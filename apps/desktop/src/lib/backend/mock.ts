@@ -59,10 +59,17 @@ let nextSha = 2;
 
 const files: FileChange[] = [
   {
-    path: "README.md",
+    path: "src/main/java/com/aurora/controller/ArticleController.java",
     origPath: null,
     indexStatus: ".",
     worktreeStatus: "M",
+    kind: "modified",
+  },
+  {
+    path: "src/main/resources/application.yml",
+    origPath: null,
+    indexStatus: "M",
+    worktreeStatus: ".",
     kind: "modified",
   },
   {
@@ -73,7 +80,28 @@ const files: FileChange[] = [
     kind: "added",
   },
   {
-    path: "notes.txt",
+    path: "README.md",
+    origPath: null,
+    indexStatus: ".",
+    worktreeStatus: "M",
+    kind: "modified",
+  },
+  {
+    path: ".idea/",
+    origPath: null,
+    indexStatus: "?",
+    worktreeStatus: "?",
+    kind: "untracked",
+  },
+  {
+    path: "lib/",
+    origPath: null,
+    indexStatus: "?",
+    worktreeStatus: "?",
+    kind: "untracked",
+  },
+  {
+    path: "target/",
     origPath: null,
     indexStatus: "?",
     worktreeStatus: "?",
@@ -93,17 +121,30 @@ function emitConsole(stream: string, line: string) {
 }
 
 function mockHunks(): DiffHunk[] {
+  const lines: string[] = [" package com.aurora.controller;"];
+  for (let i = 0; i < 40; i++) {
+    lines.push(`-    // staged line ${i}`);
+    lines.push(`+    // local line ${i}`);
+  }
+  lines.push(" }");
   return [
     {
       index: 0,
-      header: "@@ -1,3 +1,3 @@",
+      header: "@@ -1,163 +1,156 @@",
       oldStart: 1,
-      oldLines: 3,
+      oldLines: 163,
       newStart: 1,
-      newLines: 3,
-      lines: [" # gitx", "-hello", "+hello world", " "],
+      newLines: 156,
+      lines,
     },
   ];
+}
+
+function mockDiffBody(prefix: string, n: number): string {
+  const out = ["package com.aurora.controller;", ""];
+  for (let i = 0; i < n; i++) out.push(`    // ${prefix} line ${i}`);
+  out.push("}");
+  return out.join("\n");
 }
 
 function mockLog(): LogCommit[] {
@@ -240,7 +281,7 @@ function statusSnapshot(path: string, includeIgnored = false): StatusSnapshot {
 
 export const mockBackend: Backend = {
   async appInfo() {
-    return { name: "gitx", version: "0.1.1-web" };
+    return { name: "gitx", version: "0.1.2-web" };
   },
   async gitDetect() {
     return {
@@ -384,8 +425,8 @@ export const mockBackend: Backend = {
       path: req.filePath,
       leftLabel: req.left === "index" ? "Staged" : req.left === "head" ? "HEAD" : "Local",
       rightLabel: req.right === "worktree" ? "Local" : req.right === "index" ? "Staged" : "HEAD",
-      leftText: "# gitx\nhello\n",
-      rightText: "# gitx\nhello world\n",
+      leftText: mockDiffBody("staged", 160),
+      rightText: mockDiffBody("local", 160),
       binary: false,
       tooLarge: false,
       hunks: mockHunks(),
@@ -457,8 +498,23 @@ export const mockBackend: Backend = {
   },
   async logChangedFiles() {
     return [
-      { path: "README.md", status: "M", origPath: null },
-      { path: "src/app.ts", status: "A", origPath: null },
+      { path: "src/main/java/com/aurora/entity/PhotoAlbum.java", status: "M", origPath: null },
+      { path: "src/main/java/com/aurora/mapper/TalkMapper.java", status: "M", origPath: null },
+      {
+        path: "src/main/java/com/aurora/service/impl/PhotoAlbumServiceImpl.java",
+        status: "M",
+        origPath: null,
+      },
+      {
+        path: "src/main/java/com/aurora/service/impl/PhotoServiceImpl.java",
+        status: "M",
+        origPath: null,
+      },
+      {
+        path: "src/main/java/com/aurora/service/impl/TalkServiceImpl.java",
+        status: "M",
+        origPath: null,
+      },
     ];
   },
   async fileHistory(req) {

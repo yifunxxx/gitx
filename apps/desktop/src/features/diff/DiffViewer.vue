@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { Button } from "@/components/ui/button";
+import Skeleton from "@/components/common/Skeleton.vue";
 import { useDiffStore } from "@/stores/diffStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { toast } from "@/composables/useToast";
@@ -14,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
+import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 
 const props = defineProps<{ tabId: string }>();
 const diffs = useDiffStore();
@@ -33,18 +35,30 @@ function onRightScroll(pos: { left: number; top: number }) {
 const tab = computed(() => diffs.tabs.find((t) => t.id === props.tabId));
 const result = computed(() => tab.value?.result);
 
-const visibleHunks = computed(() => {
-  if (!result.value) return [];
-  if (tab.value?.collapseUnchanged) return result.value.hunks;
-  return result.value.hunks;
+const visibleHunks = computed(() => result.value?.hunks ?? []);
+
+const collapsed = computed(() => {
+  if (!tab.value?.collapseUnchanged || !visibleHunks.value.length) return null;
+  return buildCollapsedSides(visibleHunks.value);
 });
+
+const leftText = computed(() => {
+  if (collapsed.value) return collapsed.value.left.text;
+  return result.value?.leftText ?? "";
+});
+const rightText = computed(() => {
+  if (collapsed.value) return collapsed.value.right.text;
+  return result.value?.rightText ?? "";
+});
+
+const enableInline = computed(() => countHunkLines(visibleHunks.value) <= 900);
 
 async function stageHunk(index: number) {
   if (!tab.value) return;
   await diffs.stageHunks(tab.value.path, [index]);
   toast({ title: "Hunk staged" });
   await changes.refresh();
-  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right);
+  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
 }
 
 async function unstageHunk(index: number) {
@@ -52,7 +66,7 @@ async function unstageHunk(index: number) {
   await diffs.unstageHunks(tab.value.path, [index]);
   toast({ title: "Hunk unstaged" });
   await changes.refresh();
-  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right);
+  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
 }
 
 async function stageSelectedLines() {
@@ -83,7 +97,7 @@ async function stageSelectedLines() {
   });
   toast({ title: "Lines staged", description: `${lines.length} line(s)` });
   await changes.refresh();
-  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right);
+  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
 }
 
 const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.leftRev);
@@ -97,9 +111,6 @@ const wsModes: { id: IgnoreWhitespace; label: string }[] = [
   { id: "all", label: "Ignore whitespaces" },
   { id: "allAndEmptyLines", label: "Ignore whitespaces and empty lines" },
 ];
-
-const leftText = computed(() => result.value?.leftText ?? "");
-const rightText = computed(() => result.value?.rightText ?? "");
 </script>
 
 <template>
@@ -110,7 +121,7 @@ const rightText = computed(() => result.value?.rightText ?? "");
         {{ result?.leftLabel }} → {{ result?.rightLabel }}
       </span>
       <div class="flex-1" />
-      <label class="flex items-center gap-1 text-[11px] text-muted-foreground">
+      <label class="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
         Whitespace
         <Select
           :model-value="tab.ignoreWhitespace"
@@ -144,18 +155,42 @@ const rightText = computed(() => result.value?.rightText ?? "");
       </Button>
     </div>
 
-    <div v-if="tab.loading" class="p-4 text-xs text-muted-foreground">Loading diff…</div>
+    <div v-if="tab.loading && !result" class="space-y-2 p-4">
+      <div class="text-xs text-muted-foreground">Loading diff…</div>
+      <Skeleton class="h-4 w-2/3" />
+      <Skeleton class="h-4 w-1/2" />
+      <Skeleton class="h-4 w-3/4" />
+      <Skeleton class="mt-4 h-40 w-full" />
+    </div>
     <div v-else-if="result?.binary" class="p-4 text-xs">Binary file — stage as a whole file.</div>
     <div v-else-if="result?.tooLarge" class="p-4 text-xs">
       File is too large to show —
-      <button type="button" class="underline" @click="diffs.reloadTab(tab)">Show anyway</button>
+      <button
+        type="button"
+        class="cursor-pointer underline"
+        @click="diffs.reloadTab(tab)"
+      >
+        Show anyway
+      </button>
     </div>
-    <div v-else-if="!result?.hunks.length" class="p-4 text-xs text-muted-foreground">
+    <div v-else-if="result && !result.hunks.length" class="p-4 text-xs text-muted-foreground">
       No differences
     </div>
-    <div v-else class="flex min-h-0 flex-1 flex-col">
+    <div v-else-if="result" class="relative flex min-h-0 flex-1 flex-col">
+      <div
+        v-if="tab.loading"
+        class="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-foreground/80 px-2 py-0.5 text-[10px] text-background-solid"
+      >
+        Refreshing…
+      </div>
       <div v-if="tab.unified" class="min-h-0 flex-1">
-        <CodeMirrorDiff side="unified" unified :text="''" :hunks="visibleHunks" />
+        <CodeMirrorDiff
+          side="unified"
+          unified
+          :text="''"
+          :hunks="visibleHunks"
+          :enable-inline="enableInline"
+        />
       </div>
       <div v-else class="grid min-h-0 flex-1 grid-cols-2">
         <div class="min-h-0 border-r">
@@ -164,6 +199,9 @@ const rightText = computed(() => result.value?.rightText ?? "");
             side="left"
             :text="leftText"
             :hunks="visibleHunks"
+            :changed-lines="collapsed?.left.changed ?? null"
+            :line-map="collapsed?.left.lineMap ?? null"
+            :enable-inline="enableInline"
             @scroll="onLeftScroll"
           />
         </div>
@@ -173,6 +211,9 @@ const rightText = computed(() => result.value?.rightText ?? "");
             side="right"
             :text="rightText"
             :hunks="visibleHunks"
+            :changed-lines="collapsed?.right.changed ?? null"
+            :line-map="collapsed?.right.lineMap ?? null"
+            :enable-inline="enableInline"
             @scroll="onRightScroll"
           />
         </div>

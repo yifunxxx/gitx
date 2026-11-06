@@ -85,7 +85,7 @@ async function renameSelectedShelf() {
         <div
           v-for="s in store.stashes"
           :key="s.sha"
-          class="flex cursor-default items-center gap-2 px-2 py-1 hover:bg-accent/50"
+          class="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-accent/50"
           :class="store.selectedStashRef === store.stashRefOf(s) ? 'bg-accent' : ''"
           @click="store.selectedStashRef = store.stashRefOf(s)"
         >
@@ -116,7 +116,7 @@ async function renameSelectedShelf() {
         <div
           v-for="s in store.shelves"
           :key="s.id"
-          class="flex cursor-default items-center gap-2 px-2 py-1 hover:bg-accent/50"
+          class="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-accent/50"
           :class="store.selectedShelfId === s.id ? 'bg-accent' : ''"
           @click="store.selectedShelfId = s.id"
         >

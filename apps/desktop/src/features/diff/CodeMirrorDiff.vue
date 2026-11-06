@@ -15,12 +15,19 @@ import {
   computeUnifiedInlineRanges,
   type CharRange,
 } from "./inlineDiff";
+import { countHunkLines } from "./collapsedDiff";
 
 const props = defineProps<{
   text: string;
   hunks: DiffHunk[];
   side: "left" | "right" | "unified";
   unified?: boolean;
+  /** Precomputed changed line set (1-based) for collapsed side-by-side. */
+  changedLines?: Set<number> | null;
+  /** Original line numbers for collapsed docs (index 0 = doc line 1). */
+  lineMap?: number[] | null;
+  /** Skip expensive char-level highlights for huge diffs. */
+  enableInline?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,6 +38,8 @@ let view: EditorView | null = null;
 let hostEl: HTMLDivElement | null = null;
 let syncing = false;
 let onScroll: (() => void) | null = null;
+let mountToken = 0;
+let lastFingerprint = "";
 
 const insertLine = Decoration.line({ class: "cm-diff-insert" });
 const deleteLine = Decoration.line({ class: "cm-diff-delete" });
@@ -59,6 +68,12 @@ function changedLineSet(
   hunks: DiffHunk[],
   side: string,
 ): { changed: Set<number>; kind: "insert" | "delete" } {
+  if (props.changedLines) {
+    return {
+      changed: props.changedLines,
+      kind: side === "left" ? "delete" : "insert",
+    };
+  }
   const changed = new Set<number>();
   if (side === "left") {
     for (const h of hunks) {
@@ -82,6 +97,13 @@ function changedLineSet(
   return { changed, kind: "insert" };
 }
 
+function shouldInline(hunks: DiffHunk[], doc: string): boolean {
+  if (props.enableInline === false) return false;
+  if (doc.length > 120_000) return false;
+  if (countHunkLines(hunks) > 900) return false;
+  return true;
+}
+
 function buildDecorations(
   doc: string,
   hunks: DiffHunk[],
@@ -93,6 +115,7 @@ function buildDecorations(
   const lines = doc.split("\n");
   type Item = { from: number; to: number; deco: Decoration };
   const items: Item[] = [];
+  const doInline = shouldInline(hunks, doc);
 
   if (unified) {
     let pos = 0;
@@ -102,12 +125,20 @@ function buildDecorations(
       else if (line.startsWith("-")) items.push({ from: pos, to: pos, deco: deleteLine });
       pos += line.length + 1;
     }
-    const inline = computeUnifiedInlineRanges(hunks);
-    pos = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      pushInline(items, pos, line, inline.get(i + 1), line.startsWith("-") ? deleteMark : insertMark);
-      pos += line.length + 1;
+    if (doInline) {
+      const inline = computeUnifiedInlineRanges(hunks);
+      pos = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        pushInline(
+          items,
+          pos,
+          line,
+          inline.get(i + 1),
+          line.startsWith("-") ? deleteMark : insertMark,
+        );
+        pos += line.length + 1;
+      }
     }
   } else {
     const { changed, kind } = changedLineSet(hunks, side);
@@ -118,13 +149,15 @@ function buildDecorations(
       if (changed.has(i + 1)) items.push({ from: pos, to: pos, deco: lineMark });
       pos += (lines[i]?.length ?? 0) + 1;
     }
-    const sides = computeSideInlineRanges(hunks);
-    const inline = side === "left" ? sides.left : sides.right;
-    pos = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      pushInline(items, pos, line, inline.get(i + 1), wordMark);
-      pos += line.length + 1;
+    if (doInline && !props.changedLines) {
+      const sides = computeSideInlineRanges(hunks);
+      const inline = side === "left" ? sides.left : sides.right;
+      pos = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        pushInline(items, pos, line, inline.get(i + 1), wordMark);
+        pos += line.length + 1;
+      }
     }
   }
 
@@ -214,12 +247,48 @@ function theme() {
   });
 }
 
-function mount() {
+function fingerprint(): string {
+  const mapKey = props.lineMap ? props.lineMap.length : 0;
+  const chKey = props.changedLines ? props.changedLines.size : 0;
+  return [
+    props.side,
+    props.unified ? "u" : "s",
+    props.text.length,
+    props.hunks.length,
+    props.hunks[0]?.header ?? "",
+    props.hunks[props.hunks.length - 1]?.header ?? "",
+    mapKey,
+    chKey,
+    props.enableInline === false ? "0" : "1",
+  ].join("|");
+}
+
+function contentForProps(): string {
+  return props.unified || props.side === "unified" ? unifiedText(props.hunks) : props.text;
+}
+
+function lineNumberExt() {
+  if (!props.lineMap?.length) return lineNumbers();
+  const map = props.lineMap;
+  return lineNumbers({
+    formatNumber: (n) => {
+      const orig = map[n - 1];
+      if (!orig) return "·";
+      return String(orig);
+    },
+  });
+}
+
+function mountNow() {
   if (!hostEl) return;
+  const fp = fingerprint();
+  const content = contentForProps();
+  // Avoid full remount when nothing meaningful changed.
+  if (view && fp === lastFingerprint && view.state.doc.toString() === content) return;
+  lastFingerprint = fp;
+
   detachScroll();
   view?.destroy();
-  const content =
-    props.unified || props.side === "unified" ? unifiedText(props.hunks) : props.text;
   const unified = !!(props.unified || props.side === "unified");
   const deco = buildDecorations(content, props.hunks, props.side, unified);
   const gutters = buildGutterMarkers(content, props.hunks, props.side, unified);
@@ -229,7 +298,7 @@ function mount() {
     state: EditorState.create({
       doc: content,
       extensions: [
-        lineNumbers(),
+        lineNumberExt(),
         gutter({
           class: "cm-diff-change-gutter",
           markers: () => gutters,
@@ -241,6 +310,15 @@ function mount() {
     }),
   });
   attachScroll();
+}
+
+function mount() {
+  const token = ++mountToken;
+  // Defer heavy CodeMirror init so tab switch / click paint first.
+  requestAnimationFrame(() => {
+    if (token !== mountToken) return;
+    mountNow();
+  });
 }
 
 function attachScroll() {
@@ -283,12 +361,22 @@ defineExpose({ getScroller, applyScroll });
 
 onMounted(mount);
 onBeforeUnmount(() => {
+  mountToken += 1;
   detachScroll();
   view?.destroy();
   view = null;
 });
 watch(
-  () => [props.text, props.hunks, props.side, props.unified] as const,
+  () =>
+    [
+      props.text,
+      props.hunks,
+      props.side,
+      props.unified,
+      props.changedLines,
+      props.lineMap,
+      props.enableInline,
+    ] as const,
   () => mount(),
 );
 </script>
