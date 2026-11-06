@@ -32,12 +32,9 @@ impl GitRunner {
             let _ = record;
         }
         // Prefer non -z parse for portability: stash list --format
-        let inv = GitInvocation::new(
-            cwd,
-            ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%ct"],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone());
+        let inv = GitInvocation::new(cwd, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%ct"])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
         let text = String::from_utf8_lossy(&out.stdout);
         for line in text.lines() {
@@ -79,7 +76,12 @@ impl GitRunner {
         paths: Option<&[String]>,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        let mut args = vec!["stash".into(), "push".into(), "-m".into(), message.to_string()];
+        let mut args = vec![
+            "stash".into(),
+            "push".into(),
+            "-m".into(),
+            message.to_string(),
+        ];
         if keep_index {
             args.push("--keep-index".into());
         }
@@ -202,7 +204,11 @@ impl GitRunner {
         Ok(())
     }
 
-    pub async fn stash_clear(&self, cwd: &Path, cancel: &CancellationToken) -> Result<(), AppError> {
+    pub async fn stash_clear(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
         let list = self.stash_list(cwd, cancel).await?;
         for e in &list {
             let backup = format!("refs/gitx/backup/stash-{}", &e.sha[..7.min(e.sha.len())]);

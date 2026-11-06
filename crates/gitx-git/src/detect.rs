@@ -1,5 +1,6 @@
-use gitx_core::{AppError, ErrorCode};
+use gitx_core::{AppError, ErrorCode, WslPathInfo};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::Command;
 
 /// Minimum supported git version (major.minor.patch).
@@ -14,6 +15,57 @@ pub struct GitDetectResult {
     pub minor: u32,
     pub patch: u32,
     pub supported: bool,
+}
+
+/// Detect `\\wsl$\Distro\…` / `\\wsl.localhost\Distro\…` paths (#9 WSL).
+pub fn parse_wsl_unc_path(path: &str) -> Option<WslPathInfo> {
+    let normalized = path.replace('/', "\\");
+    let rest = normalized
+        .strip_prefix("\\\\wsl$\\")
+        .or_else(|| normalized.strip_prefix("\\\\wsl.localhost\\"))?;
+    let mut parts = rest.splitn(2, '\\');
+    let distro = parts.next()?.to_string();
+    if distro.is_empty() {
+        return None;
+    }
+    let win_tail = parts.next().unwrap_or("");
+    let linux_path = if win_tail.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", win_tail.replace('\\', "/"))
+    };
+    Some(WslPathInfo {
+        suggested_git: format!("wsl.exe -d {distro} git"),
+        distro,
+        linux_path,
+    })
+}
+
+/// Convert a Windows WSL UNC path using `wslpath` when available.
+pub fn wsl_translate_path(distro: &str, windows_path: &str) -> Option<String> {
+    let output = Command::new("wsl.exe")
+        .args(["-d", distro, "wslpath", "-a", windows_path])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// Prefer WSL git when the workspace lives under a WSL UNC path.
+pub fn resolve_git_bin_for_path(preferred: Option<&str>, workspace: Option<&Path>) -> String {
+    if let Some(ws) = workspace {
+        if let Some(info) = parse_wsl_unc_path(&ws.to_string_lossy()) {
+            return format!("wsl.exe -d {} git", info.distro);
+        }
+    }
+    preferred.unwrap_or("git").to_string()
 }
 
 pub fn detect_git(preferred: Option<&str>) -> Result<GitDetectResult, AppError> {

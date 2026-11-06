@@ -196,6 +196,11 @@ pub async fn shelf_import(
     emit_cmd(&app, format!("# import patch {}", req.patch_file)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.shelf_import_patch(&cwd, PathBuf::from(&req.patch_file).as_path(), &req.message, &cancel)
-        .await
+    git.shelf_import_patch(
+        &cwd,
+        PathBuf::from(&req.patch_file).as_path(),
+        &req.message,
+        &cancel,
+    )
+    .await
 }

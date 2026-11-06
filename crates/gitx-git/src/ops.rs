@@ -336,8 +336,11 @@ impl GitRunner {
                 .await?;
             let head_text = gitx_diff::decode_lossy(head_bytes.as_deref()).unwrap_or_default();
             let work_text = gitx_diff::decode_lossy(work_bytes.as_deref()).unwrap_or_default();
-            let new_text =
-                gitx_diff::apply_selected_lines_to_base(&head_text, &work_text, &sel.selected_lines);
+            let new_text = gitx_diff::apply_selected_lines_to_base(
+                &head_text,
+                &work_text,
+                &sel.selected_lines,
+            );
             let mode = self
                 .file_mode_in_index(cwd, &sel.path, cancel)
                 .await
@@ -361,22 +364,17 @@ impl GitRunner {
 
         // Run commit with GIT_INDEX_FILE via a wrapper script approach:
         // `git -c ...` cannot set env; use std::process with env for this one call.
-        let result = self
-            .run_with_index_env(cwd, &tmp_index, args, cancel)
-            .await;
+        let result = self.run_with_index_env(cwd, &tmp_index, args, cancel).await;
 
         // Sync real index: reset selected paths so remaining worktree changes stay unstaged.
         let paths: Vec<String> = partial.iter().map(|p| p.path.clone()).collect();
         let _ = self
             .run(
-                GitInvocation::new(
-                    cwd,
-                    {
-                        let mut a = vec!["reset".into(), "-q".into(), "--".into()];
-                        a.extend(paths);
-                        a
-                    },
-                )
+                GitInvocation::new(cwd, {
+                    let mut a = vec!["reset".into(), "-q".into(), "--".into()];
+                    a.extend(paths);
+                    a
+                })
                 .kind(OpKind::Write)
                 .git_bin(self.git_bin.clone()),
                 cancel,
@@ -439,9 +437,10 @@ impl GitRunner {
         if cancel.is_cancelled() {
             return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
         }
-        let output = cmd.output().await.map_err(|e| {
-            AppError::new(ErrorCode::GitCommandFailed, format!("spawn git: {e}"))
-        })?;
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| AppError::new(ErrorCode::GitCommandFailed, format!("spawn git: {e}")))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if stderr.contains("nothing to commit") {

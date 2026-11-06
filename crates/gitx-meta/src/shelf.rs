@@ -216,8 +216,7 @@ pub fn remove_paths_from_shelf(
     applied_paths: &[String],
 ) -> Result<Option<ShelfEntry>, AppError> {
     let mut meta = load_shelf_meta(git_common_dir, id)?;
-    meta.paths
-        .retain(|p| !applied_paths.iter().any(|a| a == p));
+    meta.paths.retain(|p| !applied_paths.iter().any(|a| a == p));
     if meta.paths.is_empty() {
         soft_delete_shelf(git_common_dir, id)?;
         return Ok(None);

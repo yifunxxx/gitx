@@ -36,7 +36,9 @@ impl GitRunner {
             .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
         Ok(crate::status::parse_status_porcelain_v2(
-            &out.stdout, repo_id, version,
+            &out.stdout,
+            repo_id,
+            version,
         ))
     }
 
@@ -114,14 +116,12 @@ impl GitRunner {
     ) -> Result<PathBuf, AppError> {
         let path = self.exclude_path(cwd, cancel).await?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("create info dir: {e}"))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| AppError::new(ErrorCode::FsError, format!("create info dir: {e}")))?;
         }
         if !path.exists() {
-            std::fs::write(&path, "# git exclude — managed by gitx\n").map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("create exclude: {e}"))
-            })?;
+            std::fs::write(&path, "# git exclude — managed by gitx\n")
+                .map_err(|e| AppError::new(ErrorCode::FsError, format!("create exclude: {e}")))?;
         }
         Ok(path)
     }

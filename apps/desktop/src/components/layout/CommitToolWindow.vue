@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, watch } from "vue";
-import { Plus, Minus, RefreshCw, FileDiff, ListPlus, Eye } from "@lucide/vue";
+import { computed, onMounted, watch } from "vue";
+import { Plus, Minus, RefreshCw, FileDiff, ListPlus, Eye, MoreVertical } from "@lucide/vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import Skeleton from "@/components/common/Skeleton.vue";
@@ -25,6 +25,39 @@ const layout = useLayoutStore();
 const rewrite = useRewriteStore();
 const stashShelf = useStashShelfStore();
 const files = useFileViewerStore();
+
+const commitTwModeLabel = computed(() => {
+  switch (layout.commitTwMode) {
+    case "window":
+      return "Window";
+    case "float":
+      return "Float";
+    default:
+      return "Docked";
+  }
+});
+
+const showMessageEditor = computed(() => !layout.commitControlsHidden);
+
+function cycleCommitTwMode() {
+  const order = ["docked", "window", "float"] as const;
+  const idx = order.indexOf(layout.commitTwMode);
+  void layout.setCommitTwMode(order[(idx + 1) % order.length]!);
+}
+
+function onCommitMenu() {
+  const choice = window.prompt(
+    "Commit TW: docked | window | float | toggle-controls",
+    layout.commitTwMode,
+  );
+  if (!choice) return;
+  const v = choice.trim().toLowerCase();
+  if (v === "docked" || v === "window" || v === "float") {
+    void layout.setCommitTwMode(v);
+  } else if (v === "toggle-controls" || v === "toggle") {
+    layout.toggleCommitControls();
+  }
+}
 
 onMounted(() => {
   if (workspace.isRepo) {
@@ -196,9 +229,27 @@ function onContext(payload: { path: string; section: ChangesSection; x: number; 
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-sidebar">
-    <div class="flex h-8 items-center justify-between border-b px-2 text-xs font-medium">
-      <span>Commit</span>
+    <div
+      class="flex h-8 items-center justify-between border-b px-2 text-xs font-medium"
+      :class="{
+        'ring-1 ring-primary/40': layout.commitTwMode === 'float',
+        'border-l-2 border-l-primary': layout.commitTwMode === 'window',
+      }"
+    >
+      <span>
+        Commit
+        <span class="ml-1 text-[10px] font-normal text-muted-foreground">{{ commitTwModeLabel }}</span>
+      </span>
       <div class="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          title="View Mode (Docked / Window / Float)"
+          @click="cycleCommitTwMode"
+        >
+          <MoreVertical class="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="xs" title="Commit TW menu" @click="onCommitMenu">⋮</Button>
         <Button variant="ghost" size="icon" title="Refresh" @click="changes.refresh()">
           <RefreshCw class="h-3.5 w-3.5" />
         </Button>
@@ -254,7 +305,13 @@ function onContext(payload: { path: string; section: ChangesSection; x: number; 
         <Skeleton class="h-4 w-3/4" />
       </div>
       <ChangesTree v-else @open-diff="openDiff" @open-file="openFile" @context="onContext" />
-      <CommitMessageEditor />
+      <CommitMessageEditor v-if="showMessageEditor" />
+      <div
+        v-else
+        class="border-t px-2 py-1 text-[11px] text-muted-foreground"
+      >
+        Commit controls hidden — Ctrl+K / Toggle Commit Controls to show
+      </div>
     </template>
   </div>
 </template>

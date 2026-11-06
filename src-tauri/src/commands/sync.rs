@@ -1,7 +1,7 @@
 use crate::state::AppState;
 use gitx_core::{
-    AppError, FetchSummary, IncomingCheck, PullResult, PushPreview, PushResult, UpdateInfo,
-    UpdateMethod,
+    AppError, FetchSummary, IncomingCheck, PullResult, PushPreview, PushResult,
+    SubmoduleUpdatePolicy, SubmoduleUpdateResult, SyncForkResult, UpdateInfo, UpdateMethod,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -107,6 +107,28 @@ pub async fn pull_run(state: State<'_, AppState>, req: PullRunReq) -> Result<Pul
     .await
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncForkReq {
+    pub path: String,
+    pub parent_remote: Option<String>,
+    pub strategy: Option<UpdateMethod>,
+    #[serde(default = "default_true")]
+    pub push_origin: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmoduleUpdateReq {
+    pub path: String,
+    pub policy: Option<SubmoduleUpdatePolicy>,
+    pub changed_paths: Option<Vec<String>>,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn update_project_run(
@@ -114,9 +136,56 @@ pub async fn update_project_run(
     req: UpdateProjectReq,
 ) -> Result<UpdateInfo, AppError> {
     let path = PathBuf::from(&req.path);
+    let policy = {
+        let settings = state.settings.read().await;
+        settings.git.update_submodules
+    };
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.update_project_run(&path, req.strategy, &cancel).await
+    let info = git.update_project_run(&path, req.strategy, &cancel).await?;
+    if !matches!(policy, SubmoduleUpdatePolicy::Never) {
+        let changed: Vec<String> = info.updated_files.iter().map(|f| f.path.clone()).collect();
+        let _ = git
+            .submodule_update(&path, policy, Some(&changed), &cancel)
+            .await;
+    }
+    Ok(info)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn sync_fork(
+    state: State<'_, AppState>,
+    req: SyncForkReq,
+) -> Result<SyncForkResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let settings = state.settings.read().await;
+    let parent = req
+        .parent_remote
+        .unwrap_or_else(|| settings.git.fork_parent_remote.clone());
+    let strategy = req.strategy.unwrap_or(settings.git.update_method);
+    drop(settings);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.sync_fork(&path, &parent, strategy, req.push_origin, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn submodule_update(
+    state: State<'_, AppState>,
+    req: SubmoduleUpdateReq,
+) -> Result<SubmoduleUpdateResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let policy = req.policy.unwrap_or_else(|| {
+        // callers that omit policy get Always for explicit action
+        SubmoduleUpdatePolicy::Always
+    });
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.submodule_update(&path, policy, req.changed_paths.as_deref(), &cancel)
+        .await
 }
 
 #[tauri::command]

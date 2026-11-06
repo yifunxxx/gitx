@@ -50,6 +50,11 @@ pub enum ErrorCode {
     StashFailed,
     ShelfFailed,
     PatchFailed,
+    // M7
+    WorktreeBranchInUse,
+    WorktreeLocked,
+    WorktreeNested,
+    MultiRootFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]

@@ -760,3 +760,119 @@ pub enum CleanTreeMethod {
     Stash,
     Shelve,
 }
+
+/// Commit tool window presentation (#69). Modal is deferred (#139).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum CommitTwMode {
+    #[default]
+    Docked,
+    Window,
+    Float,
+}
+
+/// Submodule update policy after Update Project (#81).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SubmoduleUpdatePolicy {
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeInfo {
+    pub path: String,
+    pub head: String,
+    pub branch: Option<String>,
+    pub bare: bool,
+    pub detached: bool,
+    pub locked: bool,
+    pub lock_reason: Option<String>,
+    pub prunable: bool,
+    pub prune_reason: Option<String>,
+    /// First entry from `git worktree list` (main worktree).
+    pub is_main: bool,
+    /// Matches the currently open repo path.
+    pub is_current: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreePrunePreview {
+    pub paths: Vec<String>,
+    pub dry_run_output: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoRoot {
+    pub id: String,
+    pub worktree_root: String,
+    pub git_dir: String,
+    pub common_dir: String,
+    pub is_worktree: bool,
+    pub display_name: String,
+    pub color: String,
+    /// True when discovered from `.gitmodules` (read-only root; register deferred #11).
+    pub is_submodule: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MultiRootOpStep {
+    pub repo_id: String,
+    pub path: String,
+    pub ok: bool,
+    pub previous_ref: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MultiRootOpResult {
+    pub ok: bool,
+    pub steps: Vec<MultiRootOpStep>,
+    pub rolled_back: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncForkResult {
+    pub default_branch: String,
+    pub upstream_ref: String,
+    pub old_head: String,
+    pub new_head: String,
+    pub strategy: String,
+    pub pushed: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmoduleUpdateItem {
+    pub path: String,
+    pub old_sha: Option<String>,
+    pub new_sha: Option<String>,
+    pub on_branch: Option<String>,
+    pub updated: bool,
+    pub skipped: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmoduleUpdateResult {
+    pub items: Vec<SubmoduleUpdateItem>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WslPathInfo {
+    pub distro: String,
+    pub linux_path: String,
+    pub suggested_git: String,
+}

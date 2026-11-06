@@ -46,18 +46,16 @@ impl GitRunner {
         let _ = self.run(inv, cancel).await;
 
         // Binary-aware diff.
-        let mut args = vec![
-            "diff".into(),
-            "--binary".into(),
-            "HEAD".into(),
-            "--".into(),
-        ];
+        let mut args = vec!["diff".into(), "--binary".into(), "HEAD".into(), "--".into()];
         args.extend(paths.iter().cloned());
         let inv = GitInvocation::new(cwd, args)
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone());
         let diff_out = self.run(inv, cancel).await?;
-        let binary = diff_out.stdout.windows(14).any(|w| w == b"GIT binary patch")
+        let binary = diff_out
+            .stdout
+            .windows(14)
+            .any(|w| w == b"GIT binary patch")
             || String::from_utf8_lossy(&diff_out.stdout).contains("Binary files");
 
         // Also capture unstaged? For shelve we want worktree vs HEAD for tracked;
@@ -111,7 +109,11 @@ impl GitRunner {
         let meta = gitx_meta::load_shelf_meta(&common, shelf_id)?;
         let patch = gitx_meta::read_shelf_patch(&common, shelf_id)?;
 
-        let patch_path = common.join("gitx").join("shelf").join(shelf_id).join("changes.patch");
+        let patch_path = common
+            .join("gitx")
+            .join("shelf")
+            .join(shelf_id)
+            .join("changes.patch");
         // Write patch to temp if needed — already on disk.
         let inv = GitInvocation::new(
             cwd,
@@ -227,7 +229,10 @@ impl GitRunner {
         .stderr(std::process::Stdio::piped());
         let _ = inv;
         let output = cmd.output().await.map_err(|e| {
-            AppError::new(ErrorCode::GitCommandFailed, format!("unshelve temp apply: {e}"))
+            AppError::new(
+                ErrorCode::GitCommandFailed,
+                format!("unshelve temp apply: {e}"),
+            )
         })?;
         if !output.status.success() {
             // Last resort: copy shelved intent by applying patch with --reverse on base

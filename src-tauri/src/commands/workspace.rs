@@ -20,7 +20,11 @@ pub struct WorkspaceOpenRes {
     pub path: String,
     pub is_repo: bool,
     pub git_dir: Option<String>,
+    pub common_dir: Option<String>,
     pub toplevel: Option<String>,
+    pub is_worktree: Option<bool>,
+    pub wsl: Option<gitx_core::WslPathInfo>,
+    pub roots: Vec<gitx_core::RepoRoot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -51,6 +55,12 @@ pub async fn workspace_open(
         ));
     }
 
+    let wsl = gitx_git::parse_wsl_unc_path(&req.path);
+    if let Some(info) = &wsl {
+        let mut git = state.git.write().await;
+        *git = gitx_git::GitRunner::new("git").with_wsl(info.distro.clone());
+    }
+
     let git = state.git.read().await;
     let cancel = tokio_util::sync::CancellationToken::new();
     let inv = gitx_git::GitInvocation::new(
@@ -60,6 +70,7 @@ pub async fn workspace_open(
             "--is-inside-work-tree",
             "--show-toplevel",
             "--git-dir",
+            "--git-common-dir",
         ],
     )
     .kind(OpKind::Read)
@@ -71,18 +82,50 @@ pub async fn workspace_open(
             let mut lines = text.lines();
             let inside = lines.next().unwrap_or("false").trim() == "true";
             let toplevel = lines.next().map(|s| s.trim().to_string());
-            let git_dir = lines.next().map(|s| s.trim().to_string());
-            if let (Some(tl), Some(gd)) = (&toplevel, &git_dir) {
+            let git_dir_raw = lines.next().map(|s| s.trim().to_string());
+            let common_raw = lines.next().map(|s| s.trim().to_string());
+            let (git_dir, common_dir, is_worktree) = match (&toplevel, &git_dir_raw, &common_raw) {
+                (Some(tl), Some(gd), Some(cd)) => {
+                    let tl_path = PathBuf::from(tl);
+                    let abs = |raw: &str| {
+                        let p = PathBuf::from(raw);
+                        if p.is_absolute() {
+                            p
+                        } else {
+                            tl_path.join(p)
+                        }
+                    };
+                    let g = abs(gd).to_string_lossy().into_owned();
+                    let c = abs(cd).to_string_lossy().into_owned();
+                    let is_wt = g != c;
+                    (Some(g), Some(c), Some(is_wt))
+                }
+                _ => (git_dir_raw, common_raw, None),
+            };
+            if let Some(tl) = &toplevel {
                 state
                     .watcher
                     .watch(&RepoId::new(tl.clone()), PathBuf::from(tl).as_path());
-                let _ = gd;
             }
+            let roots = if inside {
+                git.discover_repo_roots(
+                    PathBuf::from(toplevel.as_deref().unwrap_or(&req.path)).as_path(),
+                    &cancel,
+                )
+                .await
+                .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             WorkspaceOpenRes {
                 path: req.path.clone(),
                 is_repo: inside,
                 git_dir,
+                common_dir,
                 toplevel,
+                is_worktree,
+                wsl: wsl.clone(),
+                roots,
             }
         }
         Err(err) => {
@@ -94,7 +137,11 @@ pub async fn workspace_open(
                     path: req.path.clone(),
                     is_repo: false,
                     git_dir: None,
+                    common_dir: None,
                     toplevel: None,
+                    is_worktree: None,
+                    wsl: wsl.clone(),
+                    roots: Vec::new(),
                 }
             } else {
                 return Err(err);

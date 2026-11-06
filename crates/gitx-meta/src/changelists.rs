@@ -133,7 +133,10 @@ pub fn delete_changelist(
         ));
     }
     if !state.lists.iter().any(|l| l.id == target) {
-        return Err(AppError::new(ErrorCode::NotFound, "target changelist not found"));
+        return Err(AppError::new(
+            ErrorCode::NotFound,
+            "target changelist not found",
+        ));
     }
     let was_active = state
         .lists
@@ -195,7 +198,10 @@ pub fn move_paths(
 }
 
 /// Drop assignments for paths that no longer have local changes.
-pub fn prune_missing(git_dir: &Path, present_paths: &[String]) -> Result<ChangelistsState, AppError> {
+pub fn prune_missing(
+    git_dir: &Path,
+    present_paths: &[String],
+) -> Result<ChangelistsState, AppError> {
     let mut state = load_changelists(git_dir)?;
     let before = state.assignments.len();
     state

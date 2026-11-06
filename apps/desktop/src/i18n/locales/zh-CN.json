@@ -52,7 +52,45 @@
     "updateInfo": "Update Info",
     "stash": "Stash",
     "shelf": "Shelf",
-    "stashesShelves": "Stashes & Shelves"
+    "stashesShelves": "Stashes & Shelves",
+    "worktrees": "Worktrees"
+  },
+  "common": {
+    "cancel": "取消"
+  },
+  "worktrees": {
+    "new": "新建 Worktree…",
+    "newTitle": "创建新 Worktree",
+    "openRef": "打开 Ref…",
+    "openRefTitle": "在 Worktree 中打开 Ref",
+    "openRefHint": "托管无关：输入 PR 号、merge-request ref 或任意 remote ref。不调用 GitHub/GitLab API。",
+    "refOrPr": "Ref / PR 号",
+    "prune": "Prune",
+    "empty": "没有额外 worktree — 新建 Worktree",
+    "open": "打开",
+    "openHere": "在此打开",
+    "lock": "锁定…",
+    "unlock": "解锁",
+    "remove": "移除…",
+    "from": "起始",
+    "newBranch": "创建新分支（可选）",
+    "newBranchHint": "当分支已被检出时需要新建分支名",
+    "location": "路径",
+    "openAfter": "创建后打开",
+    "create": "创建",
+    "lockReason": "锁定原因",
+    "removeConfirm": "移除 worktree {path}？",
+    "removeForceHint": "若有未提交更改请使用 force",
+    "removeForceConfirm": "仍要移除（--force）？未提交更改会先快照再从该 worktree 丢弃。",
+    "cannotRemoveCurrent": "不能移除主 worktree 或当前窗口所在 worktree",
+    "cannotRemoveLocked": "请先解锁再移除"
+  },
+  "commitTw": {
+    "viewMode": "视图模式",
+    "docked": "停靠",
+    "window": "窗口",
+    "float": "浮动",
+    "toggleControls": "切换提交控件"
   },
   "changelist": {
     "new": "新建变更列表",

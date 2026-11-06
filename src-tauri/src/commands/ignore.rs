@@ -69,9 +69,7 @@ pub async fn ignore_add(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn ignore_suggest_patterns(
-    req: IgnoreSuggestReq,
-) -> Result<Vec<String>, AppError> {
+pub async fn ignore_suggest_patterns(req: IgnoreSuggestReq) -> Result<Vec<String>, AppError> {
     let mut patterns = Vec::new();
     for f in &req.files {
         let rel = if req.ignore_dir.is_empty() {
@@ -108,10 +106,7 @@ pub async fn rm_cached(
     req: RmCachedReq,
 ) -> Result<(), AppError> {
     if req.paths.is_empty() {
-        return Err(AppError::new(
-            ErrorCode::InvalidArgument,
-            "no paths",
-        ));
+        return Err(AppError::new(ErrorCode::InvalidArgument, "no paths"));
     }
     let cwd = PathBuf::from(&req.path);
     emit_cmd(

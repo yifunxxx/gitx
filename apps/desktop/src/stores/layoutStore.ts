@@ -1,5 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
+import type { CommitTwMode } from "@/lib/backend";
+import { getBackend } from "@/lib/backend";
 
 const KEY = "gitx.layout.v1";
 
@@ -9,13 +11,16 @@ export const useLayoutStore = defineStore("layout", () => {
   const leftSize = ref(28);
   const bottomSize = ref(32);
   const activeBottomTab = ref<
-    "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves"
+    "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves" | "worktrees"
   >("log");
   const activeEditorKind = ref<
     "welcome" | "diff" | "history" | "compare" | "repoAtRev" | "blame" | "merge" | "file"
   >("welcome");
   const findActionOpen = ref(false);
   const vcsPopupOpen = ref(false);
+  /** Commit TW presentation (#69). */
+  const commitTwMode = ref<CommitTwMode>("docked");
+  const commitControlsHidden = ref(false);
 
   function load() {
     try {
@@ -26,6 +31,12 @@ export const useLayoutStore = defineStore("layout", () => {
       if (typeof data.bottomOpen === "boolean") bottomOpen.value = data.bottomOpen;
       if (typeof data.leftSize === "number") leftSize.value = data.leftSize;
       if (typeof data.bottomSize === "number") bottomSize.value = data.bottomSize;
+      if (data.commitTwMode === "docked" || data.commitTwMode === "window" || data.commitTwMode === "float") {
+        commitTwMode.value = data.commitTwMode;
+      }
+      if (typeof data.commitControlsHidden === "boolean") {
+        commitControlsHidden.value = data.commitControlsHidden;
+      }
     } catch {
       /* ignore */
     }
@@ -39,12 +50,37 @@ export const useLayoutStore = defineStore("layout", () => {
         bottomOpen: bottomOpen.value,
         leftSize: leftSize.value,
         bottomSize: bottomSize.value,
+        commitTwMode: commitTwMode.value,
+        commitControlsHidden: commitControlsHidden.value,
       }),
     );
   }
 
   load();
-  watch([leftOpen, bottomOpen, leftSize, bottomSize], persist);
+  watch(
+    [leftOpen, bottomOpen, leftSize, bottomSize, commitTwMode, commitControlsHidden],
+    persist,
+  );
+
+  async function setCommitTwMode(mode: CommitTwMode) {
+    const prev = commitTwMode.value;
+    commitTwMode.value = mode;
+    try {
+      await getBackend().uiSyncBroadcast({
+        channel: "commitTw.mode",
+        data: { mode, previous: prev },
+      });
+    } catch {
+      /* web */
+    }
+    if (mode === "docked") {
+      // Closing independent window returns to docked — state already applied.
+    }
+  }
+
+  function toggleCommitControls() {
+    commitControlsHidden.value = !commitControlsHidden.value;
+  }
 
   return {
     leftOpen,
@@ -55,5 +91,9 @@ export const useLayoutStore = defineStore("layout", () => {
     activeEditorKind,
     findActionOpen,
     vcsPopupOpen,
+    commitTwMode,
+    commitControlsHidden,
+    setCommitTwMode,
+    toggleCommitControls,
   };
 });
