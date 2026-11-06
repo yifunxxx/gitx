@@ -104,7 +104,7 @@ const graphLayout = computed(() => {
       laneColors.set(e.toLane, color);
     });
   }
-  const colPx = Math.max(56, (maxLane + 1) * 14 + 8);
+  const colPx = Math.max(56, (maxLane + 1) * 16 + 12);
   return { edgeColors, incoming, maxLane, colPx };
 });
 
@@ -452,7 +452,7 @@ async function ctxExtract() {
                 @click="onCommitClick(c.sha, $event)"
                 @contextmenu="onCommitContext(c.sha, $event)"
               >
-                <span class="flex h-full items-center overflow-hidden">
+                <span class="flex h-full items-center justify-start">
                   <CommitGraphCell
                     :graph="c.graph"
                     :edge-colors="graphLayout.edgeColors[idx] ?? []"

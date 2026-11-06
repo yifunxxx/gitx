@@ -14,8 +14,8 @@ const props = defineProps<{
 }>();
 
 const H = computed(() => props.rowHeight ?? 22);
-const W = computed(() => props.laneWidth ?? 14);
-const pad = 4;
+const W = computed(() => props.laneWidth ?? 16);
+const pad = 6;
 
 const width = computed(() => Math.max(1, props.maxLane + 1) * W.value + pad * 2);
 const height = computed(() => H.value);
@@ -80,7 +80,7 @@ function curvePath(from: number, to: number) {
       v-for="(s, i) in segments"
       :key="i"
       fill="none"
-      stroke-width="1.5"
+      stroke-width="2"
       stroke-linecap="round"
       :stroke="laneColor(s.color)"
     >
@@ -107,17 +107,17 @@ function curvePath(from: number, to: number) {
       :x2="cx(graph.lane)"
       :y2="cy()"
       fill="none"
-      stroke-width="1.5"
+      stroke-width="2"
       stroke-linecap="round"
       :stroke="laneColor(graph.color)"
     />
     <circle
       :cx="cx(graph.lane)"
       :cy="cy()"
-      r="3.25"
+      r="3.5"
       :fill="laneColor(graph.color)"
       class="stroke-background"
-      stroke-width="1.25"
+      stroke-width="1.5"
     />
   </svg>
 </template>
