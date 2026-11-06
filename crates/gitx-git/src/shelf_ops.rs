@@ -6,6 +6,7 @@ use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 impl GitRunner {
+    #[allow(clippy::too_many_arguments)]
     pub async fn shelve_changes(
         &self,
         cwd: &Path,

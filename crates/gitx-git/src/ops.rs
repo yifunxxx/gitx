@@ -244,6 +244,7 @@ impl GitRunner {
     }
 
     /// Commit with optional pathspec (`--only`) or partial line selections via temp index (#66).
+    #[allow(clippy::too_many_arguments)]
     pub async fn commit_create_ex(
         &self,
         cwd: &Path,

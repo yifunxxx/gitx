@@ -3,6 +3,7 @@
 //! M5: seq-editor / editor can inject a prepared file via env:
 //! - `GITX_REBASE_TODO` — path copied over the git-rebase-todo
 //! - `GITX_COMMIT_MSG` — path copied over COMMIT_EDITMSG (reword/squash)
+//!
 //! Full local IPC (Unix socket / named pipe + GITX_IPC_TOKEN) remains for askpass UI.
 
 use std::env;

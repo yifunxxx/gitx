@@ -53,16 +53,14 @@ impl GitRunner {
         let path_str = path.to_string_lossy();
         for wt in &existing {
             let wt_path = Path::new(&wt.path);
-            if path.starts_with(wt_path) || wt_path.starts_with(path) {
-                if path != wt_path {
-                    return Err(AppError::new(
-                        ErrorCode::WorktreeNested,
-                        format!(
-                            "worktree path '{}' nests with existing worktree '{}'",
-                            path_str, wt.path
-                        ),
-                    ));
-                }
+            if (path.starts_with(wt_path) || wt_path.starts_with(path)) && path != wt_path {
+                return Err(AppError::new(
+                    ErrorCode::WorktreeNested,
+                    format!(
+                        "worktree path '{}' nests with existing worktree '{}'",
+                        path_str, wt.path
+                    ),
+                ));
             }
         }
         if path.exists() {

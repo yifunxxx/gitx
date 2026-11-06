@@ -85,6 +85,7 @@ pub struct NewShelf {
 }
 
 /// Allocate a new shelf directory and write meta + patch bytes.
+#[allow(clippy::too_many_arguments)]
 pub fn create_shelf_entry(
     git_common_dir: &Path,
     message: &str,
