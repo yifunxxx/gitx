@@ -597,3 +597,57 @@ pub struct DirtyWorktreeInfo {
     pub files: Vec<String>,
     pub operation: String,
 }
+
+// --- M5: rewrite history / interactive rebase / reset / undo ---
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RebaseTodoAction {
+    Pick,
+    Reword,
+    Edit,
+    Squash,
+    Fixup,
+    Drop,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RebaseTodoItem {
+    pub action: RebaseTodoAction,
+    pub sha: String,
+    pub subject: String,
+    /// Full message used for reword / squash combined message.
+    pub message: Option<String>,
+    pub author: String,
+    pub author_time: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RebasePlan {
+    /// Exclusive base (parent of first commit); empty string means `--root`.
+    pub base: String,
+    pub onto: Option<String>,
+    pub items: Vec<RebaseTodoItem>,
+    pub rebase_merges: bool,
+    pub autosquash: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ResetMode {
+    Soft,
+    Mixed,
+    Hard,
+    Keep,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPreview {
+    pub target: String,
+    pub commits_affected: u32,
+    pub dirty_tracked: Vec<String>,
+    pub will_discard_local: bool,
+}

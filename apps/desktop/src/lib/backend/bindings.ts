@@ -561,6 +561,57 @@ export type ConflictFileReq = { path: string; filePath: string }
 export type ConflictSaveReq = { path: string; filePath: string; content: string }
 export type ConflictMarkReq = { path: string; paths: string[] }
 
+// --- M5 ---
+export type RebaseTodoAction = "pick" | "reword" | "edit" | "squash" | "fixup" | "drop"
+export type RebaseTodoItem = {
+  action: RebaseTodoAction
+  sha: string
+  subject: string
+  message: string | null
+  author: string
+  authorTime: number
+}
+export type RebasePlan = {
+  base: string
+  onto: string | null
+  items: RebaseTodoItem[]
+  rebaseMerges: boolean
+  autosquash: boolean
+}
+export type ResetMode = "soft" | "mixed" | "hard" | "keep"
+export type ResetPreview = {
+  target: string
+  commitsAffected: number
+  dirtyTracked: string[]
+  willDiscardLocal: boolean
+}
+export type RebasePlanReq = { path: string; fromSha: string; upstream?: boolean }
+export type RebaseInteractiveStartReq = { path: string; plan: RebasePlan; smart: boolean }
+export type RewordCommitReq = { path: string; sha: string; message: string }
+export type SquashCommitsReq = { path: string; shas: string[]; message: string }
+export type DropCommitsReq = { path: string; shas: string[] }
+export type FixupIntoReq = {
+  path: string
+  target: string
+  squash: boolean
+  message?: string | null
+}
+export type RevertRunReq = {
+  path: string
+  shas: string[]
+  mainline?: number | null
+  noCommit: boolean
+}
+export type ResetPreviewReq = { path: string; target: string }
+export type ResetRunReq = { path: string; target: string; mode: ResetMode }
+export type UndoRewriteReq = { path: string; backupRef: string; restoreWorktree: boolean }
+export type PartialChangesReq = {
+  path: string
+  commit: string
+  paths: string[]
+  message?: string | null
+}
+
 
 export const commands = {
   async appInfo(): Promise<AppInfo> {
@@ -811,6 +862,51 @@ export const commands = {
   },
   async conflictResolveSimple(req: ConflictsPathReq): Promise<number> {
     return invoke("conflict_resolve_simple", { req })
+  },
+  async rebaseInteractivePlan(req: RebasePlanReq): Promise<RebasePlan> {
+    return invoke("rebase_interactive_plan", { req })
+  },
+  async rebaseInteractiveStart(req: RebaseInteractiveStartReq): Promise<RewriteResult> {
+    return invoke("rebase_interactive_start", { req })
+  },
+  async rewordCommit(req: RewordCommitReq): Promise<RewriteResult> {
+    return invoke("reword_commit", { req })
+  },
+  async squashCommits(req: SquashCommitsReq): Promise<RewriteResult> {
+    return invoke("squash_commits", { req })
+  },
+  async dropCommits(req: DropCommitsReq): Promise<RewriteResult> {
+    return invoke("drop_commits", { req })
+  },
+  async fixupInto(req: FixupIntoReq): Promise<RewriteResult> {
+    return invoke("fixup_into", { req })
+  },
+  async uncommit(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("uncommit", { req })
+  },
+  async revertRun(req: RevertRunReq): Promise<RewriteResult> {
+    return invoke("revert_run", { req })
+  },
+  async revertContinue(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("revert_continue", { req })
+  },
+  async revertAbort(req: RewritePathReq): Promise<RewriteResult> {
+    return invoke("revert_abort", { req })
+  },
+  async resetPreview(req: ResetPreviewReq): Promise<ResetPreview> {
+    return invoke("reset_preview", { req })
+  },
+  async resetRun(req: ResetRunReq): Promise<RewriteResult> {
+    return invoke("reset_run", { req })
+  },
+  async undoRewrite(req: UndoRewriteReq): Promise<RewriteResult> {
+    return invoke("undo_rewrite", { req })
+  },
+  async extractChanges(req: PartialChangesReq): Promise<RewriteResult> {
+    return invoke("extract_changes", { req })
+  },
+  async dropChanges(req: PartialChangesReq): Promise<RewriteResult> {
+    return invoke("drop_changes", { req })
   },
 }
 

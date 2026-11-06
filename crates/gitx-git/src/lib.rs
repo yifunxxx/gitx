@@ -5,6 +5,7 @@
 mod clone_ops;
 mod conflict_ops;
 mod detect;
+mod history_rewrite_ops;
 mod jobs;
 mod ops;
 mod progress;

@@ -99,6 +99,22 @@ import type {
   ConflictSaveReq,
   ConflictMarkReq,
   Merge3Result,
+  RebasePlan,
+  RebasePlanReq,
+  RebaseInteractiveStartReq,
+  RewordCommitReq,
+  SquashCommitsReq,
+  DropCommitsReq,
+  FixupIntoReq,
+  RevertRunReq,
+  ResetPreview,
+  ResetPreviewReq,
+  ResetRunReq,
+  ResetMode,
+  UndoRewriteReq,
+  PartialChangesReq,
+  RebaseTodoAction,
+  RebaseTodoItem,
 } from "./bindings";
 import { commands } from "./bindings";
 import { mockBackend } from "./mock";
@@ -189,6 +205,22 @@ export type Backend = {
   conflictSaveResult(req: ConflictSaveReq): Promise<null>;
   conflictMarkResolved(req: ConflictMarkReq): Promise<null>;
   conflictResolveSimple(req: ConflictsPathReq): Promise<number>;
+  // M5
+  rebaseInteractivePlan(req: RebasePlanReq): Promise<RebasePlan>;
+  rebaseInteractiveStart(req: RebaseInteractiveStartReq): Promise<RewriteResult>;
+  rewordCommit(req: RewordCommitReq): Promise<RewriteResult>;
+  squashCommits(req: SquashCommitsReq): Promise<RewriteResult>;
+  dropCommits(req: DropCommitsReq): Promise<RewriteResult>;
+  fixupInto(req: FixupIntoReq): Promise<RewriteResult>;
+  uncommit(req: RewritePathReq): Promise<RewriteResult>;
+  revertRun(req: RevertRunReq): Promise<RewriteResult>;
+  revertContinue(req: RewritePathReq): Promise<RewriteResult>;
+  revertAbort(req: RewritePathReq): Promise<RewriteResult>;
+  resetPreview(req: ResetPreviewReq): Promise<ResetPreview>;
+  resetRun(req: ResetRunReq): Promise<RewriteResult>;
+  undoRewrite(req: UndoRewriteReq): Promise<RewriteResult>;
+  extractChanges(req: PartialChangesReq): Promise<RewriteResult>;
+  dropChanges(req: PartialChangesReq): Promise<RewriteResult>;
 };
 
 export const tauriBackend: Backend = {
@@ -273,6 +305,21 @@ export const tauriBackend: Backend = {
   conflictSaveResult: (req) => commands.conflictSaveResult(req),
   conflictMarkResolved: (req) => commands.conflictMarkResolved(req),
   conflictResolveSimple: (req) => commands.conflictResolveSimple(req),
+  rebaseInteractivePlan: (req) => commands.rebaseInteractivePlan(req),
+  rebaseInteractiveStart: (req) => commands.rebaseInteractiveStart(req),
+  rewordCommit: (req) => commands.rewordCommit(req),
+  squashCommits: (req) => commands.squashCommits(req),
+  dropCommits: (req) => commands.dropCommits(req),
+  fixupInto: (req) => commands.fixupInto(req),
+  uncommit: (req) => commands.uncommit(req),
+  revertRun: (req) => commands.revertRun(req),
+  revertContinue: (req) => commands.revertContinue(req),
+  revertAbort: (req) => commands.revertAbort(req),
+  resetPreview: (req) => commands.resetPreview(req),
+  resetRun: (req) => commands.resetRun(req),
+  undoRewrite: (req) => commands.undoRewrite(req),
+  extractChanges: (req) => commands.extractChanges(req),
+  dropChanges: (req) => commands.dropChanges(req),
 };
 
 export function getBackend(): Backend {

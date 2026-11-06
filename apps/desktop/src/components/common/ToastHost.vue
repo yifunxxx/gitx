@@ -2,6 +2,11 @@
 import { dismissToast, useToasts } from "@/composables/useToast";
 
 const toasts = useToasts();
+
+function onAction(id: string, run: () => void) {
+  run();
+  dismissToast(id);
+}
 </script>
 
 <template>
@@ -17,13 +22,23 @@ const toasts = useToasts();
       <div
         v-for="t in toasts"
         :key="t.id"
-        class="pointer-events-auto max-w-sm rounded-lg bg-foreground px-4 py-2 text-sm text-background-solid shadow-lg"
+        class="pointer-events-auto flex max-w-sm items-center gap-3 rounded-lg bg-foreground px-4 py-2 text-sm text-background-solid shadow-lg"
         role="status"
       >
-        <div class="font-medium">{{ t.title }}</div>
-        <div v-if="t.description" class="opacity-80">{{ t.description }}</div>
+        <div class="min-w-0 flex-1">
+          <div class="font-medium">{{ t.title }}</div>
+          <div v-if="t.description" class="opacity-80">{{ t.description }}</div>
+        </div>
         <button
-          class="mt-1 text-xs underline opacity-70"
+          v-if="t.action"
+          class="shrink-0 text-xs font-medium underline"
+          type="button"
+          @click="onAction(t.id, t.action.onClick)"
+        >
+          {{ t.action.label }}
+        </button>
+        <button
+          class="shrink-0 text-xs underline opacity-70"
           type="button"
           @click="dismissToast(t.id)"
         >

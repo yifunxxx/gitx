@@ -26,14 +26,23 @@
     "resolveConflicts": "Resolve Conflicts…",
     "abortMerge": "Abort Merge",
     "abortRebase": "Abort Rebase",
-    "continueRebase": "Continue Rebase"
+    "continueRebase": "Continue Rebase",
+    "interactiveRebase": "Interactively Rebase from Here…",
+    "reword": "Edit Commit Message…",
+    "squash": "Squash Commits…",
+    "dropCommits": "Drop Commits",
+    "uncommit": "Undo Commit",
+    "revert": "Revert Commit",
+    "reset": "Reset Current Branch to Here…"
   },
   "merge": {
     "conflicts": "Conflicts",
     "acceptYours": "Accept Yours",
     "acceptTheirs": "Accept Theirs",
     "smartMerge": "Smart Merge",
-    "dirtyTitle": "Local changes would be overwritten"
+    "dirtyTitle": "Local changes would be overwritten",
+    "interactiveRebase": "Interactive Rebase",
+    "startRebasing": "Start Rebasing"
   },
   "toolWindows": {
     "commit": "Commit",

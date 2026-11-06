@@ -26,14 +26,23 @@
     "resolveConflicts": "解决冲突…",
     "abortMerge": "中止合并",
     "abortRebase": "中止变基",
-    "continueRebase": "继续变基"
+    "continueRebase": "继续变基",
+    "interactiveRebase": "从此处交互式变基…",
+    "reword": "编辑提交说明…",
+    "squash": "压缩提交…",
+    "dropCommits": "丢弃提交",
+    "uncommit": "撤销提交",
+    "revert": "还原提交",
+    "reset": "将当前分支重置到此处…"
   },
   "merge": {
     "conflicts": "冲突",
     "acceptYours": "接受己方",
     "acceptTheirs": "接受对方",
     "smartMerge": "智能合并",
-    "dirtyTitle": "本地修改将被覆盖"
+    "dirtyTitle": "本地修改将被覆盖",
+    "interactiveRebase": "交互式变基",
+    "startRebasing": "开始变基"
   },
   "toolWindows": {
     "commit": "Commit",

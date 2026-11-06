@@ -1,7 +1,7 @@
-//! Merge / rebase / cherry-pick IPC (M4).
+//! Merge / rebase / cherry-pick IPC (M4) + rewrite history (M5).
 
 use crate::state::AppState;
-use gitx_core::{AppError, RepoOpState, RewriteResult};
+use gitx_core::{AppError, RebasePlan, RepoOpState, ResetMode, ResetPreview, RewriteResult};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -262,4 +262,296 @@ pub async fn cherry_pick_abort(
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
     git.cherry_pick_abort(&path, &cancel).await
+}
+
+// --- M5 ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RebasePlanReq {
+    pub path: String,
+    /// First commit to include (from-here), or exclusive upstream when `upstream` is true.
+    pub from_sha: String,
+    /// When true, `from_sha` is an exclusive upstream base (Rebase dialog --interactive).
+    #[serde(default)]
+    pub upstream: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RebaseInteractiveStartReq {
+    pub path: String,
+    pub plan: RebasePlan,
+    pub smart: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RewordCommitReq {
+    pub path: String,
+    pub sha: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SquashCommitsReq {
+    pub path: String,
+    pub shas: Vec<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DropCommitsReq {
+    pub path: String,
+    pub shas: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FixupIntoReq {
+    pub path: String,
+    pub target: String,
+    pub squash: bool,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RevertRunReq {
+    pub path: String,
+    pub shas: Vec<String>,
+    pub mainline: Option<u32>,
+    pub no_commit: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPreviewReq {
+    pub path: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetRunReq {
+    pub path: String,
+    pub target: String,
+    pub mode: ResetMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoRewriteReq {
+    pub path: String,
+    pub backup_ref: String,
+    pub restore_worktree: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialChangesReq {
+    pub path: String,
+    pub commit: String,
+    pub paths: Vec<String>,
+    pub message: Option<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rebase_interactive_plan(
+    state: State<'_, AppState>,
+    req: RebasePlanReq,
+) -> Result<RebasePlan, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    if req.upstream {
+        git.rebase_interactive_plan_from_upstream(&path, &req.from_sha, &cancel)
+            .await
+    } else {
+        git.rebase_interactive_plan(&path, &req.from_sha, &cancel)
+            .await
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rebase_interactive_start(
+    state: State<'_, AppState>,
+    req: RebaseInteractiveStartReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.rebase_interactive_start(&path, &req.plan, req.smart, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reword_commit(
+    state: State<'_, AppState>,
+    req: RewordCommitReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.reword_commit(&path, &req.sha, &req.message, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn squash_commits(
+    state: State<'_, AppState>,
+    req: SquashCommitsReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.squash_commits(&path, &req.shas, &req.message, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn drop_commits(
+    state: State<'_, AppState>,
+    req: DropCommitsReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.drop_commits(&path, &req.shas, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fixup_into(
+    state: State<'_, AppState>,
+    req: FixupIntoReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.fixup_into(
+        &path,
+        &req.target,
+        req.squash,
+        req.message.as_deref(),
+        &cancel,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn uncommit(state: State<'_, AppState>, req: PathReq) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.uncommit(&path, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn revert_run(
+    state: State<'_, AppState>,
+    req: RevertRunReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.revert_run(&path, &req.shas, req.mainline, req.no_commit, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn revert_continue(
+    state: State<'_, AppState>,
+    req: PathReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.revert_continue(&path, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn revert_abort(
+    state: State<'_, AppState>,
+    req: PathReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.revert_abort(&path, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reset_preview(
+    state: State<'_, AppState>,
+    req: ResetPreviewReq,
+) -> Result<ResetPreview, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.reset_preview(&path, &req.target, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reset_run(
+    state: State<'_, AppState>,
+    req: ResetRunReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.reset_run(&path, &req.target, req.mode, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn undo_rewrite(
+    state: State<'_, AppState>,
+    req: UndoRewriteReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.undo_rewrite(&path, &req.backup_ref, req.restore_worktree, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extract_changes(
+    state: State<'_, AppState>,
+    req: PartialChangesReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let msg = req.message.as_deref().unwrap_or("Extracted changes");
+    git.extract_changes(&path, &req.commit, &req.paths, msg, &cancel)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn drop_changes(
+    state: State<'_, AppState>,
+    req: PartialChangesReq,
+) -> Result<RewriteResult, AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.drop_changes(&path, &req.commit, &req.paths, &cancel)
+        .await
 }

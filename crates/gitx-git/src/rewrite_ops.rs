@@ -373,10 +373,15 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<RewriteResult, AppError> {
         if interactive {
-            return Err(AppError::new(
-                ErrorCode::Internal,
-                "Interactive rebase is M5 — use Rebase without --interactive for now",
-            ));
+            // Prefer loading a plan from HEAD~N is not enough — callers should use
+            // rebase_interactive_plan + rebase_interactive_start. Keep a safe default:
+            // treat as "rebase -i" with all picks from upstream..HEAD.
+            let plan = self
+                .rebase_interactive_plan_from_upstream(cwd, upstream, cancel)
+                .await?;
+            return self
+                .rebase_interactive_start(cwd, &plan, smart, cancel)
+                .await;
         }
         self.ensure_not_busy(cwd, cancel).await?;
         let old = self
@@ -619,7 +624,7 @@ impl GitRunner {
 
     // --- helpers ---
 
-    async fn sequencer_action(
+    pub(crate) async fn sequencer_action(
         &self,
         cwd: &Path,
         cmd: &str,
@@ -685,7 +690,7 @@ impl GitRunner {
         }
     }
 
-    async fn run_rewrite(
+    pub(crate) async fn run_rewrite(
         &self,
         cwd: &Path,
         args: Vec<String>,
@@ -764,7 +769,7 @@ impl GitRunner {
         op_result.map(|_| ())
     }
 
-    async fn map_rewrite_err(
+    pub(crate) async fn map_rewrite_err(
         &self,
         cwd: &Path,
         e: AppError,
@@ -825,7 +830,7 @@ impl GitRunner {
         Err(e)
     }
 
-    async fn ensure_not_busy(
+    pub(crate) async fn ensure_not_busy(
         &self,
         cwd: &Path,
         cancel: &CancellationToken,
@@ -840,7 +845,7 @@ impl GitRunner {
         Ok(())
     }
 
-    async fn safety_backup(
+    pub(crate) async fn safety_backup(
         &self,
         cwd: &Path,
         op: &str,

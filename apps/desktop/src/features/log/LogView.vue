@@ -159,6 +159,80 @@ async function ctxCherryPick() {
   closeCtx();
   await rewrite.cherryPick({ shas });
 }
+
+async function ctxReword() {
+  if (!log.selectedSha) return;
+  closeCtx();
+  const { openDialog } = await import("@/composables/useDialog");
+  const RewordDialog = (await import("@/features/merge/RewordDialog.vue")).default;
+  await openDialog(RewordDialog, { sha: log.selectedSha });
+}
+
+async function ctxInteractive() {
+  if (!log.selectedSha) return;
+  closeCtx();
+  const { openDialog } = await import("@/composables/useDialog");
+  const InteractiveRebaseEditor = (await import("@/features/merge/InteractiveRebaseEditor.vue"))
+    .default;
+  await openDialog(InteractiveRebaseEditor, { fromSha: log.selectedSha });
+}
+
+async function ctxReset() {
+  if (!log.selectedSha) return;
+  closeCtx();
+  const { openDialog } = await import("@/composables/useDialog");
+  const ResetDialog = (await import("@/features/merge/ResetDialog.vue")).default;
+  await openDialog(ResetDialog, { target: log.selectedSha });
+}
+
+async function ctxRevert() {
+  const shas = log.selectedShas.length
+    ? [...log.selectedShas]
+    : log.selectedSha
+      ? [log.selectedSha]
+      : [];
+  if (!shas.length) return;
+  closeCtx();
+  await rewrite.revert(shas);
+}
+
+async function ctxDrop() {
+  const shas = log.selectedShas.length
+    ? [...log.selectedShas]
+    : log.selectedSha
+      ? [log.selectedSha]
+      : [];
+  if (!shas.length) return;
+  closeCtx();
+  if (!confirm(`Drop ${shas.length} commit(s)?`)) return;
+  await rewrite.drop(shas);
+}
+
+async function ctxSquash() {
+  const shas = log.selectedShas.length ? [...log.selectedShas] : [];
+  if (shas.length < 2) {
+    toast({ title: "Select two or more commits" });
+    return;
+  }
+  closeCtx();
+  const { openDialog } = await import("@/composables/useDialog");
+  const SquashDialog = (await import("@/features/merge/SquashDialog.vue")).default;
+  await openDialog(SquashDialog, { shas });
+}
+
+async function ctxUncommit() {
+  closeCtx();
+  await rewrite.uncommit();
+}
+
+async function ctxExtract() {
+  if (!log.selectedSha || !log.changedFiles.length) return;
+  closeCtx();
+  const paths = log.changedFiles.map((f) => f.path);
+  const msg = prompt("Message for extracted commit", "Extracted changes");
+  if (msg == null) return;
+  await rewrite.extractChanges(log.selectedSha, paths, msg || "Extracted changes");
+}
 </script>
 
 <template>
@@ -401,6 +475,30 @@ async function ctxCherryPick() {
       </button>
       <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCherryPick">
         Cherry-Pick
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReword">
+        Edit Commit Message…
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxInteractive">
+        Interactively Rebase from Here…
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxSquash">
+        Squash Commits…
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxDrop">
+        Drop Commits
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxUncommit">
+        Undo Commit
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRevert">
+        Revert Commit
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReset">
+        Reset Current Branch to Here…
+      </button>
+      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxExtract">
+        Extract Selected Changes…
       </button>
       <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareLocal">
         Compare with Local

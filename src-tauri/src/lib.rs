@@ -29,9 +29,11 @@ use commands::remotes::{
     remote_add, remote_edit, remote_list, remote_remove, remote_remove_preview,
 };
 use commands::rewrite::{
-    cherry_pick_abort, cherry_pick_continue, cherry_pick_run, cherry_pick_skip, merge_abort,
-    merge_commit, merge_run, rebase_abort, rebase_continue, rebase_run, rebase_skip,
-    repo_op_state_get,
+    cherry_pick_abort, cherry_pick_continue, cherry_pick_run, cherry_pick_skip, drop_changes,
+    drop_commits, extract_changes, fixup_into, merge_abort, merge_commit, merge_run, rebase_abort,
+    rebase_continue, rebase_interactive_plan, rebase_interactive_start, rebase_run, rebase_skip,
+    repo_op_state_get, reset_preview, reset_run, revert_abort, revert_continue, revert_run,
+    reword_commit, squash_commits, uncommit, undo_rewrite,
 };
 use commands::status::status_get;
 use commands::sync::{
@@ -139,6 +141,22 @@ pub fn run() {
             conflict_save_result,
             conflict_mark_resolved,
             conflict_resolve_simple,
+            // M5
+            rebase_interactive_plan,
+            rebase_interactive_start,
+            reword_commit,
+            squash_commits,
+            drop_commits,
+            fixup_into,
+            uncommit,
+            revert_run,
+            revert_continue,
+            revert_abort,
+            reset_preview,
+            reset_run,
+            undo_rewrite,
+            extract_changes,
+            drop_changes,
         ]);
 
     #[cfg(debug_assertions)]
