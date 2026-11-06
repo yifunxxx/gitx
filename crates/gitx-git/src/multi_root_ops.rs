@@ -112,20 +112,18 @@ impl GitRunner {
                         .into_owned();
                     if !seen.contains(&key) && !seen.contains(&path.to_string_lossy().into_owned())
                     {
-                        match self.resolve_repo_root(&path, roots.len(), cancel).await {
-                            Ok(mut r) => {
-                                // Skip linked worktrees of the same common-dir (shown in Worktrees tab).
-                                if r.common_dir == primary_common && r.is_worktree {
-                                    continue;
-                                }
-                                // Mark submodule roots from .gitmodules presence of parent.
-                                if root.join(".gitmodules").exists() {
-                                    r.is_submodule = true;
-                                }
-                                seen.insert(r.worktree_root.clone());
-                                roots.push(r);
+                        if let Ok(mut r) = self.resolve_repo_root(&path, roots.len(), cancel).await
+                        {
+                            // Skip linked worktrees of the same common-dir (shown in Worktrees tab).
+                            if r.common_dir == primary_common && r.is_worktree {
+                                continue;
                             }
-                            Err(_) => {}
+                            // Mark submodule roots from .gitmodules presence of parent.
+                            if root.join(".gitmodules").exists() {
+                                r.is_submodule = true;
+                            }
+                            seen.insert(r.worktree_root.clone());
+                            roots.push(r);
                         }
                     }
                 }

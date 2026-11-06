@@ -50,13 +50,10 @@ impl GitRunner {
             String::new()
         } else {
             // Parent of the "from here" commit is the exclusive base.
-            match self
-                .rev_parse_public(cwd, &format!("{from_sha}^"), cancel)
+            // Root commit → empty base.
+            self.rev_parse_public(cwd, &format!("{from_sha}^"), cancel)
                 .await
-            {
-                Ok(p) => p,
-                Err(_) => String::new(), // root commit
-            }
+                .unwrap_or_default()
         };
 
         let range = if base.is_empty() {
@@ -403,9 +400,7 @@ impl GitRunner {
             .rev_parse_public(cwd, &format!("{target}^"), cancel)
             .await
             .unwrap_or_default();
-        let mut plan = self
-            .rebase_interactive_plan(cwd, if base.is_empty() { &target } else { &target }, cancel)
-            .await?;
+        let mut plan = self.rebase_interactive_plan(cwd, &target, cancel).await?;
         // Ensure autosquash semantics in plan: mark fixup/squash commits.
         for item in &mut plan.items {
             let subj = item.subject.to_lowercase();
@@ -652,12 +647,7 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let needs_snapshot = matches!(mode, ResetMode::Hard | ResetMode::Keep);
-        let backup = if needs_snapshot {
-            self.safety_backup(cwd, "reset", &old, cancel).await.ok()
-        } else {
-            self.safety_backup(cwd, "reset", &old, cancel).await.ok()
-        };
+        let backup = self.safety_backup(cwd, "reset", &old, cancel).await.ok();
         let mode_flag = match mode {
             ResetMode::Soft => "--soft",
             ResetMode::Mixed => "--mixed",

@@ -493,6 +493,7 @@ impl GitRunner {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn cherry_pick_run(
         &self,
         cwd: &Path,
