@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { FolderGit2, FolderOpen, GitBranchPlus } from "@lucide/vue";
+import { Download, FolderGit2, FolderOpen, GitBranchPlus } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useLogStore } from "@/stores/logStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useBranchesStore } from "@/stores/branchesStore";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
+import { runAction } from "@/actions";
 
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
 const log = useLogStore();
 const layout = useLayoutStore();
+const branches = useBranchesStore();
 
 async function pickDirectory(): Promise<string | null> {
   if (isTauri()) {
@@ -29,6 +32,7 @@ async function afterOpen() {
   if (workspace.isRepo) {
     await changes.refresh();
     await log.load(true);
+    await branches.refresh();
   }
 }
 
@@ -52,6 +56,15 @@ async function createRepo() {
   toast({ title: "Repository created", description: path });
   await afterOpen();
 }
+
+async function cloneRepo() {
+  await runAction("Git.Clone", {
+    repoIds: [],
+    selection: {},
+    source: "menu",
+    place: "Welcome",
+  });
+}
 </script>
 
 <template>
@@ -60,7 +73,7 @@ async function createRepo() {
       <div class="mb-8">
         <div class="text-2xl font-semibold tracking-tight">gitx</div>
         <p class="mt-1 text-sm text-muted-foreground">
-          IDEA-aligned Git GUI — open a repository to stage, commit, and browse history.
+          IDEA-aligned Git GUI — open, clone, or create a repository to get started.
         </p>
       </div>
 
@@ -92,13 +105,14 @@ async function createRepo() {
             <FolderOpen class="h-4 w-4" />
             Open…
           </Button>
+          <Button class="justify-start gap-2" size="lg" variant="outline" @click="cloneRepo">
+            <Download class="h-4 w-4" />
+            Clone Repository…
+          </Button>
           <Button class="justify-start gap-2" size="lg" variant="outline" @click="createRepo">
             <GitBranchPlus class="h-4 w-4" />
             Create Repository…
           </Button>
-          <p class="mt-2 text-[11px] text-muted-foreground">
-            Clone Repository arrives in M2. Staging mode is the M1 default.
-          </p>
         </div>
       </div>
     </div>

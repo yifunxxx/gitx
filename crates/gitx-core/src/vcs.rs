@@ -311,3 +311,140 @@ pub struct CommitResult {
     pub subject: String,
     pub amended: bool,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RefKind {
+    LocalBranch,
+    RemoteBranch,
+    Tag,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RefEntry {
+    pub name: String,
+    pub full_name: String,
+    pub kind: RefKind,
+    pub sha: String,
+    pub upstream: Option<String>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub is_head: bool,
+    pub subject: Option<String>,
+    pub committer_time: Option<i64>,
+    /// Peeled object for annotated tags.
+    pub peeled_sha: Option<String>,
+    pub is_favorite: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RefsList {
+    pub local: Vec<RefEntry>,
+    pub remote: Vec<RefEntry>,
+    pub tags: Vec<RefEntry>,
+    pub recent: Vec<String>,
+    pub current: Option<String>,
+    pub detached: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteInfo {
+    pub name: String,
+    pub fetch_url: String,
+    pub push_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchSummary {
+    pub remote: String,
+    pub new_branches: u32,
+    pub updated_branches: u32,
+    pub new_tags: u32,
+    pub pruned: u32,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PullResult {
+    pub old_head: String,
+    pub new_head: String,
+    pub strategy: String,
+    pub updated: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PushRefspec {
+    pub local: String,
+    pub remote: String,
+    pub remote_branch: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PushPreview {
+    pub remote: String,
+    pub refs: Vec<PushRefspec>,
+    pub commits: Vec<String>,
+    pub set_upstream: bool,
+    pub has_remote: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PushOutcome {
+    Success,
+    UpToDate,
+    Rejected,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PushResult {
+    pub outcome: PushOutcome,
+    pub remote: String,
+    pub message: String,
+    pub rejected: bool,
+    pub set_upstream: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub old_head: String,
+    pub new_head: String,
+    pub strategy: String,
+    pub updated_files: Vec<ChangedFile>,
+    pub commits: Vec<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneResult {
+    pub path: String,
+    pub shallow: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomingCheck {
+    pub has_unfetched: bool,
+    pub remotes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CompareRange {
+    pub left: String,
+    pub right: String,
+    pub left_only: Vec<String>,
+    pub right_only: Vec<String>,
+}

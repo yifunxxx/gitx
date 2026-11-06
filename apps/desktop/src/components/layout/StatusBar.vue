@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { Bell, GitBranch, LoaderCircle } from "@lucide/vue";
+import { computed } from "vue";
 import { useJobsStore } from "@/stores/jobsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useBranchesStore } from "@/stores/branchesStore";
 
 const jobs = useJobsStore();
 const workspace = useWorkspaceStore();
+const branches = useBranchesStore();
+
+const branchText = computed(() => {
+  if (!workspace.isRepo) return "no repo";
+  const b = workspace.branch;
+  if (!b) return "…";
+  if (b.detached) return `detached ${b.head}`;
+  return b.head;
+});
 </script>
 
 <template>
@@ -16,10 +27,16 @@ const workspace = useWorkspaceStore();
       <span>{{ jobs.count ? `${jobs.count} process(es)` : "Idle" }}</span>
     </div>
     <div class="h-3 w-px bg-border" />
-    <div class="flex items-center gap-1">
+    <button
+      type="button"
+      class="flex items-center gap-1 hover:text-foreground disabled:opacity-50"
+      :disabled="!workspace.isRepo"
+      @click="branches.openPopup()"
+    >
       <GitBranch class="h-3 w-3" />
-      <span>{{ workspace.isRepo ? "main" : "no repo" }}</span>
-    </div>
+      <span>{{ branchText }}</span>
+      <span v-if="branches.hasUnfetched" class="text-info">↓•</span>
+    </button>
     <div class="flex-1" />
     <div class="flex items-center gap-1">
       <Bell class="h-3 w-3" />

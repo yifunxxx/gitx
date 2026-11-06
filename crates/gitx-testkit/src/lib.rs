@@ -1,4 +1,4 @@
-//! Fixture repository builder (first 5 scenarios for M0).
+//! Fixture repository builder (M0 scenarios + M2 with-remote).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,63 +42,100 @@ impl FixtureBuilder {
 
     pub fn build(&self, scenario: &str) -> Result<FixtureRepo, TestkitError> {
         let temp = TempDir::new()?;
-        let root = temp.path().to_path_buf();
-        git(&root, &["init", "-b", "main"])?;
-        git(&root, &["config", "user.name", "gitx-test"])?;
-        git(&root, &["config", "user.email", "gitx@test.local"])?;
         // Deterministic timestamps.
         std::env::set_var("GIT_AUTHOR_DATE", "2024-01-01T00:00:00Z");
         std::env::set_var("GIT_COMMITTER_DATE", "2024-01-01T00:00:00Z");
 
-        match scenario {
-            "clean" => {
-                write(&root, "README.md", "# clean\n")?;
-                git(&root, &["add", "README.md"])?;
-                git(&root, &["commit", "-m", "initial"])?;
+        let repo_root = if scenario == "with-remote" {
+            build_with_remote(temp.path())?
+        } else {
+            let root = temp.path().to_path_buf();
+            git(&root, &["init", "-b", "main"])?;
+            git(&root, &["config", "user.name", "gitx-test"])?;
+            git(&root, &["config", "user.email", "gitx@test.local"])?;
+            match scenario {
+                "clean" => {
+                    write(&root, "README.md", "# clean\n")?;
+                    git(&root, &["add", "README.md"])?;
+                    git(&root, &["commit", "-m", "initial"])?;
+                }
+                "dirty" => {
+                    write(&root, "README.md", "# dirty\n")?;
+                    git(&root, &["add", "README.md"])?;
+                    git(&root, &["commit", "-m", "initial"])?;
+                    write(&root, "README.md", "# dirty modified\n")?;
+                }
+                "untracked" => {
+                    write(&root, "README.md", "# untracked\n")?;
+                    git(&root, &["add", "README.md"])?;
+                    git(&root, &["commit", "-m", "initial"])?;
+                    write(&root, "new.txt", "untracked\n")?;
+                }
+                "empty" => {}
+                "detached" => {
+                    write(&root, "README.md", "# detached\n")?;
+                    git(&root, &["add", "README.md"])?;
+                    git(&root, &["commit", "-m", "initial"])?;
+                    write(&root, "README.md", "# second\n")?;
+                    git(&root, &["add", "README.md"])?;
+                    git(&root, &["commit", "-m", "second"])?;
+                    let sha = git_stdout(&root, &["rev-parse", "HEAD~1"])?;
+                    git(&root, &["checkout", "--detach", sha.trim()])?;
+                }
+                other => {
+                    return Err(TestkitError::Git(format!("unknown scenario: {other}")));
+                }
             }
-            "dirty" => {
-                write(&root, "README.md", "# dirty\n")?;
-                git(&root, &["add", "README.md"])?;
-                git(&root, &["commit", "-m", "initial"])?;
-                write(&root, "README.md", "# dirty modified\n")?;
-            }
-            "untracked" => {
-                write(&root, "README.md", "# untracked\n")?;
-                git(&root, &["add", "README.md"])?;
-                git(&root, &["commit", "-m", "initial"])?;
-                write(&root, "new.txt", "untracked\n")?;
-            }
-            "empty" => {
-                // init only
-            }
-            "detached" => {
-                write(&root, "README.md", "# detached\n")?;
-                git(&root, &["add", "README.md"])?;
-                git(&root, &["commit", "-m", "initial"])?;
-                write(&root, "README.md", "# second\n")?;
-                git(&root, &["add", "README.md"])?;
-                git(&root, &["commit", "-m", "second"])?;
-                let sha = git_stdout(&root, &["rev-parse", "HEAD~1"])?;
-                git(&root, &["checkout", "--detach", sha.trim()])?;
-            }
-            other => {
-                return Err(TestkitError::Git(format!("unknown scenario: {other}")));
-            }
-        }
+            root
+        };
 
         if self.keep {
             let kept = temp.keep();
+            let root = if scenario == "with-remote" {
+                kept.join("work")
+            } else {
+                kept
+            };
             Ok(FixtureRepo {
-                root: kept,
+                root,
                 _temp: None,
             })
         } else {
             Ok(FixtureRepo {
-                root,
+                root: repo_root,
                 _temp: Some(temp),
             })
         }
     }
+}
+
+fn build_with_remote(temp: &Path) -> Result<PathBuf, TestkitError> {
+    let work = temp.join("work");
+    let bare = temp.join("remote.git");
+    fs::create_dir_all(&work)?;
+    git(&work, &["init", "-b", "main"])?;
+    git(&work, &["config", "user.name", "gitx-test"])?;
+    git(&work, &["config", "user.email", "gitx@test.local"])?;
+    write(&work, "README.md", "# with-remote\n")?;
+    git(&work, &["add", "README.md"])?;
+    git(&work, &["commit", "-m", "initial"])?;
+
+    let status = Command::new("git")
+        .args(["init", "--bare", "-b", "main"])
+        .arg(&bare)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .status()?;
+    if !status.success() {
+        return Err(TestkitError::Git(format!(
+            "bare init failed with {status}"
+        )));
+    }
+    git(
+        &work,
+        &["remote", "add", "origin", bare.to_str().unwrap()],
+    )?;
+    git(&work, &["push", "-u", "origin", "main"])?;
+    Ok(work)
 }
 
 fn write(root: &Path, rel: &str, content: &str) -> Result<(), TestkitError> {
@@ -148,5 +185,13 @@ mod tests {
         let repo = FixtureBuilder::new().build("clean").expect("fixture");
         assert!(repo.path().join("README.md").exists());
         assert!(repo.path().join(".git").exists());
+    }
+
+    #[test]
+    fn builds_with_remote_fixture() {
+        let repo = FixtureBuilder::new().build("with-remote").expect("fixture");
+        assert!(repo.path().join("README.md").exists());
+        let out = git_stdout(repo.path(), &["remote", "-v"]).expect("remote");
+        assert!(out.contains("origin"));
     }
 }

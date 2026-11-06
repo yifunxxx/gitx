@@ -2,14 +2,18 @@
 
 #![allow(clippy::result_large_err)]
 
+mod clone_ops;
 mod detect;
 mod jobs;
 mod ops;
 mod progress;
+mod refs_ops;
+mod remote_ops;
 mod runner;
 mod scheduler;
 mod status;
 mod stderr;
+mod sync_ops;
 
 pub use detect::{detect_git, GitDetectResult, MIN_GIT_VERSION};
 pub use jobs::{JobEvent, JobManager, JobProgress, JobState};

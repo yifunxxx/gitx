@@ -51,3 +51,32 @@ fn migrate_settings(mut settings: AppSettings) -> AppSettings {
     settings.schema_version = gitx_core::SETTINGS_SCHEMA_VERSION;
     settings
 }
+
+/// Favorite ref full names (`refs/heads/main`, …) per repository.
+pub fn favorites_path(git_common_dir: &Path) -> PathBuf {
+    gitx_dir(git_common_dir).join("favorites.json")
+}
+
+pub fn load_favorites(git_common_dir: &Path) -> Result<Vec<String>, AppError> {
+    let path = favorites_path(git_common_dir);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("read favorites: {e}")))?;
+    serde_json::from_str(&raw)
+        .map_err(|e| AppError::new(ErrorCode::Internal, format!("parse favorites: {e}")))
+}
+
+pub fn save_favorites(git_common_dir: &Path, favorites: &[String]) -> Result<(), AppError> {
+    ensure_meta_dir(git_common_dir)?;
+    let path = favorites_path(git_common_dir);
+    let tmp = path.with_extension("json.tmp");
+    let raw = serde_json::to_string_pretty(favorites)
+        .map_err(|e| AppError::new(ErrorCode::Internal, format!("serialize favorites: {e}")))?;
+    fs::write(&tmp, raw)
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("write favorites: {e}")))?;
+    fs::rename(&tmp, &path)
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("rename favorites: {e}")))?;
+    Ok(())
+}

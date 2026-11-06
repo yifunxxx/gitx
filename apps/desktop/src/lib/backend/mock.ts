@@ -22,6 +22,20 @@ const defaultSettings: AppSettings = {
   recentWorkspaces: ["/tmp/demo-repo"],
   stagingMode: true,
   logIndexing: true,
+  git: {
+    updateMethod: "merge",
+    fetchTags: "auto",
+    autoFetchMinutes: 0,
+    checkIncoming: "auto",
+    showUpdateInfo: true,
+    showOptionsBeforeUpdate: true,
+    fetchOnAddRemote: true,
+    protectedBranches: ["main", "master"],
+    useCredentialHelper: true,
+    groupBranchesByDirectory: true,
+    showRecentBranches: true,
+    showTags: true,
+  },
 };
 
 let settings = structuredClone(defaultSettings);
@@ -97,15 +111,27 @@ function mockLog(): LogCommit[] {
   ];
 }
 
+
+let mockBranch = "main";
+let mockBranches = ["main", "develop"];
+let mockRemotes: { name: string; fetchUrl: string; pushUrl: string | null }[] = [
+  { name: "origin", fetchUrl: "https://example.com/gitx.git", pushUrl: null },
+];
+let mockFavorites: string[] = ["refs/heads/main"];
+let mockTags: { name: string; sha: string }[] = [{ name: "v0.1", sha: "bbbbbbbccccccccccccccccccccccccccccccc" }];
+let mockAhead = 1;
+let hasFetched = false;
+let mockBehind = 0;
+
 function statusSnapshot(path: string): StatusSnapshot {
   return {
     repoId: path,
     version: Date.now(),
     branch: {
-      head: "main",
-      upstream: null,
-      ahead: 1,
-      behind: 0,
+      head: mockBranch,
+      upstream: mockRemotes.length ? `origin/${mockBranch}` : null,
+      ahead: mockAhead,
+      behind: mockBehind,
       detached: false,
     },
     files: structuredClone(files),
@@ -467,4 +493,205 @@ export const mockBackend: Backend = {
       ],
     };
   },
+  async refsList() {
+    return {
+      local: mockBranches.map((name) => ({
+        name,
+        fullName: `refs/heads/${name}`,
+        kind: "localBranch" as const,
+        sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        upstream: name === mockBranch && mockRemotes.length ? `origin/${name}` : null,
+        ahead: name === mockBranch ? mockAhead : null,
+        behind: name === mockBranch ? mockBehind : null,
+        isHead: name === mockBranch,
+        subject: "mock commit",
+        committerTime: 1_704_067_200,
+        peeledSha: null,
+        isFavorite: mockFavorites.includes(`refs/heads/${name}`),
+      })),
+      remote: mockRemotes.flatMap((r) =>
+        mockBranches.map((name) => ({
+          name: `${r.name}/${name}`,
+          fullName: `refs/remotes/${r.name}/${name}`,
+          kind: "remoteBranch" as const,
+          sha: "bbbbbbbccccccccccccccccccccccccccccccc",
+          upstream: null,
+          ahead: null,
+          behind: null,
+          isHead: false,
+          subject: "remote tip",
+          committerTime: 1_704_000_000,
+          peeledSha: null,
+          isFavorite: mockFavorites.includes(`refs/remotes/${r.name}/${name}`),
+        })),
+      ),
+      tags: mockTags.map((t) => ({
+        name: t.name,
+        fullName: `refs/tags/${t.name}`,
+        kind: "tag" as const,
+        sha: t.sha,
+        upstream: null,
+        ahead: null,
+        behind: null,
+        isHead: false,
+        subject: "tag",
+        committerTime: 1_704_000_000,
+        peeledSha: t.sha,
+        isFavorite: false,
+      })),
+      recent: mockBranches.slice(0, 3),
+      current: mockBranch,
+      detached: false,
+    };
+  },
+  async favoritesSet(req) {
+    mockFavorites = [...req.favorites];
+    return null;
+  },
+  async branchCreate(req) {
+    if (!mockBranches.includes(req.name)) mockBranches.push(req.name);
+    if (req.checkout) mockBranch = req.name;
+    emitConsole("cmd", `git branch ${req.name}`);
+    return null;
+  },
+  async branchCheckout(req) {
+    mockBranch = req.target.includes("/") ? req.target.split("/").pop()! : req.target;
+    if (!mockBranches.includes(mockBranch) && req.mode === "remote") mockBranches.push(mockBranch);
+    emitConsole("cmd", `git checkout ${req.target}`);
+    return null;
+  },
+  async branchRename(req) {
+    mockBranches = mockBranches.map((b) => (b === req.oldName ? req.newName : b));
+    if (mockBranch === req.oldName) mockBranch = req.newName;
+    return null;
+  },
+  async branchDelete(req) {
+    mockBranches = mockBranches.filter((b) => b !== req.name);
+    return { sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" };
+  },
+  async branchRestore(req) {
+    if (!mockBranches.includes(req.name)) mockBranches.push(req.name);
+    return null;
+  },
+  async branchUpdate() {
+    mockBehind = 0;
+    return null;
+  },
+  async compareBranches(req) {
+    return {
+      left: req.left,
+      right: req.right,
+      leftOnly: req.left === req.right ? [] : ["aaaaaaa Add feature"],
+      rightOnly: req.left === req.right ? [] : ["bbbbbbb Initial commit"],
+    };
+  },
+  async tagCreate(req) {
+    mockTags.push({ name: req.name, sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+    return null;
+  },
+  async tagDelete(req) {
+    mockTags = mockTags.filter((t) => t.name !== req.name);
+    return { sha: "bbbbbbbccccccccccccccccccccccccccccccc" };
+  },
+  async tagPush(req) {
+    emitConsole("cmd", `git push ${req.remote} refs/tags/${req.name}`);
+    return null;
+  },
+  async remoteList() {
+    return structuredClone(mockRemotes);
+  },
+  async remoteAdd(req) {
+    mockRemotes.push({ name: req.name, fetchUrl: req.url, pushUrl: null });
+    emitConsole("cmd", `git remote add ${req.name} ${req.url}`);
+    return null;
+  },
+  async remoteEdit(req) {
+    const r = mockRemotes.find((x) => x.name === req.name);
+    if (!r) return null;
+    if (req.newName) r.name = req.newName;
+    if (req.url) r.fetchUrl = req.url;
+    if (req.pushUrl) r.pushUrl = req.pushUrl;
+    return null;
+  },
+  async remoteRemovePreview() {
+    return { trackingCount: mockBranches.length };
+  },
+  async remoteRemove(req) {
+    mockRemotes = mockRemotes.filter((r) => r.name !== req.name);
+    return null;
+  },
+  async fetchRun() {
+    mockBehind = 0;
+    hasFetched = true;
+    emitConsole("cmd", "git fetch --all --prune");
+    return {
+      remote: "all",
+      newBranches: 0,
+      updatedBranches: 0,
+      newTags: 0,
+      pruned: 0,
+      message: "Everything is up to date",
+    };
+  },
+  async pullRun() {
+    mockBehind = 0;
+    return {
+      oldHead: "bbbbbbbccccccccccccccccccccccccccccccc",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      strategy: "merge",
+      updated: true,
+      message: "Pulled successfully",
+    };
+  },
+  async updateProjectRun(req) {
+    mockBehind = 0;
+    return {
+      oldHead: "bbbbbbbccccccccccccccccccccccccccccccc",
+      newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      strategy: req.strategy,
+      updatedFiles: [{ path: "README.md", status: "M", origPath: null }],
+      commits: ["aaaaaaa Update README"],
+      message: "1 files updated in 1 commits",
+    };
+  },
+  async pushPreview() {
+    return {
+      remote: mockRemotes[0]?.name ?? "origin",
+      refs: [{ local: mockBranch, remote: mockRemotes[0]?.name ?? "origin", remoteBranch: mockBranch }],
+      commits: mockAhead ? ["aaaaaaa Local commit"] : [],
+      setUpstream: false,
+      hasRemote: mockRemotes.length > 0,
+    };
+  },
+  async pushRun(req) {
+    if (req.forceWithLease && ["main", "master"].includes(req.branch)) {
+      throw { code: "protectedBranch", message: `force push to protected branch '${req.branch}' is not allowed` };
+    }
+    mockAhead = 0;
+    emitConsole("cmd", `git push ${req.remote} ${req.branch}`);
+    return {
+      outcome: "success" as const,
+      remote: req.remote,
+      message: `Pushed to ${req.remote}/${req.branch}`,
+      rejected: false,
+      setUpstream: req.setUpstream,
+    };
+  },
+  async lsRemoteCheck() {
+    return { hasUnfetched: mockBehind > 0 && !hasFetched, remotes: mockBehind ? ["origin"] : [] };
+  },
+  async cloneCheckUrl(req) {
+    return req.url.includes("git") || req.url.startsWith("http");
+  },
+  async cloneRun(req) {
+    emitConsole("cmd", `git clone ${req.url} ${req.dir}`);
+    return { path: req.dir, shallow: !!req.depth };
+  },
+  async unshallowRun() {
+    return null;
+  },
+  async repoStateGet() {
+    return { isShallow: false };
+  },
+
 };
