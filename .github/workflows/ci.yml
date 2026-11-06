@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, "docs/**", "cursor/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm --filter @gitx/desktop build
+      - run: pnpm bindings:check
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install webkit deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+      - run: cargo fmt --check
+      - run: cargo test -p gitx-core -p gitx-git -p gitx-testkit -p gitx-meta --workspace --exclude gitx
+      - run: cargo clippy -p gitx-core -p gitx-git -p gitx-helper -p gitx-meta -p gitx-watch -- -D warnings
+      - run: cargo build -p gitx-helper
+      - run: cargo build -p gitx
+
+  # Full desktop e2e (tauri-driver) is deferred — smoke via web mock in M0.
+  e2e-web-placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Playwright web e2e scaffold deferred; vitest covers registry + i18n for M0"

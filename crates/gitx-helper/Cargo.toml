@@ -1,0 +1,15 @@
+[package]
+name = "gitx-helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "askpass / editor / sequence-editor sidecar"
+
+[[bin]]
+name = "gitx-helper"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

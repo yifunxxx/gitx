@@ -1,0 +1,55 @@
+:root {
+  --vcs-modified: 37 99 235;
+  --vcs-added: 22 163 74;
+  --vcs-deleted: 115 115 115;
+  --vcs-renamed: 124 58 237;
+  --vcs-unversioned: 153 80 52;
+  --vcs-ignored: 113 128 58;
+  --vcs-conflict: 220 38 38;
+  --vcs-merged-with-conflicts: 234 88 12;
+  --vcs-changelist-inactive: 161 161 161;
+
+  --diff-insert-bg: 220 252 231;
+  --diff-insert-strong: 22 163 74;
+  --diff-delete-bg: 254 226 226;
+  --diff-delete-strong: 220 38 38;
+  --diff-modify-bg: 219 234 254;
+  --diff-conflict-bg: 254 243 199;
+  --diff-word-insert: 134 239 172;
+  --diff-word-delete: 252 165 165;
+
+  --gutter-added: 22 163 74;
+  --gutter-modified: 37 99 235;
+  --gutter-deleted: 220 38 38;
+
+  --graph-lane-0: 37 99 235;
+  --graph-lane-1: 22 163 74;
+  --graph-lane-2: 234 88 12;
+  --graph-lane-3: 124 58 237;
+  --graph-lane-4: 8 145 178;
+  --graph-lane-5: 219 39 119;
+  --graph-lane-6: 202 138 4;
+  --graph-lane-7: 79 70 229;
+  --graph-lane-8: 5 150 105;
+  --graph-lane-9: 225 29 72;
+  --graph-lane-10: 14 165 233;
+  --graph-lane-11: 168 85 247;
+
+  --ref-head: 23 23 23;
+  --ref-local: 37 99 235;
+  --ref-remote: 22 163 74;
+  --ref-tag: 202 138 4;
+  --commit-unpushed: 37 99 235;
+  --commit-cherry-picked: 161 161 161;
+
+  --incoming: 37 99 235;
+  --outgoing: 22 163 74;
+}
+
+.dark {
+  --diff-insert-bg: 20 83 45 / 0.35;
+  --diff-delete-bg: 127 29 29 / 0.35;
+  --diff-modify-bg: 30 58 138 / 0.35;
+  --diff-conflict-bg: 113 63 18 / 0.4;
+  --ref-head: 208 208 214;
+}

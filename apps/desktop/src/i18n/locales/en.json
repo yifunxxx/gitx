@@ -1,0 +1,22 @@
+{
+  "app": {
+    "name": "gitx",
+    "welcome": "Welcome to gitx"
+  },
+  "actions": {
+    "refreshStatus": "Refresh Status",
+    "demoHello": "Demo: Hello gitx",
+    "findAction": "Find Action",
+    "openFolder": "Open Folder"
+  },
+  "toolWindows": {
+    "commit": "Commit",
+    "git": "Git",
+    "console": "Console",
+    "log": "Log"
+  },
+  "empty": {
+    "noFolder": "Open a folder to get started",
+    "noChanges": "No changes"
+  }
+}
