@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
 import { Eye, Filter, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
@@ -17,6 +18,7 @@ import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
+import { clampMenuPosition, markContextHandled } from "@/lib/contextMenu";
 import {
   Select,
   SelectContent,
@@ -28,6 +30,7 @@ import PathTreeList from "@/components/files/PathTreeList.vue";
 import type { ChangedFile } from "@/lib/backend";
 import CommitGraphCell from "./CommitGraphCell.vue";
 
+const { t } = useI18n();
 const log = useLogStore();
 const workspace = useWorkspaceStore();
 const compare = useCompareStore();
@@ -128,9 +131,10 @@ function onCommitClick(sha: string, e: MouseEvent) {
 }
 
 function onCommitContext(sha: string, e: MouseEvent) {
-  e.preventDefault();
+  markContextHandled(e);
   if (!log.selectedShas.includes(sha)) void log.select(sha, false);
-  ctx.value = { open: true, x: e.clientX, y: e.clientY };
+  const pos = clampMenuPosition(e.clientX, e.clientY, 260, 420);
+  ctx.value = { open: true, x: pos.x, y: pos.y };
 }
 
 function closeCtx() {
@@ -139,7 +143,7 @@ function closeCtx() {
 
 async function ctxCopy() {
   log.copySelectedSha();
-  toast({ title: "Copied revision" });
+  toast({ title: t("log.copiedRevision") });
   closeCtx();
 }
 
@@ -151,7 +155,7 @@ async function ctxCompareLocal() {
 
 async function ctxCompareVersions() {
   if (log.selectedShas.length < 2) {
-    toast({ title: "Select two commits (Ctrl/Cmd-click)" });
+    toast({ title: t("log.selectTwoCommits") });
     return;
   }
   await compare.compareVersions(log.selectedShas[0]!, log.selectedShas[1]!);
@@ -242,8 +246,8 @@ async function ctxDrop() {
   if (!shas.length) return;
   closeCtx();
   const ok = await confirmDialog({
-    title: "Drop Commits",
-    message: `Drop ${shas.length} commit(s)?`,
+    title: t("actions.dropCommits"),
+    message: t("log.dropConfirm", { count: shas.length }),
     destructive: true,
   });
   if (!ok) return;
@@ -253,7 +257,7 @@ async function ctxDrop() {
 async function ctxSquash() {
   const shas = log.selectedShas.length ? [...log.selectedShas] : [];
   if (shas.length < 2) {
-    toast({ title: "Select two or more commits" });
+    toast({ title: t("log.selectTwoOrMore") });
     return;
   }
   closeCtx();
@@ -272,11 +276,11 @@ async function ctxExtract() {
   closeCtx();
   const paths = log.changedFiles.map((f) => f.path);
   const msg = await promptDialog({
-    title: "Extract Selected Changes…",
-    defaultValue: "Extracted changes",
+    title: t("actions.extractSelected"),
+    defaultValue: t("log.extractedDefault"),
   });
   if (msg == null) return;
-  await rewrite.extractChanges(log.selectedSha, paths, msg || "Extracted changes");
+  await rewrite.extractChanges(log.selectedSha, paths, msg || t("log.extractedDefault"));
 }
 </script>
 
@@ -525,54 +529,62 @@ async function ctxExtract() {
       </Splitpanes>
     </template>
 
-    <div
-      v-if="ctx.open"
-      class="fixed z-[9999] min-w-48 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
-      :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }"
-      @click.stop
-    >
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCopy">
-        Copy Revision Number
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCherryPick">
-        Cherry-Pick
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReword">
-        Edit Commit Message…
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxInteractive">
-        Interactively Rebase from Here…
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxSquash">
-        Squash Commits…
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxDrop">
-        Drop Commits
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxUncommit">
-        Undo Commit
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRevert">
-        Revert Commit
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReset">
-        Reset Current Branch to Here…
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxExtract">
-        Extract Selected Changes…
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareLocal">
-        Compare with Local
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareVersions">
-        Compare Versions
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCombined">
-        Show All Changes
-      </button>
-      <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRepoAtRev">
-        Show Repository at Revision
-      </button>
-    </div>
+    <Teleport to="body">
+      <div
+        v-if="ctx.open"
+        class="fixed inset-0 z-[9998]"
+        @click="closeCtx"
+        @contextmenu.prevent="closeCtx"
+      >
+        <div
+          class="absolute z-[9999] min-w-48 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
+          :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }"
+          @click.stop
+        >
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCopy">
+            {{ t("log.copyRevision") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCherryPick">
+            {{ t("actions.cherryPick") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReword">
+            {{ t("actions.reword") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxInteractive">
+            {{ t("actions.interactiveRebase") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxSquash">
+            {{ t("actions.squash") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxDrop">
+            {{ t("actions.dropCommits") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxUncommit">
+            {{ t("actions.uncommit") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRevert">
+            {{ t("actions.revert") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReset">
+            {{ t("actions.reset") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxExtract">
+            {{ t("actions.extractSelected") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareLocal">
+            {{ t("history.compareWithLocal") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareVersions">
+            {{ t("history.compareVersions") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCombined">
+            {{ t("history.showAllChanges") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRepoAtRev">
+            {{ t("history.repoAtRevision") }}
+          </button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

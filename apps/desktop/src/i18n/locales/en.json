@@ -18,11 +18,22 @@
   "actions": {
     "refreshStatus": "Refresh Status",
     "findAction": "Find Action",
+    "noActions": "No actions",
+    "vcsOperations": "VCS Operations",
     "openFolder": "Open…",
     "commit": "Commit",
     "showDiff": "Show Diff",
     "stage": "Stage",
     "unstage": "Unstage",
+    "addToVcs": "Add to VCS",
+    "ignoreFile": "Ignore File…",
+    "showStashes": "Show Stashes…",
+    "extractSelected": "Extract Selected Changes…",
+    "dropSelected": "Drop Selected Changes",
+    "compareWithBranch": "Compare with Branch or Tag…",
+    "createPatch": "Create Patch…",
+    "openExclude": "Open .git/info/exclude",
+    "commitAndPush": "Commit and Push…",
     "createRepo": "Create Git Repository…",
     "clone": "Clone Repository…",
     "branches": "Branches…",
@@ -46,6 +57,14 @@
     "revert": "Revert Commit",
     "reset": "Reset Current Branch to Here…",
     "settings": "Settings…"
+  },
+  "log": {
+    "copyRevision": "Copy Revision Number",
+    "copiedRevision": "Copied revision",
+    "selectTwoCommits": "Select two commits (Ctrl/Cmd-click)",
+    "selectTwoOrMore": "Select two or more commits",
+    "dropConfirm": "Drop {count} commit(s)?",
+    "extractedDefault": "Extracted changes"
   },
   "merge": {
     "conflicts": "Conflicts",
@@ -73,7 +92,8 @@
     "apply": "Apply",
     "dismiss": "Dismiss",
     "confirm": "Confirm",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "close": "Close"
   },
   "status": {
     "idle": "Idle",
@@ -245,6 +265,7 @@
     "noFolderTitle": "No folder open",
     "noFolderHint": "Open a folder from Welcome or the toolbar.",
     "noChanges": "No local changes",
+    "noFiles": "No files",
     "notVcs": "This folder is not under version control",
     "notVcsHint": "Enable Version Control Integration to create a Git repository here.",
     "enableVcs": "Enable Version Control Integration…",
@@ -268,16 +289,30 @@
   "history": {
     "showHistory": "Show History",
     "compare": "Compare",
-    "repoAtRevision": "Repository at Revision",
+    "repoAtRevision": "Show Repository at Revision",
     "filters": "Filters",
-    "graphOptions": "Graph Options"
+    "graphOptions": "Graph Options",
+    "compareWithLocal": "Compare with Local",
+    "compareVersions": "Compare Versions",
+    "showAllChanges": "Show All Changes"
   },
   "branches": {
     "search": "Search branches…",
     "local": "Local",
     "remote": "Remote",
     "tags": "Tags",
-    "recent": "Recent"
+    "recent": "Recent",
+    "checkout": "Checkout",
+    "rename": "Rename…",
+    "mergeIntoCurrent": "Merge '{name}' into Current",
+    "rebaseOnto": "Rebase Current onto '{name}'",
+    "checkoutAndRebase": "Checkout and Rebase onto Current",
+    "pullMerge": "Pull into Current Using Merge",
+    "pullRebase": "Pull into Current Using Rebase",
+    "compareWithCurrent": "Compare with current",
+    "copyName": "Copy Branch Name",
+    "delete": "Delete",
+    "noRemotes": "No remotes — Manage Remotes…"
   },
   "workspace": {
     "path": "Path",

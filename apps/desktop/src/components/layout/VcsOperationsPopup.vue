@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { getGroup, getAction, runAction, shortcutFor } from "@/actions";
 import type { ActionContext } from "@/actions";
+import { resolveActionTitle } from "@/actions/titles";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 
@@ -13,7 +16,12 @@ const items = computed(() =>
   (group.value?.children ?? [])
     .filter((c): c is string => c !== "-")
     .map((id) => getAction(id))
-    .filter(Boolean),
+    .filter(Boolean)
+    .map((a) => ({
+      id: a!.id,
+      title: resolveActionTitle(a!, t),
+      shortcut: shortcutFor(a!)[0],
+    })),
 );
 
 const ctx = computed<ActionContext>(() => ({
@@ -40,21 +48,21 @@ async function pick(id: string) {
       class="absolute left-10 top-12 min-w-56 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
     >
       <div class="px-2 py-1 text-[11px] font-medium text-muted-foreground">
-        VCS Operations
+        {{ t("actions.vcsOperations") }}
       </div>
       <button
         v-for="a in items"
-        :key="a!.id"
+        :key="a.id"
         type="button"
         class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[13px] leading-4 hover:bg-accent"
-        @click="pick(a!.id)"
+        @click="pick(a.id)"
       >
-        <span>{{ a!.title }}</span>
+        <span>{{ a.title }}</span>
         <kbd
-          v-if="shortcutFor(a!)[0]"
+          v-if="a.shortcut"
           class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
         >
-          {{ shortcutFor(a!)[0] }}
+          {{ a.shortcut }}
         </kbd>
       </button>
     </div>

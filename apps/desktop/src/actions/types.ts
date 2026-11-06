@@ -26,7 +26,10 @@ export type EnabledResult = boolean | { enabled: false; reason: string };
 
 export type ActionDef = {
   id: string;
+  /** English fallback title (Find Action / logs). Prefer `titleKey` for UI. */
   title: string;
+  /** vue-i18n key; when set, menus/popups use localized label. */
+  titleKey?: string;
   description?: string;
   icon?: Component;
   defaultShortcuts?: { mac?: string[]; win?: string[]; linux?: string[] };

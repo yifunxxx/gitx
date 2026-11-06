@@ -281,7 +281,7 @@ function statusSnapshot(path: string, includeIgnored = false): StatusSnapshot {
 
 export const mockBackend: Backend = {
   async appInfo() {
-    return { name: "gitx", version: "0.1.2-web" };
+    return { name: "gitx", version: "0.1.3-web" };
   },
   async gitDetect() {
     return {
@@ -421,12 +421,13 @@ export const mockBackend: Backend = {
     });
   },
   async diffFile(req): Promise<DiffFileResult> {
+    const includeTexts = req.includeTexts !== false;
     return {
       path: req.filePath,
       leftLabel: req.left === "index" ? "Staged" : req.left === "head" ? "HEAD" : "Local",
       rightLabel: req.right === "worktree" ? "Local" : req.right === "index" ? "Staged" : "HEAD",
-      leftText: mockDiffBody("staged", 160),
-      rightText: mockDiffBody("local", 160),
+      leftText: includeTexts ? mockDiffBody("staged", 160) : null,
+      rightText: includeTexts ? mockDiffBody("local", 160) : null,
       binary: false,
       tooLarge: false,
       hunks: mockHunks(),
@@ -627,12 +628,13 @@ export const mockBackend: Backend = {
     return this.logIndexStatus({ path: "/tmp/demo-repo" });
   },
   async diffFileAt(req) {
+    const includeTexts = req.includeTexts !== false;
     return {
       path: req.filePath,
       leftLabel: req.leftRev.slice(0, 7),
       rightLabel: req.rightRev.slice(0, 7),
-      leftText: "# gitx\nhello\n",
-      rightText: "# gitx\nhello world\n",
+      leftText: includeTexts ? "# gitx\nhello\n" : null,
+      rightText: includeTexts ? "# gitx\nhello world\n" : null,
       binary: false,
       tooLarge: false,
       hunks: mockHunks(),

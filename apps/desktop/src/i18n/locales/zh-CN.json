@@ -18,14 +18,25 @@
   "actions": {
     "refreshStatus": "刷新状态",
     "findAction": "查找操作",
+    "noActions": "无匹配操作",
+    "vcsOperations": "VCS 操作",
     "openFolder": "打开…",
     "commit": "提交",
     "showDiff": "显示 Diff",
-    "stage": "Stage",
-    "unstage": "Unstage",
+    "stage": "暂存",
+    "unstage": "取消暂存",
+    "addToVcs": "添加到版本控制",
+    "ignoreFile": "忽略文件…",
+    "showStashes": "显示 Stash…",
+    "extractSelected": "提取所选更改…",
+    "dropSelected": "丢弃所选更改",
+    "compareWithBranch": "与分支或标签比较…",
+    "createPatch": "创建补丁…",
+    "openExclude": "打开 .git/info/exclude",
+    "commitAndPush": "提交并推送…",
     "createRepo": "创建 Git 仓库…",
     "clone": "Clone 仓库…",
-    "branches": "Branches…",
+    "branches": "分支…",
     "fetch": "Fetch",
     "pull": "Pull…",
     "push": "Push…",
@@ -46,6 +57,14 @@
     "revert": "还原提交",
     "reset": "将当前分支重置到此处…",
     "settings": "设置…"
+  },
+  "log": {
+    "copyRevision": "复制修订号",
+    "copiedRevision": "已复制修订号",
+    "selectTwoCommits": "请选择两个提交（Ctrl/Cmd-点击）",
+    "selectTwoOrMore": "请选择两个或更多提交",
+    "dropConfirm": "丢弃 {count} 个提交？",
+    "extractedDefault": "提取的更改"
   },
   "merge": {
     "conflicts": "冲突",
@@ -73,7 +92,8 @@
     "apply": "应用",
     "dismiss": "关闭",
     "confirm": "确认",
-    "loading": "加载中…"
+    "loading": "加载中…",
+    "close": "关闭"
   },
   "status": {
     "idle": "空闲",
@@ -245,6 +265,7 @@
     "noFolderTitle": "未打开文件夹",
     "noFolderHint": "从 Welcome 或工具栏打开文件夹。",
     "noChanges": "没有本地变更",
+    "noFiles": "无文件",
     "notVcs": "此文件夹不在版本控制下",
     "notVcsHint": "启用版本控制集成以在此创建 Git 仓库。",
     "enableVcs": "启用版本控制集成…",
@@ -270,14 +291,28 @@
     "compare": "比较",
     "repoAtRevision": "在修订版浏览仓库",
     "filters": "过滤",
-    "graphOptions": "图选项"
+    "graphOptions": "图选项",
+    "compareWithLocal": "与本地比较",
+    "compareVersions": "比较版本",
+    "showAllChanges": "显示全部更改"
   },
   "branches": {
     "search": "搜索分支…",
-    "local": "Local",
-    "remote": "Remote",
-    "tags": "Tags",
-    "recent": "Recent"
+    "local": "本地",
+    "remote": "远程",
+    "tags": "标签",
+    "recent": "最近",
+    "checkout": "检出",
+    "rename": "重命名…",
+    "mergeIntoCurrent": "将 '{name}' 合并到当前分支",
+    "rebaseOnto": "将当前分支变基到 '{name}'",
+    "checkoutAndRebase": "检出并变基到当前分支",
+    "pullMerge": "用合并拉取到当前分支",
+    "pullRebase": "用变基拉取到当前分支",
+    "compareWithCurrent": "与当前分支比较",
+    "copyName": "复制分支名",
+    "delete": "删除",
+    "noRemotes": "无远程 — 管理 Remotes…"
   },
   "workspace": {
     "path": "路径",

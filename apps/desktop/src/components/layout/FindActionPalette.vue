@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { searchActions, runAction, shortcutFor } from "@/actions";
 import type { ActionContext } from "@/actions";
+import { resolveActionTitle } from "@/actions/titles";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
+const { t } = useI18n();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const query = ref("");
@@ -18,7 +21,15 @@ const ctx = computed<ActionContext>(() => ({
   folderPath: workspace.folderPath,
 }));
 
-const results = computed(() => searchActions(query.value, ctx.value).slice(0, 30));
+const results = computed(() =>
+  searchActions(query.value, ctx.value)
+    .slice(0, 30)
+    .map((a) => ({
+      id: a.id,
+      title: resolveActionTitle(a, t),
+      shortcut: shortcutFor(a)[0],
+    })),
+);
 
 watch(
   () => layout.findActionOpen,
@@ -52,7 +63,7 @@ function onKey(e: KeyboardEvent) {
         ref="inputEl"
         v-model="query"
         class="h-10 w-full border-b bg-transparent px-3 text-sm outline-none"
-        placeholder="Find Action…"
+        :placeholder="t('actions.findAction')"
       />
       <ul class="max-h-80 overflow-auto p-1">
         <li v-for="a in results" :key="a.id">
@@ -66,15 +77,15 @@ function onKey(e: KeyboardEvent) {
               <span class="ml-2 text-xs text-muted-foreground">{{ a.id }}</span>
             </span>
             <kbd
-              v-if="shortcutFor(a)[0]"
+              v-if="a.shortcut"
               class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
             >
-              {{ shortcutFor(a)[0] }}
+              {{ a.shortcut }}
             </kbd>
           </button>
         </li>
         <li v-if="!results.length" class="px-2 py-3 text-xs text-muted-foreground">
-          No actions
+          {{ t("actions.noActions") }}
         </li>
       </ul>
     </div>

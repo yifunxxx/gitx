@@ -13,6 +13,15 @@ describe("charRanges", () => {
   it("returns empty for identical strings", () => {
     expect(charRanges("abc", "abc")).toEqual({ left: [], right: [] });
   });
+
+  it("caps token LCS on long tokenized middles", () => {
+    // Many distinct tokens → matrix would exceed MAX_TOKEN_LCS_CELLS without the cap.
+    const oldText = Array.from({ length: 400 }, (_, i) => `tok${i}`).join(" ");
+    const newText = Array.from({ length: 400 }, (_, i) => `tok${i + 1}`).join(" ");
+    const r = charRanges(oldText, newText);
+    expect(r.left.length).toBeGreaterThan(0);
+    expect(r.right.length).toBeGreaterThan(0);
+  });
 });
 
 describe("computeSideInlineRanges", () => {

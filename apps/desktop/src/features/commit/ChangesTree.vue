@@ -10,8 +10,11 @@ import {
   type PathTreeNode,
 } from "@/lib/path-tree/buildPathTree";
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
+import { markContextHandled } from "@/lib/contextMenu";
+import { useI18n } from "vue-i18n";
 import { statusClass } from "./statusColor";
 
+const { t } = useI18n();
 const changes = useChangesStore();
 
 const emit = defineEmits<{
@@ -182,7 +185,7 @@ function onKeydown(row: FileRow, e: KeyboardEvent) {
 function onContext(row: FileRow, e: MouseEvent) {
   const file = row.node.file?.change;
   if (!file) return;
-  e.preventDefault();
+  markContextHandled(e);
   if (!changes.selectedPaths.includes(file.path)) {
     changes.select(file.path, row.section, false);
   }
@@ -275,7 +278,7 @@ function rowKey(row: Row, i: number) {
       </div>
     </template>
     <div v-if="isEmpty" class="px-3 py-6 text-xs text-muted-foreground">
-      No local changes
+      {{ t("empty.noChanges") }}
     </div>
   </div>
 </template>

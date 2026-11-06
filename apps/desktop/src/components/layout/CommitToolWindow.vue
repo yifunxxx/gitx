@@ -29,6 +29,7 @@ import { toast } from "@/composables/useToast";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { getBackend } from "@/lib/backend";
 import type { CommitTwMode } from "@/lib/backend";
+import { clampMenuPosition } from "@/lib/contextMenu";
 
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
@@ -212,10 +213,11 @@ async function shelveSelected() {
 
 function onContext(payload: { path: string; section: ChangesSection; x: number; y: number }) {
   layout.vcsPopupOpen = false;
+  const pos = clampMenuPosition(payload.x, payload.y, 200, 200);
   ctxMenu.value = {
     open: true,
-    x: payload.x,
-    y: payload.y,
+    x: pos.x,
+    y: pos.y,
     path: payload.path,
     section: payload.section,
   };
@@ -255,6 +257,7 @@ async function runCtx(action: string) {
 <template>
   <div
     class="flex h-full min-h-0 flex-col bg-sidebar"
+    data-gitx-context="changes"
     :class="{
       'ring-1 ring-primary/40': layout.commitTwMode === 'float',
       'border-l-2 border-l-primary': layout.commitTwMode === 'window',

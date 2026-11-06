@@ -8,6 +8,10 @@ import {
   type PathTreeNode,
 } from "@/lib/path-tree/buildPathTree";
 import FileTypeIcon from "./FileTypeIcon.vue";
+import { markContextHandled } from "@/lib/contextMenu";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -20,9 +24,11 @@ const props = withDefaults(
   {
     statusClass: () => "text-foreground",
     selectedPath: null,
-    emptyText: "No files",
+    emptyText: undefined,
   },
 );
+
+const resolvedEmpty = computed(() => props.emptyText ?? t("empty.noFiles"));
 
 const emit = defineEmits<{
   select: [file: T];
@@ -64,7 +70,7 @@ function onRowDblClick(node: PathTreeNode<T>) {
 
 function onContext(node: PathTreeNode<T>, e: MouseEvent) {
   if (!node.file) return;
-  e.preventDefault();
+  markContextHandled(e);
   emit("context", { file: node.file, x: e.clientX, y: e.clientY });
 }
 
@@ -112,7 +118,7 @@ function labelFor(node: PathTreeNode<T>) {
       </span>
     </div>
     <div v-if="!files.length" class="px-3 py-4 text-xs text-muted-foreground">
-      {{ emptyText }}
+      {{ resolvedEmpty }}
     </div>
   </div>
 </template>

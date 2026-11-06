@@ -258,6 +258,8 @@ export type DiffFileReq = {
   left: DiffSide
   right: DiffSide
   ignoreWhitespace?: IgnoreWhitespace
+  /** When false, backend omits full texts (collapsed Diff only needs hunks). */
+  includeTexts?: boolean
 }
 export type DiffFileAtReq = {
   repoId: string
@@ -268,6 +270,7 @@ export type DiffFileAtReq = {
   leftPath?: string | null
   rightPath?: string | null
   ignoreWhitespace?: IgnoreWhitespace
+  includeTexts?: boolean
 }
 export type DiffRefsReq = {
   repoId: string

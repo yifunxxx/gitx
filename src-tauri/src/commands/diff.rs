@@ -17,6 +17,13 @@ pub struct DiffFileReq {
     pub right: DiffSide,
     #[serde(default)]
     pub ignore_whitespace: IgnoreWhitespace,
+    /// When false, omit full file texts (collapsed Diff only needs hunks).
+    #[serde(default = "default_include_texts")]
+    pub include_texts: bool,
+}
+
+fn default_include_texts() -> bool {
+    true
 }
 
 fn side_label(side: DiffSide) -> &'static str {
@@ -47,12 +54,15 @@ pub async fn diff_file(
     }
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let left_bytes = git
-        .read_blob_at(&cwd, side_rev(req.left), &req.file_path, &cancel)
-        .await?;
-    let right_bytes = git
-        .read_blob_at(&cwd, side_rev(req.right), &req.file_path, &cancel)
-        .await?;
+    let left_rev = side_rev(req.left);
+    let right_rev = side_rev(req.right);
+    let file_path = req.file_path.clone();
+
+    // Parallel blob reads — independent I/O.
+    let (left_bytes, right_bytes) = tokio::try_join!(
+        git.read_blob_at(&cwd, left_rev, &file_path, &cancel),
+        git.read_blob_at(&cwd, right_rev, &file_path, &cancel),
+    )?;
 
     let binary = left_bytes.as_ref().is_some_and(|b| is_probably_binary(b))
         || right_bytes.as_ref().is_some_and(|b| is_probably_binary(b));
@@ -74,20 +84,29 @@ pub async fn diff_file(
 
     let left_text = decode_lossy(left_bytes.as_deref());
     let right_text = decode_lossy(right_bytes.as_deref());
-    let hunks = compute_hunks(
-        left_text.as_deref(),
-        right_text.as_deref(),
-        &DiffComputeOptions {
-            ignore_whitespace: req.ignore_whitespace,
-        },
-    );
+    let ignore = req.ignore_whitespace;
+    let left_for_diff = left_text.clone();
+    let right_for_diff = right_text.clone();
+
+    // Offload Myers/Histogram CPU off the async worker.
+    let hunks = tokio::task::spawn_blocking(move || {
+        compute_hunks(
+            left_for_diff.as_deref(),
+            right_for_diff.as_deref(),
+            &DiffComputeOptions {
+                ignore_whitespace: ignore,
+            },
+        )
+    })
+    .await
+    .map_err(|e| AppError::new(ErrorCode::Internal, format!("diff join: {e}")))?;
 
     Ok(DiffFileResult {
         path: req.file_path,
         left_label: side_label(req.left).into(),
         right_label: side_label(req.right).into(),
-        left_text,
-        right_text,
+        left_text: if req.include_texts { left_text } else { None },
+        right_text: if req.include_texts { right_text } else { None },
         binary: false,
         too_large: false,
         hunks,

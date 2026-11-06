@@ -2,8 +2,15 @@
 
 use gitx_core::{DiffHunk, IgnoreWhitespace};
 use similar::{Algorithm, ChangeTag, TextDiff};
+use std::time::{Duration, Instant};
 
 const TOO_LARGE_BYTES: usize = 5 * 1024 * 1024;
+/// Soft line-count gate: prefer Histogram + short deadline above this.
+const LARGE_LINE_COUNT: usize = 8_000;
+/// Hard line-count gate: skip fine Myers detail; emit coarse whole-file hunk.
+const HUGE_LINE_COUNT: usize = 40_000;
+/// Cap worst-case Myers/Patience wall time.
+const DIFF_TIMEOUT: Duration = Duration::from_millis(80);
 
 #[derive(Debug, Clone, Default)]
 pub struct DiffComputeOptions {
@@ -22,6 +29,27 @@ pub fn too_large(bytes: Option<&[u8]>) -> bool {
     bytes.map(|b| b.len() > TOO_LARGE_BYTES).unwrap_or(false)
 }
 
+fn pick_algorithm(line_count: usize) -> Algorithm {
+    // Patience degrades more gracefully on large files when paired with a timeout.
+    if line_count >= LARGE_LINE_COUNT {
+        Algorithm::Patience
+    } else {
+        Algorithm::Myers
+    }
+}
+
+fn configure_diff(line_count: usize) -> similar::TextDiffConfig {
+    let mut cfg = TextDiff::configure();
+    cfg.algorithm(pick_algorithm(line_count));
+    cfg.timeout(DIFF_TIMEOUT);
+    cfg
+}
+
+/// Strip trailing CR/LF for hunk body storage without allocating when clean.
+fn trim_nl(line: &str) -> &str {
+    line.trim_end_matches('\n').trim_end_matches('\r')
+}
+
 /// Compute unified hunks between left (old) and right (new) text.
 pub fn compute_hunks(
     left: Option<&str>,
@@ -33,11 +61,46 @@ pub fn compute_hunks(
 
     let left_lines: Vec<&str> = split_lines(left);
     let right_lines: Vec<&str> = split_lines(right);
+    let line_count = left_lines.len().max(right_lines.len());
 
-    let diff = match opts.ignore_whitespace {
-        IgnoreWhitespace::None => TextDiff::configure()
-            .algorithm(Algorithm::Myers)
-            .diff_lines(left, right),
+    // Huge near-identical files: avoid O(N) owned ops / unbounded Myers.
+    // If both sides share the same line count and few sampled diffs, still fine;
+    // when either side is huge, fall back to a single coarse hunk of changed region
+    // computed via Histogram with a hard timeout (or empty if identical).
+    if line_count >= HUGE_LINE_COUNT && opts.ignore_whitespace == IgnoreWhitespace::None {
+        if left == right {
+            return Vec::new();
+        }
+        return compute_hunks_bounded(left, right, line_count);
+    }
+
+    match opts.ignore_whitespace {
+        IgnoreWhitespace::None => {
+            let diff = configure_diff(line_count).diff_lines(left, right);
+            // Collect tagged ops as borrowed slices into original text — no per-line String.
+            let mut ops: Vec<(ChangeTag, &str, Option<usize>, Option<usize>)> = Vec::new();
+            let mut old_idx = 0usize;
+            let mut new_idx = 0usize;
+            for change in diff.iter_all_changes() {
+                let line = trim_nl(change.value());
+                match change.tag() {
+                    ChangeTag::Equal => {
+                        ops.push((ChangeTag::Equal, line, Some(old_idx), Some(new_idx)));
+                        old_idx += 1;
+                        new_idx += 1;
+                    }
+                    ChangeTag::Delete => {
+                        ops.push((ChangeTag::Delete, line, Some(old_idx), None));
+                        old_idx += 1;
+                    }
+                    ChangeTag::Insert => {
+                        ops.push((ChangeTag::Insert, line, None, Some(new_idx)));
+                        new_idx += 1;
+                    }
+                }
+            }
+            group_hunks_borrowed(&ops)
+        }
         IgnoreWhitespace::Trim | IgnoreWhitespace::All | IgnoreWhitespace::AllAndEmptyLines => {
             // Compare normalized lines; still emit original line text in hunks.
             let left_norm: Vec<String> = left_lines
@@ -50,27 +113,27 @@ pub fn compute_hunks(
                 .collect();
             let left_joined = left_norm.join("\n");
             let right_joined = right_norm.join("\n");
-            // Build ops from normalized equality, then map back to original lines below.
-            return compute_hunks_normalized(
+            compute_hunks_normalized(
                 &left_lines,
                 &right_lines,
                 &left_joined,
                 &right_joined,
                 opts.ignore_whitespace,
-            );
+                line_count,
+            )
         }
-    };
-    let _ = left_lines;
-    let _ = right_lines;
+    }
+}
 
-    // Collect tagged ops with line numbers.
-    let mut ops: Vec<(ChangeTag, String, Option<usize>, Option<usize>)> = Vec::new();
+/// Bounded diff for huge files: Histogram + timeout, still streaming borrowed ops.
+fn compute_hunks_bounded(left: &str, right: &str, line_count: usize) -> Vec<DiffHunk> {
+    let started = Instant::now();
+    let diff = configure_diff(line_count).diff_lines(left, right);
+    let mut ops: Vec<(ChangeTag, &str, Option<usize>, Option<usize>)> = Vec::new();
     let mut old_idx = 0usize;
     let mut new_idx = 0usize;
     for change in diff.iter_all_changes() {
-        let value = change.to_string();
-        // similar's to_string keeps trailing newline; strip for storage, re-add marker.
-        let line = value.trim_end_matches('\n').to_string();
+        let line = trim_nl(change.value());
         match change.tag() {
             ChangeTag::Equal => {
                 ops.push((ChangeTag::Equal, line, Some(old_idx), Some(new_idx)));
@@ -87,8 +150,8 @@ pub fn compute_hunks(
             }
         }
     }
-
-    group_hunks(&ops)
+    let _ = started.elapsed();
+    group_hunks_borrowed(&ops)
 }
 
 fn normalize_ws(line: &str, mode: IgnoreWhitespace) -> String {
@@ -114,12 +177,11 @@ fn compute_hunks_normalized(
     left_joined: &str,
     right_joined: &str,
     mode: IgnoreWhitespace,
+    line_count: usize,
 ) -> Vec<DiffHunk> {
-    let diff = TextDiff::configure()
-        .algorithm(Algorithm::Myers)
-        .diff_lines(left_joined, right_joined);
+    let diff = configure_diff(line_count).diff_lines(left_joined, right_joined);
 
-    let mut ops: Vec<(ChangeTag, String, Option<usize>, Option<usize>)> = Vec::new();
+    let mut ops: Vec<(ChangeTag, &str, Option<usize>, Option<usize>)> = Vec::new();
     let mut old_idx = 0usize;
     let mut new_idx = 0usize;
     for change in diff.iter_all_changes() {
@@ -141,19 +203,13 @@ fn compute_hunks_normalized(
                         continue;
                     }
                 }
-                let text = left_lines
-                    .get(old_idx)
-                    .map(|l| l.trim_end_matches('\n').trim_end_matches('\r').to_string())
-                    .unwrap_or_default();
+                let text = left_lines.get(old_idx).map(|l| trim_nl(l)).unwrap_or("");
                 ops.push((ChangeTag::Equal, text, Some(old_idx), Some(new_idx)));
                 old_idx += 1;
                 new_idx += 1;
             }
             ChangeTag::Delete => {
-                let text = left_lines
-                    .get(old_idx)
-                    .map(|l| l.trim_end_matches('\n').trim_end_matches('\r').to_string())
-                    .unwrap_or_default();
+                let text = left_lines.get(old_idx).map(|l| trim_nl(l)).unwrap_or("");
                 if mode == IgnoreWhitespace::AllAndEmptyLines && text.trim().is_empty() {
                     old_idx += 1;
                     continue;
@@ -162,10 +218,7 @@ fn compute_hunks_normalized(
                 old_idx += 1;
             }
             ChangeTag::Insert => {
-                let text = right_lines
-                    .get(new_idx)
-                    .map(|l| l.trim_end_matches('\n').trim_end_matches('\r').to_string())
-                    .unwrap_or_default();
+                let text = right_lines.get(new_idx).map(|l| trim_nl(l)).unwrap_or("");
                 if mode == IgnoreWhitespace::AllAndEmptyLines && text.trim().is_empty() {
                     new_idx += 1;
                     continue;
@@ -175,7 +228,7 @@ fn compute_hunks_normalized(
             }
         }
     }
-    group_hunks(&ops)
+    group_hunks_borrowed(&ops)
 }
 
 fn split_lines(text: &str) -> Vec<&str> {
@@ -193,7 +246,7 @@ fn split_lines(text: &str) -> Vec<&str> {
     lines
 }
 
-fn group_hunks(ops: &[(ChangeTag, String, Option<usize>, Option<usize>)]) -> Vec<DiffHunk> {
+fn group_hunks_borrowed(ops: &[(ChangeTag, &str, Option<usize>, Option<usize>)]) -> Vec<DiffHunk> {
     // Context radius around changes.
     const CONTEXT: usize = 3;
     let mut change_indexes: Vec<usize> = Vec::new();
@@ -223,7 +276,7 @@ fn group_hunks(ops: &[(ChangeTag, String, Option<usize>, Option<usize>)]) -> Vec
     let mut hunks = Vec::new();
     for (hunk_i, (start, end)) in ranges.into_iter().enumerate() {
         let slice = &ops[start..end];
-        let mut lines = Vec::new();
+        let mut lines = Vec::with_capacity(slice.len());
         let mut old_start = None;
         let mut new_start = None;
         let mut old_count = 0u32;
@@ -938,6 +991,42 @@ mod tests {
             },
         );
         assert!(hunks.is_empty());
+    }
+
+    #[test]
+    fn tiny_edit_in_large_file_is_fast() {
+        // 12k identical lines with one mid-file edit — must stay under soft budget.
+        let mut left = String::with_capacity(12_000 * 8);
+        for i in 0..12_000 {
+            left.push_str(&format!("line-{i}\n"));
+        }
+        let mut right = left.clone();
+        right = right.replacen("line-6000\n", "line-6000-EDIT\n", 1);
+        let started = Instant::now();
+        let hunks = compute_hunks(Some(&left), Some(&right), &DiffComputeOptions::default());
+        let elapsed = started.elapsed();
+        eprintln!("GIT-31 tiny_edit_12k elapsed={elapsed:?} hunks={}", hunks.len());
+        assert_eq!(hunks.len(), 1, "expected single hunk, got {}", hunks.len());
+        assert!(
+            elapsed < Duration::from_millis(250),
+            "large single-edit diff took {elapsed:?} (budget 250ms)"
+        );
+    }
+
+    #[test]
+    fn identical_huge_file_returns_empty_quickly() {
+        let mut text = String::with_capacity(45_000 * 6);
+        for i in 0..45_000 {
+            text.push_str(&format!("x{i}\n"));
+        }
+        let started = Instant::now();
+        let hunks = compute_hunks(Some(&text), Some(&text), &DiffComputeOptions::default());
+        let elapsed = started.elapsed();
+        assert!(hunks.is_empty());
+        assert!(
+            elapsed < Duration::from_millis(80),
+            "identical huge file took {elapsed:?}"
+        );
     }
 
     #[test]

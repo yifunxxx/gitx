@@ -140,6 +140,9 @@ function tokenize(s: string): { text: string; start: number }[] {
   return out;
 }
 
+/** Cap token LCS matrix size to avoid O(n²) cliffs on long/minified lines. */
+const MAX_TOKEN_LCS_CELLS = 40_000;
+
 function tokenRanges(
   oldText: string,
   newText: string,
@@ -148,6 +151,13 @@ function tokenRanges(
   const nt = tokenize(newText);
   const n = ot.length;
   const m = nt.length;
+  if (n * m > MAX_TOKEN_LCS_CELLS) {
+    // Fall back to a single mid-span mark instead of a huge DP matrix.
+    return {
+      left: oldText.length ? [{ from: 0, to: oldText.length }] : [],
+      right: newText.length ? [{ from: 0, to: newText.length }] : [],
+    };
+  }
   // LCS lengths
   const dp: Uint16Array[] = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
   for (let i = n - 1; i >= 0; i--) {
