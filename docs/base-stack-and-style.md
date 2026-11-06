@@ -54,8 +54,9 @@
 ### Windows / chrome
 
 - Tauri window: **1280×800**, min **900×600**, initially hidden then shown.
-- **`titleBarStyle: Overlay`**, `hiddenTitle: true`, macOS traffic lights inset `(16, 18)`.
-- Custom drag region + **WindowControls** (Windows rectangular hover hit targets; Linux GNOME-style circular buttons; macOS native lights).
+- **Windows / Linux**: frameless (`decorations: false` in `tauri.conf.json`) so only the in-app **TitleBar** + **WindowControls** show — Overlay alone still leaves the native Windows title bar.
+- **macOS**: platform merge `tauri.macos.conf.json` keeps `decorations: true`, **`titleBarStyle: Overlay`**, `hiddenTitle: true`, traffic lights inset `(16, 18)`.
+- Custom drag region (`data-tauri-drag-region`) + **WindowControls** (Windows rectangular hover hit targets; Linux GNOME-style circular buttons; macOS native lights, custom buttons hidden).
 - Optional drawn frame on some Linux floating layouts; zen mode hides sidebar chrome.
 
 ### Buttons
@@ -204,7 +205,8 @@ Mapped to Tailwind `--radius-sm|md|lg|xl`.
 ### Window
 
 - Default 1280×800; min 900×600  
-- Overlay titlebar; mac traffic light inset x=16 y=18  
+- Win/Linux: undecorated + custom TitleBar/WindowControls; macOS: Overlay titlebar, traffic light inset x=16 y=18  
+
 
 ---
 
@@ -226,7 +228,7 @@ Mapped to Tailwind `--radius-sm|md|lg|xl`.
 | Concern | Path |
 | --- | --- |
 | Root scripts / deps | `package.json` |
-| Tauri config | `src-tauri/tauri.conf.json`, `src-tauri/src/lib.rs` (menu/tray) |
+| Tauri config | `src-tauri/tauri.conf.json`, `src-tauri/tauri.macos.conf.json` (Overlay + traffic lights), `src-tauri/src/lib.rs` (menu/tray) |
 | Desktop app | `apps/desktop/` |
 | Tokens | `apps/desktop/src/styles/tokens.css` |
 | Globals / themes / menus CSS | `apps/desktop/src/styles/globals.css` |

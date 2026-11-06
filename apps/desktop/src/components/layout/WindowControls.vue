@@ -36,12 +36,13 @@ async function close() {
 </script>
 
 <template>
+  <!-- Intentionally no data-tauri-drag-region so min/max/close stay clickable -->
   <div v-if="showCustom" class="flex items-center gap-0.5 pr-1">
     <button
       type="button"
       class="flex h-8 w-10 items-center justify-center text-muted-foreground hover:bg-accent"
       aria-label="Minimize"
-      @click="minimize"
+      @click.stop="minimize"
     >
       <Minus class="h-3.5 w-3.5" />
     </button>
@@ -49,7 +50,7 @@ async function close() {
       type="button"
       class="flex h-8 w-10 items-center justify-center text-muted-foreground hover:bg-accent"
       aria-label="Maximize"
-      @click="toggleMax"
+      @click.stop="toggleMax"
     >
       <Square class="h-3 w-3" />
     </button>
@@ -57,7 +58,7 @@ async function close() {
       type="button"
       class="flex h-8 w-10 items-center justify-center text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
       aria-label="Close"
-      @click="close"
+      @click.stop="close"
     >
       <X class="h-3.5 w-3.5" />
     </button>
