@@ -1,0 +1,75 @@
+# Build unsigned Windows installers (NSIS .exe + MSI) on windows-latest.
+# Download from the Actions run → Artifacts after a successful build.
+#
+# Triggers:
+#   - workflow_dispatch (Actions tab → Run workflow)
+#   - push to master
+#   - version tags (v*)
+name: Release Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    tags: ["v*"]
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Build Windows installers
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # version comes from package.json "packageManager" (pnpm@10.33.4)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Setup Rust (MSVC)
+        uses: dtolnay/rust-toolchain@1.90.0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # windows-latest includes MSVC Build Tools and WebView2 Runtime.
+      # Tauri NSIS/MSI can also ship the WebView2 bootstrapper for end users.
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows app (NSIS + MSI)
+        run: pnpm tauri:build
+
+      - name: List bundle outputs
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse src-tauri/target/release/bundle -ErrorAction SilentlyContinue |
+            Select-Object FullName, Length
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitx-windows-nsis
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload MSI installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitx-windows-msi
+          path: src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 30

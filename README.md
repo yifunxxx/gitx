@@ -10,6 +10,12 @@ Desktop Git GUI aligned with IntelliJ IDEA’s built-in Git UI, built on the dbx
 - System `git` ≥ 2.31
 - Platform WebView deps ([Tauri prerequisites](https://tauri.app/start/prerequisites/))
 
+### Windows 11 extras
+
+- [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (preinstalled on most Win11 machines)
+- [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the **Desktop development with C++** / MSVC workload
+- Git for Windows
+
 ## Develop
 
 ```bash
@@ -25,6 +31,46 @@ pnpm typecheck
 pnpm test
 cargo test -p gitx-git -p gitx-testkit
 cargo build -p gitx-helper
+```
+
+## Windows 11 — local run & build
+
+In PowerShell or Git Bash (after installing the prerequisites above):
+
+```powershell
+# Enable corepack or install pnpm 10, then:
+pnpm install
+pnpm tauri:dev        # run the desktop app
+pnpm tauri:build      # produce NSIS .exe + MSI under src-tauri/target/release/bundle/
+```
+
+Installers land at:
+
+- `src-tauri/target/release/bundle/nsis/*-setup.exe`
+- `src-tauri/target/release/bundle/msi/*.msi`
+
+Unsigned builds may show SmartScreen — choose **More info** → **Run anyway**.
+
+## Download Windows installer from CI
+
+The **Release Windows** workflow (`.github/workflows/release-windows.yml`) builds on `windows-latest` and uploads:
+
+| Artifact name        | Contents      |
+| -------------------- | ------------- |
+| `gitx-windows-nsis`  | NSIS `.exe`   |
+| `gitx-windows-msi`   | MSI installer |
+
+It runs on push to `master`, on `v*` tags, and via **Actions → Release Windows → Run workflow**.
+
+1. Open [Actions → Release Windows](../../actions/workflows/release-windows.yml) (or the repo **Actions** tab).
+2. Open the latest green run.
+3. Under **Artifacts**, download `gitx-windows-nsis` or `gitx-windows-msi`, unzip, and run the installer.
+
+Manual trigger:
+
+```bash
+gh workflow run release-windows.yml --ref master
+gh run list --workflow=release-windows.yml --limit 3
 ```
 
 ## Layout
