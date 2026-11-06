@@ -127,7 +127,10 @@ impl GitRunner {
             }
         }
 
-        let recent = self.recent_branches(cwd, 5, cancel).await.unwrap_or_default();
+        let recent = self
+            .recent_branches(cwd, 5, cancel)
+            .await
+            .unwrap_or_default();
 
         // Favorites first within each list.
         let sort_fav = |a: &RefEntry, b: &RefEntry| match (a.is_favorite, b.is_favorite) {
@@ -155,12 +158,9 @@ impl GitRunner {
         limit: usize,
         cancel: &CancellationToken,
     ) -> Result<Vec<String>, AppError> {
-        let inv = GitInvocation::new(
-            cwd,
-            ["reflog", "HEAD", "-n", "500", "--format=%gs"],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone());
+        let inv = GitInvocation::new(cwd, ["reflog", "HEAD", "-n", "500", "--format=%gs"])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
         let out = match self.run(inv, cancel).await {
             Ok(o) => o,
             Err(_) => return Ok(Vec::new()),
@@ -260,20 +260,25 @@ impl GitRunner {
             "remote" => {
                 // Create/reuse local tracking branch from remote ref like origin/feature.
                 let short = target.rsplit('/').next().unwrap_or(target);
-                let local_exists = GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", &format!("refs/heads/{short}")])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone());
+                let local_exists = GitInvocation::new(
+                    cwd,
+                    [
+                        "show-ref",
+                        "--verify",
+                        "--quiet",
+                        &format!("refs/heads/{short}"),
+                    ],
+                )
+                .kind(OpKind::Read)
+                .git_bin(self.git_bin.clone());
                 if self.run(local_exists, cancel).await.is_ok() {
                     GitInvocation::new(cwd, ["checkout", short])
                         .kind(OpKind::Write)
                         .git_bin(self.git_bin.clone())
                 } else {
-                    GitInvocation::new(
-                        cwd,
-                        ["checkout", "-b", short, "--track", target],
-                    )
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone())
+                    GitInvocation::new(cwd, ["checkout", "-b", short, "--track", target])
+                        .kind(OpKind::Write)
+                        .git_bin(self.git_bin.clone())
                 }
             }
             _ => GitInvocation::new(cwd, ["checkout", target])
@@ -399,17 +404,10 @@ impl GitRunner {
     ) -> Result<(), AppError> {
         // Fast-forward local branch without checkout: fetch remote:local.
         // Caller should pass "origin/feature" style or full remote refspec.
-        let inv = GitInvocation::new(
-            cwd,
-            [
-                "fetch",
-                ".",
-                &format!("{remote_ref}:{local}"),
-            ],
-        )
-        .kind(OpKind::Write)
-        .timeout(Some(Duration::from_secs(120)))
-        .git_bin(self.git_bin.clone());
+        let inv = GitInvocation::new(cwd, ["fetch", ".", &format!("{remote_ref}:{local}")])
+            .kind(OpKind::Write)
+            .timeout(Some(Duration::from_secs(120)))
+            .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await.map_err(|e| {
             let msg = e.message.to_lowercase();
             if msg.contains("non-fast-forward") || msg.contains("rejected") {
@@ -434,12 +432,9 @@ impl GitRunner {
         force: bool,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        let check = GitInvocation::new(
-            cwd,
-            ["check-ref-format", &format!("refs/tags/{name}")],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone());
+        let check = GitInvocation::new(cwd, ["check-ref-format", &format!("refs/tags/{name}")])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
         self.run(check, cancel).await.map_err(|_| {
             AppError::new(
                 ErrorCode::InvalidRefName,
@@ -508,8 +503,12 @@ impl GitRunner {
         right: &str,
         cancel: &CancellationToken,
     ) -> Result<gitx_core::CompareRange, AppError> {
-        let left_only = self.rev_list_range(cwd, &format!("{left}..{right}"), cancel).await?;
-        let right_only = self.rev_list_range(cwd, &format!("{right}..{left}"), cancel).await?;
+        let left_only = self
+            .rev_list_range(cwd, &format!("{left}..{right}"), cancel)
+            .await?;
+        let right_only = self
+            .rev_list_range(cwd, &format!("{right}..{left}"), cancel)
+            .await?;
         Ok(gitx_core::CompareRange {
             left: left.to_string(),
             right: right.to_string(),
@@ -524,12 +523,9 @@ impl GitRunner {
         range: &str,
         cancel: &CancellationToken,
     ) -> Result<Vec<String>, AppError> {
-        let inv = GitInvocation::new(
-            cwd,
-            ["rev-list", "--oneline", range],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone());
+        let inv = GitInvocation::new(cwd, ["rev-list", "--oneline", range])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
         let text = String::from_utf8_lossy(&out.stdout);
         Ok(text

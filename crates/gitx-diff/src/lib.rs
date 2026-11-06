@@ -96,15 +96,9 @@ fn normalize_ws(line: &str, mode: IgnoreWhitespace) -> String {
     match mode {
         IgnoreWhitespace::None => trimmed_nl.to_string(),
         IgnoreWhitespace::Trim => trimmed_nl.trim().to_string(),
-        IgnoreWhitespace::All => trimmed_nl
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect(),
+        IgnoreWhitespace::All => trimmed_nl.chars().filter(|c| !c.is_whitespace()).collect(),
         IgnoreWhitespace::AllAndEmptyLines => {
-            let stripped: String = trimmed_nl
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect();
+            let stripped: String = trimmed_nl.chars().filter(|c| !c.is_whitespace()).collect();
             if stripped.is_empty() {
                 String::new()
             } else {
