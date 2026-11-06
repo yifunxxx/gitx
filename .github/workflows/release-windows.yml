@@ -52,17 +52,18 @@ jobs:
       - name: Build Windows app (NSIS + MSI)
         run: pnpm tauri:build
 
+      # Cargo workspace puts target/ at the repo root (not under src-tauri/).
       - name: List bundle outputs
         shell: pwsh
         run: |
-          Get-ChildItem -Recurse src-tauri/target/release/bundle -ErrorAction SilentlyContinue |
+          Get-ChildItem -Recurse target/release/bundle -ErrorAction SilentlyContinue |
             Select-Object FullName, Length
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4
         with:
           name: gitx-windows-nsis
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -70,6 +71,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gitx-windows-msi
-          path: src-tauri/target/release/bundle/msi/*.msi
+          path: target/release/bundle/msi/*.msi
           if-no-files-found: error
           retention-days: 30
