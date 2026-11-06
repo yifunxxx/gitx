@@ -15,13 +15,13 @@ describe("action registry", () => {
     bootstrapActions();
   });
 
-  it("registers demo action with IDEA-style id", () => {
-    expect(getAction("Git.Demo.Hello")?.title).toContain("Hello");
+  it("registers Settings and RefreshStatus", () => {
+    expect(getAction("Settings")?.title).toContain("Settings");
     expect(getAction("Git.RefreshStatus")).toBeTruthy();
   });
 
   it("finds actions by query", () => {
-    const hits = searchActions("demo", ctx);
-    expect(hits.some((a) => a.id === "Git.Demo.Hello")).toBe(true);
+    const hits = searchActions("settings", ctx);
+    expect(hits.some((a) => a.id === "Settings")).toBe(true);
   });
 });

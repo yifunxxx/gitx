@@ -56,7 +56,7 @@ export function registerDefaultGroups() {
       "CheckinProject",
       "Git.Commit.And.Push",
       "-",
-      "Git.Demo.Hello",
+      "Settings",
       "Vcs.Operations.Popup",
     ],
   });
@@ -120,7 +120,7 @@ export function registerDefaultGroups() {
       "Git.ShowHistory",
       "Git.Compare.With.Branch",
       "Vcs.ShowRepositoryAtRevision",
-      "Git.Demo.Hello",
+      "Settings",
     ],
   });
   registerGroup({

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { X } from "@lucide/vue";
 import WelcomeView from "@/features/welcome/WelcomeView.vue";
 import DiffViewer from "@/features/diff/DiffViewer.vue";
@@ -18,6 +19,7 @@ import { useConflictsStore } from "@/stores/conflictsStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 
+const { t } = useI18n();
 const workspace = useWorkspaceStore();
 const diffs = useDiffStore();
 const history = useHistoryStore();
@@ -74,7 +76,9 @@ function showWorkspace() {
         "
         @click="showWorkspace"
       >
-        {{ workspace.folderPath ? "Workspace" : "Welcome" }}
+        {{
+          workspace.folderPath ? t("chrome.workspaceTab") : t("chrome.welcomeTab")
+        }}
       </button>
       <button
         v-for="tab in diffs.tabs"

@@ -5,9 +5,11 @@ import {
   GitBranch,
   History,
   Menu,
+  Moon,
   RotateCcw,
   Search,
   Settings,
+  Sun,
   Upload,
 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
@@ -15,19 +17,23 @@ import WindowControls from "./WindowControls.vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useBranchesStore } from "@/stores/branchesStore";
-import { runAction, getAction } from "@/actions";
+import { runAction } from "@/actions";
 import type { ActionContext } from "@/actions";
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
 import { useChangesStore } from "@/stores/changesStore";
 import { useLogStore } from "@/stores/logStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
+const { t } = useI18n();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const branches = useBranchesStore();
 const changes = useChangesStore();
 const log = useLogStore();
+const settings = useSettingsStore();
 
 const ctx = computed<ActionContext>(() => ({
   repoIds: workspace.toplevel ? [workspace.toplevel] : [],
@@ -55,12 +61,21 @@ const branchLabel = computed(() => {
 
 const branchTitle = computed(() => {
   const b = workspace.branch;
-  if (!b) return "Branches";
-  const up = b.upstream ? `Upstream: ${b.upstream}` : "No upstream branch — Push to set";
+  if (!b) return t("actions.branches");
+  const up = b.upstream
+    ? `${t("status.upstream")}: ${b.upstream}`
+    : t("status.noUpstream");
   const fetched = branches.lastFetchAt
-    ? `Last fetch: ${new Date(branches.lastFetchAt).toLocaleTimeString()}`
-    : "Not fetched yet";
+    ? `${t("status.lastFetch")}: ${new Date(branches.lastFetchAt).toLocaleTimeString()}`
+    : t("status.notFetched");
   return `${up}\n${fetched}`;
+});
+
+const isDark = computed(() => {
+  const theme = settings.settings?.appearance.theme ?? "system";
+  if (theme === "dark") return true;
+  if (theme === "light") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
 });
 
 async function openFolder() {
@@ -70,11 +85,11 @@ async function openFolder() {
     const selected = await open({ directory: true, multiple: false });
     path = typeof selected === "string" ? selected : null;
   } else {
-    path = window.prompt("Folder path (web mock)", workspace.folderPath ?? "/tmp") || null;
+    path = window.prompt(t("welcome.folderPrompt"), workspace.folderPath ?? "/tmp") || null;
   }
   if (!path) return;
   await workspace.openFolder(path);
-  toast({ title: "Folder opened", description: path });
+  toast({ title: t("welcome.opened"), description: path });
   if (workspace.isRepo) {
     await changes.refresh();
     await log.load(true);
@@ -87,8 +102,6 @@ async function openFolder() {
 async function run(id: string, source: ActionContext["source"] = "toolbar") {
   await runAction(id, { ...ctx.value, source, place: source });
 }
-
-const demo = computed(() => getAction("Git.Demo.Hello"));
 </script>
 
 <template>
@@ -103,13 +116,17 @@ const demo = computed(() => getAction("Git.Demo.Hello"));
     <Button variant="ghost" size="sm" class="gap-1.5" @click="openFolder">
       <FolderOpen class="h-3.5 w-3.5" />
       <span class="max-w-[160px] truncate">
-        {{ workspace.folderPath ? workspace.folderPath.split(/[\\/]/).pop() : "Open Folder" }}
+        {{
+          workspace.folderPath
+            ? workspace.folderPath.split(/[\\/]/).pop()
+            : t("welcome.openFolder")
+        }}
       </span>
     </Button>
 
     <button
       type="button"
-      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
       :title="branchTitle"
       :disabled="!workspace.isRepo"
       @click="branches.openPopup()"
@@ -124,19 +141,19 @@ const demo = computed(() => getAction("Git.Demo.Hello"));
       <Button
         variant="ghost"
         size="sm"
-        title="Update Project"
+        :title="t('actions.updateProject')"
         :disabled="!workspace.isRepo"
         @click="run('Vcs.UpdateProject')"
       >
         <RotateCcw class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="sm" title="Commit" @click="run('CheckinProject')">
+      <Button variant="ghost" size="sm" :title="t('actions.commit')" @click="run('CheckinProject')">
         <Check class="h-3.5 w-3.5" />
       </Button>
       <Button
         variant="ghost"
         size="sm"
-        title="Push"
+        :title="t('actions.push')"
         :disabled="!workspace.isRepo"
         @click="run('Git.Push')"
       >
@@ -145,24 +162,34 @@ const demo = computed(() => getAction("Git.Demo.Hello"));
       <Button
         variant="ghost"
         size="sm"
-        title="History"
+        :title="t('toolWindows.log')"
         @click="layout.bottomOpen = true; layout.activeBottomTab = 'log'"
       >
         <History class="h-3.5 w-3.5" />
       </Button>
       <Button
-        v-if="demo"
         variant="ghost"
-        size="sm"
-        :title="demo.title"
-        @click="run('Git.Demo.Hello', 'menu')"
+        size="icon"
+        :title="isDark ? t('settings.theme.light') : t('settings.theme.dark')"
+        @click="settings.toggleTheme()"
       >
-        Demo
+        <Sun v-if="isDark" class="h-3.5 w-3.5" />
+        <Moon v-else class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="icon" title="Find Action" @click="layout.findActionOpen = true">
+      <Button
+        variant="ghost"
+        size="icon"
+        :title="t('actions.findAction')"
+        @click="layout.findActionOpen = true"
+      >
         <Search class="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="icon" title="Settings (M8)" disabled>
+      <Button
+        variant="ghost"
+        size="icon"
+        :title="t('settings.title')"
+        @click="run('Settings')"
+      >
         <Settings class="h-3.5 w-3.5" />
       </Button>
     </div>

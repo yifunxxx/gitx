@@ -1,8 +1,9 @@
 use crate::{CleanTreeMethod, CommitTwMode, SubmoduleUpdatePolicy};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashMap;
 
-pub const SETTINGS_SCHEMA_VERSION: u32 = 3;
+pub const SETTINGS_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -160,6 +161,7 @@ impl Default for GitSettings {
 pub struct AppSettings {
     pub schema_version: u32,
     pub appearance: AppearanceSettings,
+    #[serde(default = "default_locale")]
     pub locale: String,
     pub git_executable: Option<String>,
     /// Recent workspace roots (newest first), max 20.
@@ -176,6 +178,9 @@ pub struct AppSettings {
     pub log_indexing: bool,
     #[serde(default)]
     pub git: GitSettings,
+    /// Per-action shortcut overrides (platform-agnostic chord strings like `mod+,`).
+    #[serde(default)]
+    pub keymap_overrides: HashMap<String, Vec<String>>,
 }
 
 fn default_staging_mode() -> bool {
@@ -187,18 +192,23 @@ fn default_log_indexing() -> bool {
     true
 }
 
+fn default_locale() -> String {
+    "zh-CN".into()
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
             appearance: AppearanceSettings::default(),
-            locale: "en".into(),
+            locale: default_locale(),
             git_executable: None,
             recent_workspaces: Vec::new(),
             staging_mode: false,
             show_ignored_files: false,
             log_indexing: true,
             git: GitSettings::default(),
+            keymap_overrides: HashMap::new(),
         }
     }
 }
