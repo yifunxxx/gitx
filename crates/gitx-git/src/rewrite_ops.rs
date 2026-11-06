@@ -642,9 +642,20 @@ impl GitRunner {
         } else {
             None
         };
-        let inv = GitInvocation::new(cwd, [cmd, flag])
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone());
+        // `--continue` commits with the prepared sequencer message. Without a
+        // non-interactive editor, dumb-terminal / non-TTY environments (CI,
+        // GUI hosts) fail with "Terminal is dumb, but EDITOR unset".
+        let inv = if flag == "--continue" {
+            GitInvocation::new(cwd, ["-c", "core.editor=true", cmd, flag])
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone())
+                .env("GIT_EDITOR", "true")
+                .env("EDITOR", "true")
+        } else {
+            GitInvocation::new(cwd, [cmd, flag])
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone())
+        };
         match self.run(inv, cancel).await {
             Ok(_) => {
                 let new = self
