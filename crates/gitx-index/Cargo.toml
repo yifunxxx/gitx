@@ -4,7 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Git Log Indexing (SQLite) stub"
+description = "Git Log Indexing (SQLite + FTS5)"
 
 [dependencies]
 gitx-core = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { workspace = true }

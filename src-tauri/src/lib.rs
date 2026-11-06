@@ -9,8 +9,12 @@ use commands::app::{
 };
 use commands::clone_cmd::{clone_check_url, clone_run, repo_state_get, unshallow_run};
 use commands::commit::{commit_create, commit_head_message};
+use commands::compare::{diff_combined, diff_file_at, diff_refs};
 use commands::diff::diff_file;
-use commands::history::{log_changed_files, log_commit_details, log_query};
+use commands::history::{
+    blame_file, blob_read, checkout_path_from_rev, file_history, list_refs, log_changed_files,
+    log_commit_details, log_index_rebuild, log_index_status, log_query, tree_list,
+};
 use commands::index_ops::{add_paths, stage_hunks, stage_paths, unstage_hunks, unstage_paths};
 use commands::jobs::{job_cancel, job_list};
 use commands::refs::{
@@ -61,11 +65,23 @@ pub fn run() {
             stage_hunks,
             unstage_hunks,
             diff_file,
+            diff_file_at,
+            diff_refs,
+            diff_combined,
             commit_create,
             commit_head_message,
             log_query,
             log_commit_details,
             log_changed_files,
+            // M3
+            file_history,
+            blame_file,
+            tree_list,
+            blob_read,
+            checkout_path_from_rev,
+            list_refs,
+            log_index_status,
+            log_index_rebuild,
             // M2
             refs_list,
             favorites_set,

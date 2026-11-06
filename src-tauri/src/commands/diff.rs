@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use gitx_core::{AppError, DiffFileResult, DiffSide, ErrorCode};
+use gitx_core::{AppError, DiffFileResult, DiffSide, ErrorCode, IgnoreWhitespace};
 use gitx_diff::{compute_hunks, decode_lossy, is_probably_binary, too_large, DiffComputeOptions};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -16,7 +16,7 @@ pub struct DiffFileReq {
     pub left: DiffSide,
     pub right: DiffSide,
     #[serde(default)]
-    pub ignore_whitespace: bool,
+    pub ignore_whitespace: IgnoreWhitespace,
 }
 
 fn side_label(side: DiffSide) -> &'static str {
@@ -24,6 +24,14 @@ fn side_label(side: DiffSide) -> &'static str {
         DiffSide::Head => "HEAD",
         DiffSide::Index => "Staged",
         DiffSide::Worktree => "Local",
+    }
+}
+
+fn side_rev(side: DiffSide) -> &'static str {
+    match side {
+        DiffSide::Head => "HEAD",
+        DiffSide::Index => "INDEX",
+        DiffSide::Worktree => "WORKTREE",
     }
 }
 
@@ -40,10 +48,10 @@ pub async fn diff_file(
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
     let left_bytes = git
-        .read_blob_side(&cwd, &req.file_path, req.left, &cancel)
+        .read_blob_at(&cwd, side_rev(req.left), &req.file_path, &cancel)
         .await?;
     let right_bytes = git
-        .read_blob_side(&cwd, &req.file_path, req.right, &cancel)
+        .read_blob_at(&cwd, side_rev(req.right), &req.file_path, &cancel)
         .await?;
 
     let binary = left_bytes.as_ref().is_some_and(|b| is_probably_binary(b))

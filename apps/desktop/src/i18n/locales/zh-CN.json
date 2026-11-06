@@ -39,6 +39,13 @@
     "runHooks": "运行 Git hooks",
     "messagePlaceholder": "提交说明"
   },
+  "history": {
+    "showHistory": "显示历史",
+    "compare": "比较",
+    "repoAtRevision": "在修订版浏览仓库",
+    "filters": "过滤",
+    "graphOptions": "图选项"
+  },
   "branches": {
     "search": "搜索分支…",
     "local": "Local",

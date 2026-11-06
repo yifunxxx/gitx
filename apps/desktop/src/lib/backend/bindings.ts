@@ -39,6 +39,7 @@ export type AppSettings = {
   gitExecutable: string | null
   recentWorkspaces: string[]
   stagingMode: boolean
+  logIndexing: boolean
   git?: GitSettings
 }
 export type JobId = string
@@ -105,14 +106,62 @@ export type HunksReq = {
   hunkIndexes: number[]
 }
 export type DiffSide = "head" | "index" | "worktree"
+export type IgnoreWhitespace = "none" | "trim" | "all" | "allAndEmptyLines"
+export type LogOrder = "date" | "topo"
+export type LogFilters = {
+  text?: string | null
+  regex?: boolean
+  matchCase?: boolean
+  authors?: string[]
+  since?: string | null
+  until?: string | null
+  paths?: string[]
+  revisions?: string[]
+  firstParent?: boolean
+  noMerges?: boolean
+  order?: LogOrder
+}
 export type DiffFileReq = {
   repoId: string
   path: string
   filePath: string
   left: DiffSide
   right: DiffSide
-  ignoreWhitespace?: boolean
+  ignoreWhitespace?: IgnoreWhitespace
 }
+export type DiffFileAtReq = {
+  repoId: string
+  path: string
+  filePath: string
+  leftRev: string
+  rightRev: string
+  leftPath?: string | null
+  rightPath?: string | null
+  ignoreWhitespace?: IgnoreWhitespace
+}
+export type DiffRefsReq = {
+  repoId: string
+  path: string
+  left: string
+  right: string
+}
+export type DiffRefsResult = { left: string; right: string; files: ChangedFile[] }
+export type CombinedDiffReq = {
+  repoId: string
+  path: string
+  left: string
+  right?: string | null
+  ignoreWhitespace?: IgnoreWhitespace
+  limit?: number
+}
+export type CombinedDiffFile = {
+  path: string
+  status: string
+  origPath: string | null
+  hunks: DiffHunk[]
+  binary: boolean
+}
+export type CombinedDiffResult = { left: string; right: string; files: CombinedDiffFile[] }
 export type DiffHunk = {
   index: number
   header: string
@@ -133,6 +182,78 @@ export type DiffFileResult = {
   hunks: DiffHunk[]
   encoding: string
 }
+export type HistoryCommit = {
+  sha: string
+  shortSha: string
+  parents: string[]
+  subject: string
+  author: string
+  authorEmail: string
+  authorTime: number
+  pathAtCommit: string
+  status: string | null
+  origPath: string | null
+}
+export type HistoryPage = { commits: HistoryCommit[]; truncated: boolean; nextOffset: number }
+export type FileHistoryReq = {
+  repoId: string
+  path: string
+  filePath: string
+  offset?: number
+  limit?: number
+  allBranches?: boolean
+}
+export type BlameLine = {
+  line: number
+  sha: string
+  author: string
+  authorTime: number
+  summary: string
+  originalPath: string | null
+  notCommitted: boolean
+}
+export type BlameResult = { path: string; rev: string; lines: BlameLine[] }
+export type BlameReq = {
+  repoId: string
+  path: string
+  filePath: string
+  rev?: string
+  ignoreWhitespace?: boolean
+}
+export type TreeEntry = {
+  name: string
+  path: string
+  kind: string
+  mode: string
+  size: number | null
+  sha: string | null
+}
+export type TreeListReq = { path: string; rev: string; dir?: string }
+export type BlobContent = {
+  path: string
+  rev: string
+  text: string | null
+  binary: boolean
+  tooLarge: boolean
+  size: number
+}
+export type BlobReadReq = { path: string; rev: string; filePath: string }
+export type CheckoutPathReq = {
+  repoId: string
+  path: string
+  rev: string
+  filePath: string
+}
+export type ListRefsReq = { path: string }
+export type IndexStatus = {
+  enabled: boolean
+  ready: boolean
+  progress: number
+  commitCount: number
+  message: string
+}
+export type IndexStatusReq = { path: string }
+export type IndexRebuildReq = { path: string }
 export type CommitCreateReq = {
   repoId: string
   path: string
@@ -142,7 +263,13 @@ export type CommitCreateReq = {
 }
 export type CommitResult = { sha: string; subject: string; amended: boolean }
 export type HeadMessageReq = { path: string }
-export type LogQueryReq = { repoId: string; path: string; offset?: number; limit?: number }
+export type LogQueryReq = {
+  repoId: string
+  path: string
+  offset?: number
+  limit?: number
+  filters?: LogFilters
+}
 export type GraphEdge = { fromLane: number; toLane: number }
 export type GraphRow = { lane: number; edges: GraphEdge[]; color: number }
 export type LogCommit = {
@@ -415,6 +542,39 @@ export const commands = {
   async logChangedFiles(req: LogChangedFilesReq): Promise<ChangedFile[]> {
     return invoke("log_changed_files", { req })
   },
+  async fileHistory(req: FileHistoryReq): Promise<HistoryPage> {
+    return invoke("file_history", { req })
+  },
+  async blameFile(req: BlameReq): Promise<BlameResult> {
+    return invoke("blame_file", { req })
+  },
+  async treeList(req: TreeListReq): Promise<TreeEntry[]> {
+    return invoke("tree_list", { req })
+  },
+  async blobRead(req: BlobReadReq): Promise<BlobContent> {
+    return invoke("blob_read", { req })
+  },
+  async checkoutPathFromRev(req: CheckoutPathReq): Promise<null> {
+    return invoke("checkout_path_from_rev", { req })
+  },
+  async listRefs(req: ListRefsReq): Promise<string[]> {
+    return invoke("list_refs", { req })
+  },
+  async logIndexStatus(req: IndexStatusReq): Promise<IndexStatus> {
+    return invoke("log_index_status", { req })
+  },
+  async logIndexRebuild(req: IndexRebuildReq): Promise<IndexStatus> {
+    return invoke("log_index_rebuild", { req })
+  },
+  async diffFileAt(req: DiffFileAtReq): Promise<DiffFileResult> {
+    return invoke("diff_file_at", { req })
+  },
+  async diffRefs(req: DiffRefsReq): Promise<DiffRefsResult> {
+    return invoke("diff_refs", { req })
+  },
+  async diffCombined(req: CombinedDiffReq): Promise<CombinedDiffResult> {
+    return invoke("diff_combined", { req })
+  },
   async refsList(req: RefsListReq): Promise<RefsList> {
     return invoke("refs_list", { req })
   },
@@ -496,7 +656,6 @@ export const commands = {
   async repoStateGet(req: RepoStateReq): Promise<RepoStateRes> {
     return invoke("repo_state_get", { req })
   },
-
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

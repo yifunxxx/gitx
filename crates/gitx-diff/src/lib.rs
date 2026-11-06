@@ -1,13 +1,13 @@
 //! Text diff + hunk construction for M1 DiffViewer / hunk stage.
 
-use gitx_core::DiffHunk;
+use gitx_core::{DiffHunk, IgnoreWhitespace};
 use similar::{Algorithm, ChangeTag, TextDiff};
 
 const TOO_LARGE_BYTES: usize = 5 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default)]
 pub struct DiffComputeOptions {
-    pub ignore_whitespace: bool,
+    pub ignore_whitespace: IgnoreWhitespace,
 }
 
 pub fn is_probably_binary(bytes: &[u8]) -> bool {
@@ -34,11 +34,34 @@ pub fn compute_hunks(
     let left_lines: Vec<&str> = split_lines(left);
     let right_lines: Vec<&str> = split_lines(right);
 
-    // ignore_whitespace wiring lands with M3 ignore modes; M1 still computes a full line diff.
-    let _ = opts.ignore_whitespace;
-    let diff = TextDiff::configure()
-        .algorithm(Algorithm::Myers)
-        .diff_lines(left, right);
+    let diff = match opts.ignore_whitespace {
+        IgnoreWhitespace::None => TextDiff::configure()
+            .algorithm(Algorithm::Myers)
+            .diff_lines(left, right),
+        IgnoreWhitespace::Trim | IgnoreWhitespace::All | IgnoreWhitespace::AllAndEmptyLines => {
+            // Compare normalized lines; still emit original line text in hunks.
+            let left_norm: Vec<String> = left_lines
+                .iter()
+                .map(|l| normalize_ws(l, opts.ignore_whitespace))
+                .collect();
+            let right_norm: Vec<String> = right_lines
+                .iter()
+                .map(|l| normalize_ws(l, opts.ignore_whitespace))
+                .collect();
+            let left_joined = left_norm.join("\n");
+            let right_joined = right_norm.join("\n");
+            // Build ops from normalized equality, then map back to original lines below.
+            return compute_hunks_normalized(
+                &left_lines,
+                &right_lines,
+                &left_joined,
+                &right_joined,
+                opts.ignore_whitespace,
+            );
+        }
+    };
+    let _ = left_lines;
+    let _ = right_lines;
 
     // Collect tagged ops with line numbers.
     let mut ops: Vec<(ChangeTag, String, Option<usize>, Option<usize>)> = Vec::new();
@@ -64,8 +87,100 @@ pub fn compute_hunks(
             }
         }
     }
-    let _ = (left_lines, right_lines);
 
+    group_hunks(&ops)
+}
+
+fn normalize_ws(line: &str, mode: IgnoreWhitespace) -> String {
+    let trimmed_nl = line.trim_end_matches('\n').trim_end_matches('\r');
+    match mode {
+        IgnoreWhitespace::None => trimmed_nl.to_string(),
+        IgnoreWhitespace::Trim => trimmed_nl.trim().to_string(),
+        IgnoreWhitespace::All => trimmed_nl
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect(),
+        IgnoreWhitespace::AllAndEmptyLines => {
+            let stripped: String = trimmed_nl
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            if stripped.is_empty() {
+                String::new()
+            } else {
+                stripped
+            }
+        }
+    }
+}
+
+fn compute_hunks_normalized(
+    left_lines: &[&str],
+    right_lines: &[&str],
+    left_joined: &str,
+    right_joined: &str,
+    mode: IgnoreWhitespace,
+) -> Vec<DiffHunk> {
+    let diff = TextDiff::configure()
+        .algorithm(Algorithm::Myers)
+        .diff_lines(left_joined, right_joined);
+
+    let mut ops: Vec<(ChangeTag, String, Option<usize>, Option<usize>)> = Vec::new();
+    let mut old_idx = 0usize;
+    let mut new_idx = 0usize;
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Equal => {
+                // Skip equal empty-normalized pairs when ignoring blank lines.
+                if mode == IgnoreWhitespace::AllAndEmptyLines {
+                    let l_empty = left_lines
+                        .get(old_idx)
+                        .map(|l| normalize_ws(l, mode).is_empty())
+                        .unwrap_or(true);
+                    let r_empty = right_lines
+                        .get(new_idx)
+                        .map(|l| normalize_ws(l, mode).is_empty())
+                        .unwrap_or(true);
+                    if l_empty && r_empty {
+                        old_idx += 1;
+                        new_idx += 1;
+                        continue;
+                    }
+                }
+                let text = left_lines
+                    .get(old_idx)
+                    .map(|l| l.trim_end_matches('\n').trim_end_matches('\r').to_string())
+                    .unwrap_or_default();
+                ops.push((ChangeTag::Equal, text, Some(old_idx), Some(new_idx)));
+                old_idx += 1;
+                new_idx += 1;
+            }
+            ChangeTag::Delete => {
+                let text = left_lines
+                    .get(old_idx)
+                    .map(|l| l.trim_end_matches('\n').trim_end_matches('\r').to_string())
+                    .unwrap_or_default();
+                if mode == IgnoreWhitespace::AllAndEmptyLines && text.trim().is_empty() {
+                    old_idx += 1;
+                    continue;
+                }
+                ops.push((ChangeTag::Delete, text, Some(old_idx), None));
+                old_idx += 1;
+            }
+            ChangeTag::Insert => {
+                let text = right_lines
+                    .get(new_idx)
+                    .map(|l| l.trim_end_matches('\n').trim_end_matches('\r').to_string())
+                    .unwrap_or_default();
+                if mode == IgnoreWhitespace::AllAndEmptyLines && text.trim().is_empty() {
+                    new_idx += 1;
+                    continue;
+                }
+                ops.push((ChangeTag::Insert, text, None, Some(new_idx)));
+                new_idx += 1;
+            }
+        }
+    }
     group_hunks(&ops)
 }
 
@@ -319,5 +434,19 @@ mod tests {
         // Stage only first hunk if multiple; otherwise the single hunk.
         let staged = apply_selected_hunks_to_base(base, work, &[0]);
         assert!(staged.contains('B') || staged.contains('D') || staged != base);
+    }
+
+    #[test]
+    fn ignore_all_whitespace_hides_indent_only_change() {
+        let left = "hello world\n";
+        let right = "hello  world\n";
+        let hunks = compute_hunks(
+            Some(left),
+            Some(right),
+            &DiffComputeOptions {
+                ignore_whitespace: IgnoreWhitespace::All,
+            },
+        );
+        assert!(hunks.is_empty());
     }
 }

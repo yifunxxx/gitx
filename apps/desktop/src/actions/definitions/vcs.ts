@@ -3,9 +3,12 @@ import {
   FileDiff,
   FolderOpen,
   GitBranchPlus,
+  History,
   Plus,
   RefreshCw,
   Minus,
+  GitCompare,
+  FolderTree,
 } from "@lucide/vue";
 import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -13,6 +16,9 @@ import { useChangesStore } from "@/stores/changesStore";
 import { useCommitStore } from "@/stores/commitStore";
 import { useDiffStore } from "@/stores/diffStore";
 import { useLogStore } from "@/stores/logStore";
+import { useHistoryStore } from "@/stores/historyStore";
+import { useCompareStore } from "@/stores/compareStore";
+import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { getBackend } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
@@ -222,6 +228,77 @@ export function registerVcsActions() {
       } else {
         toast({ title: "Enter a commit message" });
       }
+    },
+  });
+
+  registerAction({
+    id: "Git.ShowHistory",
+    title: "Show History",
+    description: "File / folder history for the selected path",
+    icon: History,
+    scope: "changes",
+    async run() {
+      const changes = useChangesStore();
+      const path = changes.selectedPaths[0];
+      if (!path) {
+        toast({ title: "Select a file first" });
+        return;
+      }
+      await useHistoryStore().openFileHistory(path);
+    },
+  });
+
+  registerAction({
+    id: "Git.Compare.With.Branch",
+    title: "Compare with Branch or Tag…",
+    description: "Compare current HEAD with another ref (host-agnostic)",
+    icon: GitCompare,
+    scope: "global",
+    enabled: (ctx) => !!ctx.folderPath,
+    async run() {
+      const workspace = useWorkspaceStore();
+      if (!workspace.repoPath) return;
+      const refs = await getBackend().listRefs({ path: workspace.repoPath });
+      const other =
+        window.prompt("Compare HEAD with ref (branch/tag)", refs[0] ?? "main")?.trim() ??
+        "";
+      if (!other) return;
+      await useCompareStore().compareRefs("HEAD", other);
+    },
+  });
+
+  registerAction({
+    id: "Vcs.ShowRepositoryAtRevision",
+    title: "Browse Repository at Revision…",
+    description: "Open read-only tree at a revision",
+    icon: FolderTree,
+    scope: "global",
+    enabled: (ctx) => !!ctx.folderPath,
+    defaultShortcuts: {
+      mac: ["mod+shift+o"],
+      win: ["ctrl+shift+o"],
+      linux: ["ctrl+shift+o"],
+    },
+    async run() {
+      const rev = window.prompt("Revision (hash / branch / tag)", "HEAD")?.trim();
+      if (!rev) return;
+      await useRepoAtRevStore().open(rev);
+    },
+  });
+
+  registerAction({
+    id: "Git.Log.CompareWithLocal",
+    title: "Compare with Local",
+    description: "Compare selected Log commit with the working tree",
+    icon: GitCompare,
+    scope: "global",
+    async run() {
+      const sha = useLogStore().selectedSha;
+      if (!sha) {
+        toast({ title: "Select a commit in Log" });
+        return;
+      }
+      await useCompareStore().compareWithLocal(sha);
     },
   });
 }

@@ -23,6 +23,9 @@ export function registerDefaultGroups() {
       "Git.Stage.Add",
       "Git.Stage.Reset",
       "Diff.ShowDiff",
+      "Git.ShowHistory",
+      "Git.Compare.With.Branch",
+      "Vcs.ShowRepositoryAtRevision",
       "CheckinProject",
       "Git.Commit.And.Push",
       "-",
@@ -35,6 +38,7 @@ export function registerDefaultGroups() {
     title: "Changes",
     children: [
       "Diff.ShowDiff",
+      "Git.ShowHistory",
       "Git.Stage.Add",
       "Git.Stage.Reset",
       "Git.Add",
@@ -63,6 +67,9 @@ export function registerDefaultGroups() {
       "CheckinProject",
       "Git.Commit.And.Push",
       "Diff.ShowDiff",
+      "Git.ShowHistory",
+      "Git.Compare.With.Branch",
+      "Vcs.ShowRepositoryAtRevision",
       "Git.Demo.Hello",
     ],
   });
@@ -73,6 +80,7 @@ export function registerDefaultGroups() {
       "Git.RefreshStatus",
       "CheckinProject",
       "Git.Push",
+      "Git.ShowHistory",
     ],
   });
 }

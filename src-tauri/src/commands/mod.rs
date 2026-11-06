@@ -1,6 +1,7 @@
 pub mod app;
 pub mod clone_cmd;
 pub mod commit;
+pub mod compare;
 pub mod diff;
 pub mod history;
 pub mod index_ops;

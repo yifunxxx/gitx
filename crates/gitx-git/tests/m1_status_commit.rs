@@ -48,6 +48,9 @@ async fn dirty_stage_commit_appears_in_log() {
     assert_eq!(result.subject, "update readme");
     assert!(!result.sha.is_empty());
 
-    let (commits, _) = runner.log_page(cwd, 0, 10, &cancel).await.expect("log");
+    let (commits, _) = runner
+        .log_page(cwd, 0, 10, &gitx_core::LogFilters::default(), &cancel)
+        .await
+        .expect("log");
     assert!(commits.iter().any(|c| c.subject == "update readme"));
 }
