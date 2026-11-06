@@ -719,7 +719,9 @@ impl GitRunner {
     ) -> Result<BlobContent, AppError> {
         let bytes = self.read_blob_at(cwd, rev, path, cancel).await?;
         let size = bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
-        let binary = bytes.as_ref().is_some_and(|b| b.iter().take(8000).any(|&c| c == 0));
+        let binary = bytes
+            .as_ref()
+            .is_some_and(|b| b.iter().take(8000).any(|&c| c == 0));
         let too_large = size > 5 * 1024 * 1024;
         let text = if binary || too_large || bytes.is_none() {
             None

@@ -63,13 +63,7 @@ pub async fn clone_run(
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
     let result = git
-        .clone_run(
-            &req.url,
-            &dir,
-            req.depth,
-            req.branch.as_deref(),
-            &cancel,
-        )
+        .clone_run(&req.url, &dir, req.depth, req.branch.as_deref(), &cancel)
         .await?;
     drop(git);
     if req.open_after {
@@ -80,10 +74,7 @@ pub async fn clone_run(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn unshallow_run(
-    state: State<'_, AppState>,
-    req: UnshallowReq,
-) -> Result<(), AppError> {
+pub async fn unshallow_run(state: State<'_, AppState>, req: UnshallowReq) -> Result<(), AppError> {
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();

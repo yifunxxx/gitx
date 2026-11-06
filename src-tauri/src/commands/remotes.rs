@@ -58,10 +58,7 @@ pub async fn remote_list(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn remote_add(
-    state: State<'_, AppState>,
-    req: RemoteAddReq,
-) -> Result<(), AppError> {
+pub async fn remote_add(state: State<'_, AppState>, req: RemoteAddReq) -> Result<(), AppError> {
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
@@ -79,10 +76,7 @@ pub async fn remote_add(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn remote_edit(
-    state: State<'_, AppState>,
-    req: RemoteEditReq,
-) -> Result<(), AppError> {
+pub async fn remote_edit(state: State<'_, AppState>, req: RemoteEditReq) -> Result<(), AppError> {
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
@@ -106,9 +100,7 @@ pub async fn remote_remove_preview(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let tracking_count = git
-        .remote_tracking_count(&path, &req.name, &cancel)
-        .await?;
+    let tracking_count = git.remote_tracking_count(&path, &req.name, &cancel).await?;
     Ok(RemoteRemovePreview { tracking_count })
 }
 

@@ -129,10 +129,7 @@ fn resolve_git_dir(path: &str, git_dir: Option<&str>) -> PathBuf {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn refs_list(
-    state: State<'_, AppState>,
-    req: RefsListReq,
-) -> Result<RefsList, AppError> {
+pub async fn refs_list(state: State<'_, AppState>, req: RefsListReq) -> Result<RefsList, AppError> {
     let path = PathBuf::from(&req.path);
     let git_dir = resolve_git_dir(&req.path, req.git_dir.as_deref());
     let favs = load_favorites(&git_dir).unwrap_or_default();
@@ -276,10 +273,7 @@ pub async fn compare_branches(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn tag_create(
-    state: State<'_, AppState>,
-    req: TagCreateReq,
-) -> Result<(), AppError> {
+pub async fn tag_create(state: State<'_, AppState>, req: TagCreateReq) -> Result<(), AppError> {
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
@@ -329,9 +323,7 @@ pub async fn tag_delete(
         .kind(OpKind::NetworkWrite)
         .git_bin(git.git_bin.clone());
         git.run(inv, &cancel).await?;
-        return Ok(TagDeleteRes {
-            sha: String::new(),
-        });
+        return Ok(TagDeleteRes { sha: String::new() });
     }
     let sha = git.tag_delete(&path, &req.name, &cancel).await?;
     Ok(TagDeleteRes { sha })
@@ -339,10 +331,7 @@ pub async fn tag_delete(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn tag_push(
-    state: State<'_, AppState>,
-    req: TagPushReq,
-) -> Result<(), AppError> {
+pub async fn tag_push(state: State<'_, AppState>, req: TagPushReq) -> Result<(), AppError> {
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();

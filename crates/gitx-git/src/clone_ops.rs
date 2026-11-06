@@ -13,13 +13,10 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<bool, AppError> {
         let cwd = std::env::temp_dir();
-        let inv = GitInvocation::new(
-            &cwd,
-            ["ls-remote", "--heads", "--", url],
-        )
-        .kind(OpKind::Network)
-        .timeout(Some(Duration::from_secs(10)))
-        .git_bin(self.git_bin.clone());
+        let inv = GitInvocation::new(&cwd, ["ls-remote", "--heads", "--", url])
+            .kind(OpKind::Network)
+            .timeout(Some(Duration::from_secs(10)))
+            .git_bin(self.git_bin.clone());
         match self.run(inv, cancel).await {
             Ok(_) => Ok(true),
             Err(e) => {

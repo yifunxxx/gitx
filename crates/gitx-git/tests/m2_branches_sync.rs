@@ -24,12 +24,14 @@ async fn branch_create_checkout_rename_delete_and_favorite_list() {
 
     let favs: HashSet<String> = ["refs/heads/feature/a".into()].into_iter().collect();
     let refs = runner.refs_list(cwd, &favs, &cancel).await.expect("refs");
-    assert!(refs.local.iter().any(|b| b.name == "feature/a" && b.is_head));
-    assert!(
-        refs.local
-            .iter()
-            .any(|b| b.name == "feature/a" && b.is_favorite)
-    );
+    assert!(refs
+        .local
+        .iter()
+        .any(|b| b.name == "feature/a" && b.is_head));
+    assert!(refs
+        .local
+        .iter()
+        .any(|b| b.name == "feature/a" && b.is_favorite));
 
     runner
         .branch_rename(cwd, "feature/a", "feature/b", false, false, &cancel)
@@ -174,10 +176,8 @@ async fn clone_from_bare_and_shallow() {
         .expect("clone");
     assert!(result.shallow);
     assert!(clone_dir.join("README.md").exists());
-    assert!(
-        runner
-            .is_shallow(&clone_dir, &cancel)
-            .await
-            .expect("shallow")
-    );
+    assert!(runner
+        .is_shallow(&clone_dir, &cancel)
+        .await
+        .expect("shallow"));
 }
