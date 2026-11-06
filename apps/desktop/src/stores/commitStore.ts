@@ -64,12 +64,18 @@ export const useCommitStore = defineStore("commit", () => {
     committing.value = true;
     try {
       const backend = getBackend();
+      const changes = useChangesStore();
+      const paths =
+        !changes.stagingMode && changes.checkedPaths.length
+          ? [...changes.checkedPaths]
+          : null;
       const result = await backend.commitCreate({
         repoId: workspace.repoId,
         path: workspace.repoPath,
         message: message.value,
         amend: amend.value,
         noVerify: !runHooks.value,
+        paths,
       });
       toast({
         title: result.amended ? "Amended" : "Committed",
@@ -78,7 +84,7 @@ export const useCommitStore = defineStore("commit", () => {
       message.value = "";
       amend.value = false;
       localStorage.removeItem(`gitx.commitDraft.${workspace.repoPath}`);
-      const changes = useChangesStore();
+      changes.setChecked([]);
       await changes.refresh();
       return result;
     } catch (e) {

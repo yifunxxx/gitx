@@ -1,18 +1,38 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useConsoleStore } from "@/stores/consoleStore";
-import { computed } from "vue";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useI18n } from "vue-i18n";
 import LogView from "@/features/log/LogView.vue";
 import UpdateInfoView from "@/features/sync/UpdateInfoView.vue";
+import StashShelfView from "@/features/stash/StashShelfView.vue";
 
 const layout = useLayoutStore();
 const consoleStore = useConsoleStore();
+const settings = useSettingsStore();
+const { t } = useI18n();
 
-const tabs = [
-  { id: "log" as const, label: "Log" },
-  { id: "update" as const, label: "Update Info" },
-  { id: "console" as const, label: "Console" },
-];
+const combineStashesShelves = computed(
+  () => settings.settings?.git?.combineStashesAndShelves !== false,
+);
+
+type BottomTab = "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves";
+
+const tabs = computed(() => {
+  const base: { id: BottomTab; label: string }[] = [
+    { id: "log", label: t("toolWindows.log") },
+    { id: "update", label: t("toolWindows.updateInfo") },
+  ];
+  if (combineStashesShelves.value) {
+    base.push({ id: "stashesShelves", label: t("toolWindows.stashesShelves") });
+  } else {
+    base.push({ id: "stash", label: t("toolWindows.stash") });
+    base.push({ id: "shelf", label: t("toolWindows.shelf") });
+  }
+  base.push({ id: "console", label: t("toolWindows.console") });
+  return base;
+});
 
 const lines = computed(() => consoleStore.lines);
 </script>
@@ -67,6 +87,15 @@ const lines = computed(() => consoleStore.lines);
     </div>
     <div v-else-if="layout.activeBottomTab === 'update'" class="min-h-0 flex-1">
       <UpdateInfoView />
+    </div>
+    <div v-else-if="layout.activeBottomTab === 'stashesShelves'" class="min-h-0 flex-1">
+      <StashShelfView mode="combined" />
+    </div>
+    <div v-else-if="layout.activeBottomTab === 'stash'" class="min-h-0 flex-1">
+      <StashShelfView mode="stash" />
+    </div>
+    <div v-else-if="layout.activeBottomTab === 'shelf'" class="min-h-0 flex-1">
+      <StashShelfView mode="shelf" />
     </div>
     <div v-else class="min-h-0 flex-1">
       <LogView />

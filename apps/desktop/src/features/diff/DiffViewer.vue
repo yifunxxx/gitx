@@ -36,6 +36,36 @@ async function unstageHunk(index: number) {
   await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right);
 }
 
+async function stageSelectedLines() {
+  if (!tab.value || !canStage.value) return;
+  const raw = window.prompt(
+    "New-side line numbers to stage (comma or space separated)",
+    "",
+  );
+  if (raw == null || !raw.trim()) return;
+  const lines = raw
+    .split(/[,\s]+/)
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!lines.length) {
+    toast({ title: "No valid line numbers" });
+    return;
+  }
+  const { getBackend } = await import("@/lib/backend");
+  const { useWorkspaceStore } = await import("@/stores/workspaceStore");
+  const workspace = useWorkspaceStore();
+  if (!workspace.repoPath || !workspace.repoId) return;
+  await getBackend().stageLines({
+    repoId: workspace.repoId,
+    path: workspace.repoPath,
+    filePath: tab.value.path,
+    lines,
+  });
+  toast({ title: "Lines staged", description: `${lines.length} line(s)` });
+  await changes.refresh();
+  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right);
+}
+
 const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.leftRev);
 const canUnstage = computed(
   () => tab.value?.left === "head" && tab.value?.right === "index" && !tab.value.leftRev,
@@ -84,6 +114,9 @@ const rightText = computed(() => result.value?.rightText ?? "");
       </Button>
       <Button size="xs" variant="ghost" @click="diffs.setUnified(tab.id, !tab.unified)">
         {{ tab.unified ? "Side-by-side" : "Unified" }}
+      </Button>
+      <Button v-if="canStage" size="xs" variant="outline" @click="stageSelectedLines">
+        Stage selected lines
       </Button>
     </div>
 
