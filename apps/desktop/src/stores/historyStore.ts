@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import type { DiffFileResult, HistoryCommit } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type HistoryTab = {
   id: string;
@@ -70,7 +71,7 @@ export const useHistoryStore = defineStore("history", () => {
         await select(tab, page.commits[0].sha);
       }
     } catch (e) {
-      tab.error = e instanceof Error ? e.message : String(e);
+      tab.error = formatErrorMessage(e);
     } finally {
       tab.loading = false;
     }

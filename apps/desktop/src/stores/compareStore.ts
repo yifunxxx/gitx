@@ -5,6 +5,7 @@ import type { ChangedFile, CombinedDiffResult, LogCommit } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
 import { useDiffStore } from "./diffStore";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type CompareTab = {
   id: string;
@@ -111,7 +112,7 @@ export const useCompareStore = defineStore("compare", () => {
       tab.left = files.left;
       tab.right = files.right;
     } catch (e) {
-      tab.error = e instanceof Error ? e.message : String(e);
+      tab.error = formatErrorMessage(e);
     } finally {
       tab.loading = false;
     }
@@ -134,7 +135,7 @@ export const useCompareStore = defineStore("compare", () => {
       tab.right = result.right;
       tab.files = result.files;
     } catch (e) {
-      tab.error = e instanceof Error ? e.message : String(e);
+      tab.error = formatErrorMessage(e);
     } finally {
       tab.loading = false;
     }

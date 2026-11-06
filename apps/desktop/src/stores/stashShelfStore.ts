@@ -5,6 +5,7 @@ import type { ShelfEntry, StashEntry } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { toast } from "@/composables/useToast";
+import { formatErrorMessage } from "@/lib/errors";
 
 export const useStashShelfStore = defineStore("stashShelf", () => {
   const stashes = ref<StashEntry[]>([]);
@@ -45,7 +46,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
         deletedShelves.value = [];
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      error.value = formatErrorMessage(e);
     } finally {
       loading.value = false;
     }

@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import type { BlobContent, TreeEntry } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type RepoAtRevTab = {
   id: string;
@@ -59,7 +60,7 @@ export const useRepoAtRevStore = defineStore("repoAtRev", () => {
         dir,
       });
     } catch (e) {
-      tab.error = e instanceof Error ? e.message : String(e);
+      tab.error = formatErrorMessage(e);
       tab.entries = [];
     } finally {
       tab.loading = false;

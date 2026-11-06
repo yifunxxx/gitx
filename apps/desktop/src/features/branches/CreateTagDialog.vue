@@ -6,6 +6,7 @@ import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { toast } from "@/composables/useToast";
+import { formatErrorMessage } from "@/lib/errors";
 
 const props = defineProps<{ target: string }>();
 const name = ref("");
@@ -29,7 +30,7 @@ async function ok() {
     toast({ title: `Tag ${name.value.trim()} created` });
     closeDialog(true);
   } catch (e) {
-    toast({ title: "Tag failed", description: String(e) });
+    toast({ title: "Tag failed", description: formatErrorMessage(e) });
   }
 }
 </script>

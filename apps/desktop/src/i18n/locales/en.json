@@ -95,6 +95,7 @@
     "gitPathPlaceholder": "Leave empty to use git from PATH",
     "gitTestOk": "Git executable OK",
     "gitTestFail": "Git detection failed",
+    "gitNotFound": "Git not found. Install Git for Windows, or enter the full path to git.exe below.",
     "pages": {
       "appearance": "Appearance",
       "git": "Version Control | Git",
@@ -290,7 +291,7 @@
   },
   "git": {
     "detectFail": "Git not detected",
-    "detectHint": "Install Git for Windows, or set the Git executable path in Settings.",
+    "detectHint": "Git not found. Install Git for Windows, or set the full path to git.exe in Settings.",
     "openSettings": "Open Settings"
   }
 }

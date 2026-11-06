@@ -5,6 +5,7 @@ import type { WorktreeInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { toast } from "@/composables/useToast";
 import { confirmDialog } from "@/composables/useConfirm";
+import { formatErrorMessage } from "@/lib/errors";
 
 export const useWorktreesStore = defineStore("worktrees", () => {
   const items = ref<WorktreeInfo[]>([]);
@@ -31,7 +32,7 @@ export const useWorktreesStore = defineStore("worktrees", () => {
     try {
       items.value = await getBackend().worktreeList({ path: ws.repoPath });
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      error.value = formatErrorMessage(e);
     } finally {
       loading.value = false;
     }

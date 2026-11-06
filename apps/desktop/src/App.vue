@@ -21,6 +21,7 @@ import { useConsoleStore } from "@/stores/consoleStore";
 import { useJobsStore } from "@/stores/jobsStore";
 import { findActionIdByEvent, runAction, setKeymapOverridesProvider } from "@/actions";
 import { isTauri } from "@/lib/utils";
+import { formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 
@@ -79,7 +80,7 @@ onMounted(async () => {
     consoleStore.append("cmd", `# git detected: ${workspace.gitPath}`);
     consoleStore.append("stdout", workspace.gitVersion ?? "");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = formatGitDetectError(err, i18n.global.t("git.detectHint"));
     consoleStore.append("stderr", msg);
     toast({
       title: i18n.global.t("git.detectFail"),

@@ -11,6 +11,7 @@ import {
 import { closeDialog } from "@/composables/useDialog";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import type { RebasePlan, RebaseTodoAction } from "@/lib/backend";
+import { formatErrorMessage } from "@/lib/errors";
 
 const props = defineProps<{
   /** First commit to include (Log “from here”). */
@@ -37,7 +38,7 @@ onMounted(async () => {
       items: p.items.map((it) => ({ ...it, message: it.message ?? "" })),
     };
   } catch (e: unknown) {
-    error.value = (e as { message?: string })?.message ?? String(e);
+    error.value = formatErrorMessage(e);
   }
 });
 

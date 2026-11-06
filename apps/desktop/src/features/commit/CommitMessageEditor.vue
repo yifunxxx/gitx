@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/composables/useToast";
+import { formatErrorMessage } from "@/lib/errors";
 
 const { t } = useI18n();
 const commit = useCommitStore();
@@ -49,7 +50,7 @@ async function onAmendTargetChange(value: string) {
   } catch (e: unknown) {
     toast({
       title: t("commit.fixupFail"),
-      description: (e as { message?: string })?.message ?? String(e),
+      description: formatErrorMessage(e),
     });
   }
 }

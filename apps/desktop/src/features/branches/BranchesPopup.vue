@@ -26,6 +26,7 @@ import type { RefEntry } from "@/lib/backend";
 import { runAction } from "@/actions";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useSyncStore } from "@/stores/syncStore";
+import { formatErrorMessage } from "@/lib/errors";
 
 const branches = useBranchesStore();
 const settings = useSettingsStore();
@@ -73,7 +74,7 @@ async function onCheckout(entry: RefEntry) {
     await afterBranchChange();
     branches.closePopup();
   } catch (e) {
-    toast({ title: "Checkout failed", description: String(e) });
+    toast({ title: "Checkout failed", description: formatErrorMessage(e) });
   }
 }
 
@@ -90,7 +91,7 @@ async function onNewBranch() {
     toast({ title: `Created ${result.name}` });
     await afterBranchChange();
   } catch (e) {
-    toast({ title: "Create branch failed", description: String(e) });
+    toast({ title: "Create branch failed", description: formatErrorMessage(e) });
   }
 }
 
@@ -108,7 +109,7 @@ async function onRename(entry: RefEntry) {
     toast({ title: `Renamed to ${result.newName}` });
     await afterBranchChange();
   } catch (e) {
-    toast({ title: "Rename failed", description: String(e) });
+    toast({ title: "Rename failed", description: formatErrorMessage(e) });
   }
 }
 
@@ -129,7 +130,7 @@ async function onDelete(entry: RefEntry) {
     });
     await afterBranchChange();
   } catch (e) {
-    toast({ title: "Delete failed", description: String(e) });
+    toast({ title: "Delete failed", description: formatErrorMessage(e) });
   }
 }
 

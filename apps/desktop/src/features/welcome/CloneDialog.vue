@@ -6,6 +6,7 @@ import { getBackend } from "@/lib/backend";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
+import { formatErrorMessage } from "@/lib/errors";
 
 const url = ref("");
 const dir = ref("");
@@ -63,7 +64,7 @@ async function ok() {
     toast({ title: "Cloned", description: result.path });
     closeDialog(result.path);
   } catch (e) {
-    toast({ title: "Clone failed", description: String(e) });
+    toast({ title: "Clone failed", description: formatErrorMessage(e) });
   }
 }
 </script>

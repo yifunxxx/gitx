@@ -14,6 +14,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { getBackend } from "@/lib/backend";
 import type { AppSettings } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
+import { formatGitDetectError } from "@/lib/errors";
 import {
   SETTINGS_PAGES,
   getByPath,
@@ -35,6 +36,7 @@ const draft = reactive(
 const dirty = ref(false);
 const testingGit = ref(false);
 const gitTestResult = ref<string | null>(null);
+const gitTestOk = ref(false);
 
 watch(
   () => settings.settings,
@@ -104,15 +106,18 @@ function onStringListInput(field: SettingField, raw: string) {
 async function testGitPath() {
   testingGit.value = true;
   gitTestResult.value = null;
+  gitTestOk.value = false;
   try {
     const path = (draft.gitExecutable || "").trim() || null;
     const result = path
       ? await getBackend().gitTestExecutable(path)
       : await getBackend().gitDetect();
+    gitTestOk.value = true;
     gitTestResult.value = `${result.path} (${result.version})`;
     toast({ title: t("settings.gitTestOk"), description: gitTestResult.value });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    gitTestOk.value = false;
+    const msg = formatGitDetectError(err, t("settings.gitNotFound"));
     gitTestResult.value = msg;
     toast({ title: t("settings.gitTestFail"), description: msg });
   } finally {
@@ -326,7 +331,8 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
 
                 <p
                   v-if="field.id === 'gitExecutable' && gitTestResult"
-                  class="font-mono text-[10px] text-muted-foreground"
+                  class="font-mono text-[10px]"
+                  :class="gitTestOk ? 'text-muted-foreground' : 'text-destructive'"
                 >
                   {{ gitTestResult }}
                 </p>

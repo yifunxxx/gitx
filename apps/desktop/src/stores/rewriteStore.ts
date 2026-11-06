@@ -11,6 +11,7 @@ import { toast } from "@/composables/useToast";
 import { openDialog } from "@/composables/useDialog";
 import DirtyWorktreeDialog from "@/features/merge/DirtyWorktreeDialog.vue";
 import ConflictsDialog from "@/features/merge/ConflictsDialog.vue";
+import { formatErrorMessage } from "@/lib/errors";
 
 export const useRewriteStore = defineStore("rewrite", () => {
   const opState = ref<RepoOpState | null>(null);
@@ -105,7 +106,7 @@ export const useRewriteStore = defineStore("rewrite", () => {
         }
         return null;
       }
-      toast({ title: `${operation} failed`, description: err?.message ?? String(e) });
+      toast({ title: `${operation} failed`, description: formatErrorMessage(e) });
       throw e;
     }
   }

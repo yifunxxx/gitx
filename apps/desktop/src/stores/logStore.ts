@@ -10,6 +10,7 @@ import type {
   LogOrder,
 } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
+import { formatErrorMessage } from "@/lib/errors";
 
 const emptyFilters = (): LogFilters => ({
   text: null,
@@ -88,7 +89,7 @@ export const useLogStore = defineStore("log", () => {
       }
       void refreshIndexStatus();
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      error.value = formatErrorMessage(e);
     } finally {
       loading.value = false;
     }

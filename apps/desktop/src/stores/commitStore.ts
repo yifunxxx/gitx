@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { toast } from "@/composables/useToast";
+import { formatErrorMessage } from "@/lib/errors";
 
 export const useCommitStore = defineStore("commit", () => {
   const message = ref("");
@@ -99,7 +100,7 @@ export const useCommitStore = defineStore("commit", () => {
       } else {
         toast({
           title: "Commit failed",
-          description: err.message ?? String(e),
+          description: formatErrorMessage(e),
         });
       }
       throw e;

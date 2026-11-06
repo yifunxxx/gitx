@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import type { ChangelistsState, FileChange } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type ChangesSection =
   | "staged"
@@ -82,7 +83,7 @@ export const useChangesStore = defineStore("changes", () => {
       const backend = getBackend();
       changelists.value = await backend.changelistList({ path: workspace.repoPath });
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      error.value = formatErrorMessage(e);
     }
   }
 
@@ -122,7 +123,7 @@ export const useChangesStore = defineStore("changes", () => {
       const known = new Set(next.files.map((f) => f.path));
       checkedPaths.value = checkedPaths.value.filter((p) => known.has(p));
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      error.value = formatErrorMessage(e);
     } finally {
       loading.value = false;
     }

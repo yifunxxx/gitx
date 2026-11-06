@@ -95,6 +95,7 @@
     "gitPathPlaceholder": "留空则使用 PATH 中的 git",
     "gitTestOk": "Git 可执行文件可用",
     "gitTestFail": "Git 检测失败",
+    "gitNotFound": "未找到 git，请安装 Git for Windows 或在下方填写 git.exe 完整路径",
     "pages": {
       "appearance": "外观",
       "git": "Version Control | Git",
@@ -290,7 +291,7 @@
   },
   "git": {
     "detectFail": "未检测到 Git",
-    "detectHint": "请安装 Git for Windows，或在设置中指定 Git 可执行文件路径。",
+    "detectHint": "未找到 git，请安装 Git for Windows 或在设置中填写 git.exe 完整路径",
     "openSettings": "打开设置"
   }
 }

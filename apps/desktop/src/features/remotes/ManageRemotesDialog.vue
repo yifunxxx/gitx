@@ -10,6 +10,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { toast } from "@/composables/useToast";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import { openDialog } from "@/composables/useDialog";
+import { formatErrorMessage } from "@/lib/errors";
 
 const remotes = ref<RemoteInfo[]>([]);
 const name = ref("");
@@ -40,7 +41,7 @@ async function add() {
     await load();
     await useBranchesStore().refresh();
   } catch (e) {
-    toast({ title: "Add remote failed", description: String(e) });
+    toast({ title: "Add remote failed", description: formatErrorMessage(e) });
   }
 }
 

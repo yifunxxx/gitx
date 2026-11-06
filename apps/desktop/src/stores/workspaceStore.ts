@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { BranchInfo, RepoRoot, WslPathInfo } from "@/lib/backend";
+import { formatErrorMessage } from "@/lib/errors";
 
 export const useWorkspaceStore = defineStore("workspace", () => {
   const folderPath = ref<string | null>(null);
@@ -75,7 +76,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     } catch (e) {
       gitVersion.value = null;
       gitPath.value = null;
-      gitError.value = e instanceof Error ? e.message : String(e);
+      gitError.value = formatErrorMessage(e);
       throw e;
     }
   }

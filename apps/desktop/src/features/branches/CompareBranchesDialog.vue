@@ -5,6 +5,7 @@ import { closeDialog } from "@/composables/useDialog";
 import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { CompareRange } from "@/lib/backend";
+import { formatErrorMessage } from "@/lib/errors";
 
 const props = defineProps<{ left: string; right: string }>();
 const result = ref<CompareRange | null>(null);
@@ -24,7 +25,7 @@ async function load() {
       right: right.value,
     });
   } catch (e) {
-    error.value = String(e);
+    error.value = formatErrorMessage(e);
   }
 }
 

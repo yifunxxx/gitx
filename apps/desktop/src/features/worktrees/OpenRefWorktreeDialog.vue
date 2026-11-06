@@ -5,6 +5,7 @@ import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorktreesStore } from "@/stores/worktreesStore";
 import { useI18n } from "vue-i18n";
+import { formatErrorMessage } from "@/lib/errors";
 
 const emit = defineEmits<{ close: [] }>();
 const { t } = useI18n();
@@ -57,7 +58,7 @@ async function submit() {
     });
     emit("close");
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
+    error.value = formatErrorMessage(e);
   } finally {
     busy.value = false;
   }

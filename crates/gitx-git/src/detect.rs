@@ -1,6 +1,6 @@
 use gitx_core::{AppError, ErrorCode, WslPathInfo};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Minimum supported git version (major.minor.patch).
@@ -68,7 +68,18 @@ pub fn resolve_git_bin_for_path(preferred: Option<&str>, workspace: Option<&Path
     preferred.unwrap_or("git").to_string()
 }
 
+/// Merge machine/user PATH + common Git dirs into this process env.
+/// WebView2 GUI apps often inherit a stripped PATH vs an interactive shell.
+pub fn ensure_windows_git_path() {
+    #[cfg(windows)]
+    {
+        augment_windows_path();
+    }
+}
+
 pub fn detect_git(preferred: Option<&str>) -> Result<GitDetectResult, AppError> {
+    ensure_windows_git_path();
+
     let mut candidates: Vec<String> = Vec::new();
     if let Some(p) = preferred {
         let trimmed = p.trim();
@@ -77,6 +88,7 @@ pub fn detect_git(preferred: Option<&str>) -> Result<GitDetectResult, AppError> 
         }
     }
     candidates.push("git".to_string());
+    candidates.push("git.exe".to_string());
     for extra in windows_git_candidates() {
         if !candidates.iter().any(|c| c.eq_ignore_ascii_case(&extra)) {
             candidates.push(extra);
@@ -93,41 +105,173 @@ pub fn detect_git(preferred: Option<&str>) -> Result<GitDetectResult, AppError> 
     Err(last_err.unwrap_or_else(|| {
         AppError::new(
             ErrorCode::GitNotFound,
-            "git executable not found on PATH (install Git for Windows, or set Settings → Git executable)",
+            "git executable not found (install Git for Windows, or set Settings → Git executable to git.exe)",
         )
         .with_recover(vec![gitx_core::RecoverAction::ShowDetails])
     }))
 }
 
-/// Common Git for Windows install locations when PATH is incomplete (GUI apps often miss user PATH).
+#[cfg(windows)]
+fn augment_windows_path() {
+    use std::collections::BTreeSet;
+    use std::ffi::OsString;
+
+    let mut entries: Vec<String> = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut push_dir = |raw: String| {
+        let trimmed = raw.trim().trim_matches('"').to_string();
+        if trimmed.is_empty() {
+            return;
+        }
+        let key = trimmed.to_ascii_lowercase();
+        if !seen.insert(key) {
+            return;
+        }
+        entries.push(trimmed);
+    };
+
+    // Prefer known Git install dirs first so `Command::new("git")` can resolve.
+    for dir in windows_git_dir_candidates() {
+        if Path::new(&dir).is_dir() {
+            push_dir(dir);
+        }
+    }
+
+    if let Some(reg) = windows_registry_path_value() {
+        for part in reg.split(';') {
+            push_dir(expand_windows_env(part));
+        }
+    }
+
+    if let Ok(existing) = std::env::var("PATH") {
+        for part in existing.split(';') {
+            push_dir(part.to_string());
+        }
+    }
+
+    let merged = entries.join(";");
+    std::env::set_var("PATH", OsString::from(merged));
+}
+
+#[cfg(windows)]
+fn windows_registry_path_value() -> Option<String> {
+    let machine =
+        reg_query_path(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment");
+    let user = reg_query_path(r"HKCU\Environment");
+    match (machine, user) {
+        (Some(m), Some(u)) => Some(format!("{m};{u}")),
+        (Some(m), None) => Some(m),
+        (None, Some(u)) => Some(u),
+        (None, None) => None,
+    }
+}
+
+#[cfg(windows)]
+fn reg_query_path(key: &str) -> Option<String> {
+    let mut cmd = Command::new("reg");
+    cmd.args(["query", key, "/v", "Path"]);
+    crate::process_win::hide_console_std(&mut cmd);
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let line = line.trim();
+        // REG_SZ / REG_EXPAND_SZ value follows the type token.
+        let Some(rest) = line
+            .split_once("REG_EXPAND_SZ")
+            .or_else(|| line.split_once("REG_SZ"))
+            .map(|(_, v)| v.trim())
+        else {
+            continue;
+        };
+        if !rest.is_empty() {
+            return Some(expand_windows_env(rest));
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn expand_windows_env(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if let Some(end) = input[i + 1..].find('%') {
+                let name = &input[i + 1..i + 1 + end];
+                if !name.is_empty() {
+                    if let Ok(val) = std::env::var(name) {
+                        out.push_str(&val);
+                        i += name.len() + 2;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+#[cfg(windows)]
+fn windows_git_dir_candidates() -> Vec<String> {
+    let mut dirs = Vec::new();
+    let mut push = |p: String| {
+        if !dirs.iter().any(|d: &String| d.eq_ignore_ascii_case(&p)) {
+            dirs.push(p);
+        }
+    };
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        push(format!(r"{pf}\Git\cmd"));
+        push(format!(r"{pf}\Git\bin"));
+        push(format!(r"{pf}\Git\mingw64\bin"));
+    }
+    if let Ok(pf86) = std::env::var("ProgramFiles(x86)") {
+        push(format!(r"{pf86}\Git\cmd"));
+        push(format!(r"{pf86}\Git\bin"));
+    }
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        push(format!(r"{local}\Programs\Git\cmd"));
+        push(format!(r"{local}\Programs\Git\bin"));
+    }
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        push(format!(r"{home}\scoop\apps\git\current\cmd"));
+        push(format!(r"{home}\scoop\shims"));
+        push(format!(r"{home}\AppData\Local\Programs\Git\cmd"));
+    }
+    for p in [
+        r"C:\Program Files\Git\cmd",
+        r"C:\Program Files\Git\bin",
+        r"C:\Program Files\Git\mingw64\bin",
+        r"C:\Program Files (x86)\Git\cmd",
+        r"C:\Program Files (x86)\Git\bin",
+    ] {
+        push(p.to_string());
+    }
+    dirs
+}
+
+/// Common Git for Windows install locations when PATH is incomplete.
 fn windows_git_candidates() -> Vec<String> {
     #[cfg(windows)]
     {
         let mut out = Vec::new();
         let mut push = |p: String| {
-            if std::path::Path::new(&p).is_file() {
+            // Accept existing files; also keep likely paths so spawn errors stay informative.
+            if Path::new(&p).is_file() {
                 out.push(p);
             }
         };
-        if let Ok(pf) = std::env::var("ProgramFiles") {
-            push(format!(r"{pf}\Git\cmd\git.exe"));
-            push(format!(r"{pf}\Git\bin\git.exe"));
+        for dir in windows_git_dir_candidates() {
+            push(format!(r"{dir}\git.exe"));
         }
-        if let Ok(pf86) = std::env::var("ProgramFiles(x86)") {
-            push(format!(r"{pf86}\Git\cmd\git.exe"));
-            push(format!(r"{pf86}\Git\bin\git.exe"));
-        }
-        if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            push(format!(r"{local}\Programs\Git\cmd\git.exe"));
-            push(format!(r"{local}\Programs\Git\bin\git.exe"));
-        }
-        // Fallbacks when env vars are missing.
-        for p in [
-            r"C:\Program Files\Git\cmd\git.exe",
-            r"C:\Program Files\Git\bin\git.exe",
-            r"C:\Program Files (x86)\Git\cmd\git.exe",
-        ] {
-            push(p.to_string());
+        // Chocolatey shim / portable leftovers.
+        if let Ok(home) = std::env::var("ProgramData") {
+            push(format!(r"{home}\chocolatey\bin\git.exe"));
         }
         out
     }
@@ -205,6 +349,17 @@ fn parse_version(line: &str) -> Option<(u32, u32, u32)> {
 }
 
 fn which_path(bin: &str) -> Option<String> {
+    if Path::new(bin).is_file() {
+        return PathBuf::from(bin)
+            .canonicalize()
+            .ok()
+            .map(|p| {
+                let s = p.to_string_lossy().into_owned();
+                // Windows canonicalize may prefix `\\?\`; strip for display / Command.
+                s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
+            })
+            .or_else(|| Some(bin.to_string()));
+    }
     if bin.contains('/') || bin.contains('\\') {
         return Some(bin.to_string());
     }
@@ -231,5 +386,23 @@ fn which_path(bin: &str) -> Option<String> {
                     .next()
                     .map(|s| s.trim().to_string())
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_version_windows_suffix() {
+        assert_eq!(
+            parse_version("git version 2.43.0.windows.1"),
+            Some((2, 43, 0))
+        );
+    }
+
+    #[test]
+    fn parse_version_plain() {
+        assert_eq!(parse_version("git version 2.31.0"), Some((2, 31, 0)));
     }
 }

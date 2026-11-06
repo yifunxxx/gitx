@@ -36,9 +36,16 @@ pub async fn app_info() -> Result<AppInfo, AppError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn git_detect(state: State<'_, AppState>) -> Result<GitDetectDto, AppError> {
-    let settings = state.settings.read().await;
-    let preferred = settings.git_executable.as_deref();
-    let result = detect_git(preferred)?;
+    let preferred = {
+        let settings = state.settings.read().await;
+        settings.git_executable.clone()
+    };
+    let result = detect_git(preferred.as_deref())?;
+    // Persist discovered absolute path so later ops don't rely on a stripped GUI PATH.
+    if preferred.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        let mut git = state.git.write().await;
+        *git = gitx_git::GitRunner::new(result.path.clone());
+    }
     Ok(GitDetectDto {
         path: result.path,
         version: result.version,
@@ -51,8 +58,25 @@ pub async fn git_detect(state: State<'_, AppState>) -> Result<GitDetectDto, AppE
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_test_executable(path: String) -> Result<GitDetectDto, AppError> {
-    let result = detect_git(Some(path.as_str()))?;
+pub async fn git_test_executable(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<GitDetectDto, AppError> {
+    let preferred = path.trim();
+    let preferred = if preferred.is_empty() {
+        None
+    } else {
+        Some(preferred)
+    };
+    let result = detect_git(preferred)?;
+    // Testing an explicit path should also rebind the runner when it succeeds.
+    if let Some(p) = preferred {
+        let mut git = state.git.write().await;
+        *git = gitx_git::GitRunner::new(p.to_string());
+    } else {
+        let mut git = state.git.write().await;
+        *git = gitx_git::GitRunner::new(result.path.clone());
+    }
     Ok(GitDetectDto {
         path: result.path,
         version: result.version,
@@ -76,8 +100,23 @@ pub async fn settings_set(
     settings: AppSettings,
 ) -> Result<AppSettings, AppError> {
     save_app_settings(&state.settings_path, &settings)?;
-    if let Some(ref bin) = settings.git_executable {
-        *state.git.write().await = gitx_git::GitRunner::new(bin.clone());
+    match settings
+        .git_executable
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(bin) => {
+            *state.git.write().await = gitx_git::GitRunner::new(bin.to_string());
+        }
+        None => {
+            // Empty = auto-detect; rebind runner to whatever is found now.
+            if let Ok(detected) = detect_git(None) {
+                *state.git.write().await = gitx_git::GitRunner::new(detected.path);
+            } else {
+                *state.git.write().await = gitx_git::GitRunner::new("git");
+            }
+        }
     }
     *state.settings.write().await = settings.clone();
     Ok(settings)

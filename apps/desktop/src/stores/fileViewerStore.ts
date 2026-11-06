@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import type { DiffHunk } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type FileViewerTab = {
   id: string;
@@ -57,7 +58,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       tab.text = diff.rightText ?? "";
       tab.hunks = diff.hunks;
     } catch (e) {
-      tab.text = `// failed to load ${filePath}\n// ${e instanceof Error ? e.message : String(e)}`;
+      tab.text = `// failed to load ${filePath}\n// ${formatErrorMessage(e)}`;
     } finally {
       tab.loading = false;
     }

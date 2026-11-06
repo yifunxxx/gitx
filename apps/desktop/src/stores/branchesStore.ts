@@ -5,6 +5,7 @@ import type { RefEntry, RefsList, RemoteInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { toast } from "@/composables/useToast";
+import { formatErrorMessage } from "@/lib/errors";
 
 export const useBranchesStore = defineStore("branches", () => {
   const refs = ref<RefsList | null>(null);
@@ -46,7 +47,7 @@ export const useBranchesStore = defineStore("branches", () => {
       refs.value = list;
       remotes.value = remoteList;
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      error.value = formatErrorMessage(e);
     } finally {
       loading.value = false;
     }

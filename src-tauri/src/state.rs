@@ -18,9 +18,14 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(settings_path: PathBuf, settings: AppSettings) -> Self {
+        gitx_git::ensure_windows_git_path();
         let git_bin = settings
             .git_executable
-            .clone()
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| gitx_git::detect_git(None).ok().map(|d| d.path))
             .unwrap_or_else(|| "git".into());
         Self {
             settings: Arc::new(RwLock::new(settings)),
