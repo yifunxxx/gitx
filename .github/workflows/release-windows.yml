@@ -169,20 +169,23 @@ jobs:
           files: |
             staging/nsis/*.exe
             staging/msi/*.msi
+          fail_on_unmatched_files: true
           body: |
             ## gitx ${{ steps.release_meta.outputs.tag }}
 
-            First public Windows installers for the M0–M8 desktop baseline (focused Git GUI on Tauri 2 + Vue 3 + Rust).
+            Windows installers for gitx (focused Git GUI on Tauri 2 + Vue 3 + Rust).
 
             ### Downloads
             - **NSIS** (`.exe` setup) — recommended for most users
             - **MSI** — for managed / enterprise installs
 
+            Assets are **bare** `.exe` / `.msi` files (not zip packages).
+
             Builds are **unsigned**; Windows SmartScreen may warn — choose **More info** → **Run anyway**.
 
-            ### Milestone notes
-            Covers M0–M8: core Git flows, Local Changes, History / Graph, multi-root worktrees, Settings / Keymap / themes / zh-CN default. See `docs/dev-plan/08-milestones.md` in the repo.
+            ### Notes
+            Covers M0–M8 plus recent UX / Diff / Git fixes on master. See `docs/dev-plan/08-milestones.md` in the repo.
 
-            App version is aligned with this tag (`0.1.0` ↔ `v0.1.0`).
+            App version matches this tag (strip the leading `v`).
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

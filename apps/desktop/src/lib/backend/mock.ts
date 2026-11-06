@@ -240,7 +240,7 @@ function statusSnapshot(path: string, includeIgnored = false): StatusSnapshot {
 
 export const mockBackend: Backend = {
   async appInfo() {
-    return { name: "gitx", version: "0.1.0-web" };
+    return { name: "gitx", version: "0.1.1-web" };
   },
   async gitDetect() {
     return {
