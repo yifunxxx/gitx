@@ -8,7 +8,7 @@ export const useLayoutStore = defineStore("layout", () => {
   const bottomOpen = ref(true);
   const leftSize = ref(28);
   const bottomSize = ref(32);
-  const activeBottomTab = ref<"console" | "log">("log");
+  const activeBottomTab = ref<"console" | "log" | "update">("log");
   const findActionOpen = ref(false);
   const vcsPopupOpen = ref(false);
 

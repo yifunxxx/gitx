@@ -3,12 +3,14 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { computed } from "vue";
 import LogView from "@/features/log/LogView.vue";
+import UpdateInfoView from "@/features/sync/UpdateInfoView.vue";
 
 const layout = useLayoutStore();
 const consoleStore = useConsoleStore();
 
 const tabs = [
   { id: "log" as const, label: "Log" },
+  { id: "update" as const, label: "Update Info" },
   { id: "console" as const, label: "Console" },
 ];
 
@@ -62,6 +64,9 @@ const lines = computed(() => consoleStore.lines);
       >
         <span class="mr-2 opacity-50">{{ line.stream }}</span>{{ line.line }}
       </div>
+    </div>
+    <div v-else-if="layout.activeBottomTab === 'update'" class="min-h-0 flex-1">
+      <UpdateInfoView />
     </div>
     <div v-else class="min-h-0 flex-1">
       <LogView />

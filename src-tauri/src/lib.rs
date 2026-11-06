@@ -7,12 +7,23 @@ use commands::app::{
     app_info, git_detect, git_test_executable, log_frontend, settings_get, settings_reload,
     settings_set,
 };
+use commands::clone_cmd::{clone_check_url, clone_run, repo_state_get, unshallow_run};
 use commands::commit::{commit_create, commit_head_message};
 use commands::diff::diff_file;
 use commands::history::{log_changed_files, log_commit_details, log_query};
 use commands::index_ops::{add_paths, stage_hunks, stage_paths, unstage_hunks, unstage_paths};
 use commands::jobs::{job_cancel, job_list};
+use commands::refs::{
+    branch_checkout, branch_create, branch_delete, branch_rename, branch_restore, branch_update,
+    compare_branches, favorites_set, refs_list, tag_create, tag_delete, tag_push,
+};
+use commands::remotes::{
+    remote_add, remote_edit, remote_list, remote_remove, remote_remove_preview,
+};
 use commands::status::status_get;
+use commands::sync::{
+    fetch_run, ls_remote_check, pull_run, push_preview, push_run, update_project_run,
+};
 use commands::workspace::{init_run, status_probe, vcs_enable, workspace_open, workspace_recent};
 use gitx_meta::load_app_settings;
 use state::AppState;
@@ -55,6 +66,34 @@ pub fn run() {
             log_query,
             log_commit_details,
             log_changed_files,
+            // M2
+            refs_list,
+            favorites_set,
+            branch_create,
+            branch_checkout,
+            branch_rename,
+            branch_delete,
+            branch_restore,
+            branch_update,
+            compare_branches,
+            tag_create,
+            tag_delete,
+            tag_push,
+            remote_list,
+            remote_add,
+            remote_edit,
+            remote_remove_preview,
+            remote_remove,
+            fetch_run,
+            pull_run,
+            update_project_run,
+            push_preview,
+            push_run,
+            ls_remote_check,
+            clone_check_url,
+            clone_run,
+            unshallow_run,
+            repo_state_get,
         ]);
 
     #[cfg(debug_assertions)]

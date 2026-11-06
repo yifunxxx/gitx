@@ -102,7 +102,7 @@ pub async fn workspace_open(
         }
     };
     drop(git);
-    remember_recent(&state, &req.path).await;
+    remember_recent_path(&state, &req.path).await;
     Ok(res)
 }
 
@@ -295,7 +295,7 @@ pub async fn workspace_recent(state: State<'_, AppState>) -> Result<WorkspaceRec
     })
 }
 
-async fn remember_recent(state: &AppState, path: &str) {
+pub async fn remember_recent_path(state: &AppState, path: &str) {
     let mut settings = state.settings.write().await;
     push_recent(&mut settings, path);
     let _ = save_app_settings(&state.settings_path, &settings);

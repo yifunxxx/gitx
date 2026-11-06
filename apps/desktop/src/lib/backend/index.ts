@@ -1,14 +1,31 @@
 import type {
   AppInfo,
   AppSettings,
+  BranchCheckoutReq,
+  BranchCreateReq,
+  BranchDeleteReq,
+  BranchDeleteRes,
+  BranchRenameReq,
+  BranchRestoreReq,
+  BranchUpdateReq,
+  CloneCheckUrlReq,
+  CloneResult,
+  CloneRunReq,
   CommitCreateReq,
   CommitDetails,
   CommitResult,
+  CompareRange,
+  CompareReq,
   DiffFileReq,
   DiffFileResult,
+  FavoritesSetReq,
+  FetchRunReq,
+  FetchSummary,
   GitDetectDto,
   HeadMessageReq,
   HunksReq,
+  IncomingCheck,
+  IncomingCheckReq,
   JobHandle,
   JobInfo,
   LogChangedFilesReq,
@@ -17,9 +34,32 @@ import type {
   LogQueryReq,
   PathsReq,
   AddPathsReq,
+  PullResult,
+  PullRunReq,
+  PushPreview,
+  PushPreviewReq,
+  PushResult,
+  PushRunReq,
+  RefsList,
+  RefsListReq,
+  RemoteAddReq,
+  RemoteEditReq,
+  RemoteInfo,
+  RemoteListReq,
+  RemoteRemovePreview,
+  RemoteRemoveReq,
+  RepoStateReq,
+  RepoStateRes,
   StatusGetReq,
   StatusProbeReq,
   StatusSnapshot,
+  TagCreateReq,
+  TagDeleteReq,
+  TagDeleteRes,
+  TagPushReq,
+  UnshallowReq,
+  UpdateInfo,
+  UpdateProjectReq,
   WorkspaceOpenReq,
   WorkspaceOpenRes,
   WorkspaceRecentRes,
@@ -56,6 +96,34 @@ export type Backend = {
   logQuery(req: LogQueryReq): Promise<LogPage>;
   logCommitDetails(req: LogCommitDetailsReq): Promise<CommitDetails>;
   logChangedFiles(req: LogChangedFilesReq): Promise<ChangedFile[]>;
+  // M2
+  refsList(req: RefsListReq): Promise<RefsList>;
+  favoritesSet(req: FavoritesSetReq): Promise<null>;
+  branchCreate(req: BranchCreateReq): Promise<null>;
+  branchCheckout(req: BranchCheckoutReq): Promise<null>;
+  branchRename(req: BranchRenameReq): Promise<null>;
+  branchDelete(req: BranchDeleteReq): Promise<BranchDeleteRes>;
+  branchRestore(req: BranchRestoreReq): Promise<null>;
+  branchUpdate(req: BranchUpdateReq): Promise<null>;
+  compareBranches(req: CompareReq): Promise<CompareRange>;
+  tagCreate(req: TagCreateReq): Promise<null>;
+  tagDelete(req: TagDeleteReq): Promise<TagDeleteRes>;
+  tagPush(req: TagPushReq): Promise<null>;
+  remoteList(req: RemoteListReq): Promise<RemoteInfo[]>;
+  remoteAdd(req: RemoteAddReq): Promise<null>;
+  remoteEdit(req: RemoteEditReq): Promise<null>;
+  remoteRemovePreview(req: RemoteRemoveReq): Promise<RemoteRemovePreview>;
+  remoteRemove(req: RemoteRemoveReq): Promise<null>;
+  fetchRun(req: FetchRunReq): Promise<FetchSummary>;
+  pullRun(req: PullRunReq): Promise<PullResult>;
+  updateProjectRun(req: UpdateProjectReq): Promise<UpdateInfo>;
+  pushPreview(req: PushPreviewReq): Promise<PushPreview>;
+  pushRun(req: PushRunReq): Promise<PushResult>;
+  lsRemoteCheck(req: IncomingCheckReq): Promise<IncomingCheck>;
+  cloneCheckUrl(req: CloneCheckUrlReq): Promise<boolean>;
+  cloneRun(req: CloneRunReq): Promise<CloneResult>;
+  unshallowRun(req: UnshallowReq): Promise<null>;
+  repoStateGet(req: RepoStateReq): Promise<RepoStateRes>;
 };
 
 export const tauriBackend: Backend = {
@@ -83,6 +151,33 @@ export const tauriBackend: Backend = {
   logQuery: (req) => commands.logQuery(req),
   logCommitDetails: (req) => commands.logCommitDetails(req),
   logChangedFiles: (req) => commands.logChangedFiles(req),
+  refsList: (req) => commands.refsList(req),
+  favoritesSet: (req) => commands.favoritesSet(req),
+  branchCreate: (req) => commands.branchCreate(req),
+  branchCheckout: (req) => commands.branchCheckout(req),
+  branchRename: (req) => commands.branchRename(req),
+  branchDelete: (req) => commands.branchDelete(req),
+  branchRestore: (req) => commands.branchRestore(req),
+  branchUpdate: (req) => commands.branchUpdate(req),
+  compareBranches: (req) => commands.compareBranches(req),
+  tagCreate: (req) => commands.tagCreate(req),
+  tagDelete: (req) => commands.tagDelete(req),
+  tagPush: (req) => commands.tagPush(req),
+  remoteList: (req) => commands.remoteList(req),
+  remoteAdd: (req) => commands.remoteAdd(req),
+  remoteEdit: (req) => commands.remoteEdit(req),
+  remoteRemovePreview: (req) => commands.remoteRemovePreview(req),
+  remoteRemove: (req) => commands.remoteRemove(req),
+  fetchRun: (req) => commands.fetchRun(req),
+  pullRun: (req) => commands.pullRun(req),
+  updateProjectRun: (req) => commands.updateProjectRun(req),
+  pushPreview: (req) => commands.pushPreview(req),
+  pushRun: (req) => commands.pushRun(req),
+  lsRemoteCheck: (req) => commands.lsRemoteCheck(req),
+  cloneCheckUrl: (req) => commands.cloneCheckUrl(req),
+  cloneRun: (req) => commands.cloneRun(req),
+  unshallowRun: (req) => commands.unshallowRun(req),
+  repoStateGet: (req) => commands.repoStateGet(req),
 };
 
 export function getBackend(): Backend {

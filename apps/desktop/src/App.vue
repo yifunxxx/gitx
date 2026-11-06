@@ -13,6 +13,7 @@ import VcsOperationsPopup from "@/components/layout/VcsOperationsPopup.vue";
 import CustomContextMenuHost from "@/components/layout/CustomContextMenuHost.vue";
 import ToastHost from "@/components/common/ToastHost.vue";
 import DialogHost from "@/components/common/DialogHost.vue";
+import BranchesPopup from "@/features/branches/BranchesPopup.vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -127,6 +128,7 @@ onUnmounted(() => {
     <CustomContextMenuHost />
     <ToastHost />
     <DialogHost />
+    <BranchesPopup />
   </div>
 </template>
 

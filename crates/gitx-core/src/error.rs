@@ -20,6 +20,17 @@ pub enum ErrorCode {
     HookFailed,
     UnsafeRepository,
     AlreadyRepository,
+    InvalidRefName,
+    RefAlreadyExists,
+    BranchNotFullyMerged,
+    BranchInUse,
+    RemoteNotFound,
+    AuthRequired,
+    NonFastForward,
+    ProtectedBranch,
+    NetworkError,
+    DivergentBranches,
+    NothingToPush,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]

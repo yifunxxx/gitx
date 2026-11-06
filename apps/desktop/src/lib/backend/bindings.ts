@@ -15,6 +15,23 @@ export type AppearanceSettings = {
   palette: string
   cornerStyle: string
 }
+export type UpdateMethod = "merge" | "rebase" | "reset"
+export type FetchTagsPolicy = "auto" | "syncAndPrune" | "always" | "never"
+export type IncomingCheckPolicy = "auto" | "always" | "never"
+export type GitSettings = {
+  updateMethod: UpdateMethod
+  fetchTags: FetchTagsPolicy
+  autoFetchMinutes: number
+  checkIncoming: IncomingCheckPolicy
+  showUpdateInfo: boolean
+  showOptionsBeforeUpdate: boolean
+  fetchOnAddRemote: boolean
+  protectedBranches: string[]
+  useCredentialHelper: boolean
+  groupBranchesByDirectory: boolean
+  showRecentBranches: boolean
+  showTags: boolean
+}
 export type AppSettings = {
   schemaVersion: number
   appearance: AppearanceSettings
@@ -22,6 +39,7 @@ export type AppSettings = {
   gitExecutable: string | null
   recentWorkspaces: string[]
   stagingMode: boolean
+  git?: GitSettings
 }
 export type JobId = string
 export type JobKind = "read" | "write" | "network" | "networkWrite" | "composite"
@@ -165,6 +183,159 @@ export type AppError = {
   recover?: string[]
 }
 
+
+// —— M2 types ——
+export type RefKind = "localBranch" | "remoteBranch" | "tag"
+export type RefEntry = {
+  name: string
+  fullName: string
+  kind: RefKind
+  sha: string
+  upstream: string | null
+  ahead: number | null
+  behind: number | null
+  isHead: boolean
+  subject: string | null
+  committerTime: number | null
+  peeledSha: string | null
+  isFavorite: boolean
+}
+export type RefsList = {
+  local: RefEntry[]
+  remote: RefEntry[]
+  tags: RefEntry[]
+  recent: string[]
+  current: string | null
+  detached: boolean
+}
+export type RemoteInfo = { name: string; fetchUrl: string; pushUrl: string | null }
+export type FetchSummary = {
+  remote: string
+  newBranches: number
+  updatedBranches: number
+  newTags: number
+  pruned: number
+  message: string
+}
+export type PullResult = {
+  oldHead: string
+  newHead: string
+  strategy: string
+  updated: boolean
+  message: string
+}
+export type PushRefspec = { local: string; remote: string; remoteBranch: string }
+export type PushPreview = {
+  remote: string
+  refs: PushRefspec[]
+  commits: string[]
+  setUpstream: boolean
+  hasRemote: boolean
+}
+export type PushOutcome = "success" | "upToDate" | "rejected" | "error"
+export type PushResult = {
+  outcome: PushOutcome
+  remote: string
+  message: string
+  rejected: boolean
+  setUpstream: boolean
+}
+export type UpdateInfo = {
+  oldHead: string
+  newHead: string
+  strategy: string
+  updatedFiles: ChangedFile[]
+  commits: string[]
+  message: string
+}
+export type CloneResult = { path: string; shallow: boolean }
+export type IncomingCheck = { hasUnfetched: boolean; remotes: string[] }
+export type CompareRange = {
+  left: string
+  right: string
+  leftOnly: string[]
+  rightOnly: string[]
+}
+export type RefsListReq = { repoId: string; path: string; gitDir?: string | null }
+export type FavoritesSetReq = { gitDir: string; favorites: string[] }
+export type BranchCreateReq = {
+  path: string
+  name: string
+  startPoint?: string | null
+  checkout: boolean
+  force: boolean
+}
+export type BranchCheckoutReq = { path: string; target: string; mode: string }
+export type BranchRenameReq = {
+  path: string
+  oldName: string
+  newName: string
+  unsetUpstream: boolean
+  force: boolean
+  gitDir?: string | null
+}
+export type BranchDeleteReq = { path: string; name: string; force: boolean }
+export type BranchDeleteRes = { sha: string }
+export type BranchRestoreReq = { path: string; name: string; sha: string }
+export type BranchUpdateReq = { path: string; local: string; remoteRef: string }
+export type CompareReq = { path: string; left: string; right: string }
+export type TagCreateReq = {
+  path: string
+  name: string
+  target: string
+  message?: string | null
+  force: boolean
+  pushRemote?: string | null
+}
+export type TagDeleteReq = { path: string; name: string; remote?: string | null }
+export type TagDeleteRes = { sha: string }
+export type TagPushReq = { path: string; name: string; remote: string }
+export type RemoteListReq = { path: string }
+export type RemoteAddReq = { path: string; name: string; url: string; fetchAfter: boolean }
+export type RemoteEditReq = {
+  path: string
+  name: string
+  newName?: string | null
+  url?: string | null
+  pushUrl?: string | null
+}
+export type RemoteRemoveReq = { path: string; name: string }
+export type RemoteRemovePreview = { trackingCount: number }
+export type FetchRunReq = { path: string; remote?: string | null; prune?: boolean | null }
+export type PullRunReq = {
+  path: string
+  remote: string
+  branch: string
+  rebase: boolean
+  ffOnly: boolean
+  noFf: boolean
+  squash: boolean
+  noCommit: boolean
+  noVerify: boolean
+}
+export type UpdateProjectReq = { path: string; strategy: UpdateMethod }
+export type PushPreviewReq = { path: string; remote?: string | null }
+export type PushRunReq = {
+  path: string
+  remote: string
+  branch: string
+  setUpstream: boolean
+  forceWithLease: boolean
+  pushTags?: string | null
+}
+export type IncomingCheckReq = { path: string; remote: string }
+export type CloneCheckUrlReq = { url: string }
+export type CloneRunReq = {
+  url: string
+  dir: string
+  depth?: number | null
+  branch?: string | null
+  openAfter: boolean
+}
+export type UnshallowReq = { path: string; remote?: string | null }
+export type RepoStateReq = { path: string }
+export type RepoStateRes = { isShallow: boolean }
+
 export const commands = {
   async appInfo(): Promise<AppInfo> {
     return invoke("app_info")
@@ -244,6 +415,88 @@ export const commands = {
   async logChangedFiles(req: LogChangedFilesReq): Promise<ChangedFile[]> {
     return invoke("log_changed_files", { req })
   },
+  async refsList(req: RefsListReq): Promise<RefsList> {
+    return invoke("refs_list", { req })
+  },
+  async favoritesSet(req: FavoritesSetReq): Promise<null> {
+    return invoke("favorites_set", { req })
+  },
+  async branchCreate(req: BranchCreateReq): Promise<null> {
+    return invoke("branch_create", { req })
+  },
+  async branchCheckout(req: BranchCheckoutReq): Promise<null> {
+    return invoke("branch_checkout", { req })
+  },
+  async branchRename(req: BranchRenameReq): Promise<null> {
+    return invoke("branch_rename", { req })
+  },
+  async branchDelete(req: BranchDeleteReq): Promise<BranchDeleteRes> {
+    return invoke("branch_delete", { req })
+  },
+  async branchRestore(req: BranchRestoreReq): Promise<null> {
+    return invoke("branch_restore", { req })
+  },
+  async branchUpdate(req: BranchUpdateReq): Promise<null> {
+    return invoke("branch_update", { req })
+  },
+  async compareBranches(req: CompareReq): Promise<CompareRange> {
+    return invoke("compare_branches", { req })
+  },
+  async tagCreate(req: TagCreateReq): Promise<null> {
+    return invoke("tag_create", { req })
+  },
+  async tagDelete(req: TagDeleteReq): Promise<TagDeleteRes> {
+    return invoke("tag_delete", { req })
+  },
+  async tagPush(req: TagPushReq): Promise<null> {
+    return invoke("tag_push", { req })
+  },
+  async remoteList(req: RemoteListReq): Promise<RemoteInfo[]> {
+    return invoke("remote_list", { req })
+  },
+  async remoteAdd(req: RemoteAddReq): Promise<null> {
+    return invoke("remote_add", { req })
+  },
+  async remoteEdit(req: RemoteEditReq): Promise<null> {
+    return invoke("remote_edit", { req })
+  },
+  async remoteRemovePreview(req: RemoteRemoveReq): Promise<RemoteRemovePreview> {
+    return invoke("remote_remove_preview", { req })
+  },
+  async remoteRemove(req: RemoteRemoveReq): Promise<null> {
+    return invoke("remote_remove", { req })
+  },
+  async fetchRun(req: FetchRunReq): Promise<FetchSummary> {
+    return invoke("fetch_run", { req })
+  },
+  async pullRun(req: PullRunReq): Promise<PullResult> {
+    return invoke("pull_run", { req })
+  },
+  async updateProjectRun(req: UpdateProjectReq): Promise<UpdateInfo> {
+    return invoke("update_project_run", { req })
+  },
+  async pushPreview(req: PushPreviewReq): Promise<PushPreview> {
+    return invoke("push_preview", { req })
+  },
+  async pushRun(req: PushRunReq): Promise<PushResult> {
+    return invoke("push_run", { req })
+  },
+  async lsRemoteCheck(req: IncomingCheckReq): Promise<IncomingCheck> {
+    return invoke("ls_remote_check", { req })
+  },
+  async cloneCheckUrl(req: CloneCheckUrlReq): Promise<boolean> {
+    return invoke("clone_check_url", { req })
+  },
+  async cloneRun(req: CloneRunReq): Promise<CloneResult> {
+    return invoke("clone_run", { req })
+  },
+  async unshallowRun(req: UnshallowReq): Promise<null> {
+    return invoke("unshallow_run", { req })
+  },
+  async repoStateGet(req: RepoStateReq): Promise<RepoStateRes> {
+    return invoke("repo_state_get", { req })
+  },
+
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
