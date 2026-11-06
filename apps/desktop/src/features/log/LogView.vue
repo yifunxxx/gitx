@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
 import { Eye, Filter, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import CommitGraphCell from "./CommitGraphCell.vue";
 
 const log = useLogStore();
 const workspace = useWorkspaceStore();
@@ -77,9 +78,35 @@ function mapStatus(s: string): FileChangeKind {
   }
 }
 
-function laneColor(color: number) {
-  return `rgb(var(--graph-lane-${color % 12}))`;
-}
+/** Precompute edge colors + column width while walking newest→oldest. */
+const graphLayout = computed(() => {
+  const laneColors = new Map<number, number>();
+  const pendingIncoming = new Set<number>();
+  let maxLane = 0;
+  const edgeColors: number[][] = [];
+  const incoming: boolean[] = [];
+  for (const c of log.commits) {
+    maxLane = Math.max(maxLane, c.graph.lane);
+    incoming.push(pendingIncoming.has(c.graph.lane));
+    pendingIncoming.delete(c.graph.lane);
+    const colors: number[] = [];
+    for (const e of c.graph.edges) {
+      maxLane = Math.max(maxLane, e.fromLane, e.toLane);
+      const color = laneColors.get(e.fromLane) ?? c.graph.color;
+      colors.push(color);
+      pendingIncoming.add(e.toLane);
+    }
+    edgeColors.push(colors);
+    laneColors.set(c.graph.lane, c.graph.color);
+    c.graph.edges.forEach((e, i) => {
+      const color = colors[i] ?? c.graph.color;
+      laneColors.set(e.fromLane, color);
+      laneColors.set(e.toLane, color);
+    });
+  }
+  const colPx = Math.max(56, (maxLane + 1) * 14 + 8);
+  return { edgeColors, incoming, maxLane, colPx };
+});
 
 function visibleRefs(refs: string[]) {
   const list = log.showTagNames ? refs : refs.filter((r) => !r.startsWith("tag:"));
@@ -400,7 +427,10 @@ async function ctxExtract() {
         <Pane :size="58" min-size="30">
           <div class="flex h-full min-h-0 flex-col">
             <div
-              class="grid h-7 shrink-0 grid-cols-[56px_1fr_120px_140px] items-center border-b px-2 text-[11px] text-muted-foreground"
+              class="grid h-7 shrink-0 items-center border-b px-2 text-[11px] text-muted-foreground"
+              :style="{
+                gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
+              }"
             >
               <span>Graph</span>
               <span>Message</span>
@@ -409,20 +439,25 @@ async function ctxExtract() {
             </div>
             <div class="min-h-0 flex-1 overflow-auto">
               <button
-                v-for="c in log.commits"
+                v-for="(c, idx) in log.commits"
                 :key="c.sha"
                 type="button"
-                class="grid h-[22px] w-full grid-cols-[56px_1fr_120px_140px] items-center px-2 text-left text-[12.5px]"
+                class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
+                :style="{
+                  gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
+                }"
                 :class="
                   log.selectedShas.includes(c.sha) ? 'bg-accent' : 'hover:bg-accent/40'
                 "
                 @click="onCommitClick(c.sha, $event)"
                 @contextmenu="onCommitContext(c.sha, $event)"
               >
-                <span class="relative flex h-full items-center justify-center">
-                  <span
-                    class="h-2.5 w-2.5 rounded-full ring-2 ring-background"
-                    :style="{ background: laneColor(c.graph.color) }"
+                <span class="flex h-full items-center overflow-hidden">
+                  <CommitGraphCell
+                    :graph="c.graph"
+                    :edge-colors="graphLayout.edgeColors[idx] ?? []"
+                    :incoming="graphLayout.incoming[idx] ?? false"
+                    :max-lane="graphLayout.maxLane"
                   />
                 </span>
                 <span class="flex min-w-0 items-center gap-1 truncate">

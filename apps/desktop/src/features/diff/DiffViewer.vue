@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { Button } from "@/components/ui/button";
 import { useDiffStore } from "@/stores/diffStore";
 import { useChangesStore } from "@/stores/changesStore";
@@ -18,6 +18,17 @@ import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 const props = defineProps<{ tabId: string }>();
 const diffs = useDiffStore();
 const changes = useChangesStore();
+
+type DiffPane = { applyScroll: (left: number, top: number) => void };
+const leftPane = ref<DiffPane | null>(null);
+const rightPane = ref<DiffPane | null>(null);
+
+function onLeftScroll(pos: { left: number; top: number }) {
+  rightPane.value?.applyScroll(pos.left, pos.top);
+}
+function onRightScroll(pos: { left: number; top: number }) {
+  leftPane.value?.applyScroll(pos.left, pos.top);
+}
 
 const tab = computed(() => diffs.tabs.find((t) => t.id === props.tabId));
 const result = computed(() => tab.value?.result);
@@ -148,10 +159,22 @@ const rightText = computed(() => result.value?.rightText ?? "");
       </div>
       <div v-else class="grid min-h-0 flex-1 grid-cols-2">
         <div class="min-h-0 border-r">
-          <CodeMirrorDiff side="left" :text="leftText" :hunks="visibleHunks" />
+          <CodeMirrorDiff
+            ref="leftPane"
+            side="left"
+            :text="leftText"
+            :hunks="visibleHunks"
+            @scroll="onLeftScroll"
+          />
         </div>
         <div class="min-h-0">
-          <CodeMirrorDiff side="right" :text="rightText" :hunks="visibleHunks" />
+          <CodeMirrorDiff
+            ref="rightPane"
+            side="right"
+            :text="rightText"
+            :hunks="visibleHunks"
+            @scroll="onRightScroll"
+          />
         </div>
       </div>
       <div

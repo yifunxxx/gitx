@@ -107,21 +107,68 @@ function mockHunks(): DiffHunk[] {
 }
 
 function mockLog(): LogCommit[] {
+  // Newest-first merge topology for Graph column preview.
   return [
     {
       sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       shortSha: "aaaaaaa",
-      parents: ["bbbbbbbccccccccccccccccccccccccccccccc"],
-      subject: "Add staging Changes UI",
+      parents: [
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "cccccccccccccccccccccccccccccccccccccccc",
+      ],
+      subject: "Merge branch 'feature'",
       author: "gitx",
       authorEmail: "gitx@local",
       authorTime: 1_704_067_200,
       refs: ["HEAD -> main"],
-      graph: { lane: 0, edges: [{ fromLane: 0, toLane: 0 }], color: 0 },
+      graph: {
+        lane: 0,
+        edges: [
+          { fromLane: 0, toLane: 0 },
+          { fromLane: 0, toLane: 1 },
+        ],
+        color: 0,
+      },
     },
     {
-      sha: "bbbbbbbccccccccccccccccccccccccccccccc",
+      sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       shortSha: "bbbbbbb",
+      parents: ["dddddddddddddddddddddddddddddddddddddddd"],
+      subject: "Add staging Changes UI",
+      author: "gitx",
+      authorEmail: "gitx@local",
+      authorTime: 1_704_050_000,
+      refs: [],
+      graph: {
+        lane: 0,
+        edges: [
+          { fromLane: 1, toLane: 1 },
+          { fromLane: 0, toLane: 0 },
+        ],
+        color: 0,
+      },
+    },
+    {
+      sha: "cccccccccccccccccccccccccccccccccccccccc",
+      shortSha: "ccccccc",
+      parents: ["dddddddddddddddddddddddddddddddddddddddd"],
+      subject: "Feature work",
+      author: "gitx",
+      authorEmail: "gitx@local",
+      authorTime: 1_704_040_000,
+      refs: ["feature"],
+      graph: {
+        lane: 1,
+        edges: [
+          { fromLane: 0, toLane: 0 },
+          { fromLane: 1, toLane: 0 },
+        ],
+        color: 1,
+      },
+    },
+    {
+      sha: "dddddddddddddddddddddddddddddddddddddddd",
+      shortSha: "ddddddd",
       parents: [],
       subject: "Initial commit",
       author: "gitx",

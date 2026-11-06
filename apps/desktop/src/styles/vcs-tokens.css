@@ -9,14 +9,14 @@
   --vcs-merged-with-conflicts: 234 88 12;
   --vcs-changelist-inactive: 161 161 161;
 
-  --diff-insert-bg: 220 252 231;
+  --diff-insert-bg: 187 247 208;
   --diff-insert-strong: 22 163 74;
-  --diff-delete-bg: 254 226 226;
+  --diff-delete-bg: 254 202 202;
   --diff-delete-strong: 220 38 38;
-  --diff-modify-bg: 219 234 254;
+  --diff-modify-bg: 191 219 254;
   --diff-conflict-bg: 254 243 199;
-  --diff-word-insert: 134 239 172;
-  --diff-word-delete: 252 165 165;
+  --diff-word-insert: 74 222 128;
+  --diff-word-delete: 248 113 113;
 
   --gutter-added: 22 163 74;
   --gutter-modified: 37 99 235;
@@ -47,9 +47,11 @@
 }
 
 .dark {
-  --diff-insert-bg: 20 83 45 / 0.35;
-  --diff-delete-bg: 127 29 29 / 0.35;
-  --diff-modify-bg: 30 58 138 / 0.35;
-  --diff-conflict-bg: 113 63 18 / 0.4;
+  --diff-insert-bg: 20 83 45;
+  --diff-delete-bg: 127 29 29;
+  --diff-modify-bg: 30 58 138;
+  --diff-conflict-bg: 113 63 18;
+  --diff-word-insert: 22 101 52;
+  --diff-word-delete: 153 27 27;
   --ref-head: 208 208 214;
 }
