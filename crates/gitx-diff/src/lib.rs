@@ -1005,7 +1005,10 @@ mod tests {
         let started = Instant::now();
         let hunks = compute_hunks(Some(&left), Some(&right), &DiffComputeOptions::default());
         let elapsed = started.elapsed();
-        eprintln!("GIT-31 tiny_edit_12k elapsed={elapsed:?} hunks={}", hunks.len());
+        eprintln!(
+            "GIT-31 tiny_edit_12k elapsed={elapsed:?} hunks={}",
+            hunks.len()
+        );
         assert_eq!(hunks.len(), 1, "expected single hunk, got {}", hunks.len());
         assert!(
             elapsed < Duration::from_millis(250),

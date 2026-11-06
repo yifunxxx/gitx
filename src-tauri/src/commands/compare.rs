@@ -168,11 +168,7 @@ pub async fn diff_file_at(
         left_label,
         right_label,
         left_text: if req.include_texts { left_text } else { None },
-        right_text: if req.include_texts {
-            right_text
-        } else {
-            None
-        },
+        right_text: if req.include_texts { right_text } else { None },
         binary: false,
         too_large: false,
         hunks,
