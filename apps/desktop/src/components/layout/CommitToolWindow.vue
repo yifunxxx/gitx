@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { Plus, Minus, RefreshCw, FileDiff, ListPlus, Eye, MoreVertical } from "@lucide/vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
@@ -18,6 +19,7 @@ import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { toast } from "@/composables/useToast";
 import { getBackend } from "@/lib/backend";
 
+const { t } = useI18n();
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
 const diffs = useDiffStore();
@@ -29,11 +31,11 @@ const files = useFileViewerStore();
 const commitTwModeLabel = computed(() => {
   switch (layout.commitTwMode) {
     case "window":
-      return "Window";
+      return t("commitTw.window");
     case "float":
-      return "Float";
+      return t("commitTw.float");
     default:
-      return "Docked";
+      return t("commitTw.docked");
   }
 });
 
@@ -237,65 +239,65 @@ function onContext(payload: { path: string; section: ChangesSection; x: number; 
       }"
     >
       <span>
-        Commit
+        {{ t("toolWindows.commit") }}
         <span class="ml-1 text-[10px] font-normal text-muted-foreground">{{ commitTwModeLabel }}</span>
       </span>
       <div class="flex items-center gap-0.5">
         <Button
           variant="ghost"
           size="icon"
-          title="View Mode (Docked / Window / Float)"
+          :title="t('commitTw.viewMode')"
           @click="cycleCommitTwMode"
         >
           <MoreVertical class="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="xs" title="Commit TW menu" @click="onCommitMenu">⋮</Button>
-        <Button variant="ghost" size="icon" title="Refresh" @click="changes.refresh()">
+        <Button variant="ghost" size="xs" :title="t('commitTw.toggleControls')" @click="onCommitMenu">⋮</Button>
+        <Button variant="ghost" size="icon" :title="t('actions.refreshStatus')" @click="changes.refresh()">
           <RefreshCw class="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" title="Show Diff" @click="showDiffSelected">
+        <Button variant="ghost" size="icon" :title="t('actions.showDiff')" @click="showDiffSelected">
           <FileDiff class="h-3.5 w-3.5" />
         </Button>
         <Button
           variant="ghost"
           size="icon"
-          :title="changes.showIgnoredFiles ? 'Hide Ignored' : 'Show Ignored'"
+          :title="t('settings.fields.showIgnoredFiles')"
           @click="changes.toggleShowIgnored()"
         >
           <Eye class="h-3.5 w-3.5" />
         </Button>
         <template v-if="changes.stagingMode">
-          <Button variant="ghost" size="icon" title="Stage" @click="stageSelected">
+          <Button variant="ghost" size="icon" :title="t('actions.stage')" @click="stageSelected">
             <Plus class="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" title="Unstage" @click="unstageSelected">
+          <Button variant="ghost" size="icon" :title="t('actions.unstage')" @click="unstageSelected">
             <Minus class="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="xs" @click="stageAll">Stage All</Button>
+          <Button variant="ghost" size="xs" @click="stageAll">{{ t("actions.stage") }} All</Button>
         </template>
         <template v-else>
-          <Button variant="ghost" size="icon" title="New Changelist" @click="newChangelist">
+          <Button variant="ghost" size="icon" :title="t('changelist.new')" @click="newChangelist">
             <ListPlus class="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="xs" @click="newChangelist">New Changelist</Button>
+          <Button variant="ghost" size="xs" @click="newChangelist">{{ t("changelist.new") }}</Button>
         </template>
       </div>
     </div>
 
     <EmptyState
       v-if="!workspace.folderPath"
-      title="No folder open"
-      description="Open a folder from Welcome or the toolbar."
+      :title="t('empty.noFolderTitle')"
+      :description="t('empty.noFolderHint')"
     />
     <EmptyState
       v-else-if="!workspace.isRepo"
-      title="This folder is not under version control"
-      description="Enable Version Control Integration to create a Git repository here."
+      :title="t('empty.notVcs')"
+      :description="t('empty.notVcsHint')"
     >
-      <Button size="sm" @click="enableVcs">Enable Version Control Integration…</Button>
+      <Button size="sm" @click="enableVcs">{{ t("empty.enableVcs") }}</Button>
     </EmptyState>
-    <ErrorState v-else-if="changes.error" message="Failed to refresh status" :title="changes.error">
-      <Button size="sm" variant="outline" @click="changes.refresh()">Retry</Button>
+    <ErrorState v-else-if="changes.error" :message="t('empty.statusFailed')" :title="changes.error">
+      <Button size="sm" variant="outline" @click="changes.refresh()">{{ t("empty.retry") }}</Button>
     </ErrorState>
     <template v-else>
       <RepoStateBanner />

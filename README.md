@@ -1,6 +1,6 @@
 # gitx
 
-Desktop Git GUI aligned with IntelliJ IDEA’s built-in Git UI, built on the dbx stack (Tauri 2 + Vue 3 + Rust).
+Focused desktop Git GUI built on the dbx stack (Tauri 2 + Vue 3 + Rust). Default UI language is **简体中文 (zh-CN)**; English is available in Settings → Appearance. Light / dark / system themes are supported and persisted.
 
 ## Requirements
 
@@ -32,6 +32,12 @@ pnpm test
 cargo test -p gitx-git -p gitx-testkit
 cargo build -p gitx-helper
 ```
+
+### Theme & language
+
+- Toolbar sun/moon toggles light ↔ dark (persisted in app settings).
+- **Settings** (`Mod+,`) → **外观 / Appearance**: theme (system/light/dark), language (zh-CN / en), corner style, palette.
+- **Keymap** page: search actions, rebind shortcuts, reset overrides.
 
 ## Windows 11 — local run & build
 
@@ -77,9 +83,9 @@ gh run list --workflow=release-windows.yml --limit 3
 
 - `apps/desktop` — Vue 3 frontend
 - `src-tauri` — Tauri app crate + IPC commands
-- `crates/*` — git engine / meta / helper stubs
+- `crates/*` — git engine / meta / helper
 - `docs/` — product & development plan
 
 ## Milestone
 
-**M3 History & Compare** (on top of M0+M1) — Log filters / graph options / indexing, File History, Compare revisions/branches/commits, Diff whitespace modes + CodeMirror, Repository at Revision, blame backend. Host-agnostic only; parallel with M2. See `docs/dev-plan/08-milestones.md`.
+**M8 Settings, Polish & Release** (on top of M0–M7) — declarative Settings (searchable), Keymap overrides, zh-CN default + en, light/dark theme persistence, Welcome copy polish, concurrency/toast Busy hardening. See `docs/dev-plan/08-milestones.md`.

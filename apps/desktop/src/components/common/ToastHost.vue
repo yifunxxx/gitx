@@ -42,7 +42,7 @@ function onAction(id: string, run: () => void) {
           type="button"
           @click="dismissToast(t.id)"
         >
-          Dismiss
+          {{ $t("common.dismiss") }}
         </button>
       </div>
     </TransitionGroup>

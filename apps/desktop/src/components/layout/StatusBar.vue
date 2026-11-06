@@ -1,21 +1,27 @@
 <script setup lang="ts">
 import { Bell, GitBranch, LoaderCircle } from "@lucide/vue";
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { useJobsStore } from "@/stores/jobsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 
+const { t } = useI18n();
 const jobs = useJobsStore();
 const workspace = useWorkspaceStore();
 const branches = useBranchesStore();
 
 const branchText = computed(() => {
-  if (!workspace.isRepo) return "no repo";
+  if (!workspace.isRepo) return t("status.noRepo");
   const b = workspace.branch;
   if (!b) return "…";
   if (b.detached) return `detached ${b.head}`;
   return b.head;
 });
+
+const busyText = computed(() =>
+  jobs.count ? t("status.busy", { count: jobs.count }) : t("status.idle"),
+);
 </script>
 
 <template>
@@ -24,7 +30,7 @@ const branchText = computed(() => {
   >
     <div class="flex items-center gap-1">
       <LoaderCircle v-if="jobs.count" class="h-3 w-3 animate-spin" />
-      <span>{{ jobs.count ? `${jobs.count} process(es)` : "Idle" }}</span>
+      <span>{{ busyText }}</span>
     </div>
     <div class="h-3 w-px bg-border" />
     <button

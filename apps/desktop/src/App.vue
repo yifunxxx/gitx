@@ -19,7 +19,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { useJobsStore } from "@/stores/jobsStore";
-import { findActionIdByEvent, runAction } from "@/actions";
+import { findActionIdByEvent, runAction, setKeymapOverridesProvider } from "@/actions";
 import { isTauri } from "@/lib/utils";
 
 const layout = useLayoutStore();
@@ -28,14 +28,27 @@ const settings = useSettingsStore();
 const consoleStore = useConsoleStore();
 const jobs = useJobsStore();
 
+setKeymapOverridesProvider(() => settings.settings?.keymapOverrides);
+
 const unlisteners: Array<() => void> = [];
 
 function onKeydown(e: KeyboardEvent) {
+  // Don't steal keys while typing in inputs / dialogs (except Find Action).
+  const target = e.target as HTMLElement | null;
+  const tag = target?.tagName?.toLowerCase();
+  const editing =
+    tag === "input" ||
+    tag === "textarea" ||
+    target?.isContentEditable ||
+    target?.closest("[role='dialog']");
+
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "a") {
     e.preventDefault();
     layout.findActionOpen = true;
     return;
   }
+  if (editing && !(e.key === "," && (e.metaKey || e.ctrlKey))) return;
+
   const id = findActionIdByEvent(e);
   if (!id) return;
   e.preventDefault();
@@ -53,6 +66,8 @@ function onConsoleLine(payload: { stream: string; line: string }) {
   consoleStore.append(stream, payload.line);
 }
 
+let stuckTimer: number | undefined;
+
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
   await settings.load();
@@ -64,6 +79,8 @@ onMounted(async () => {
   } catch (err) {
     consoleStore.append("stderr", err instanceof Error ? err.message : String(err));
   }
+
+  stuckTimer = window.setInterval(() => jobs.pruneStuck(), 30_000);
 
   if (isTauri()) {
     const { listen } = await import("@tauri-apps/api/event");
@@ -85,6 +102,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeydown);
+  if (stuckTimer != null) window.clearInterval(stuckTimer);
   unlisteners.splice(0).forEach((u) => u());
 });
 </script>

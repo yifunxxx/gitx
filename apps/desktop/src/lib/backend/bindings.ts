@@ -56,6 +56,8 @@ export type AppSettings = {
   showIgnoredFiles?: boolean
   logIndexing: boolean
   git?: GitSettings
+  /** Per-action shortcut overrides (`mod+,` style chords). */
+  keymapOverrides?: Record<string, string[]>
 }
 export type WorktreeInfo = {
   path: string

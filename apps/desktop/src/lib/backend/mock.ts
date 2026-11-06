@@ -14,18 +14,19 @@ import type {
 } from "./bindings";
 
 const defaultSettings: AppSettings = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   appearance: {
     theme: "system",
     palette: "pearl",
     cornerStyle: "small",
   },
-  locale: "en",
+  locale: "zh-CN",
   gitExecutable: null,
   recentWorkspaces: ["/tmp/demo-repo"],
   stagingMode: false,
   showIgnoredFiles: false,
   logIndexing: true,
+  keymapOverrides: {},
   git: {
     updateMethod: "merge",
     fetchTags: "auto",
@@ -215,11 +216,11 @@ export const mockBackend: Backend = {
     };
   },
   async settingsGet() {
-    return structuredClone(settings);
+    return JSON.parse(JSON.stringify(settings));
   },
   async settingsSet(next) {
-    settings = structuredClone(next);
-    return structuredClone(settings);
+    settings = JSON.parse(JSON.stringify(next));
+    return JSON.parse(JSON.stringify(settings));
   },
   async jobList() {
     return [];

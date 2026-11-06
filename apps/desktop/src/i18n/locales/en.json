@@ -3,9 +3,20 @@
     "name": "gitx",
     "welcome": "Welcome to gitx"
   },
+  "welcome": {
+    "tagline": "A focused desktop Git workbench — open, clone, or create a repository to get started.",
+    "recent": "Recent",
+    "noRecent": "No recent repositories yet",
+    "open": "Open…",
+    "openFolder": "Open Folder",
+    "clone": "Clone Repository…",
+    "create": "Create Repository…",
+    "folderPrompt": "Folder path",
+    "opened": "Opened",
+    "repoCreated": "Repository created"
+  },
   "actions": {
     "refreshStatus": "Refresh Status",
-    "demoHello": "Demo: Hello gitx",
     "findAction": "Find Action",
     "openFolder": "Open…",
     "commit": "Commit",
@@ -33,7 +44,8 @@
     "dropCommits": "Drop Commits",
     "uncommit": "Undo Commit",
     "revert": "Revert Commit",
-    "reset": "Reset Current Branch to Here…"
+    "reset": "Reset Current Branch to Here…",
+    "settings": "Settings…"
   },
   "merge": {
     "conflicts": "Conflicts",
@@ -56,7 +68,104 @@
     "worktrees": "Worktrees"
   },
   "common": {
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "ok": "OK",
+    "apply": "Apply",
+    "dismiss": "Dismiss",
+    "confirm": "Confirm"
+  },
+  "status": {
+    "idle": "Idle",
+    "busy": "{count} process(es)",
+    "noRepo": "no repo",
+    "upstream": "Upstream",
+    "noUpstream": "No upstream branch — Push to set",
+    "lastFetch": "Last fetch",
+    "notFetched": "Not fetched yet"
+  },
+  "settings": {
+    "title": "Settings",
+    "search": "Search settings…",
+    "applied": "Settings applied",
+    "test": "Test",
+    "on": "On",
+    "off": "Off",
+    "noMatches": "No matching settings",
+    "gitPathPlaceholder": "Leave empty to use git from PATH",
+    "gitTestOk": "Git executable OK",
+    "gitTestFail": "Git detection failed",
+    "pages": {
+      "appearance": "Appearance",
+      "git": "Version Control | Git",
+      "confirmation": "Confirmation & Display",
+      "keymap": "Keymap"
+    },
+    "fields": {
+      "theme": "Theme",
+      "locale": "Language",
+      "cornerStyle": "Corner style",
+      "palette": "Palette",
+      "gitExecutable": "Git executable",
+      "stagingMode": "Enable staging area (off = Changelist mode)",
+      "showIgnoredFiles": "Show Ignored Files",
+      "updateMethod": "Default Update Project method",
+      "cleanTreeMethod": "Clean working tree using",
+      "combineStashesAndShelves": "Combine stashes and shelves in one tab",
+      "autoFetchMinutes": "Auto-fetch interval (minutes, 0 = off)",
+      "protectedBranches": "Protected branches (comma-separated)",
+      "useCredentialHelper": "Use credential helper",
+      "executeBranchOpsOnAllRoots": "Execute branch operations on all roots",
+      "showOptionsBeforeUpdate": "Show options before Update",
+      "fetchOnAddRemote": "Fetch after adding a remote",
+      "cherryPickSuffixProtected": "Cherry-pick suffix on protected branches",
+      "allowPerHunkChangelists": "Allow per-hunk changelists",
+      "forkParentRemote": "Fork parent remote name",
+      "commitTwMode": "Commit tool window mode",
+      "logIndexing": "Enable Log indexing",
+      "closeCommitTwAfterCommit": "Close Commit TW after successful commit",
+      "commitControlsHidden": "Hide commit controls until Ctrl+K",
+      "groupBranchesByDirectory": "Group branches by directory",
+      "showRecentBranches": "Show recent branches",
+      "showTags": "Show tags",
+      "showUpdateInfo": "Open Update Info"
+    },
+    "theme": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "locale": {
+      "zhCN": "简体中文",
+      "en": "English"
+    },
+    "corner": {
+      "small": "Small",
+      "large": "Large",
+      "none": "None"
+    },
+    "palette": {
+      "pearl": "Pearl",
+      "graphite": "Graphite"
+    },
+    "update": {
+      "merge": "Merge",
+      "rebase": "Rebase",
+      "reset": "Reset"
+    },
+    "clean": {
+      "stash": "Stash",
+      "shelve": "Shelve"
+    },
+    "keymap": {
+      "search": "Search by name or action id…",
+      "resetAll": "Reset all",
+      "hint": "Click Rebind, then press a shortcut. Esc cancels. Later bindings win on conflict.",
+      "action": "Action",
+      "shortcut": "Shortcut",
+      "recording": "Press keys…",
+      "rebind": "Rebind",
+      "reset": "Reset"
+    }
   },
   "worktrees": {
     "new": "New Worktree…",
@@ -118,9 +227,19 @@
   },
   "empty": {
     "noFolder": "Open a folder to get started",
+    "noFolderTitle": "No folder open",
+    "noFolderHint": "Open a folder from Welcome or the toolbar.",
     "noChanges": "No local changes",
     "notVcs": "This folder is not under version control",
-    "noCommits": "No commits yet"
+    "notVcsHint": "Enable Version Control Integration to create a Git repository here.",
+    "enableVcs": "Enable Version Control Integration…",
+    "noCommits": "No commits yet",
+    "statusFailed": "Failed to refresh status",
+    "retry": "Retry"
+  },
+  "chrome": {
+    "welcomeTab": "Welcome",
+    "workspaceTab": "Workspace"
   },
   "commit": {
     "amend": "Amend",

@@ -3,9 +3,20 @@
     "name": "gitx",
     "welcome": "欢迎使用 gitx"
   },
+  "welcome": {
+    "tagline": "清晰、专注的桌面 Git 工作台 — 打开、克隆或创建仓库，立刻开始。",
+    "recent": "最近",
+    "noRecent": "还没有最近打开的仓库",
+    "open": "打开…",
+    "openFolder": "打开文件夹",
+    "clone": "Clone 仓库…",
+    "create": "创建仓库…",
+    "folderPrompt": "文件夹路径",
+    "opened": "已打开",
+    "repoCreated": "仓库已创建"
+  },
   "actions": {
     "refreshStatus": "刷新状态",
-    "demoHello": "演示：Hello gitx",
     "findAction": "查找操作",
     "openFolder": "打开…",
     "commit": "提交",
@@ -33,7 +44,8 @@
     "dropCommits": "丢弃提交",
     "uncommit": "撤销提交",
     "revert": "还原提交",
-    "reset": "将当前分支重置到此处…"
+    "reset": "将当前分支重置到此处…",
+    "settings": "设置…"
   },
   "merge": {
     "conflicts": "冲突",
@@ -56,7 +68,104 @@
     "worktrees": "Worktrees"
   },
   "common": {
-    "cancel": "取消"
+    "cancel": "取消",
+    "ok": "确定",
+    "apply": "应用",
+    "dismiss": "关闭",
+    "confirm": "确认"
+  },
+  "status": {
+    "idle": "空闲",
+    "busy": "{count} 个进程",
+    "noRepo": "无仓库",
+    "upstream": "上游",
+    "noUpstream": "无上游分支 — Push 以设置",
+    "lastFetch": "上次 Fetch",
+    "notFetched": "尚未 Fetch"
+  },
+  "settings": {
+    "title": "设置",
+    "search": "搜索设置…",
+    "applied": "设置已应用",
+    "test": "测试",
+    "on": "开",
+    "off": "关",
+    "noMatches": "没有匹配的设置项",
+    "gitPathPlaceholder": "留空则使用 PATH 中的 git",
+    "gitTestOk": "Git 可执行文件可用",
+    "gitTestFail": "Git 检测失败",
+    "pages": {
+      "appearance": "外观",
+      "git": "Version Control | Git",
+      "confirmation": "确认与显示",
+      "keymap": "Keymap"
+    },
+    "fields": {
+      "theme": "主题",
+      "locale": "语言",
+      "cornerStyle": "圆角风格",
+      "palette": "配色",
+      "gitExecutable": "Git 可执行文件",
+      "stagingMode": "启用 Staging 区域（关闭则为 Changelist 模式）",
+      "showIgnoredFiles": "显示 Ignored Files",
+      "updateMethod": "Update Project 默认方式",
+      "cleanTreeMethod": "清理工作树方式",
+      "combineStashesAndShelves": "合并 Stashes 与 Shelves 为一个 Tab",
+      "autoFetchMinutes": "自动 Fetch 间隔（分钟，0 = 关闭）",
+      "protectedBranches": "受保护分支（逗号分隔）",
+      "useCredentialHelper": "使用 credential helper",
+      "executeBranchOpsOnAllRoots": "在所有 root 上执行分支操作",
+      "showOptionsBeforeUpdate": "Update 前显示选项",
+      "fetchOnAddRemote": "添加 Remote 后自动 Fetch",
+      "cherryPickSuffixProtected": "受保护分支 Cherry-pick 追加后缀",
+      "allowPerHunkChangelists": "允许按 hunk 归属 Changelist",
+      "forkParentRemote": "Fork 父 Remote 名",
+      "commitTwMode": "Commit 工具窗模式",
+      "logIndexing": "启用 Log 索引",
+      "closeCommitTwAfterCommit": "提交成功后关闭 Commit 工具窗",
+      "commitControlsHidden": "默认隐藏提交控件（Ctrl+K 显示）",
+      "groupBranchesByDirectory": "按目录分组分支",
+      "showRecentBranches": "显示 Recent 分支",
+      "showTags": "显示 Tags",
+      "showUpdateInfo": "打开 Update Info"
+    },
+    "theme": {
+      "system": "跟随系统",
+      "light": "浅色",
+      "dark": "深色"
+    },
+    "locale": {
+      "zhCN": "简体中文",
+      "en": "English"
+    },
+    "corner": {
+      "small": "小",
+      "large": "大",
+      "none": "无"
+    },
+    "palette": {
+      "pearl": "Pearl",
+      "graphite": "Graphite"
+    },
+    "update": {
+      "merge": "Merge",
+      "rebase": "Rebase",
+      "reset": "Reset"
+    },
+    "clean": {
+      "stash": "Stash",
+      "shelve": "Shelve"
+    },
+    "keymap": {
+      "search": "按名称或 Action Id 搜索…",
+      "resetAll": "全部重置",
+      "hint": "点击「重新绑定」后按下新快捷键；Esc 取消。冲突时后绑定优先生效。",
+      "action": "操作",
+      "shortcut": "快捷键",
+      "recording": "按下快捷键…",
+      "rebind": "重新绑定",
+      "reset": "重置"
+    }
   },
   "worktrees": {
     "new": "新建 Worktree…",
@@ -118,9 +227,19 @@
   },
   "empty": {
     "noFolder": "打开文件夹开始使用",
+    "noFolderTitle": "未打开文件夹",
+    "noFolderHint": "从 Welcome 或工具栏打开文件夹。",
     "noChanges": "没有本地变更",
     "notVcs": "此文件夹不在版本控制下",
-    "noCommits": "尚无提交"
+    "notVcsHint": "启用版本控制集成以在此创建 Git 仓库。",
+    "enableVcs": "启用版本控制集成…",
+    "noCommits": "尚无提交",
+    "statusFailed": "刷新状态失败",
+    "retry": "重试"
+  },
+  "chrome": {
+    "welcomeTab": "欢迎",
+    "workspaceTab": "工作区"
   },
   "commit": {
     "amend": "Amend",
