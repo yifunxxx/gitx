@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use gitx_core::{
-    AppError, FetchSummary, IncomingCheck, PushPreview, PushResult, PullResult, UpdateInfo,
+    AppError, FetchSummary, IncomingCheck, PullResult, PushPreview, PushResult, UpdateInfo,
     UpdateMethod,
 };
 use serde::{Deserialize, Serialize};
@@ -88,10 +88,7 @@ pub async fn fetch_run(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn pull_run(
-    state: State<'_, AppState>,
-    req: PullRunReq,
-) -> Result<PullResult, AppError> {
+pub async fn pull_run(state: State<'_, AppState>, req: PullRunReq) -> Result<PullResult, AppError> {
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
@@ -137,10 +134,7 @@ pub async fn push_preview(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn push_run(
-    state: State<'_, AppState>,
-    req: PushRunReq,
-) -> Result<PushResult, AppError> {
+pub async fn push_run(state: State<'_, AppState>, req: PushRunReq) -> Result<PushResult, AppError> {
     let path = PathBuf::from(&req.path);
     let settings = state.settings.read().await;
     let protected = settings.git.protected_branches.clone();

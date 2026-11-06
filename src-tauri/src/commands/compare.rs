@@ -187,18 +187,18 @@ pub async fn diff_combined(
             .unwrap_or(None);
         let binary = left_bytes.as_ref().is_some_and(|b| is_probably_binary(b))
             || right_bytes.as_ref().is_some_and(|b| is_probably_binary(b));
-        let hunks = if binary || too_large(left_bytes.as_deref()) || too_large(right_bytes.as_deref())
-        {
-            Vec::new()
-        } else {
-            compute_hunks(
-                decode_lossy(left_bytes.as_deref()).as_deref(),
-                decode_lossy(right_bytes.as_deref()).as_deref(),
-                &DiffComputeOptions {
-                    ignore_whitespace: req.ignore_whitespace,
-                },
-            )
-        };
+        let hunks =
+            if binary || too_large(left_bytes.as_deref()) || too_large(right_bytes.as_deref()) {
+                Vec::new()
+            } else {
+                compute_hunks(
+                    decode_lossy(left_bytes.as_deref()).as_deref(),
+                    decode_lossy(right_bytes.as_deref()).as_deref(),
+                    &DiffComputeOptions {
+                        ignore_whitespace: req.ignore_whitespace,
+                    },
+                )
+            };
         out_files.push(CombinedDiffFile {
             path: f.path,
             status: f.status,
@@ -230,9 +230,7 @@ fn rev_label(rev: &str) -> String {
 }
 
 fn looks_like_rev(s: &str) -> bool {
-    !s.is_empty()
-        && !s.eq_ignore_ascii_case("WORKTREE")
-        && !s.eq_ignore_ascii_case("INDEX")
+    !s.is_empty() && !s.eq_ignore_ascii_case("WORKTREE") && !s.eq_ignore_ascii_case("INDEX")
 }
 
 async fn rev_time(

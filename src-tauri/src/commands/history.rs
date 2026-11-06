@@ -1,7 +1,7 @@
 use crate::state::AppState;
 use gitx_core::{
-    AppError, BlameResult, BlobContent, CommitDetails, ErrorCode, HistoryPage, IndexStatus,
-    LogCommit, LogFilters, LogPage, TreeEntry, ChangedFile,
+    AppError, BlameResult, BlobContent, ChangedFile, CommitDetails, ErrorCode, HistoryPage,
+    IndexStatus, LogCommit, LogFilters, LogPage, TreeEntry,
 };
 use gitx_graph::layout_graph;
 use gitx_index::LogIndex;

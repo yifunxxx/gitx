@@ -96,10 +96,7 @@ impl FixtureBuilder {
             } else {
                 kept
             };
-            Ok(FixtureRepo {
-                root,
-                _temp: None,
-            })
+            Ok(FixtureRepo { root, _temp: None })
         } else {
             Ok(FixtureRepo {
                 root: repo_root,
@@ -126,14 +123,9 @@ fn build_with_remote(temp: &Path) -> Result<PathBuf, TestkitError> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .status()?;
     if !status.success() {
-        return Err(TestkitError::Git(format!(
-            "bare init failed with {status}"
-        )));
+        return Err(TestkitError::Git(format!("bare init failed with {status}")));
     }
-    git(
-        &work,
-        &["remote", "add", "origin", bare.to_str().unwrap()],
-    )?;
+    git(&work, &["remote", "add", "origin", bare.to_str().unwrap()])?;
     git(&work, &["push", "-u", "origin", "main"])?;
     Ok(work)
 }

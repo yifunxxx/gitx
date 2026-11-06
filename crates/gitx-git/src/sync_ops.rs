@@ -2,8 +2,8 @@
 
 use crate::runner::{GitInvocation, GitRunner, OpKind};
 use gitx_core::{
-    AppError, ChangedFile, ErrorCode, FetchSummary, FetchTagsPolicy, IncomingCheck, PushOutcome,
-    PushPreview, PushRefspec, PushResult, PullResult, UpdateInfo, UpdateMethod,
+    AppError, ChangedFile, ErrorCode, FetchSummary, FetchTagsPolicy, IncomingCheck, PullResult,
+    PushOutcome, PushPreview, PushRefspec, PushResult, UpdateInfo, UpdateMethod,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -56,10 +56,7 @@ impl GitRunner {
                 _ => {}
             }
         }
-        let pruned = before
-            .keys()
-            .filter(|k| !after.contains_key(*k))
-            .count() as u32;
+        let pruned = before.keys().filter(|k| !after.contains_key(*k)).count() as u32;
 
         let message = if new_branches == 0 && updated_branches == 0 && pruned == 0 {
             "Everything is up to date".into()
@@ -104,6 +101,7 @@ impl GitRunner {
         Ok(map)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn pull_run(
         &self,
         cwd: &Path,
@@ -117,7 +115,10 @@ impl GitRunner {
         no_verify: bool,
         cancel: &CancellationToken,
     ) -> Result<PullResult, AppError> {
-        let old = self.rev_parse(cwd, "HEAD", cancel).await.unwrap_or_default();
+        let old = self
+            .rev_parse(cwd, "HEAD", cancel)
+            .await
+            .unwrap_or_default();
         let mut args = vec!["pull".to_string(), "--progress".into(), "--no-edit".into()];
         if rebase {
             args.push("--rebase".into());
@@ -146,7 +147,10 @@ impl GitRunner {
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await.map_err(map_network_err)?;
 
-        let new = self.rev_parse(cwd, "HEAD", cancel).await.unwrap_or_default();
+        let new = self
+            .rev_parse(cwd, "HEAD", cancel)
+            .await
+            .unwrap_or_default();
         let updated = old != new;
         Ok(PullResult {
             old_head: old,
@@ -184,7 +188,10 @@ impl GitRunner {
             .fetch_run(cwd, Some(&remote), true, FetchTagsPolicy::Auto, cancel)
             .await?;
 
-        let old = self.rev_parse(cwd, "HEAD", cancel).await.unwrap_or_default();
+        let old = self
+            .rev_parse(cwd, "HEAD", cancel)
+            .await
+            .unwrap_or_default();
         let upstream_now = self
             .upstream_ref(cwd, cancel)
             .await
@@ -217,7 +224,10 @@ impl GitRunner {
             }
         }
 
-        let new = self.rev_parse(cwd, "HEAD", cancel).await.unwrap_or_default();
+        let new = self
+            .rev_parse(cwd, "HEAD", cancel)
+            .await
+            .unwrap_or_default();
         let updated_files = if old != new {
             self.name_status(cwd, &old, &new, cancel)
                 .await
@@ -305,6 +315,7 @@ impl GitRunner {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn push_run(
         &self,
         cwd: &Path,
@@ -323,7 +334,11 @@ impl GitRunner {
             ));
         }
 
-        let mut args = vec!["push".to_string(), "--porcelain".into(), "--progress".into()];
+        let mut args = vec![
+            "push".to_string(),
+            "--porcelain".into(),
+            "--progress".into(),
+        ];
         if set_upstream {
             args.push("-u".into());
         }
@@ -349,7 +364,9 @@ impl GitRunner {
         match self.run(inv, cancel).await {
             Ok(out) => {
                 let text = String::from_utf8_lossy(&out.stdout);
-                let up_to_date = text.lines().any(|l| l.contains("up to date") || l.contains("="));
+                let up_to_date = text
+                    .lines()
+                    .any(|l| l.contains("up to date") || l.contains("="));
                 Ok(PushResult {
                     outcome: if up_to_date {
                         PushOutcome::UpToDate
@@ -398,12 +415,7 @@ impl GitRunner {
     ) -> Result<(), AppError> {
         let inv = GitInvocation::new(
             cwd,
-            [
-                "push",
-                "--porcelain",
-                remote,
-                &format!("refs/tags/{name}"),
-            ],
+            ["push", "--porcelain", remote, &format!("refs/tags/{name}")],
         )
         .kind(OpKind::NetworkWrite)
         .timeout(Some(Duration::from_secs(300)))
@@ -426,13 +438,10 @@ impl GitRunner {
                 format!("cannot delete protected remote branch '{branch}'"),
             ));
         }
-        let inv = GitInvocation::new(
-            cwd,
-            ["push", remote, "--delete", branch],
-        )
-        .kind(OpKind::NetworkWrite)
-        .timeout(Some(Duration::from_secs(300)))
-        .git_bin(self.git_bin.clone());
+        let inv = GitInvocation::new(cwd, ["push", remote, "--delete", branch])
+            .kind(OpKind::NetworkWrite)
+            .timeout(Some(Duration::from_secs(300)))
+            .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await.map_err(map_network_err)?;
         Ok(())
     }
@@ -581,12 +590,9 @@ impl GitRunner {
         new: &str,
         cancel: &CancellationToken,
     ) -> Result<Vec<ChangedFile>, AppError> {
-        let inv = GitInvocation::new(
-            cwd,
-            ["diff", "--name-status", "-z", "-M", old, new],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone());
+        let inv = GitInvocation::new(cwd, ["diff", "--name-status", "-z", "-M", old, new])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
         let raw = String::from_utf8_lossy(&out.stdout);
         let mut files = Vec::new();
@@ -594,16 +600,14 @@ impl GitRunner {
         let mut i = 0;
         while i < parts.len() {
             let status = parts[i];
-            if status.starts_with('R') || status.starts_with('C') {
-                if i + 2 < parts.len() {
-                    files.push(ChangedFile {
-                        path: parts[i + 2].to_string(),
-                        status: status.to_string(),
-                        orig_path: Some(parts[i + 1].to_string()),
-                    });
-                    i += 3;
-                    continue;
-                }
+            if (status.starts_with('R') || status.starts_with('C')) && i + 2 < parts.len() {
+                files.push(ChangedFile {
+                    path: parts[i + 2].to_string(),
+                    status: status.to_string(),
+                    orig_path: Some(parts[i + 1].to_string()),
+                });
+                i += 3;
+                continue;
             }
             if i + 1 < parts.len() {
                 files.push(ChangedFile {
