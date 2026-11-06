@@ -4,7 +4,15 @@ import { Button } from "@/components/ui/button";
 import { useDiffStore } from "@/stores/diffStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { toast } from "@/composables/useToast";
+import { promptDialog } from "@/composables/useConfirm";
 import type { IgnoreWhitespace } from "@/lib/backend";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 
 const props = defineProps<{ tabId: string }>();
@@ -38,10 +46,11 @@ async function unstageHunk(index: number) {
 
 async function stageSelectedLines() {
   if (!tab.value || !canStage.value) return;
-  const raw = window.prompt(
-    "New-side line numbers to stage (comma or space separated)",
-    "",
-  );
+  const raw = await promptDialog({
+    title: "Stage lines",
+    message: "New-side line numbers to stage (comma or space separated)",
+    allowEmpty: false,
+  });
   if (raw == null || !raw.trim()) return;
   const lines = raw
     .split(/[,\s]+/)
@@ -92,18 +101,22 @@ const rightText = computed(() => result.value?.rightText ?? "");
       <div class="flex-1" />
       <label class="flex items-center gap-1 text-[11px] text-muted-foreground">
         Whitespace
-        <select
-          class="h-6 rounded border bg-background px-1 text-[11px]"
-          :value="tab.ignoreWhitespace"
-          @change="
-            diffs.setIgnoreWhitespace(
-              tab.id,
-              ($event.target as HTMLSelectElement).value as IgnoreWhitespace,
-            )
+        <Select
+          :model-value="tab.ignoreWhitespace"
+          @update:model-value="
+            (v) => {
+              if (!tab) return;
+              diffs.setIgnoreWhitespace(tab.id, String(v ?? 'none') as IgnoreWhitespace);
+            }
           "
         >
-          <option v-for="m in wsModes" :key="m.id" :value="m.id">{{ m.label }}</option>
-        </select>
+          <SelectTrigger class="h-6 w-auto min-w-[9rem] text-[11px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="m in wsModes" :key="m.id" :value="m.id">{{ m.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </label>
       <Button
         size="xs"

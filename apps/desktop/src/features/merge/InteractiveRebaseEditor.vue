@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { closeDialog } from "@/composables/useDialog";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import type { RebasePlan, RebaseTodoAction } from "@/lib/backend";
@@ -103,9 +110,14 @@ async function start() {
                 @click="selected = idx"
               >
                 <td class="px-2 py-1">
-                  <select v-model="item.action" class="h-7 rounded border bg-background px-1">
-                    <option v-for="a in actions" :key="a" :value="a">{{ a }}</option>
-                  </select>
+                  <Select v-model="item.action">
+                    <SelectTrigger class="h-7 w-auto min-w-[5.5rem] text-[11px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="a in actions" :key="a" :value="a">{{ a }}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </td>
                 <td class="px-2 py-1 font-mono text-[11px]">{{ item.sha.slice(0, 7) }}</td>
                 <td class="px-2 py-1">

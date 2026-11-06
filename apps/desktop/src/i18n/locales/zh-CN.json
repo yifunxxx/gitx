@@ -64,7 +64,7 @@
     "updateInfo": "Update Info",
     "stash": "Stash",
     "shelf": "Shelf",
-    "stashesShelves": "Stashes & Shelves",
+    "stashesShelves": "Stashes 与 Shelves",
     "worktrees": "Worktrees"
   },
   "common": {
@@ -72,7 +72,8 @@
     "ok": "确定",
     "apply": "应用",
     "dismiss": "关闭",
-    "confirm": "确认"
+    "confirm": "确认",
+    "loading": "加载中…"
   },
   "status": {
     "idle": "空闲",
@@ -197,18 +198,28 @@
   "commitTw": {
     "viewMode": "视图模式",
     "docked": "停靠",
-    "window": "窗口",
+    "window": "独立面板",
     "float": "浮动",
-    "toggleControls": "切换提交控件"
+    "toggleControls": "切换提交控件",
+    "viewAs": "显示为",
+    "stageAll": "全部 Stage",
+    "ignored": "已忽略",
+    "untrackTitle": "停止跟踪",
+    "untrackAlsoIgnore": "同时写入 .gitignore？",
+    "untracked": "已停止跟踪",
+    "ignore": "忽略",
+    "untrack": "停止跟踪",
+    "controlsHidden": "提交控件已隐藏 — 使用切换提交控件显示"
   },
   "changelist": {
     "new": "新建变更列表",
     "active": "活动",
     "unversioned": "未版本控制的文件",
-    "ignored": "已忽略的文件"
+    "ignored": "已忽略的文件",
+    "namePlaceholder": "变更列表名称"
   },
   "stash": {
-    "section": "Stashes",
+    "section": "Stash 列表",
     "create": "Stash…",
     "apply": "应用",
     "pop": "弹出",
@@ -218,12 +229,15 @@
     "messagePrompt": "Stash 说明"
   },
   "shelf": {
-    "section": "Shelves",
+    "section": "Shelf 列表",
     "unshelve": "取消搁置",
     "rename": "重命名",
     "delete": "删除",
     "empty": "没有 shelf",
-    "renamePrompt": "Shelf 说明"
+    "renamePrompt": "Shelf 说明",
+    "create": "Shelve…",
+    "defaultMessage": "已搁置的更改",
+    "selectFiles": "请选择要搁置的文件"
   },
   "empty": {
     "noFolder": "打开文件夹开始使用",
@@ -244,7 +258,11 @@
   "commit": {
     "amend": "Amend",
     "runHooks": "运行 Git hooks",
-    "messagePlaceholder": "提交说明"
+    "messagePlaceholder": "提交说明",
+    "amendCommit": "Amend Commit…",
+    "amendCommitAction": "Amend Commit",
+    "fixupOk": "已 Fixup 到所选提交",
+    "fixupFail": "Fixup 失败"
   },
   "history": {
     "showHistory": "显示历史",
@@ -259,5 +277,20 @@
     "remote": "Remote",
     "tags": "Tags",
     "recent": "Recent"
+  },
+  "workspace": {
+    "path": "路径",
+    "repository": "仓库",
+    "branch": "分支",
+    "git": "Git",
+    "yes": "是",
+    "no": "否",
+    "ready": "就绪",
+    "readyHint": "使用 Commit 工具窗进行暂存。Log / 文件历史 / 比较 / 修订浏览在 Git 工具窗。Ctrl+D 打开 Diff。"
+  },
+  "git": {
+    "detectFail": "未检测到 Git",
+    "detectHint": "请安装 Git for Windows，或在设置中指定 Git 可执行文件路径。",
+    "openSettings": "打开设置"
   }
 }

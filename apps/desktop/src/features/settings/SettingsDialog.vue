@@ -2,6 +2,13 @@
 import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { closeDialog } from "@/composables/useDialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getBackend } from "@/lib/backend";
@@ -199,25 +206,24 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
               </div>
 
               <div class="flex flex-col gap-1">
-                <select
+                <Select
                   v-if="field.control.kind === 'select'"
-                  class="h-8 rounded-md border bg-background px-2 text-xs"
-                  :value="String(fieldValue(field) ?? '')"
-                  @change="
-                    onFieldChange(
-                      field,
-                      ($event.target as HTMLSelectElement).value,
-                    )
-                  "
+                  :model-value="String(fieldValue(field) ?? '')"
+                  @update:model-value="(v) => onFieldChange(field, String(v ?? ''))"
                 >
-                  <option
-                    v-for="opt in field.control.options"
-                    :key="opt.value"
-                    :value="opt.value"
-                  >
-                    {{ t(opt.labelKey) }}
-                  </option>
-                </select>
+                  <SelectTrigger>
+                    <SelectValue :placeholder="t(field.titleKey)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      v-for="opt in field.control.options"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ t(opt.labelKey) }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
 
                 <label
                   v-else-if="field.control.kind === 'boolean'"

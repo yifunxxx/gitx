@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import type { RefEntry, RefsList, RemoteInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
+import { toast } from "@/composables/useToast";
 
 export const useBranchesStore = defineStore("branches", () => {
   const refs = ref<RefsList | null>(null);
@@ -97,9 +98,18 @@ export const useBranchesStore = defineStore("branches", () => {
         const failed = result.steps.find((s) => !s.ok);
         const msg = failed?.error ?? "Multi-root checkout failed";
         if (result.rolledBack) {
-          window.alert(`${msg}\n\nRolled back successful roots.`);
+          toast({
+            title: "Multi-root checkout failed",
+            description: `${msg}\n\nRolled back successful roots.`,
+            persistent: true,
+          });
         } else {
-          const roll = window.confirm(`${msg}\n\nRollback successful roots?`);
+          const { confirmDialog } = await import("@/composables/useConfirm");
+          const roll = await confirmDialog({
+            title: "Multi-root checkout failed",
+            message: `${msg}\n\nRollback successful roots?`,
+            destructive: true,
+          });
           if (roll) {
             await getBackend().multiRootRollback({ steps: result.steps });
           }

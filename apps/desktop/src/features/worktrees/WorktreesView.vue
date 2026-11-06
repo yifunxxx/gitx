@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useI18n } from "vue-i18n";
 import CreateWorktreeDialog from "./CreateWorktreeDialog.vue";
 import OpenRefWorktreeDialog from "./OpenRefWorktreeDialog.vue";
+import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 
 const { t } = useI18n();
 const store = useWorktreesStore();
@@ -33,10 +34,17 @@ watch(
 
 async function removeSelected() {
   if (!selected.value || !canRemove.value) return;
-  if (!window.confirm(t("worktrees.removeConfirm", { path: selected.value.path }))) {
-    return;
-  }
-  const dirtyForce = window.confirm(t("worktrees.removeForceConfirm"));
+  const ok = await confirmDialog({
+    title: t("worktrees.remove"),
+    message: t("worktrees.removeConfirm", { path: selected.value.path }),
+    destructive: true,
+  });
+  if (!ok) return;
+  const dirtyForce = await confirmDialog({
+    title: t("worktrees.remove"),
+    message: t("worktrees.removeForceConfirm"),
+    destructive: true,
+  });
   await store.remove(selected.value.path, dirtyForce);
 }
 
@@ -46,7 +54,11 @@ async function lockSelected() {
     await store.unlock(selected.value.path);
     return;
   }
-  const reason = window.prompt(t("worktrees.lockReason"), "") ?? undefined;
+  const reason =
+    (await promptDialog({
+      title: t("worktrees.lock"),
+      placeholder: t("worktrees.lockReason"),
+    })) ?? undefined;
   await store.lock(selected.value.path, reason || undefined);
 }
 
@@ -75,7 +87,7 @@ function shortHead(sha: string) {
       v-else-if="store.loading && !store.items.length"
       class="p-2 text-muted-foreground"
     >
-      Loading…
+      {{ t("common.loading") }}
     </div>
     <div
       v-else-if="store.items.length <= 1"

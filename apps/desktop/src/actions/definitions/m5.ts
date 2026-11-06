@@ -8,6 +8,7 @@ import RewordDialog from "@/features/merge/RewordDialog.vue";
 import ResetDialog from "@/features/merge/ResetDialog.vue";
 import SquashDialog from "@/features/merge/SquashDialog.vue";
 import { toast } from "@/composables/useToast";
+import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 
 function hasRepo(ctx: { folderPath?: string | null }) {
   return !!ctx.folderPath && !!useWorkspaceStore().isRepo;
@@ -68,7 +69,12 @@ export function registerM5Actions() {
     async run() {
       const shas = selectedShas();
       if (!shas.length) return;
-      if (!window.confirm(`Drop ${shas.length} commit(s)? A backup ref will be created.`)) return;
+      const ok = await confirmDialog({
+        title: "Drop Commits",
+        message: `Drop ${shas.length} commit(s)? A backup ref will be created.`,
+        destructive: true,
+      });
+      if (!ok) return;
       await useRewriteStore().drop(shas);
     },
   });
@@ -94,7 +100,11 @@ export function registerM5Actions() {
     async run() {
       const sha = selectedShas()[0];
       if (!sha) return;
-      const msg = window.prompt("Combined commit message (optional)");
+      const msg = await promptDialog({
+        title: "Squash Into…",
+        placeholder: "Combined commit message (optional)",
+      });
+      if (msg == null) return;
       await useRewriteStore().fixupInto(sha, true, msg);
     },
   });
@@ -158,16 +168,21 @@ export function registerM5Actions() {
         toast({ title: "No changed files in selection" });
         return;
       }
-      const picked = window.prompt(
-        "Paths to extract (comma-separated). Leave empty for all listed files.",
-        paths.join(", "),
-      );
+      const picked = await promptDialog({
+        title: "Extract Selected Changes…",
+        message: "Paths to extract (comma-separated). Leave empty for all listed files.",
+        defaultValue: paths.join(", "),
+      });
       if (picked == null) return;
       const list = picked
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      const msg = window.prompt("Message for extracted commit", "Extracted changes") ?? "Extracted changes";
+      const msg =
+        (await promptDialog({
+          title: "Commit message",
+          defaultValue: "Extracted changes",
+        })) ?? "Extracted changes";
       await useRewriteStore().extractChanges(sha, list.length ? list : paths, msg);
     },
   });
@@ -183,7 +198,12 @@ export function registerM5Actions() {
       if (!sha) return;
       const paths = log.changedFiles?.map((f) => f.path) ?? [];
       if (!paths.length) return;
-      if (!window.confirm(`Drop selected changes from ${sha.slice(0, 7)}?`)) return;
+      const ok = await confirmDialog({
+        title: "Drop Selected Changes",
+        message: `Drop selected changes from ${sha.slice(0, 7)}?`,
+        destructive: true,
+      });
+      if (!ok) return;
       await useRewriteStore().dropChanges(sha, paths);
     },
   });

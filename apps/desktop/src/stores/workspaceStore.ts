@@ -15,6 +15,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const activeRepoId = ref<string | null>(null);
   const gitVersion = ref<string | null>(null);
   const gitPath = ref<string | null>(null);
+  const gitError = ref<string | null>(null);
   const recent = ref<string[]>([]);
   const branch = ref<BranchInfo | null>(null);
 
@@ -65,10 +66,18 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   async function detectGit() {
     const backend = getBackend();
-    const info = await backend.gitDetect();
-    gitVersion.value = info.version;
-    gitPath.value = info.path;
-    return info;
+    try {
+      const info = await backend.gitDetect();
+      gitVersion.value = info.version;
+      gitPath.value = info.path;
+      gitError.value = null;
+      return info;
+    } catch (e) {
+      gitVersion.value = null;
+      gitPath.value = null;
+      gitError.value = e instanceof Error ? e.message : String(e);
+      throw e;
+    }
   }
 
   async function loadRecent() {
@@ -144,6 +153,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     multiRoot,
     gitVersion,
     gitPath,
+    gitError,
     recent,
     branch,
     repoId,

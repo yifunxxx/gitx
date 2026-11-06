@@ -1,42 +1,60 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useCommitStore } from "@/stores/commitStore";
 import { useLogStore } from "@/stores/logStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "@/composables/useToast";
 
+const { t } = useI18n();
 const commit = useCommitStore();
 const log = useLogStore();
 const rewrite = useRewriteStore();
-const amendTarget = ref("");
+const amendTarget = ref("HEAD");
+
+const amendOptions = computed(() => [
+  { value: "HEAD", label: "HEAD" },
+  ...log.commits.slice(0, 12).map((c) => ({
+    value: c.sha,
+    label: `${c.sha.slice(0, 7)} ${c.subject.slice(0, 32)}`,
+  })),
+]);
 
 async function onAmendChange(e: Event) {
   const checked = (e.target as HTMLInputElement).checked;
   await commit.setAmend(checked);
-  if (!checked) amendTarget.value = "";
+  if (!checked) amendTarget.value = "HEAD";
 }
 
-async function onAmendTargetChange() {
-  if (!amendTarget.value) {
+async function onAmendTargetChange(value: string) {
+  amendTarget.value = value;
+  if (value === "HEAD" || !value) {
     await commit.setAmend(true);
     return;
   }
   // Early commit amend via fixup (#61 / #108).
   await commit.setAmend(false);
   try {
-    await rewrite.fixupInto(amendTarget.value, false);
-    toast({ title: "Fixed up into selected commit" });
-    amendTarget.value = "";
+    await rewrite.fixupInto(value, false);
+    toast({ title: t("commit.fixupOk") });
+    amendTarget.value = "HEAD";
   } catch (e: unknown) {
     toast({
-      title: "Fixup failed",
+      title: t("commit.fixupFail"),
       description: (e as { message?: string })?.message ?? String(e),
     });
   }
 }
 
-const recentLocal = () => log.commits.slice(0, 12);
+const recentLocal = () => amendOptions.value;
 </script>
 
 <template>
@@ -49,30 +67,30 @@ const recentLocal = () => log.commits.slice(0, 12);
           :checked="commit.amend"
           @change="onAmendChange"
         />
-        Amend
+        {{ t("commit.amend") }}
       </label>
       <label class="flex items-center gap-1.5 text-muted-foreground">
-        Amend Commit…
-        <select
-          v-model="amendTarget"
-          class="h-6 max-w-[10rem] rounded border bg-background px-1 text-[11px]"
-          @change="onAmendTargetChange"
-        >
-          <option value="">HEAD</option>
-          <option v-for="c in recentLocal()" :key="c.sha" :value="c.sha">
-            {{ c.sha.slice(0, 7) }} {{ c.subject.slice(0, 32) }}
-          </option>
-        </select>
+        {{ t("commit.amendCommit") }}
+        <Select :model-value="amendTarget" @update:model-value="(v) => onAmendTargetChange(String(v ?? 'HEAD'))">
+          <SelectTrigger class="h-6 max-w-[12rem] text-[11px]">
+            <SelectValue :placeholder="'HEAD'" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="opt in recentLocal()" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </label>
       <label class="flex items-center gap-1.5 text-muted-foreground">
         <input v-model="commit.runHooks" type="checkbox" class="accent-foreground" />
-        Run Git hooks
+        {{ t("commit.runHooks") }}
       </label>
     </div>
     <textarea
       v-model="commit.message"
       class="min-h-[88px] resize-none bg-transparent px-2 py-1.5 font-mono text-[12.5px] outline-none placeholder:text-muted-foreground"
-      placeholder="Commit message"
+      :placeholder="t('commit.messagePlaceholder')"
       spellcheck="false"
     />
     <div class="flex items-center justify-end gap-2 border-t px-2 py-1.5">
@@ -81,7 +99,7 @@ const recentLocal = () => log.commits.slice(0, 12);
         :disabled="commit.committing || !commit.message.trim()"
         @click="commit.commit()"
       >
-        {{ commit.amend ? "Amend Commit" : "Commit" }}
+        {{ commit.amend ? t("commit.amendCommitAction") : t("actions.commit") }}
       </Button>
     </div>
   </div>

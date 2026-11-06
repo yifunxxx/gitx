@@ -6,6 +6,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getBackend } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
+import { confirmDialog } from "@/composables/useConfirm";
 
 function hasRepo() {
   const ws = useWorkspaceStore();
@@ -77,7 +78,10 @@ export function registerM7Actions() {
       if (!ws.repoPath) return;
       const settings = useSettingsStore();
       const parent = settings.settings?.git?.forkParentRemote ?? "upstream";
-      const push = window.confirm(`Sync with '${parent}' and push to origin?`);
+      const push = await confirmDialog({
+        title: "Sync Fork",
+        message: `Sync with '${parent}' and push to origin?`,
+      });
       const res = await getBackend().syncFork({
         path: ws.repoPath,
         parentRemote: parent,

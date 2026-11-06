@@ -435,6 +435,7 @@ impl GitRunner {
             .env("GIT_INDEX_FILE", index_file)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        crate::process_win::hide_console_tokio(&mut cmd);
         if cancel.is_cancelled() {
             return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
         }

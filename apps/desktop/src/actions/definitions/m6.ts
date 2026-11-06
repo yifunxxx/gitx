@@ -6,6 +6,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { getBackend } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
+import { promptDialog } from "@/composables/useConfirm";
 
 function hasRepo() {
   const ws = useWorkspaceStore();
@@ -23,7 +24,11 @@ export function registerM6Actions() {
     async run() {
       const ws = useWorkspaceStore();
       if (!ws.repoPath) return;
-      const message = window.prompt("Stash message", "WIP");
+      const message = await promptDialog({
+        title: "Stash Changes…",
+        defaultValue: "WIP",
+        placeholder: "Stash message",
+      });
       if (message == null) return;
       await getBackend().stashCreate({
         path: ws.repoPath,
@@ -60,7 +65,10 @@ export function registerM6Actions() {
     scope: "changes",
     enabled: () => hasRepo() && !useChangesStore().stagingMode,
     async run() {
-      const name = window.prompt("New changelist name");
+      const name = await promptDialog({
+        title: "New Changelist…",
+        allowEmpty: false,
+      });
       if (!name?.trim()) return;
       await useChangesStore().createChangelist(name.trim(), true);
       toast({ title: "Changelist created", description: name.trim() });
@@ -106,7 +114,10 @@ export function registerM6Actions() {
       const ws = useWorkspaceStore();
       const changes = useChangesStore();
       if (!ws.repoPath) return;
-      const message = window.prompt("Shelf message", "Shelved changes");
+      const message = await promptDialog({
+        title: "Shelve Changes…",
+        defaultValue: "Shelved changes",
+      });
       if (message == null) return;
       await getBackend().shelfCreate({
         path: ws.repoPath,

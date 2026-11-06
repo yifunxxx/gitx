@@ -43,10 +43,10 @@ pub fn parse_wsl_unc_path(path: &str) -> Option<WslPathInfo> {
 
 /// Convert a Windows WSL UNC path using `wslpath` when available.
 pub fn wsl_translate_path(distro: &str, windows_path: &str) -> Option<String> {
-    let output = Command::new("wsl.exe")
-        .args(["-d", distro, "wslpath", "-a", windows_path])
-        .output()
-        .ok()?;
+    let mut cmd = Command::new("wsl.exe");
+    cmd.args(["-d", distro, "wslpath", "-a", windows_path]);
+    crate::process_win::hide_console_std(&mut cmd);
+    let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -69,31 +69,84 @@ pub fn resolve_git_bin_for_path(preferred: Option<&str>, workspace: Option<&Path
 }
 
 pub fn detect_git(preferred: Option<&str>) -> Result<GitDetectResult, AppError> {
-    let candidates: Vec<&str> = preferred.into_iter().chain(["git"]).collect();
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(p) = preferred {
+        let trimmed = p.trim();
+        if !trimmed.is_empty() {
+            candidates.push(trimmed.to_string());
+        }
+    }
+    candidates.push("git".to_string());
+    for extra in windows_git_candidates() {
+        if !candidates.iter().any(|c| c.eq_ignore_ascii_case(&extra)) {
+            candidates.push(extra);
+        }
+    }
 
     let mut last_err: Option<AppError> = None;
-    for bin in candidates {
+    for bin in &candidates {
         match probe(bin) {
             Ok(result) => return Ok(result),
             Err(err) => last_err = Some(err),
         }
     }
     Err(last_err.unwrap_or_else(|| {
-        AppError::new(ErrorCode::GitNotFound, "git executable not found on PATH")
-            .with_recover(vec![gitx_core::RecoverAction::ShowDetails])
+        AppError::new(
+            ErrorCode::GitNotFound,
+            "git executable not found on PATH (install Git for Windows, or set Settings → Git executable)",
+        )
+        .with_recover(vec![gitx_core::RecoverAction::ShowDetails])
     }))
 }
 
+/// Common Git for Windows install locations when PATH is incomplete (GUI apps often miss user PATH).
+fn windows_git_candidates() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let mut out = Vec::new();
+        let mut push = |p: String| {
+            if std::path::Path::new(&p).is_file() {
+                out.push(p);
+            }
+        };
+        if let Ok(pf) = std::env::var("ProgramFiles") {
+            push(format!(r"{pf}\Git\cmd\git.exe"));
+            push(format!(r"{pf}\Git\bin\git.exe"));
+        }
+        if let Ok(pf86) = std::env::var("ProgramFiles(x86)") {
+            push(format!(r"{pf86}\Git\cmd\git.exe"));
+            push(format!(r"{pf86}\Git\bin\git.exe"));
+        }
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            push(format!(r"{local}\Programs\Git\cmd\git.exe"));
+            push(format!(r"{local}\Programs\Git\bin\git.exe"));
+        }
+        // Fallbacks when env vars are missing.
+        for p in [
+            r"C:\Program Files\Git\cmd\git.exe",
+            r"C:\Program Files\Git\bin\git.exe",
+            r"C:\Program Files (x86)\Git\cmd\git.exe",
+        ] {
+            push(p.to_string());
+        }
+        out
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 fn probe(bin: &str) -> Result<GitDetectResult, AppError> {
-    let output = Command::new(bin)
-        .args(["--version"])
-        .output()
-        .map_err(|e| {
-            AppError::new(
-                ErrorCode::GitNotFound,
-                format!("failed to spawn `{bin}`: {e}"),
-            )
-        })?;
+    let mut cmd = Command::new(bin);
+    cmd.args(["--version"]);
+    crate::process_win::hide_console_std(&mut cmd);
+    let output = cmd.output().map_err(|e| {
+        AppError::new(
+            ErrorCode::GitNotFound,
+            format!("failed to spawn `{bin}`: {e}"),
+        )
+    })?;
 
     if !output.status.success() {
         return Err(AppError::new(
@@ -157,18 +210,19 @@ fn which_path(bin: &str) -> Option<String> {
     }
     #[cfg(unix)]
     {
-        Command::new("which")
-            .arg(bin)
-            .output()
+        let mut cmd = Command::new("which");
+        cmd.arg(bin);
+        cmd.output()
             .ok()
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
     }
     #[cfg(windows)]
     {
-        Command::new("where")
-            .arg(bin)
-            .output()
+        let mut cmd = Command::new("where");
+        cmd.arg(bin);
+        crate::process_win::hide_console_std(&mut cmd);
+        cmd.output()
             .ok()
             .filter(|o| o.status.success())
             .and_then(|o| {

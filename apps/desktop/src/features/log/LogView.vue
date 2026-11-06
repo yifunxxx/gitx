@@ -16,6 +16,14 @@ import { Button } from "@/components/ui/button";
 import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
+import { confirmDialog, promptDialog } from "@/composables/useConfirm";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const log = useLogStore();
 const workspace = useWorkspaceStore();
@@ -204,7 +212,12 @@ async function ctxDrop() {
       : [];
   if (!shas.length) return;
   closeCtx();
-  if (!confirm(`Drop ${shas.length} commit(s)?`)) return;
+  const ok = await confirmDialog({
+    title: "Drop Commits",
+    message: `Drop ${shas.length} commit(s)?`,
+    destructive: true,
+  });
+  if (!ok) return;
   await rewrite.drop(shas);
 }
 
@@ -229,7 +242,10 @@ async function ctxExtract() {
   if (!log.selectedSha || !log.changedFiles.length) return;
   closeCtx();
   const paths = log.changedFiles.map((f) => f.path);
-  const msg = prompt("Message for extracted commit", "Extracted changes");
+  const msg = await promptDialog({
+    title: "Extract Selected Changes…",
+    defaultValue: "Extracted changes",
+  });
   if (msg == null) return;
   await rewrite.extractChanges(log.selectedSha, paths, msg || "Extracted changes");
 }
@@ -270,17 +286,24 @@ async function ctxExtract() {
           placeholder="Paths"
           @keydown.enter="applySearch"
         />
-        <select
-          class="h-6 rounded border bg-background px-1"
-          @change="
-            log.setDatePreset(($event.target as HTMLSelectElement).value as '24h' | '7d' | 'all');
-            applySearch();
+        <Select
+          model-value="all"
+          @update:model-value="
+            (v) => {
+              log.setDatePreset(String(v ?? 'all') as '24h' | '7d' | 'all');
+              applySearch();
+            }
           "
         >
-          <option value="all">Any date</option>
-          <option value="24h">Last 24h</option>
-          <option value="7d">Last 7 days</option>
-        </select>
+          <SelectTrigger class="h-6 w-auto min-w-[6.5rem] text-[11px]">
+            <SelectValue placeholder="Any date" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any date</SelectItem>
+            <SelectItem value="24h">Last 24h</SelectItem>
+            <SelectItem value="7d">Last 7 days</SelectItem>
+          </SelectContent>
+        </Select>
         <Button size="xs" variant="secondary" @click="applySearch">Apply</Button>
         <Button size="xs" variant="ghost" @click="log.clearAllFilters(); applySearch()">
           Clear
@@ -320,17 +343,23 @@ async function ctxExtract() {
       >
         <label class="flex items-center gap-1">
           Sort
-          <select
-            class="h-6 rounded border bg-background px-1"
-            :value="log.filters.order ?? 'date'"
-            @change="
-              log.setOrder(($event.target as HTMLSelectElement).value as 'date' | 'topo');
-              applySearch();
+          <Select
+            :model-value="log.filters.order ?? 'date'"
+            @update:model-value="
+              (v) => {
+                log.setOrder(String(v ?? 'date') as 'date' | 'topo');
+                applySearch();
+              }
             "
           >
-            <option value="date">Date</option>
-            <option value="topo">Topological</option>
-          </select>
+            <SelectTrigger class="h-6 w-auto min-w-[6rem] text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="date">Date</SelectItem>
+              <SelectItem value="topo">Topological</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
         <label class="flex items-center gap-1">
           <input type="checkbox" :checked="!!log.filters.firstParent" @change="log.toggleFirstParent(); applySearch()" />

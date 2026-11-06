@@ -72,7 +72,8 @@
     "ok": "OK",
     "apply": "Apply",
     "dismiss": "Dismiss",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "loading": "Loading…"
   },
   "status": {
     "idle": "Idle",
@@ -197,15 +198,25 @@
   "commitTw": {
     "viewMode": "View Mode",
     "docked": "Docked",
-    "window": "Window",
+    "window": "Window panel",
     "float": "Float",
-    "toggleControls": "Toggle Commit Controls"
+    "toggleControls": "Toggle Commit Controls",
+    "viewAs": "View as",
+    "stageAll": "Stage All",
+    "ignored": "Ignored",
+    "untrackTitle": "Stop tracking",
+    "untrackAlsoIgnore": "Also add to .gitignore?",
+    "untracked": "Stopped tracking",
+    "ignore": "Ignore",
+    "untrack": "Stop tracking",
+    "controlsHidden": "Commit controls hidden — use Toggle Commit Controls to show"
   },
   "changelist": {
     "new": "New Changelist",
     "active": "Active",
     "unversioned": "Unversioned Files",
-    "ignored": "Ignored Files"
+    "ignored": "Ignored Files",
+    "namePlaceholder": "Changelist name"
   },
   "stash": {
     "section": "Stashes",
@@ -223,7 +234,10 @@
     "rename": "Rename",
     "delete": "Delete",
     "empty": "No shelves",
-    "renamePrompt": "Shelf message"
+    "renamePrompt": "Shelf message",
+    "create": "Shelve…",
+    "defaultMessage": "Shelved changes",
+    "selectFiles": "Select files to shelve"
   },
   "empty": {
     "noFolder": "Open a folder to get started",
@@ -244,7 +258,11 @@
   "commit": {
     "amend": "Amend",
     "runHooks": "Run Git hooks",
-    "messagePlaceholder": "Commit message"
+    "messagePlaceholder": "Commit message",
+    "amendCommit": "Amend Commit…",
+    "amendCommitAction": "Amend Commit",
+    "fixupOk": "Fixed up into selected commit",
+    "fixupFail": "Fixup failed"
   },
   "history": {
     "showHistory": "Show History",
@@ -259,5 +277,20 @@
     "remote": "Remote",
     "tags": "Tags",
     "recent": "Recent"
+  },
+  "workspace": {
+    "path": "Path",
+    "repository": "Repository",
+    "branch": "Branch",
+    "git": "Git",
+    "yes": "yes",
+    "no": "no",
+    "ready": "Ready",
+    "readyHint": "Use Commit TW for staging. Log / File History / Compare / Repository at Revision are in the Git tool window. Ctrl+D opens Diff."
+  },
+  "git": {
+    "detectFail": "Git not detected",
+    "detectHint": "Install Git for Windows, or set the Git executable path in Settings.",
+    "openSettings": "Open Settings"
   }
 }

@@ -5,6 +5,7 @@ import { closeDialog } from "@/composables/useDialog";
 import { getBackend } from "@/lib/backend";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
+import { promptDialog } from "@/composables/useConfirm";
 
 const url = ref("");
 const dir = ref("");
@@ -40,7 +41,11 @@ async function browse() {
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected === "string") dir.value = selected;
   } else {
-    const p = window.prompt("Clone into directory", dir.value);
+    const p = await promptDialog({
+      title: "Clone into directory",
+      defaultValue: dir.value,
+      allowEmpty: false,
+    });
     if (p) dir.value = p;
   }
 }

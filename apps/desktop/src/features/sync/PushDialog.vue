@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { closeDialog, openDialog } from "@/composables/useDialog";
 import { useSyncStore } from "@/stores/syncStore";
 import { useBranchesStore } from "@/stores/branchesStore";
@@ -102,9 +109,16 @@ async function ok() {
       <template v-else>
         <div class="mt-3 grid grid-cols-2 gap-2">
           <label class="text-[11px] text-muted-foreground">Remote
-            <select v-model="remote" class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm">
-              <option v-for="r in branches.remotes" :key="r.name" :value="r.name">{{ r.name }}</option>
-            </select>
+            <Select v-model="remote">
+              <SelectTrigger class="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="r in branches.remotes" :key="r.name" :value="r.name">
+                  {{ r.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           <label class="text-[11px] text-muted-foreground">Branch
             <input v-model="branch" class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm" />
@@ -117,11 +131,16 @@ async function ok() {
         <label class="mt-3 flex items-center gap-2 text-xs"><input v-model="setUpstream" type="checkbox" /> Set upstream</label>
         <label class="mt-1 flex items-center gap-2 text-xs"><input v-model="forceWithLease" type="checkbox" /> Force with lease (blocked on protected)</label>
         <label class="mt-1 block text-[11px] text-muted-foreground">Push tags
-          <select v-model="pushTags" class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm">
-            <option value="none">None</option>
-            <option value="current">Current Branch</option>
-            <option value="all">All</option>
-          </select>
+          <Select v-model="pushTags">
+            <SelectTrigger class="mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="current">Current Branch</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
       </template>
 

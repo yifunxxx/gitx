@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Plus, Minus, RefreshCw, FileDiff, ListPlus, Eye, MoreVertical } from "@lucide/vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import Skeleton from "@/components/common/Skeleton.vue";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import ChangesTree from "@/features/commit/ChangesTree.vue";
 import CommitMessageEditor from "@/features/commit/CommitMessageEditor.vue";
 import RepoStateBanner from "@/features/merge/RepoStateBanner.vue";
@@ -17,7 +26,9 @@ import { useRewriteStore } from "@/stores/rewriteStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { toast } from "@/composables/useToast";
+import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { getBackend } from "@/lib/backend";
+import type { CommitTwMode } from "@/lib/backend";
 
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
@@ -27,6 +38,14 @@ const layout = useLayoutStore();
 const rewrite = useRewriteStore();
 const stashShelf = useStashShelfStore();
 const files = useFileViewerStore();
+
+const ctxMenu = ref<{
+  open: boolean;
+  x: number;
+  y: number;
+  path: string;
+  section: ChangesSection;
+} | null>(null);
 
 const commitTwModeLabel = computed(() => {
   switch (layout.commitTwMode) {
@@ -41,24 +60,8 @@ const commitTwModeLabel = computed(() => {
 
 const showMessageEditor = computed(() => !layout.commitControlsHidden);
 
-function cycleCommitTwMode() {
-  const order = ["docked", "window", "float"] as const;
-  const idx = order.indexOf(layout.commitTwMode);
-  void layout.setCommitTwMode(order[(idx + 1) % order.length]!);
-}
-
-function onCommitMenu() {
-  const choice = window.prompt(
-    "Commit TW: docked | window | float | toggle-controls",
-    layout.commitTwMode,
-  );
-  if (!choice) return;
-  const v = choice.trim().toLowerCase();
-  if (v === "docked" || v === "window" || v === "float") {
-    void layout.setCommitTwMode(v);
-  } else if (v === "toggle-controls" || v === "toggle") {
-    layout.toggleCommitControls();
-  }
+async function setMode(mode: CommitTwMode) {
+  await layout.setCommitTwMode(mode);
 }
 
 onMounted(() => {
@@ -80,7 +83,7 @@ watch(
 
 async function enableVcs() {
   await workspace.enableVcs("main");
-  toast({ title: "Git enabled", description: "Repository initialized" });
+  toast({ title: t("empty.enableVcs"), description: t("welcome.repoCreated") });
   await changes.refresh();
 }
 
@@ -104,14 +107,14 @@ async function stageSelected() {
   } else {
     await changes.stage(paths);
   }
-  toast({ title: "Staged", description: `${paths.length} path(s)` });
+  toast({ title: t("actions.stage"), description: `${paths.length}` });
 }
 
 async function unstageSelected() {
   const paths = changes.selectedPaths;
   if (!paths.length) return;
   await changes.unstage(paths);
-  toast({ title: "Unstaged", description: `${paths.length} path(s)` });
+  toast({ title: t("actions.unstage"), description: `${paths.length}` });
 }
 
 async function stageAll() {
@@ -121,14 +124,18 @@ async function stageAll() {
   ];
   if (!paths.length) return;
   await changes.stage(paths);
-  toast({ title: "Staged all" });
+  toast({ title: t("commitTw.stageAll") });
 }
 
 async function newChangelist() {
-  const name = window.prompt("New changelist name");
+  const name = await promptDialog({
+    title: t("changelist.new"),
+    placeholder: t("changelist.namePlaceholder"),
+    allowEmpty: false,
+  });
   if (!name?.trim()) return;
   await changes.createChangelist(name.trim(), true);
-  toast({ title: "Changelist created", description: name.trim() });
+  toast({ title: t("changelist.new"), description: name.trim() });
 }
 
 function showDiffSelected() {
@@ -141,20 +148,27 @@ async function ignoreSelected() {
   const paths = changes.selectedPaths;
   if (!paths.length) return;
   await changes.ignore(paths);
-  toast({ title: "Ignored", description: `${paths.length} path(s)` });
+  toast({ title: t("commitTw.ignored"), description: `${paths.length}` });
 }
 
 async function stopTrackingSelected() {
   const paths = changes.selectedPaths;
   if (!paths.length) return;
-  const alsoIgnore = window.confirm("Also add to .gitignore?");
+  const alsoIgnore = await confirmDialog({
+    title: t("commitTw.untrackTitle"),
+    message: t("commitTw.untrackAlsoIgnore"),
+  });
   await changes.rmCached(paths, alsoIgnore);
-  toast({ title: "Stopped tracking", description: `${paths.length} path(s)` });
+  toast({ title: t("commitTw.untracked"), description: `${paths.length}` });
 }
 
 async function stashSelected() {
   if (!workspace.repoPath) return;
-  const message = window.prompt("Stash message", "WIP");
+  const message = await promptDialog({
+    title: t("stash.create"),
+    defaultValue: "WIP",
+    placeholder: t("stash.messagePrompt"),
+  });
   if (message == null) return;
   const paths = changes.selectedPaths.length ? changes.selectedPaths : undefined;
   await getBackend().stashCreate({
@@ -163,7 +177,7 @@ async function stashSelected() {
     includeUntracked: changes.selectedSection === "unversioned",
     paths: paths ?? null,
   });
-  toast({ title: "Stashed" });
+  toast({ title: t("stash.create") });
   await changes.refresh();
   await stashShelf.refresh();
   layout.bottomOpen = true;
@@ -174,18 +188,22 @@ async function shelveSelected() {
   if (!workspace.repoPath) return;
   const paths = changes.selectedPaths;
   if (!paths.length) {
-    toast({ title: "Select files to shelve" });
+    toast({ title: t("shelf.selectFiles") });
     return;
   }
-  const message = window.prompt("Shelf message", "Shelved changes");
+  const message = await promptDialog({
+    title: t("shelf.create"),
+    defaultValue: t("shelf.defaultMessage"),
+    placeholder: t("shelf.renamePrompt"),
+  });
   if (message == null) return;
   await getBackend().shelfCreate({
     path: workspace.repoPath,
-    message: message || "Shelved changes",
+    message: message || t("shelf.defaultMessage"),
     paths,
     keepChanges: false,
   });
-  toast({ title: "Shelved", description: `${paths.length} path(s)` });
+  toast({ title: t("shelf.create"), description: `${paths.length}` });
   await changes.refresh();
   await stashShelf.refresh();
   layout.bottomOpen = true;
@@ -194,64 +212,95 @@ async function shelveSelected() {
 
 function onContext(payload: { path: string; section: ChangesSection; x: number; y: number }) {
   layout.vcsPopupOpen = false;
-  void payload;
-  const action = window.prompt(
-    "Action: stage | unstage | ignore | shelve | stash | untrack",
-    changes.stagingMode
-      ? payload.section === "staged"
-        ? "unstage"
-        : "stage"
-      : "ignore",
-  );
-  if (!action) return;
-  switch (action.trim().toLowerCase()) {
+  ctxMenu.value = {
+    open: true,
+    x: payload.x,
+    y: payload.y,
+    path: payload.path,
+    section: payload.section,
+  };
+}
+
+function closeCtx() {
+  if (ctxMenu.value) ctxMenu.value = { ...ctxMenu.value, open: false };
+}
+
+async function runCtx(action: string) {
+  closeCtx();
+  switch (action) {
     case "stage":
-      void stageSelected();
+      await stageSelected();
       break;
     case "unstage":
-      void unstageSelected();
+      await unstageSelected();
       break;
     case "ignore":
-      void ignoreSelected();
+      await ignoreSelected();
       break;
     case "shelve":
-      void shelveSelected();
+      await shelveSelected();
       break;
     case "stash":
-      void stashSelected();
+      await stashSelected();
       break;
     case "untrack":
-      void stopTrackingSelected();
+      await stopTrackingSelected();
       break;
     default:
-      toast({ title: "Unknown action", description: action });
+      break;
   }
 }
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-sidebar">
-    <div
-      class="flex h-8 items-center justify-between border-b px-2 text-xs font-medium"
-      :class="{
-        'ring-1 ring-primary/40': layout.commitTwMode === 'float',
-        'border-l-2 border-l-primary': layout.commitTwMode === 'window',
-      }"
-    >
+  <div
+    class="flex h-full min-h-0 flex-col bg-sidebar"
+    :class="{
+      'ring-1 ring-primary/40': layout.commitTwMode === 'float',
+      'border-l-2 border-l-primary': layout.commitTwMode === 'window',
+    }"
+  >
+    <div class="flex h-8 items-center justify-between border-b px-2 text-xs font-medium">
       <span>
         {{ t("toolWindows.commit") }}
         <span class="ml-1 text-[10px] font-normal text-muted-foreground">{{ commitTwModeLabel }}</span>
       </span>
       <div class="flex items-center gap-0.5">
-        <Button
-          variant="ghost"
-          size="icon"
-          :title="t('commitTw.viewMode')"
-          @click="cycleCommitTwMode"
-        >
-          <MoreVertical class="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="xs" :title="t('commitTw.toggleControls')" @click="onCommitMenu">⋮</Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger>
+            <Button variant="ghost" size="icon" :title="t('commitTw.viewMode')">
+              <MoreVertical class="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-52">
+            <DropdownMenuLabel>{{ t("commitTw.viewAs") }}</DropdownMenuLabel>
+            <DropdownMenuItem
+              :class="layout.commitTwMode === 'docked' ? 'bg-accent' : ''"
+              @select="setMode('docked')"
+            >
+              {{ t("commitTw.docked") }}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              :class="layout.commitTwMode === 'window' ? 'bg-accent' : ''"
+              @select="setMode('window')"
+            >
+              {{ t("commitTw.window") }}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              :class="layout.commitTwMode === 'float' ? 'bg-accent' : ''"
+              @select="setMode('float')"
+            >
+              {{ t("commitTw.float") }}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              :checked="layout.commitControlsHidden"
+              @update:checked="(v: boolean) => (layout.commitControlsHidden = v)"
+            >
+              {{ t("commitTw.toggleControls") }}
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button variant="ghost" size="icon" :title="t('actions.refreshStatus')" @click="changes.refresh()">
           <RefreshCw class="h-3.5 w-3.5" />
         </Button>
@@ -273,7 +322,7 @@ function onContext(payload: { path: string; section: ChangesSection; x: number; 
           <Button variant="ghost" size="icon" :title="t('actions.unstage')" @click="unstageSelected">
             <Minus class="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="xs" @click="stageAll">{{ t("actions.stage") }} All</Button>
+          <Button variant="ghost" size="xs" @click="stageAll">{{ t("commitTw.stageAll") }}</Button>
         </template>
         <template v-else>
           <Button variant="ghost" size="icon" :title="t('changelist.new')" @click="newChangelist">
@@ -312,8 +361,68 @@ function onContext(payload: { path: string; section: ChangesSection; x: number; 
         v-else
         class="border-t px-2 py-1 text-[11px] text-muted-foreground"
       >
-        Commit controls hidden — Ctrl+K / Toggle Commit Controls to show
+        {{ t("commitTw.controlsHidden") }}
       </div>
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="ctxMenu?.open"
+        class="fixed inset-0 z-[9998]"
+        @click="closeCtx"
+        @contextmenu.prevent="closeCtx"
+      >
+        <div
+          class="absolute z-[9999] min-w-40 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
+          :style="{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }"
+          @click.stop
+        >
+          <button
+            v-if="changes.stagingMode && ctxMenu.section !== 'staged'"
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="runCtx('stage')"
+          >
+            {{ t("actions.stage") }}
+          </button>
+          <button
+            v-if="changes.stagingMode && ctxMenu.section === 'staged'"
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="runCtx('unstage')"
+          >
+            {{ t("actions.unstage") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="runCtx('ignore')"
+          >
+            {{ t("commitTw.ignore") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="runCtx('stash')"
+          >
+            {{ t("stash.create") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="runCtx('shelve')"
+          >
+            {{ t("shelf.create") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-accent"
+            @click="runCtx('untrack')"
+          >
+            {{ t("commitTw.untrack") }}
+          </button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

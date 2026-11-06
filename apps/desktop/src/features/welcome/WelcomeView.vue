@@ -9,6 +9,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
+import { promptDialog } from "@/composables/useConfirm";
 import { runAction } from "@/actions";
 
 const { t } = useI18n();
@@ -24,7 +25,12 @@ async function pickDirectory(): Promise<string | null> {
     const selected = await open({ directory: true, multiple: false });
     return typeof selected === "string" ? selected : null;
   }
-  return window.prompt(t("welcome.folderPrompt"), workspace.folderPath ?? "/tmp") || null;
+  return promptDialog({
+    title: t("welcome.openFolder"),
+    defaultValue: workspace.folderPath ?? "",
+    placeholder: t("welcome.folderPrompt"),
+    allowEmpty: false,
+  });
 }
 
 async function afterOpen() {

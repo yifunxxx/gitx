@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import type { WorktreeInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { toast } from "@/composables/useToast";
+import { confirmDialog } from "@/composables/useConfirm";
 
 export const useWorktreesStore = defineStore("worktrees", () => {
   const items = ref<WorktreeInfo[]>([]);
@@ -61,24 +62,10 @@ export const useWorktreesStore = defineStore("worktrees", () => {
     return res;
   }
 
-  async function openWorktree(path: string, newWindow: boolean) {
-    if (newWindow) {
-      // Host-agnostic: ask the shell to open another workspace window when available.
-      try {
-        await getBackend().uiSyncBroadcast({
-          channel: "worktree.open",
-          data: { path, newWindow: true },
-        });
-      } catch {
-        /* web mock */
-      }
-      toast({
-        title: newWindow ? "Open in new window" : "Switch workspace",
-        description: path,
-      });
-      return;
-    }
+  async function openWorktree(path: string, _newWindow: boolean) {
+    // Single main window: always switch the current workspace (no OS window spawn).
     await workspace().openFolder(path);
+    toast({ title: "Worktree", description: path });
   }
 
   async function remove(path: string, force: boolean) {
@@ -123,9 +110,11 @@ export const useWorktreesStore = defineStore("worktrees", () => {
       toast({ title: "Nothing to prune" });
       return;
     }
-    const ok = window.confirm(
-      `Prune ${preview.paths.length || "listed"} worktree(s)?\n\n${preview.dryRunOutput || preview.paths.join("\n")}`,
-    );
+    const ok = await confirmDialog({
+      title: "Prune Worktrees",
+      message: `Prune ${preview.paths.length || "listed"} worktree(s)?\n\n${preview.dryRunOutput || preview.paths.join("\n")}`,
+      destructive: true,
+    });
     if (!ok) return;
     await getBackend().worktreePrune({ path: ws.repoPath });
     toast({ title: "Worktrees pruned" });

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { closeDialog } from "@/composables/useDialog";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useSyncStore } from "@/stores/syncStore";
@@ -65,9 +72,16 @@ async function ok() {
       <h2 class="text-sm font-semibold">Pull</h2>
       <div class="mt-3 grid grid-cols-2 gap-2">
         <label class="text-[11px] text-muted-foreground">Remote
-          <select v-model="remote" class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm">
-            <option v-for="r in branches.remotes" :key="r.name" :value="r.name">{{ r.name }}</option>
-          </select>
+          <Select v-model="remote" class="mt-1">
+            <SelectTrigger class="mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="r in branches.remotes" :key="r.name" :value="r.name">
+                {{ r.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </label>
         <label class="text-[11px] text-muted-foreground">Branch
           <input v-model="branch" class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm" />

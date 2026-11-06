@@ -57,6 +57,12 @@ export const useLayoutStore = defineStore("layout", () => {
   }
 
   load();
+  // Keep dock visibility consistent with Commit TW presentation after restore.
+  if (commitTwMode.value === "float") {
+    leftOpen.value = false;
+  } else if (!leftOpen.value) {
+    leftOpen.value = true;
+  }
   watch(
     [leftOpen, bottomOpen, leftSize, bottomSize, commitTwMode, commitControlsHidden],
     persist,
@@ -65,6 +71,18 @@ export const useLayoutStore = defineStore("layout", () => {
   async function setCommitTwMode(mode: CommitTwMode) {
     const prev = commitTwMode.value;
     commitTwMode.value = mode;
+    // IDEA-like single OS window: modes are in-app only (never spawn WebviewWindow).
+    if (mode === "docked") {
+      leftOpen.value = true;
+      if (leftSize.value > 40) leftSize.value = 28;
+    } else if (mode === "window") {
+      // "Window" = undocked-style wide dock inside the main frame (no OS window).
+      leftOpen.value = true;
+      if (leftSize.value < 36) leftSize.value = 42;
+    } else if (mode === "float") {
+      // Float = in-app floating panel; hide the docked left slot.
+      leftOpen.value = false;
+    }
     try {
       await getBackend().uiSyncBroadcast({
         channel: "commitTw.mode",
@@ -72,9 +90,6 @@ export const useLayoutStore = defineStore("layout", () => {
       });
     } catch {
       /* web */
-    }
-    if (mode === "docked") {
-      // Closing independent window returns to docked — state already applied.
     }
   }
 

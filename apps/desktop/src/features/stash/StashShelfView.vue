@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useI18n } from "vue-i18n";
+import { promptDialog } from "@/composables/useConfirm";
 
 const props = defineProps<{
   mode: "combined" | "stash" | "shelf";
@@ -28,7 +29,11 @@ watch(
 );
 
 async function newStash() {
-  const message = window.prompt(t("stash.messagePrompt"), "WIP");
+  const message = await promptDialog({
+    title: t("stash.create"),
+    defaultValue: "WIP",
+    placeholder: t("stash.messagePrompt"),
+  });
   if (message == null) return;
   await store.createStash(message || "WIP");
 }
@@ -36,7 +41,12 @@ async function newStash() {
 async function renameSelectedShelf() {
   if (!store.selectedShelfId) return;
   const current = store.shelves.find((s) => s.id === store.selectedShelfId);
-  const message = window.prompt(t("shelf.renamePrompt"), current?.message ?? "");
+  const message = await promptDialog({
+    title: t("shelf.rename"),
+    defaultValue: current?.message ?? "",
+    placeholder: t("shelf.renamePrompt"),
+    allowEmpty: false,
+  });
   if (message == null || !message.trim()) return;
   await store.renameShelf(store.selectedShelfId, message.trim());
 }
@@ -62,8 +72,11 @@ async function renameSelectedShelf() {
     </div>
 
     <div v-if="store.error" class="px-2 py-1 text-destructive">{{ store.error }}</div>
-    <div v-else-if="store.loading && !store.stashes.length && !store.shelves.length" class="p-2 text-muted-foreground">
-      Loading…
+    <div
+      v-else-if="store.loading && !store.stashes.length && !store.shelves.length"
+      class="p-2 text-muted-foreground"
+    >
+      {{ t("common.loading") }}
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto">

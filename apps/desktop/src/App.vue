@@ -21,6 +21,8 @@ import { useConsoleStore } from "@/stores/consoleStore";
 import { useJobsStore } from "@/stores/jobsStore";
 import { findActionIdByEvent, runAction, setKeymapOverridesProvider } from "@/actions";
 import { isTauri } from "@/lib/utils";
+import { toast } from "@/composables/useToast";
+import { i18n } from "@/i18n";
 
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
@@ -77,7 +79,24 @@ onMounted(async () => {
     consoleStore.append("cmd", `# git detected: ${workspace.gitPath}`);
     consoleStore.append("stdout", workspace.gitVersion ?? "");
   } catch (err) {
-    consoleStore.append("stderr", err instanceof Error ? err.message : String(err));
+    const msg = err instanceof Error ? err.message : String(err);
+    consoleStore.append("stderr", msg);
+    toast({
+      title: i18n.global.t("git.detectFail"),
+      description: msg,
+      persistent: true,
+      action: {
+        label: i18n.global.t("git.openSettings"),
+        onClick: () => {
+          void runAction("Settings", {
+            repoIds: [],
+            selection: {},
+            source: "popup",
+            place: "GitDetect",
+          });
+        },
+      },
+    });
   }
 
   stuckTimer = window.setInterval(() => jobs.pruneStuck(), 30_000);
@@ -117,14 +136,21 @@ onUnmounted(() => {
           <Pane :size="layout.bottomOpen ? 100 - layout.bottomSize : 100" min-size="30">
             <Splitpanes class="h-full">
               <Pane
-                v-if="layout.leftOpen"
+                v-if="layout.leftOpen && layout.commitTwMode !== 'float'"
                 :size="layout.leftSize"
                 min-size="16"
                 max-size="50"
               >
                 <CommitToolWindow />
               </Pane>
-              <Pane :size="layout.leftOpen ? 100 - layout.leftSize : 100" min-size="30">
+              <Pane
+                :size="
+                  layout.leftOpen && layout.commitTwMode !== 'float'
+                    ? 100 - layout.leftSize
+                    : 100
+                "
+                min-size="30"
+              >
                 <EditorTabs />
               </Pane>
             </Splitpanes>
@@ -138,6 +164,17 @@ onUnmounted(() => {
             <GitToolWindow />
           </Pane>
         </Splitpanes>
+      </div>
+    </div>
+    <!-- Float mode: in-app panel only — never a second OS / Webview window. -->
+    <div
+      v-if="layout.commitTwMode === 'float'"
+      class="pointer-events-none fixed inset-x-4 bottom-12 top-14 z-40 flex justify-start"
+    >
+      <div
+        class="pointer-events-auto flex h-full w-[min(420px,42vw)] min-w-[280px] flex-col overflow-hidden rounded-md border bg-sidebar shadow-lg ring-1 ring-foreground/10"
+      >
+        <CommitToolWindow />
       </div>
     </div>
     <StatusBar />

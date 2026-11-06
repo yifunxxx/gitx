@@ -11,6 +11,7 @@ mod jobs;
 mod multi_root_ops;
 mod ops;
 mod patch_ops;
+mod process_win;
 mod progress;
 mod refs_ops;
 mod remote_ops;

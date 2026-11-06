@@ -228,6 +228,7 @@ impl GitRunner {
         .env("GIT_WORK_TREE", &tmp)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+        crate::process_win::hide_console_tokio(&mut cmd);
         let _ = inv;
         let output = cmd.output().await.map_err(|e| {
             AppError::new(

@@ -22,6 +22,7 @@ import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { getBackend } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
+import { promptDialog } from "@/composables/useConfirm";
 import { isTauri } from "@/lib/utils";
 
 export function registerVcsActions() {
@@ -71,7 +72,11 @@ export function registerVcsActions() {
         const selected = await open({ directory: true, multiple: false });
         path = typeof selected === "string" ? selected : null;
       } else {
-        path = window.prompt("Folder path") || null;
+        path = await promptDialog({
+          title: "Open…",
+          placeholder: "Folder path",
+          allowEmpty: false,
+        });
       }
       if (!path) return;
       const workspace = useWorkspaceStore();
@@ -98,7 +103,11 @@ export function registerVcsActions() {
         const selected = await open({ directory: true, multiple: false });
         path = typeof selected === "string" ? selected : null;
       } else {
-        path = window.prompt("Directory for new repository") || null;
+        path = await promptDialog({
+          title: "Create Git Repository…",
+          placeholder: "Directory for new repository",
+          allowEmpty: false,
+        });
       }
       if (!path) return;
       const workspace = useWorkspaceStore();
@@ -259,9 +268,14 @@ export function registerVcsActions() {
       const workspace = useWorkspaceStore();
       if (!workspace.repoPath) return;
       const refs = await getBackend().listRefs({ path: workspace.repoPath });
-      const other =
-        window.prompt("Compare HEAD with ref (branch/tag)", refs[0] ?? "main")?.trim() ??
-        "";
+      const other = (
+        await promptDialog({
+          title: "Compare with Branch or Tag…",
+          defaultValue: refs[0] ?? "main",
+          placeholder: "branch / tag",
+          allowEmpty: false,
+        })
+      )?.trim();
       if (!other) return;
       await useCompareStore().compareRefs("HEAD", other);
     },
@@ -280,7 +294,14 @@ export function registerVcsActions() {
       linux: ["ctrl+shift+o"],
     },
     async run() {
-      const rev = window.prompt("Revision (hash / branch / tag)", "HEAD")?.trim();
+      const rev = (
+        await promptDialog({
+          title: "Browse Repository at Revision…",
+          defaultValue: "HEAD",
+          placeholder: "hash / branch / tag",
+          allowEmpty: false,
+        })
+      )?.trim();
       if (!rev) return;
       await useRepoAtRevStore().open(rev);
     },

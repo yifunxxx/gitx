@@ -23,6 +23,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
+import { promptDialog } from "@/composables/useConfirm";
 import { useChangesStore } from "@/stores/changesStore";
 import { useLogStore } from "@/stores/logStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -85,7 +86,12 @@ async function openFolder() {
     const selected = await open({ directory: true, multiple: false });
     path = typeof selected === "string" ? selected : null;
   } else {
-    path = window.prompt(t("welcome.folderPrompt"), workspace.folderPath ?? "/tmp") || null;
+    path = await promptDialog({
+      title: t("welcome.openFolder"),
+      defaultValue: workspace.folderPath ?? "",
+      placeholder: t("welcome.folderPrompt"),
+      allowEmpty: false,
+    });
   }
   if (!path) return;
   await workspace.openFolder(path);

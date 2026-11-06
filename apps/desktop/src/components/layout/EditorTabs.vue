@@ -226,22 +226,31 @@ function showWorkspace() {
       />
       <WelcomeView v-else-if="!workspace.folderPath" />
       <div v-else class="space-y-2 p-6 text-sm">
-        <div class="font-medium">Workspace</div>
+        <div class="font-medium">{{ t("chrome.workspaceTab") }}</div>
         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <dt>Path</dt>
+          <dt>{{ t("workspace.path") }}</dt>
           <dd class="font-mono text-foreground">{{ workspace.folderPath }}</dd>
-          <dt>Repository</dt>
-          <dd>{{ workspace.isRepo ? "yes" : "no" }}</dd>
-          <dt>Branch</dt>
+          <dt>{{ t("workspace.repository") }}</dt>
+          <dd>{{ workspace.isRepo ? t("workspace.yes") : t("workspace.no") }}</dd>
+          <dt>{{ t("workspace.branch") }}</dt>
           <dd>{{ workspace.branch?.head ?? "—" }}</dd>
-          <dt>Git</dt>
-          <dd class="font-mono">{{ workspace.gitVersion ?? "…" }}</dd>
+          <dt>{{ t("workspace.git") }}</dt>
+          <dd class="font-mono">
+            <template v-if="workspace.gitVersion">{{ workspace.gitVersion }}</template>
+            <span v-else-if="workspace.gitError" class="text-destructive">
+              {{ workspace.gitError }}
+            </span>
+            <span v-else>{{ t("common.loading") }}</span>
+          </dd>
         </dl>
+        <p v-if="workspace.gitError" class="text-xs text-destructive">
+          {{ t("git.detectHint") }}
+        </p>
         <EmptyState
           v-if="workspace.isRepo"
           class="!h-auto !justify-start pt-6"
-          title="Ready"
-          description="Commit TW for staging. Log filters / File History / Compare / Repository at Revision are in the Git tool window. Ctrl+D opens Diff (CodeMirror)."
+          :title="t('workspace.ready')"
+          :description="t('workspace.readyHint')"
         />
       </div>
     </div>
