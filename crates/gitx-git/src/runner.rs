@@ -88,12 +88,15 @@ pub struct GitOutput {
 
 pub struct GitRunner {
     pub git_bin: String,
+    /// When set, invoke via `wsl.exe -d <distro> -- git …` with a Linux cwd (#9).
+    pub wsl_distro: Option<String>,
 }
 
 impl Default for GitRunner {
     fn default() -> Self {
         Self {
             git_bin: "git".into(),
+            wsl_distro: None,
         }
     }
 }
@@ -102,7 +105,13 @@ impl GitRunner {
     pub fn new(git_bin: impl Into<String>) -> Self {
         Self {
             git_bin: git_bin.into(),
+            wsl_distro: None,
         }
+    }
+
+    pub fn with_wsl(mut self, distro: impl Into<String>) -> Self {
+        self.wsl_distro = Some(distro.into());
+        self
     }
 
     pub async fn run(
@@ -116,10 +125,19 @@ impl GitRunner {
         let command = inv.display_command();
         debug!(%command, cwd = %inv.cwd.display(), "git run");
 
-        let mut cmd = Command::new(&inv.git_bin);
-        cmd.args(&inv.args)
-            .current_dir(&inv.cwd)
-            .stdout(Stdio::piped())
+        let wsl_distro = self
+            .wsl_distro
+            .clone()
+            .or_else(|| parse_wsl_git_bin(&inv.git_bin).map(|(d, _)| d));
+
+        let mut cmd = if let Some(distro) = wsl_distro {
+            build_wsl_git_command(&distro, &inv)
+        } else {
+            let mut c = Command::new(&inv.git_bin);
+            c.args(&inv.args).current_dir(&inv.cwd);
+            c
+        };
+        cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("LC_ALL", "C");
@@ -249,6 +267,29 @@ impl GitRunner {
 fn inject_base_config(cmd: &mut Command, kind: OpKind) {
     // Env already set; keep a hook for future -c injection based on OpKind.
     let _ = (cmd, kind);
+}
+
+/// Parse `wsl.exe -d Distro git` style bins into (distro, "git").
+fn parse_wsl_git_bin(bin: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = bin.split_whitespace().collect();
+    if parts.len() >= 4 && parts[0].eq_ignore_ascii_case("wsl.exe") && parts[1] == "-d" {
+        Some((parts[2].to_string(), parts[3..].join(" ")))
+    } else {
+        None
+    }
+}
+
+fn build_wsl_git_command(distro: &str, inv: &GitInvocation) -> Command {
+    let linux_cwd = crate::detect::parse_wsl_unc_path(&inv.cwd.to_string_lossy())
+        .map(|i| i.linux_path)
+        .or_else(|| crate::detect::wsl_translate_path(distro, &inv.cwd.to_string_lossy()))
+        .unwrap_or_else(|| inv.cwd.to_string_lossy().replace('\\', "/"));
+    let mut prefixed = vec![OsString::from("-C"), OsString::from(linux_cwd)];
+    prefixed.extend(inv.args.iter().cloned());
+    let mut c = Command::new("wsl.exe");
+    c.arg("-d").arg(distro).arg("--").arg("git");
+    c.args(&prefixed);
+    c
 }
 
 fn redact_command(cmd: &str) -> String {

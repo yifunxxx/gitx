@@ -5,6 +5,7 @@ import { registerM2Actions } from "./definitions/m2";
 import { registerM4Actions } from "./definitions/m4";
 import { registerM5Actions } from "./definitions/m5";
 import { registerM6Actions } from "./definitions/m6";
+import { registerM7Actions } from "./definitions/m7";
 
 export function bootstrapActions() {
   registerDefaultGroups();
@@ -13,6 +14,7 @@ export function bootstrapActions() {
   registerM4Actions();
   registerM5Actions();
   registerM6Actions();
+  registerM7Actions();
   registerDemoActions();
 }
 

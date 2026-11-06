@@ -143,6 +143,29 @@ import type {
   PatchApplyReq,
   PatchApplyClipboardReq,
   PatchCreateResult,
+  WorktreeListReq,
+  WorktreeAddReq,
+  WorktreeAddRes,
+  WorktreeRemoveReq,
+  WorktreeLockReq,
+  WorktreePathReq,
+  WorktreeOpenRefReq,
+  WorktreeDefaultPathReq,
+  WorktreeDefaultPathRes,
+  WorktreeInfo,
+  WorktreePrunePreview,
+  DiscoverRootsReq,
+  RepoRoot,
+  MultiRootCheckoutReq,
+  MultiRootRollbackReq,
+  MultiRootOpResult,
+  UiSyncPayload,
+  ParseWslPathReq,
+  WslPathInfo,
+  SyncForkReq,
+  SyncForkResult,
+  SubmoduleUpdateReq,
+  SubmoduleUpdateResult,
 } from "./bindings";
 import { commands } from "./bindings";
 import { mockBackend } from "./mock";
@@ -282,6 +305,23 @@ export type Backend = {
   patchCreate(req: PatchCreateReq): Promise<PatchCreateResult>;
   patchApply(req: PatchApplyReq): Promise<null>;
   patchApplyClipboard(req: PatchApplyClipboardReq): Promise<null>;
+  // M7
+  worktreeList(req: WorktreeListReq): Promise<WorktreeInfo[]>;
+  worktreeAdd(req: WorktreeAddReq): Promise<WorktreeAddRes>;
+  worktreeRemove(req: WorktreeRemoveReq): Promise<null>;
+  worktreeLock(req: WorktreeLockReq): Promise<null>;
+  worktreeUnlock(req: WorktreePathReq): Promise<null>;
+  worktreePrunePreview(req: WorktreeListReq): Promise<WorktreePrunePreview>;
+  worktreePrune(req: WorktreeListReq): Promise<WorktreePrunePreview>;
+  worktreeOpenRef(req: WorktreeOpenRefReq): Promise<WorktreeAddRes>;
+  worktreeDefaultPath(req: WorktreeDefaultPathReq): Promise<WorktreeDefaultPathRes>;
+  repoDiscover(req: DiscoverRootsReq): Promise<RepoRoot[]>;
+  multiRootCheckout(req: MultiRootCheckoutReq): Promise<MultiRootOpResult>;
+  multiRootRollback(req: MultiRootRollbackReq): Promise<MultiRootOpResult>;
+  uiSyncBroadcast(payload: UiSyncPayload): Promise<null>;
+  parseWslPath(req: ParseWslPathReq): Promise<WslPathInfo | null>;
+  syncFork(req: SyncForkReq): Promise<SyncForkResult>;
+  submoduleUpdate(req: SubmoduleUpdateReq): Promise<SubmoduleUpdateResult>;
 };
 
 export const tauriBackend: Backend = {
@@ -413,6 +453,22 @@ export const tauriBackend: Backend = {
   patchCreate: (req) => commands.patchCreate(req),
   patchApply: (req) => commands.patchApply(req),
   patchApplyClipboard: (req) => commands.patchApplyClipboard(req),
+  worktreeList: (req) => commands.worktreeList(req),
+  worktreeAdd: (req) => commands.worktreeAdd(req),
+  worktreeRemove: (req) => commands.worktreeRemove(req),
+  worktreeLock: (req) => commands.worktreeLock(req),
+  worktreeUnlock: (req) => commands.worktreeUnlock(req),
+  worktreePrunePreview: (req) => commands.worktreePrunePreview(req),
+  worktreePrune: (req) => commands.worktreePrune(req),
+  worktreeOpenRef: (req) => commands.worktreeOpenRef(req),
+  worktreeDefaultPath: (req) => commands.worktreeDefaultPath(req),
+  repoDiscover: (req) => commands.repoDiscover(req),
+  multiRootCheckout: (req) => commands.multiRootCheckout(req),
+  multiRootRollback: (req) => commands.multiRootRollback(req),
+  uiSyncBroadcast: (payload) => commands.uiSyncBroadcast(payload),
+  parseWslPath: (req) => commands.parseWslPath(req),
+  syncFork: (req) => commands.syncFork(req),
+  submoduleUpdate: (req) => commands.submoduleUpdate(req),
 };
 
 export function getBackend(): Backend {

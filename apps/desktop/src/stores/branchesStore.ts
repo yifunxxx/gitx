@@ -80,11 +80,38 @@ export const useBranchesStore = defineStore("branches", () => {
           : "local";
     const target =
       entry.kind === "remoteBranch" ? entry.name : entry.name;
-    await getBackend().branchCheckout({
-      path: ws.repoPath,
-      target: entry.kind === "tag" ? entry.fullName : target,
-      mode,
-    });
+    const checkoutTarget = entry.kind === "tag" ? entry.fullName : target;
+    const allRoots =
+      settings().settings?.git?.executeBranchOpsOnAllRoots !== false &&
+      ws.multiRoot &&
+      ws.roots.length > 1;
+
+    if (allRoots) {
+      const result = await getBackend().multiRootCheckout({
+        roots: ws.roots.map((r) => r.worktreeRoot),
+        target: checkoutTarget,
+        mode,
+        rollbackOnFail: true,
+      });
+      if (!result.ok) {
+        const failed = result.steps.find((s) => !s.ok);
+        const msg = failed?.error ?? "Multi-root checkout failed";
+        if (result.rolledBack) {
+          window.alert(`${msg}\n\nRolled back successful roots.`);
+        } else {
+          const roll = window.confirm(`${msg}\n\nRollback successful roots?`);
+          if (roll) {
+            await getBackend().multiRootRollback({ steps: result.steps });
+          }
+        }
+      }
+    } else {
+      await getBackend().branchCheckout({
+        path: ws.repoPath,
+        target: checkoutTarget,
+        mode,
+      });
+    }
     await refresh();
   }
 

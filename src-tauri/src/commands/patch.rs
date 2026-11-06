@@ -61,14 +61,8 @@ pub async fn patch_create(
         git.default_patch_path(&cwd, &cancel).await?
     };
     emit_cmd(&app, format!("git diff --binary > {}", output.display())).await;
-    git.patch_create(
-        &cwd,
-        &req.paths,
-        &output,
-        req.base.as_deref(),
-        &cancel,
-    )
-    .await
+    git.patch_create(&cwd, &req.paths, &output, req.base.as_deref(), &cancel)
+        .await
 }
 
 #[tauri::command]

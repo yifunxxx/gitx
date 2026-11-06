@@ -14,7 +14,7 @@ import type {
 } from "./bindings";
 
 const defaultSettings: AppSettings = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   appearance: {
     theme: "system",
     palette: "pearl",
@@ -43,6 +43,12 @@ const defaultSettings: AppSettings = {
     cleanTreeMethod: "stash",
     combineStashesAndShelves: true,
     allowPerHunkChangelists: true,
+    executeBranchOpsOnAllRoots: true,
+    updateSubmodules: "auto",
+    forkParentRemote: "upstream",
+    commitTwMode: "docked",
+    commitControlsHidden: false,
+    closeCommitTwAfterCommit: false,
   },
 };
 
@@ -230,7 +236,22 @@ export const mockBackend: Backend = {
       path: req.path,
       isRepo: true,
       gitDir: `${req.path}/.git`,
+      commonDir: `${req.path}/.git`,
       toplevel: req.path,
+      isWorktree: false,
+      wsl: null,
+      roots: [
+        {
+          id: req.path,
+          worktreeRoot: req.path,
+          gitDir: `${req.path}/.git`,
+          commonDir: `${req.path}/.git`,
+          isWorktree: false,
+          displayName: req.path.split(/[/\\]/).pop() ?? "repo",
+          color: "#3b82f6",
+          isSubmodule: false,
+        },
+      ],
     };
   },
   async workspaceRecent() {
@@ -1298,5 +1319,121 @@ export const mockBackend: Backend = {
     emitConsole("cmd", "git apply <clipboard>");
     void req;
     return null;
+  },
+  // M7
+  async worktreeList(req) {
+    return [
+      {
+        path: req.path,
+        head: "abcdef0123456789abcdef0123456789abcdef01",
+        branch: "main",
+        bare: false,
+        detached: false,
+        locked: false,
+        lockReason: null,
+        prunable: false,
+        pruneReason: null,
+        isMain: true,
+        isCurrent: true,
+      },
+    ];
+  },
+  async worktreeAdd(req) {
+    emitConsole("cmd", `git worktree add ${req.worktreePath} ${req.startRef}`);
+    return { worktreePath: req.worktreePath, openAfter: req.openAfter !== false };
+  },
+  async worktreeRemove(req) {
+    emitConsole("cmd", `git worktree remove ${req.worktreePath}`);
+    return null;
+  },
+  async worktreeLock(req) {
+    emitConsole("cmd", `git worktree lock ${req.worktreePath}`);
+    return null;
+  },
+  async worktreeUnlock(req) {
+    emitConsole("cmd", `git worktree unlock ${req.worktreePath}`);
+    return null;
+  },
+  async worktreePrunePreview() {
+    return { paths: [], dryRunOutput: "" };
+  },
+  async worktreePrune() {
+    emitConsole("cmd", "git worktree prune -v");
+    return { paths: [], dryRunOutput: "" };
+  },
+  async worktreeOpenRef(req) {
+    emitConsole("cmd", `git fetch ${req.remote} ${req.refspec}`);
+    return { worktreePath: req.worktreePath, openAfter: true };
+  },
+  async worktreeDefaultPath(req) {
+    const base = req.repoPath.replace(/[/\\]+$/, "");
+    const name = base.split(/[/\\]/).pop() ?? "repo";
+    const parent = base.slice(0, Math.max(0, base.length - name.length - 1)) || ".";
+    const safe = req.branch.replace(/[^A-Za-z0-9_-]/g, "-");
+    return { path: `${parent}/${name}-${safe}` };
+  },
+  async repoDiscover(req) {
+    return [
+      {
+        id: req.path,
+        worktreeRoot: req.path,
+        gitDir: `${req.path}/.git`,
+        commonDir: `${req.path}/.git`,
+        isWorktree: false,
+        displayName: req.path.split(/[/\\]/).pop() ?? "repo",
+        color: "#3b82f6",
+        isSubmodule: false,
+      },
+    ];
+  },
+  async multiRootCheckout(req) {
+    emitConsole("cmd", `multi-root checkout ${req.target}`);
+    return {
+      ok: true,
+      rolledBack: false,
+      steps: req.roots.map((path) => ({
+        repoId: path,
+        path,
+        ok: true,
+        previousRef: "main",
+        error: null,
+      })),
+    };
+  },
+  async multiRootRollback(req) {
+    return {
+      ok: true,
+      rolledBack: true,
+      steps: req.steps.map((s) => ({ ...s, ok: true, error: null })),
+    };
+  },
+  async uiSyncBroadcast(payload) {
+    void payload;
+    return null;
+  },
+  async parseWslPath(req) {
+    if (req.path.includes("wsl$") || req.path.includes("wsl.localhost")) {
+      return {
+        distro: "Ubuntu",
+        linuxPath: "/home/user/proj",
+        suggestedGit: "wsl.exe -d Ubuntu git",
+      };
+    }
+    return null;
+  },
+  async syncFork(req) {
+    emitConsole("cmd", `git fetch ${req.parentRemote ?? "upstream"}`);
+    return {
+      defaultBranch: "main",
+      upstreamRef: `${req.parentRemote ?? "upstream"}/main`,
+      oldHead: "aaa",
+      newHead: "bbb",
+      strategy: "merge",
+      pushed: req.pushOrigin !== false,
+      message: "Synced with upstream",
+    };
+  },
+  async submoduleUpdate() {
+    return { items: [], message: "No .gitmodules" };
   },
 };

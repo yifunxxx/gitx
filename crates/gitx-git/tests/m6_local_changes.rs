@@ -11,11 +11,7 @@ async fn line_stage_only_selected_lines() {
     let cancel = CancellationToken::new();
     let cwd = repo.path();
 
-    std::fs::write(
-        cwd.join("README.md"),
-        "# clean\nline-a\nline-b\nline-c\n",
-    )
-    .unwrap();
+    std::fs::write(cwd.join("README.md"), "# clean\nline-a\nline-b\nline-c\n").unwrap();
 
     // Stage only the first added line (new-side line 2 = "line-a").
     // After edit: line1="# clean", line2="line-a", line3="line-b", line4="line-c"
@@ -60,21 +56,14 @@ async fn changelist_create_move_persist() {
         .id
         .clone();
     let state = gitx_meta::move_paths(&git_dir, &["README.md".into()], &feature_id).unwrap();
-    assert!(
-        state
-            .assignments
-            .iter()
-            .any(|a| a.path == "README.md" && a.list_id == feature_id)
-    );
+    assert!(state
+        .assignments
+        .iter()
+        .any(|a| a.path == "README.md" && a.list_id == feature_id));
 
     let reloaded = gitx_meta::load_changelists(&git_dir).unwrap();
     assert_eq!(reloaded.lists.len(), 2);
-    assert!(
-        reloaded
-            .assignments
-            .iter()
-            .any(|a| a.path == "README.md")
-    );
+    assert!(reloaded.assignments.iter().any(|a| a.path == "README.md"));
 }
 
 #[tokio::test]
@@ -198,10 +187,8 @@ async fn rm_cached_stop_tracking() {
         .await
         .unwrap();
     assert!(
-        status
-            .files
-            .iter()
-            .any(|f| f.path == "README.md" && (f.index_status == "D" || f.kind == gitx_core::FileChangeKind::Deleted)),
+        status.files.iter().any(|f| f.path == "README.md"
+            && (f.index_status == "D" || f.kind == gitx_core::FileChangeKind::Deleted)),
         "README.md should show as deleted in index: {:?}",
         status.files
     );
@@ -237,8 +224,14 @@ async fn pathspec_commit_only_selected_file() {
         .output()
         .unwrap();
     let names = String::from_utf8_lossy(&show.stdout);
-    assert!(names.contains("a.txt"), "commit should include a.txt: {names}");
-    assert!(!names.contains("b.txt"), "commit should not include b.txt: {names}");
+    assert!(
+        names.contains("a.txt"),
+        "commit should include a.txt: {names}"
+    );
+    assert!(
+        !names.contains("b.txt"),
+        "commit should not include b.txt: {names}"
+    );
     assert!(
         !names.contains("README.md"),
         "commit should not include README: {names}"

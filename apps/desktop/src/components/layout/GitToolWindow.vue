@@ -3,21 +3,35 @@ import { computed } from "vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorktreesStore } from "@/stores/worktreesStore";
 import { useI18n } from "vue-i18n";
 import LogView from "@/features/log/LogView.vue";
 import UpdateInfoView from "@/features/sync/UpdateInfoView.vue";
 import StashShelfView from "@/features/stash/StashShelfView.vue";
+import WorktreesView from "@/features/worktrees/WorktreesView.vue";
 
 const layout = useLayoutStore();
 const consoleStore = useConsoleStore();
 const settings = useSettingsStore();
+const worktrees = useWorktreesStore();
 const { t } = useI18n();
 
 const combineStashesShelves = computed(
   () => settings.settings?.git?.combineStashesAndShelves !== false,
 );
 
-type BottomTab = "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves";
+type BottomTab =
+  | "console"
+  | "log"
+  | "update"
+  | "stash"
+  | "shelf"
+  | "stashesShelves"
+  | "worktrees";
+
+const showWorktreesTab = computed(
+  () => worktrees.userOpened || worktrees.items.length > 1,
+);
 
 const tabs = computed(() => {
   const base: { id: BottomTab; label: string }[] = [
@@ -29,6 +43,9 @@ const tabs = computed(() => {
   } else {
     base.push({ id: "stash", label: t("toolWindows.stash") });
     base.push({ id: "shelf", label: t("toolWindows.shelf") });
+  }
+  if (showWorktreesTab.value) {
+    base.push({ id: "worktrees", label: t("toolWindows.worktrees") });
   }
   base.push({ id: "console", label: t("toolWindows.console") });
   return base;
@@ -96,6 +113,9 @@ const lines = computed(() => consoleStore.lines);
     </div>
     <div v-else-if="layout.activeBottomTab === 'shelf'" class="min-h-0 flex-1">
       <StashShelfView mode="shelf" />
+    </div>
+    <div v-else-if="layout.activeBottomTab === 'worktrees'" class="min-h-0 flex-1">
+      <WorktreesView />
     </div>
     <div v-else class="min-h-0 flex-1">
       <LogView />

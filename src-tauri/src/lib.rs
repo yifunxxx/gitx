@@ -29,15 +29,10 @@ use commands::index_ops::{
     unstage_paths,
 };
 use commands::jobs::{job_cancel, job_list};
+use commands::multi_root::{
+    multi_root_checkout, multi_root_rollback, parse_wsl_path, repo_discover, ui_sync_broadcast,
+};
 use commands::patch::{patch_apply, patch_apply_clipboard, patch_create};
-use commands::shelf::{
-    shelf_create, shelf_delete, shelf_import, shelf_list, shelf_list_deleted, shelf_rename,
-    shelf_restore, shelf_unshelve,
-};
-use commands::stash::{
-    stash_apply, stash_branch, stash_clear, stash_create, stash_drop, stash_list, stash_pop,
-    stash_restore,
-};
 use commands::refs::{
     branch_checkout, branch_create, branch_delete, branch_rename, branch_restore, branch_update,
     compare_branches, favorites_set, refs_list, tag_create, tag_delete, tag_push,
@@ -52,11 +47,24 @@ use commands::rewrite::{
     repo_op_state_get, reset_preview, reset_run, revert_abort, revert_continue, revert_run,
     reword_commit, squash_commits, uncommit, undo_rewrite,
 };
+use commands::shelf::{
+    shelf_create, shelf_delete, shelf_import, shelf_list, shelf_list_deleted, shelf_rename,
+    shelf_restore, shelf_unshelve,
+};
+use commands::stash::{
+    stash_apply, stash_branch, stash_clear, stash_create, stash_drop, stash_list, stash_pop,
+    stash_restore,
+};
 use commands::status::status_get;
 use commands::sync::{
-    fetch_run, ls_remote_check, pull_run, push_preview, push_run, update_project_run,
+    fetch_run, ls_remote_check, pull_run, push_preview, push_run, submodule_update, sync_fork,
+    update_project_run,
 };
 use commands::workspace::{init_run, status_probe, vcs_enable, workspace_open, workspace_recent};
+use commands::worktree::{
+    worktree_add, worktree_default_path, worktree_list, worktree_lock, worktree_open_ref,
+    worktree_prune, worktree_prune_preview, worktree_remove, worktree_unlock,
+};
 use gitx_meta::load_app_settings;
 use state::AppState;
 use tauri::Manager;
@@ -207,6 +215,23 @@ pub fn run() {
             patch_create,
             patch_apply,
             patch_apply_clipboard,
+            // M7
+            worktree_list,
+            worktree_add,
+            worktree_remove,
+            worktree_lock,
+            worktree_unlock,
+            worktree_prune_preview,
+            worktree_prune,
+            worktree_open_ref,
+            worktree_default_path,
+            repo_discover,
+            multi_root_checkout,
+            multi_root_rollback,
+            ui_sync_broadcast,
+            parse_wsl_path,
+            sync_fork,
+            submodule_update,
         ]);
 
     #[cfg(debug_assertions)]

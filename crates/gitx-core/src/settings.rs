@@ -1,8 +1,8 @@
-use crate::CleanTreeMethod;
+use crate::{CleanTreeMethod, CommitTwMode, SubmoduleUpdatePolicy};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-pub const SETTINGS_SCHEMA_VERSION: u32 = 2;
+pub const SETTINGS_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +90,28 @@ pub struct GitSettings {
     /// Allow putting changes within one file into different changelists (#52).
     #[serde(default = "default_true")]
     pub allow_per_hunk_changelists: bool,
+    /// Execute branch ops (checkout/new/delete/…) on all workspace roots (#33).
+    #[serde(default = "default_true")]
+    pub execute_branch_ops_on_all_roots: bool,
+    /// Update submodules after Update Project (#81).
+    #[serde(default)]
+    pub update_submodules: SubmoduleUpdatePolicy,
+    /// Remote name treated as fork parent for Sync Fork (#17). Default `upstream`.
+    #[serde(default = "default_fork_parent")]
+    pub fork_parent_remote: String,
+    /// Commit TW presentation (#69).
+    #[serde(default)]
+    pub commit_tw_mode: CommitTwMode,
+    /// Hide Commit TW message area until Ctrl+K (#69).
+    #[serde(default)]
+    pub commit_controls_hidden: bool,
+    /// Close Commit TW after successful commit (#69 Advanced).
+    #[serde(default)]
+    pub close_commit_tw_after_commit: bool,
+}
+
+fn default_fork_parent() -> String {
+    "upstream".into()
 }
 
 fn default_update_method() -> UpdateMethod {
@@ -123,6 +145,12 @@ impl Default for GitSettings {
             clean_tree_method: CleanTreeMethod::Stash,
             combine_stashes_and_shelves: true,
             allow_per_hunk_changelists: true,
+            execute_branch_ops_on_all_roots: true,
+            update_submodules: SubmoduleUpdatePolicy::Auto,
+            fork_parent_remote: default_fork_parent(),
+            commit_tw_mode: CommitTwMode::Docked,
+            commit_controls_hidden: false,
+            close_commit_tw_after_commit: false,
         }
     }
 }

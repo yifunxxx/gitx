@@ -52,7 +52,45 @@
     "updateInfo": "Update Info",
     "stash": "Stash",
     "shelf": "Shelf",
-    "stashesShelves": "Stashes & Shelves"
+    "stashesShelves": "Stashes & Shelves",
+    "worktrees": "Worktrees"
+  },
+  "common": {
+    "cancel": "Cancel"
+  },
+  "worktrees": {
+    "new": "New Worktree…",
+    "newTitle": "Create New Worktree",
+    "openRef": "Open Ref…",
+    "openRefTitle": "Open Ref in Worktree",
+    "openRefHint": "Host-agnostic: enter a PR number, merge-request ref, or any remote ref. No GitHub/GitLab API.",
+    "refOrPr": "Ref / PR number",
+    "prune": "Prune",
+    "empty": "No additional worktrees — New Worktree",
+    "open": "Open",
+    "openHere": "Open Here",
+    "lock": "Lock…",
+    "unlock": "Unlock",
+    "remove": "Remove…",
+    "from": "From",
+    "newBranch": "Create new branch (optional)",
+    "newBranchHint": "Required when the branch is already checked out",
+    "location": "Location",
+    "openAfter": "Open after creation",
+    "create": "Create",
+    "lockReason": "Lock reason",
+    "removeConfirm": "Remove worktree {path}?",
+    "removeForceHint": "Use force if it has uncommitted changes",
+    "removeForceConfirm": "Remove anyway (--force)? Uncommitted changes will be snapshotted then discarded from this worktree.",
+    "cannotRemoveCurrent": "Cannot remove the main or current worktree",
+    "cannotRemoveLocked": "Unlock the worktree before removing"
+  },
+  "commitTw": {
+    "viewMode": "View Mode",
+    "docked": "Docked",
+    "window": "Window",
+    "float": "Float",
+    "toggleControls": "Toggle Commit Controls"
   },
   "changelist": {
     "new": "New Changelist",

@@ -19,6 +19,8 @@ export type UpdateMethod = "merge" | "rebase" | "reset"
 export type FetchTagsPolicy = "auto" | "syncAndPrune" | "always" | "never"
 export type IncomingCheckPolicy = "auto" | "always" | "never"
 export type CleanTreeMethod = "stash" | "shelve"
+export type CommitTwMode = "docked" | "window" | "float"
+export type SubmoduleUpdatePolicy = "auto" | "always" | "never"
 export type GitSettings = {
   updateMethod: UpdateMethod
   fetchTags: FetchTagsPolicy
@@ -36,6 +38,12 @@ export type GitSettings = {
   cleanTreeMethod?: CleanTreeMethod
   combineStashesAndShelves?: boolean
   allowPerHunkChangelists?: boolean
+  executeBranchOpsOnAllRoots?: boolean
+  updateSubmodules?: SubmoduleUpdatePolicy
+  forkParentRemote?: string
+  commitTwMode?: CommitTwMode
+  commitControlsHidden?: boolean
+  closeCommitTwAfterCommit?: boolean
 }
 export type AppSettings = {
   schemaVersion: number
@@ -48,6 +56,115 @@ export type AppSettings = {
   showIgnoredFiles?: boolean
   logIndexing: boolean
   git?: GitSettings
+}
+export type WorktreeInfo = {
+  path: string
+  head: string
+  branch: string | null
+  bare: boolean
+  detached: boolean
+  locked: boolean
+  lockReason: string | null
+  prunable: boolean
+  pruneReason: string | null
+  isMain: boolean
+  isCurrent: boolean
+}
+export type WorktreePrunePreview = {
+  paths: string[]
+  dryRunOutput: string
+}
+export type RepoRoot = {
+  id: string
+  worktreeRoot: string
+  gitDir: string
+  commonDir: string
+  isWorktree: boolean
+  displayName: string
+  color: string
+  isSubmodule: boolean
+}
+export type MultiRootOpStep = {
+  repoId: string
+  path: string
+  ok: boolean
+  previousRef: string | null
+  error: string | null
+}
+export type MultiRootOpResult = {
+  ok: boolean
+  steps: MultiRootOpStep[]
+  rolledBack: boolean
+}
+export type SyncForkResult = {
+  defaultBranch: string
+  upstreamRef: string
+  oldHead: string
+  newHead: string
+  strategy: string
+  pushed: boolean
+  message: string
+}
+export type SubmoduleUpdateItem = {
+  path: string
+  oldSha: string | null
+  newSha: string | null
+  onBranch: string | null
+  updated: boolean
+  skipped: boolean
+  message: string
+}
+export type SubmoduleUpdateResult = {
+  items: SubmoduleUpdateItem[]
+  message: string
+}
+export type WslPathInfo = {
+  distro: string
+  linuxPath: string
+  suggestedGit: string
+}
+export type WorktreeListReq = { path: string }
+export type WorktreeAddReq = {
+  path: string
+  worktreePath: string
+  startRef: string
+  newBranch?: string | null
+  track?: boolean
+  openAfter?: boolean
+}
+export type WorktreeAddRes = { worktreePath: string; openAfter: boolean }
+export type WorktreePathReq = { path: string; worktreePath: string }
+export type WorktreeRemoveReq = { path: string; worktreePath: string; force?: boolean }
+export type WorktreeLockReq = { path: string; worktreePath: string; reason?: string | null }
+export type WorktreeOpenRefReq = {
+  path: string
+  worktreePath: string
+  remote: string
+  refspec: string
+  reviewName: string
+}
+export type WorktreeDefaultPathReq = { repoPath: string; branch: string }
+export type WorktreeDefaultPathRes = { path: string }
+export type DiscoverRootsReq = { path: string }
+export type MultiRootCheckoutReq = {
+  roots: string[]
+  target: string
+  mode: string
+  rollbackOnFail?: boolean
+}
+export type MultiRootRollbackReq = { steps: MultiRootOpStep[] }
+export type UiSyncPayload = { channel: string; data: unknown }
+export type ParseWslPathReq = { path: string }
+export type SyncForkReq = {
+  path: string
+  parentRemote?: string | null
+  strategy?: UpdateMethod | null
+  pushOrigin?: boolean
+}
+export type SubmoduleUpdateReq = {
+  path: string
+  policy?: SubmoduleUpdatePolicy | null
+  changedPaths?: string[] | null
 }
 export type JobId = string
 export type JobKind = "read" | "write" | "network" | "networkWrite" | "composite"
@@ -67,7 +184,11 @@ export type WorkspaceOpenRes = {
   path: string
   isRepo: boolean
   gitDir: string | null
+  commonDir?: string | null
   toplevel: string | null
+  isWorktree?: boolean | null
+  wsl?: WslPathInfo | null
+  roots?: RepoRoot[]
 }
 export type WorkspaceRecentRes = { paths: string[] }
 export type StatusProbeReq = { path: string }
@@ -1155,6 +1276,55 @@ export const commands = {
   },
   async patchApplyClipboard(req: PatchApplyClipboardReq): Promise<null> {
     return invoke("patch_apply_clipboard", { req })
+  },
+  // M7
+  async worktreeList(req: WorktreeListReq): Promise<WorktreeInfo[]> {
+    return invoke("worktree_list", { req })
+  },
+  async worktreeAdd(req: WorktreeAddReq): Promise<WorktreeAddRes> {
+    return invoke("worktree_add", { req })
+  },
+  async worktreeRemove(req: WorktreeRemoveReq): Promise<null> {
+    return invoke("worktree_remove", { req })
+  },
+  async worktreeLock(req: WorktreeLockReq): Promise<null> {
+    return invoke("worktree_lock", { req })
+  },
+  async worktreeUnlock(req: WorktreePathReq): Promise<null> {
+    return invoke("worktree_unlock", { req })
+  },
+  async worktreePrunePreview(req: WorktreeListReq): Promise<WorktreePrunePreview> {
+    return invoke("worktree_prune_preview", { req })
+  },
+  async worktreePrune(req: WorktreeListReq): Promise<WorktreePrunePreview> {
+    return invoke("worktree_prune", { req })
+  },
+  async worktreeOpenRef(req: WorktreeOpenRefReq): Promise<WorktreeAddRes> {
+    return invoke("worktree_open_ref", { req })
+  },
+  async worktreeDefaultPath(req: WorktreeDefaultPathReq): Promise<WorktreeDefaultPathRes> {
+    return invoke("worktree_default_path", { req })
+  },
+  async repoDiscover(req: DiscoverRootsReq): Promise<RepoRoot[]> {
+    return invoke("repo_discover", { req })
+  },
+  async multiRootCheckout(req: MultiRootCheckoutReq): Promise<MultiRootOpResult> {
+    return invoke("multi_root_checkout", { req })
+  },
+  async multiRootRollback(req: MultiRootRollbackReq): Promise<MultiRootOpResult> {
+    return invoke("multi_root_rollback", { req })
+  },
+  async uiSyncBroadcast(payload: UiSyncPayload): Promise<null> {
+    return invoke("ui_sync_broadcast", { payload })
+  },
+  async parseWslPath(req: ParseWslPathReq): Promise<WslPathInfo | null> {
+    return invoke("parse_wsl_path", { req })
+  },
+  async syncFork(req: SyncForkReq): Promise<SyncForkResult> {
+    return invoke("sync_fork", { req })
+  },
+  async submoduleUpdate(req: SubmoduleUpdateReq): Promise<SubmoduleUpdateResult> {
+    return invoke("submodule_update", { req })
   },
 }
 

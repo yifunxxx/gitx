@@ -15,7 +15,12 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<PatchCreateResult, AppError> {
         let base = base.unwrap_or("HEAD");
-        let mut args = vec!["diff".into(), "--binary".into(), base.to_string(), "--".into()];
+        let mut args = vec![
+            "diff".into(),
+            "--binary".into(),
+            base.to_string(),
+            "--".into(),
+        ];
         if paths.is_empty() {
             // All local changes vs base.
         } else {
@@ -75,8 +80,9 @@ impl GitRunner {
         if let Some(parent) = tmp.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        std::fs::write(&tmp, patch_text)
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("write clipboard patch: {e}")))?;
+        std::fs::write(&tmp, patch_text).map_err(|e| {
+            AppError::new(ErrorCode::FsError, format!("write clipboard patch: {e}"))
+        })?;
         let result = self.patch_apply(cwd, &tmp, three_way, cancel).await;
         let _ = std::fs::remove_file(&tmp);
         result
