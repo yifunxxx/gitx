@@ -57,22 +57,45 @@ Installers land at (Cargo workspace root `target/`):
 
 Unsigned builds may show SmartScreen — choose **More info** → **Run anyway**.
 
-## Download Windows installer from CI
+## Download Windows installer
 
-The **Release Windows** workflow (`.github/workflows/release-windows.yml`) builds on `windows-latest` and uploads:
+### GitHub Releases (recommended)
 
-| Artifact name        | Contents      |
-| -------------------- | ------------- |
-| `gitx-windows-nsis`  | NSIS `.exe`   |
-| `gitx-windows-msi`   | MSI installer |
+Tagged builds (`v*`) publish a [GitHub Release](https://github.com/yifunxxx/gitx/releases) with both installers attached:
 
-It runs on push to `master`, on `v*` tags, and via **Actions → Release Windows → Run workflow**.
+| Asset              | Contents            |
+| ------------------ | ------------------- |
+| `*-setup.exe`      | NSIS installer      |
+| `*.msi`            | MSI installer       |
 
-1. Open [Actions → Release Windows](../../actions/workflows/release-windows.yml) (or the repo **Actions** tab).
-2. Open the latest green run.
-3. Under **Artifacts**, download `gitx-windows-nsis` or `gitx-windows-msi`, unzip, and run the installer.
+1. Open **[Releases](https://github.com/yifunxxx/gitx/releases)**.
+2. Pick the latest `v*` release (e.g. `v0.1.0`).
+3. Download the NSIS `.exe` (most users) or the `.msi`, then run it.
 
-Manual trigger:
+App / package versions are `0.1.0`, matching tag `v0.1.0`. Builds are unsigned — SmartScreen may warn; choose **More info** → **Run anyway**.
+
+Publish a release by pushing a version tag (after the workflow is on `master`):
+
+```bash
+git checkout master && git pull
+git tag -a v0.1.0 -m "gitx v0.1.0"
+git push origin v0.1.0
+# Watch: Actions → Release Windows; then https://github.com/yifunxxx/gitx/releases
+```
+
+Optional: **Actions → Release Windows → Run workflow** with a `version` input (`0.1.0` or `v0.1.0`) to create the same Release without a local tag push.
+
+### CI Artifacts (master / debugging)
+
+Every successful **Release Windows** run also uploads Actions Artifacts (30-day retention):
+
+| Artifact name       | Contents    |
+| ------------------- | ----------- |
+| `gitx-windows-nsis` | NSIS `.exe` |
+| `gitx-windows-msi`  | MSI         |
+
+1. Open [Actions → Release Windows](../../actions/workflows/release-windows.yml).
+2. Open a green run → **Artifacts** → download, unzip, install.
 
 ```bash
 gh workflow run release-windows.yml --ref master

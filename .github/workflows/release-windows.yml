@@ -1,18 +1,25 @@
 # Build unsigned Windows installers (NSIS .exe + MSI) on windows-latest.
-# Download from the Actions run → Artifacts after a successful build.
 #
 # Triggers:
-#   - workflow_dispatch (Actions tab → Run workflow)
-#   - push to master
-#   - version tags (v*)
+#   - workflow_dispatch (optional version input → GitHub Release)
+#   - push to master → Artifacts only
+#   - version tags (v*) → Artifacts + GitHub Release
 #
 # Tauri 2 + Cargo workspace: bundles land at repo-root
 #   target/release/bundle/{nsis,msi}/
 # (not under src-tauri/target/).
+#
+# Releases use GITHUB_TOKEN only (no extra secrets).
 name: Release Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional release version (e.g. 0.1.0 or v0.1.0). Empty = artifacts only."
+        required: false
+        type: string
+        default: ""
   push:
     branches: [master]
     tags: ["v*"]
@@ -20,6 +27,9 @@ on:
 concurrency:
   group: release-windows-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   windows:
@@ -119,3 +129,60 @@ jobs:
           path: staging/msi/*.msi
           if-no-files-found: error
           retention-days: 30
+
+      # Normalize optional workflow_dispatch version to a v* tag name.
+      - name: Resolve release tag
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          create=false
+          tag=""
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            create=true
+            tag="${GITHUB_REF_NAME}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            raw="${{ inputs.version }}"
+            raw="$(echo -n "${raw}" | tr -d '[:space:]')"
+            if [[ -n "${raw}" ]]; then
+              create=true
+              if [[ "${raw}" == v* ]]; then
+                tag="${raw}"
+              else
+                tag="v${raw}"
+              fi
+            fi
+          fi
+          echo "create=${create}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Resolved create=${create} tag=${tag}"
+
+      - name: Create GitHub Release
+        if: steps.release_meta.outputs.create == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: gitx ${{ steps.release_meta.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            staging/nsis/*.exe
+            staging/msi/*.msi
+          body: |
+            ## gitx ${{ steps.release_meta.outputs.tag }}
+
+            First public Windows installers for the M0–M8 desktop baseline (focused Git GUI on Tauri 2 + Vue 3 + Rust).
+
+            ### Downloads
+            - **NSIS** (`.exe` setup) — recommended for most users
+            - **MSI** — for managed / enterprise installs
+
+            Builds are **unsigned**; Windows SmartScreen may warn — choose **More info** → **Run anyway**.
+
+            ### Milestone notes
+            Covers M0–M8: core Git flows, Local Changes, History / Graph, multi-root worktrees, Settings / Keymap / themes / zh-CN default. See `docs/dev-plan/08-milestones.md` in the repo.
+
+            App version is aligned with this tag (`0.1.0` ↔ `v0.1.0`).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
