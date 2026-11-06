@@ -622,6 +622,8 @@ export type PartialChangesReq = {
   commit: string
   paths: string[]
   message?: string | null
+}
+
 // --- M6 ---
 export type HunkAnchor = {
   before: string[]
@@ -1056,6 +1058,7 @@ export const commands = {
   },
   async dropChanges(req: PartialChangesReq): Promise<RewriteResult> {
     return invoke("drop_changes", { req })
+  },
   // M6
   async stageLines(req: LinesReq): Promise<null> {
     return invoke("stage_lines", { req })

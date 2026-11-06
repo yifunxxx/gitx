@@ -1060,6 +1060,7 @@ export const mockBackend: Backend = {
       conflictFiles: [],
       backupRef: "refs/gitx/backup/drop-changes-0",
     };
+  },
   async stageLines(req) {
     emitConsole("cmd", `# stage lines ${req.lines.join(",")} on ${req.filePath}`);
     return this.stagePaths({
