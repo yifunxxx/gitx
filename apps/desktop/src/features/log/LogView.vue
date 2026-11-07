@@ -332,7 +332,7 @@ async function ctxExtract() {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col" @click="closeCtx">
+  <div class="flex h-full min-h-0 flex-col bg-background" @click="closeCtx">
     <EmptyState
       v-if="!workspace.isRepo"
       :title="t('log.noRepoTitle')"
@@ -531,7 +531,11 @@ async function ctxExtract() {
                 :style="{
                   gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
                 }"
-                :class="log.selectedShas.includes(c.sha) ? 'bg-accent' : 'hover:bg-accent/40'"
+                :class="
+                  log.selectedShas.includes(c.sha)
+                    ? 'bg-selection text-selection-foreground'
+                    : 'hover:bg-hover-surface'
+                "
                 @click="onCommitClick(c.sha, $event)"
                 @contextmenu="onCommitContext(c.sha, $event)"
               >

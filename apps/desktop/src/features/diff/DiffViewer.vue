@@ -171,7 +171,7 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
           {{ tab.collapseUnchanged ? t("diff.expandUnchanged") : t("diff.collapseUnchanged") }}
         </Button>
       </Tip>
-      <Tip :text="t('toolbar.diffLayout')">
+      <Tip :text="t('toolbar.diffLayoutTip')">
         <Button size="xs" variant="ghost" @click="diffs.setUnified(tab.id, !tab.unified)">
           {{ tab.unified ? t("diff.sideBySide") : t("diff.unified") }}
         </Button>

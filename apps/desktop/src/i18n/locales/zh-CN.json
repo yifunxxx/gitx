@@ -159,6 +159,7 @@
     "diffWhitespace": "空白字符处理",
     "diffCollapse": "折叠或展开未更改区域",
     "diffLayout": "并排 / 统一视图",
+    "diffLayoutTip": "切换 Diff 布局",
     "diffStageLines": "暂存所选行"
   },
   "diff": {
@@ -324,7 +325,23 @@
     "untracked": "已停止跟踪",
     "ignore": "忽略",
     "untrack": "停止跟踪",
-    "controlsHidden": "提交控件已隐藏 — 使用切换提交控件显示"
+    "controlsHidden": "提交控件已隐藏 — 使用切换提交控件显示",
+    "showDiff": "显示 Diff",
+    "showHistory": "显示历史",
+    "openFile": "打开文件",
+    "commitFiles": "提交文件…",
+    "rollback": "回滚…",
+    "rollbackTitle": "回滚更改",
+    "rollbackConfirm": "将所选文件恢复为 HEAD 内容？未提交的更改将丢失。",
+    "rollbackDone": "已回滚",
+    "moveToChangelist": "移动到其他变更列表…",
+    "moveToChangelistTitle": "移动到变更列表",
+    "moveToChangelistPrompt": "目标变更列表名称（新建或已有）",
+    "copyPath": "复制路径",
+    "copyRelativePath": "复制相对路径",
+    "copiedPath": "已复制路径",
+    "createPatch": "创建补丁…",
+    "menuGapNote": "删除到回收站未接（与 IDEA Delete 对齐待办）"
   },
   "changelist": {
     "new": "新建变更列表",

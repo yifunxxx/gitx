@@ -1,21 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Plus, Minus, RefreshCw, FileDiff, ListPlus, Eye, MoreVertical } from "@lucide/vue";
+import { Plus, Minus, RefreshCw, FileDiff, ListPlus } from "@lucide/vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import Skeleton from "@/components/common/Skeleton.vue";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import ChangesTree from "@/features/commit/ChangesTree.vue";
 import CommitMessageEditor from "@/features/commit/CommitMessageEditor.vue";
 import RepoStateBanner from "@/features/merge/RepoStateBanner.vue";
@@ -26,11 +17,12 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
+import { useHistoryStore } from "@/stores/historyStore";
 import { toast } from "@/composables/useToast";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { getBackend } from "@/lib/backend";
-import type { CommitTwMode } from "@/lib/backend";
 import { clampMenuPosition } from "@/lib/contextMenu";
+import { runAction } from "@/actions";
 
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
@@ -40,6 +32,7 @@ const layout = useLayoutStore();
 const rewrite = useRewriteStore();
 const stashShelf = useStashShelfStore();
 const files = useFileViewerStore();
+const history = useHistoryStore();
 
 const ctxMenu = ref<{
   open: boolean;
@@ -49,22 +42,16 @@ const ctxMenu = ref<{
   section: ChangesSection;
 } | null>(null);
 
-const commitTwModeLabel = computed(() => {
-  switch (layout.commitTwMode) {
-    case "window":
-      return t("commitTw.window");
-    case "float":
-      return t("commitTw.float");
-    default:
-      return t("commitTw.docked");
-  }
-});
-
 const showMessageEditor = computed(() => !layout.commitControlsHidden);
 
-async function setMode(mode: CommitTwMode) {
-  await layout.setCommitTwMode(mode);
-}
+const ctxIsStaged = computed(() => ctxMenu.value?.section === "staged");
+const ctxIsUnversioned = computed(() => ctxMenu.value?.section === "unversioned");
+const ctxIsTrackedChange = computed(
+  () =>
+    !!ctxMenu.value &&
+    ctxMenu.value.section !== "unversioned" &&
+    ctxMenu.value.section !== "ignored",
+);
 
 onMounted(() => {
   if (workspace.isRepo) {
@@ -209,9 +196,76 @@ async function shelveSelected() {
   layout.activeBottomTab = stashShelf.combineTab ? "stashesShelves" : "shelf";
 }
 
+async function rollbackSelected() {
+  if (!workspace.repoPath || !workspace.repoId) return;
+  const paths = changes.selectedPaths;
+  if (!paths.length) return;
+  const ok = await confirmDialog({
+    title: t("commitTw.rollbackTitle"),
+    message: t("commitTw.rollbackConfirm"),
+    destructive: true,
+  });
+  if (!ok) return;
+  // Staging mode: unstage first so checkout restores both index + worktree.
+  if (changes.stagingMode && changes.selectedSection === "staged") {
+    await changes.unstage(paths);
+  }
+  for (const filePath of paths) {
+    await getBackend().checkoutPathFromRev({
+      repoId: workspace.repoId,
+      path: workspace.repoPath,
+      rev: "HEAD",
+      filePath,
+    });
+  }
+  toast({ title: t("commitTw.rollbackDone"), description: `${paths.length}` });
+  await changes.refresh();
+}
+
+async function moveToChangelistSelected() {
+  const paths = changes.selectedPaths;
+  if (!paths.length) return;
+  const name = await promptDialog({
+    title: t("commitTw.moveToChangelistTitle"),
+    placeholder: t("commitTw.moveToChangelistPrompt"),
+    allowEmpty: false,
+  });
+  if (!name?.trim()) return;
+  const target = name.trim();
+  let list = changes.changelists?.lists.find((l) => l.name === target);
+  if (!list) {
+    await changes.createChangelist(target, false);
+    list = changes.changelists?.lists.find((l) => l.name === target);
+  }
+  if (!list) return;
+  await changes.moveToChangelist(paths, list.id);
+  toast({ title: t("commitTw.moveToChangelist"), description: target });
+}
+
+async function copyPath(relative: boolean) {
+  const path = changes.selectedPaths[0] ?? ctxMenu.value?.path;
+  if (!path) return;
+  const text =
+    relative || !workspace.repoPath
+      ? path
+      : `${workspace.repoPath.replace(/[\\/]+$/, "")}/${path}`.replace(/\\/g, "/");
+  await navigator.clipboard?.writeText(text);
+  toast({ title: t("commitTw.copiedPath"), description: text });
+}
+
+async function createPatchSelected() {
+  await runAction("Create Patch", {
+    repoIds: workspace.toplevel ? [workspace.toplevel] : [],
+    selection: { files: [...changes.selectedPaths] },
+    source: "context",
+    place: "Git.ContextMenu.Changes",
+    folderPath: workspace.folderPath,
+  });
+}
+
 function onContext(payload: { path: string; section: ChangesSection; x: number; y: number }) {
   layout.vcsPopupOpen = false;
-  const pos = clampMenuPosition(payload.x, payload.y, 200, 200);
+  const pos = clampMenuPosition(payload.x, payload.y, 240, 360);
   ctxMenu.value = {
     open: true,
     x: pos.x,
@@ -228,11 +282,39 @@ function closeCtx() {
 async function runCtx(action: string) {
   closeCtx();
   switch (action) {
+    case "showDiff":
+      showDiffSelected();
+      break;
+    case "showHistory": {
+      const path = changes.selectedPaths[0];
+      if (path) await history.openFileHistory(path);
+      break;
+    }
+    case "openFile": {
+      const path = changes.selectedPaths[0];
+      if (path) openFile(path);
+      break;
+    }
+    case "commit":
+      layout.leftOpen = true;
+      break;
+    case "rollback":
+      await rollbackSelected();
+      break;
     case "stage":
       await stageSelected();
       break;
     case "unstage":
       await unstageSelected();
+      break;
+    case "add":
+      await stageSelected();
+      break;
+    case "moveChangelist":
+      await moveToChangelistSelected();
+      break;
+    case "newChangelist":
+      await newChangelist();
       break;
     case "ignore":
       await ignoreSelected();
@@ -243,8 +325,20 @@ async function runCtx(action: string) {
     case "stash":
       await stashSelected();
       break;
+    case "patch":
+      await createPatchSelected();
+      break;
     case "untrack":
       await stopTrackingSelected();
+      break;
+    case "copyPath":
+      await copyPath(false);
+      break;
+    case "copyRelative":
+      await copyPath(true);
+      break;
+    case "refresh":
+      await changes.refresh();
       break;
     default:
       break;
@@ -262,50 +356,8 @@ async function runCtx(action: string) {
     }"
   >
     <div class="flex h-8 items-center justify-between border-b px-2 text-xs font-medium">
-      <span>
-        {{ t("toolWindows.commit") }}
-        <span class="ml-1 text-[10px] font-normal text-muted-foreground">{{
-          commitTwModeLabel
-        }}</span>
-      </span>
+      <span>{{ t("toolWindows.commit") }}</span>
       <div class="flex items-center gap-0.5">
-        <DropdownMenu>
-          <Tip :text="t('commitTw.viewMode')">
-            <DropdownMenuTrigger>
-              <Button variant="ghost" size="icon">
-                <MoreVertical class="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-          </Tip>
-          <DropdownMenuContent align="end" class="w-52">
-            <DropdownMenuLabel>{{ t("commitTw.viewAs") }}</DropdownMenuLabel>
-            <DropdownMenuItem
-              :class="layout.commitTwMode === 'docked' ? 'bg-accent' : ''"
-              @select="setMode('docked')"
-            >
-              {{ t("commitTw.docked") }}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              :class="layout.commitTwMode === 'window' ? 'bg-accent' : ''"
-              @select="setMode('window')"
-            >
-              {{ t("commitTw.window") }}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              :class="layout.commitTwMode === 'float' ? 'bg-accent' : ''"
-              @select="setMode('float')"
-            >
-              {{ t("commitTw.float") }}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem
-              :checked="layout.commitControlsHidden"
-              @update:checked="(v: boolean) => (layout.commitControlsHidden = v)"
-            >
-              {{ t("commitTw.toggleControls") }}
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
         <Tip :text="t('actions.refreshStatus')">
           <Button variant="ghost" size="icon" @click="changes.refresh()">
             <RefreshCw class="h-3.5 w-3.5" />
@@ -314,11 +366,6 @@ async function runCtx(action: string) {
         <Tip :text="t('actions.showDiff')">
           <Button variant="ghost" size="icon" @click="showDiffSelected">
             <FileDiff class="h-3.5 w-3.5" />
-          </Button>
-        </Tip>
-        <Tip :text="t('settings.fields.showIgnoredFiles')">
-          <Button variant="ghost" size="icon" @click="changes.toggleShowIgnored()">
-            <Eye class="h-3.5 w-3.5" />
           </Button>
         </Tip>
         <template v-if="changes.stagingMode">
@@ -339,16 +386,11 @@ async function runCtx(action: string) {
           </Tip>
         </template>
         <template v-else>
-          <Tip :text="t('changelist.new')">
-            <Button variant="ghost" size="icon" @click="newChangelist">
-              <ListPlus class="h-3.5 w-3.5" />
-            </Button>
-          </Tip>
-          <Tip :text="t('changelist.new')">
-            <Button variant="ghost" size="xs" @click="newChangelist">{{
-              t("changelist.new")
-            }}</Button>
-          </Tip>
+          <!-- Visible label → no tip with the same string (GIT-37). -->
+          <Button variant="ghost" size="xs" class="gap-1" @click="newChangelist">
+            <ListPlus class="h-3.5 w-3.5" />
+            {{ t("changelist.new") }}
+          </Button>
         </template>
       </div>
     </div>
@@ -390,53 +432,149 @@ async function runCtx(action: string) {
         @contextmenu.prevent="closeCtx"
       >
         <div
-          class="absolute z-[9999] min-w-40 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
+          class="absolute z-[9999] min-w-48 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
           :style="{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }"
           @click.stop
         >
           <button
-            v-if="changes.stagingMode && ctxMenu.section !== 'staged'"
             type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('showDiff')"
+          >
+            {{ t("commitTw.showDiff") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('showHistory')"
+          >
+            {{ t("commitTw.showHistory") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('openFile')"
+          >
+            {{ t("commitTw.openFile") }}
+          </button>
+          <div class="my-1 h-px bg-border" />
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('commit')"
+          >
+            {{ t("commitTw.commitFiles") }}
+          </button>
+          <button
+            v-if="ctxIsTrackedChange"
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('rollback')"
+          >
+            {{ t("commitTw.rollback") }}
+          </button>
+          <div class="my-1 h-px bg-border" />
+          <button
+            v-if="changes.stagingMode && !ctxIsStaged && !ctxIsUnversioned"
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
             @click="runCtx('stage')"
           >
             {{ t("actions.stage") }}
           </button>
           <button
-            v-if="changes.stagingMode && ctxMenu.section === 'staged'"
+            v-if="changes.stagingMode && ctxIsStaged"
             type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
             @click="runCtx('unstage')"
           >
             {{ t("actions.unstage") }}
           </button>
           <button
+            v-if="ctxIsUnversioned"
             type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="runCtx('ignore')"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('add')"
           >
-            {{ t("commitTw.ignore") }}
+            {{ t("actions.addToVcs") }}
           </button>
+          <template v-if="!changes.stagingMode && !ctxIsUnversioned && ctxMenu.section !== 'ignored'">
+            <button
+              type="button"
+              class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+              @click="runCtx('moveChangelist')"
+            >
+              {{ t("commitTw.moveToChangelist") }}
+            </button>
+            <button
+              type="button"
+              class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+              @click="runCtx('newChangelist')"
+            >
+              {{ t("changelist.new") }}
+            </button>
+          </template>
+          <div class="my-1 h-px bg-border" />
           <button
+            v-if="!ctxIsUnversioned"
             type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="runCtx('stash')"
-          >
-            {{ t("stash.create") }}
-          </button>
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
             @click="runCtx('shelve')"
           >
             {{ t("shelf.create") }}
           </button>
           <button
             type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-accent"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('stash')"
+          >
+            {{ t("stash.create") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('patch')"
+          >
+            {{ t("commitTw.createPatch") }}
+          </button>
+          <div class="my-1 h-px bg-border" />
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('ignore')"
+          >
+            {{ t("commitTw.ignore") }}
+          </button>
+          <button
+            v-if="ctxIsTrackedChange"
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-hover-surface"
             @click="runCtx('untrack')"
           >
             {{ t("commitTw.untrack") }}
+          </button>
+          <div class="my-1 h-px bg-border" />
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('copyPath')"
+          >
+            {{ t("commitTw.copyPath") }}
+          </button>
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('copyRelative')"
+          >
+            {{ t("commitTw.copyRelativePath") }}
+          </button>
+          <div class="my-1 h-px bg-border" />
+          <button
+            type="button"
+            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+            @click="runCtx('refresh')"
+          >
+            {{ t("actions.refreshStatus") }}
           </button>
         </div>
       </div>

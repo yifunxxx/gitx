@@ -185,10 +185,28 @@ onUnmounted(() => {
 </template>
 
 <style>
-.splitpanes.default-theme .splitpanes__splitter {
-  background: rgb(var(--border));
+/* Override splitpanes default-theme hard-coded #f2f2f2 / #fff so dark mode
+   does not leave light "islands" in Log / nested panes (GIT-37). */
+.default-theme.splitpanes .splitpanes__pane {
+  background-color: rgb(var(--background));
 }
-.splitpanes.default-theme .splitpanes__splitter:hover {
-  background: rgb(var(--ring));
+.default-theme.splitpanes .splitpanes__splitter {
+  background-color: rgb(var(--border));
+  border-color: rgb(var(--border)) !important;
+}
+.default-theme.splitpanes .splitpanes__splitter:hover {
+  background-color: rgb(var(--ring));
+}
+.default-theme.splitpanes .splitpanes__splitter:before,
+.default-theme.splitpanes .splitpanes__splitter:after,
+.default-theme .splitpanes .splitpanes__splitter:before,
+.default-theme .splitpanes .splitpanes__splitter:after {
+  background-color: rgb(var(--muted-foreground) / 0.35);
+}
+.default-theme.splitpanes .splitpanes__splitter:hover:before,
+.default-theme.splitpanes .splitpanes__splitter:hover:after,
+.default-theme .splitpanes .splitpanes__splitter:hover:before,
+.default-theme .splitpanes .splitpanes__splitter:hover:after {
+  background-color: rgb(var(--muted-foreground) / 0.55);
 }
 </style>

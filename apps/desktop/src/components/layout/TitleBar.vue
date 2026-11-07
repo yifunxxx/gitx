@@ -136,7 +136,7 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
     <Tip :text="branchTitle" side="bottom">
       <button
         type="button"
-        class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+        class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-hover-surface hover:text-foreground hover:shadow-sm disabled:opacity-50"
         :disabled="!workspace.isRepo"
         @click="branches.openPopup()"
       >

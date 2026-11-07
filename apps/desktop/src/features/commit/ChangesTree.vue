@@ -241,7 +241,11 @@ function rowKey(row: Row, i: number) {
       <div
         v-else
         class="flex h-[22px] cursor-pointer items-center gap-0.5 pr-2"
-        :class="isSelected(row) ? 'bg-accent' : 'hover:bg-accent/50'"
+        :class="
+          isSelected(row)
+            ? 'bg-selection text-selection-foreground'
+            : 'hover:bg-hover-surface'
+        "
         :style="{ paddingLeft: `${8 + row.node.depth * 12}px` }"
         tabindex="0"
         @click="onClick(row, $event)"

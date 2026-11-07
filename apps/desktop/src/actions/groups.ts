@@ -63,23 +63,29 @@ export function registerDefaultGroups() {
   registerGroup({
     id: "Git.ContextMenu.Changes",
     title: "Changes",
+    // Align with IDEA Local Changes / Commit TW file context menu grouping.
+    // File-row right-click uses CommitToolWindow local menu (richer); this group
+    // covers empty chrome / Find Action parity.
     children: [
       "Diff.ShowDiff",
       "Git.ShowHistory",
+      "-",
+      "CheckinProject",
       "Git.Stage.Add",
       "Git.Stage.Reset",
       "Git.Add",
+      "-",
       "ChangesView.NewChangeList",
-      "Git.Ignore.File",
       "Git.Shelve",
       "Git.Stash",
+      "Create Patch",
+      "-",
+      "Git.Ignore.File",
       "-",
       "Git.ChangesView.AcceptYours",
       "Git.ChangesView.AcceptTheirs",
       "Git.ChangesView.Merge",
       "Git.ResolveConflicts",
-      "Git.InMemory.Extract.Selected.Changes",
-      "Git.Drop.Selected.Changes",
       "-",
       "Git.RefreshStatus",
     ],

@@ -159,6 +159,7 @@
     "diffWhitespace": "Whitespace handling",
     "diffCollapse": "Collapse or expand unchanged regions",
     "diffLayout": "Side-by-side / Unified view",
+    "diffLayoutTip": "Toggle Diff layout",
     "diffStageLines": "Stage selected lines"
   },
   "diff": {
@@ -324,7 +325,23 @@
     "untracked": "Stopped tracking",
     "ignore": "Ignore",
     "untrack": "Stop tracking",
-    "controlsHidden": "Commit controls hidden — use Toggle Commit Controls to show"
+    "controlsHidden": "Commit controls hidden — use Toggle Commit Controls to show",
+    "showDiff": "Show Diff",
+    "showHistory": "Show History",
+    "openFile": "Open File",
+    "commitFiles": "Commit Files…",
+    "rollback": "Rollback…",
+    "rollbackTitle": "Rollback Changes",
+    "rollbackConfirm": "Restore selected files to HEAD? Uncommitted changes will be lost.",
+    "rollbackDone": "Rolled back",
+    "moveToChangelist": "Move to Another Changelist…",
+    "moveToChangelistTitle": "Move to Changelist",
+    "moveToChangelistPrompt": "Target changelist name (existing or new)",
+    "copyPath": "Copy Path",
+    "copyRelativePath": "Copy Relative Path",
+    "copiedPath": "Path copied",
+    "createPatch": "Create Patch…",
+    "menuGapNote": "Delete to trash not wired (IDEA Delete parity deferred)"
   },
   "changelist": {
     "new": "New Changelist",

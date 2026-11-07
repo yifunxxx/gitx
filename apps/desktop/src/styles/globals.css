@@ -29,6 +29,9 @@
   --color-dbx-chrome: rgb(var(--dbx-chrome));
   --color-dbx-content: rgb(var(--dbx-content));
   --color-background-solid: rgb(var(--background-solid));
+  --color-selection: rgb(var(--selection));
+  --color-selection-foreground: rgb(var(--selection-foreground));
+  --color-hover-surface: rgb(var(--hover-surface));
 
   --radius-sm: var(--dbx-radius-sm);
   --radius-md: var(--dbx-radius-md);
