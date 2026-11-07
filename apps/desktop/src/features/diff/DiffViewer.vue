@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import Skeleton from "@/components/common/Skeleton.vue";
 import { useDiffStore } from "@/stores/diffStore";
@@ -19,6 +20,7 @@ import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 import { normalizeEolForDisplay } from "./diffPaint";
 
 const props = defineProps<{ tabId: string }>();
+const { t } = useI18n();
 const diffs = useDiffStore();
 const changes = useChangesStore();
 
@@ -45,7 +47,6 @@ const collapsed = computed(() => {
 
 const leftText = computed(() => {
   if (collapsed.value) return collapsed.value.left.text;
-  // Display uses LF so visually identical lines match; compare already normalizes EOL.
   return normalizeEolForDisplay(result.value?.leftText ?? "");
 });
 const rightText = computed(() => {
@@ -61,27 +62,42 @@ const paintKey = computed(
     `${props.tabId}|e${diffs.paintEpoch}|${tab.value?.contentKey ?? ""}|${tab.value?.path ?? ""}|${tab.value?.collapseUnchanged ? "c" : "e"}|${tab.value?.unified ? "u" : "s"}`,
 );
 
-async function stageHunk(index: number) {
-  if (!tab.value) return;
-  await diffs.stageHunks(tab.value.path, [index]);
-  toast({ title: "Hunk staged" });
-  await changes.refresh();
-  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
+function localizeSideLabel(label: string | undefined): string {
+  if (!label) return "";
+  switch (label) {
+    case "Staged":
+      return t("diff.sideStaged");
+    case "Local":
+      return t("diff.sideLocal");
+    case "HEAD":
+      return t("diff.sideHead");
+    default:
+      return label;
+  }
 }
 
-async function unstageHunk(index: number) {
-  if (!tab.value) return;
-  await diffs.unstageHunks(tab.value.path, [index]);
-  toast({ title: "Hunk unstaged" });
-  await changes.refresh();
-  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
+const sideSummary = computed(
+  () =>
+    `${localizeSideLabel(result.value?.leftLabel)} → ${localizeSideLabel(result.value?.rightLabel)}`,
+);
+
+const wsModes: { id: IgnoreWhitespace; key: string }[] = [
+  { id: "none", key: "diff.wsNone" },
+  { id: "trim", key: "diff.wsTrim" },
+  { id: "all", key: "diff.wsAll" },
+  { id: "allAndEmptyLines", key: "diff.wsAllAndEmpty" },
+];
+
+function wsLabel(id: IgnoreWhitespace | undefined): string {
+  const mode = wsModes.find((m) => m.id === id) ?? wsModes[0]!;
+  return t(mode.key);
 }
 
 async function stageSelectedLines() {
   if (!tab.value || !canStage.value) return;
   const raw = await promptDialog({
-    title: "Stage lines",
-    message: "New-side line numbers to stage (comma or space separated)",
+    title: t("diff.stageLinesTitle"),
+    message: t("diff.stageLinesPrompt"),
     allowEmpty: false,
   });
   if (raw == null || !raw.trim()) return;
@@ -90,7 +106,7 @@ async function stageSelectedLines() {
     .map((s) => Number(s.trim()))
     .filter((n) => Number.isFinite(n) && n > 0);
   if (!lines.length) {
-    toast({ title: "No valid line numbers" });
+    toast({ title: t("diff.noValidLines") });
     return;
   }
   const { getBackend } = await import("@/lib/backend");
@@ -103,34 +119,25 @@ async function stageSelectedLines() {
     filePath: tab.value.path,
     lines,
   });
-  toast({ title: "Lines staged", description: `${lines.length} line(s)` });
+  toast({
+    title: t("diff.linesStaged"),
+    description: t("diff.linesStagedCount", { count: lines.length }),
+  });
   await changes.refresh();
   await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
 }
 
 const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.leftRev);
-const canUnstage = computed(
-  () => tab.value?.left === "head" && tab.value?.right === "index" && !tab.value.leftRev,
-);
-
-const wsModes: { id: IgnoreWhitespace; label: string }[] = [
-  { id: "none", label: "Do not ignore" },
-  { id: "trim", label: "Trim whitespaces" },
-  { id: "all", label: "Ignore whitespaces" },
-  { id: "allAndEmptyLines", label: "Ignore whitespaces and empty lines" },
-];
 </script>
 
 <template>
   <div v-if="tab" class="flex h-full min-h-0 flex-col">
     <div class="flex h-8 flex-wrap items-center gap-2 border-b bg-dbx-chrome px-2 text-xs">
       <span class="font-medium">{{ tab.path }}</span>
-      <span class="text-muted-foreground">
-        {{ result?.leftLabel }} → {{ result?.rightLabel }}
-      </span>
+      <span class="text-muted-foreground">{{ sideSummary }}</span>
       <div class="flex-1" />
-      <label class="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
-        Whitespace
+      <label class="flex cursor-pointer items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+        {{ t("diff.whitespace") }}
         <Select
           :model-value="tab.ignoreWhitespace"
           @update:model-value="
@@ -141,10 +148,12 @@ const wsModes: { id: IgnoreWhitespace; label: string }[] = [
           "
         >
           <SelectTrigger class="h-6 w-auto min-w-[9rem] text-[11px]">
-            <SelectValue />
+            <SelectValue>{{ wsLabel(tab.ignoreWhitespace) }}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="m in wsModes" :key="m.id" :value="m.id">{{ m.label }}</SelectItem>
+            <SelectItem v-for="m in wsModes" :key="m.id" :value="m.id">
+              {{ t(m.key) }}
+            </SelectItem>
           </SelectContent>
         </Select>
       </label>
@@ -153,53 +162,55 @@ const wsModes: { id: IgnoreWhitespace; label: string }[] = [
         variant="ghost"
         @click="diffs.setCollapseUnchanged(tab.id, !tab.collapseUnchanged)"
       >
-        {{ tab.collapseUnchanged ? "Expand unchanged" : "Collapse unchanged" }}
+        {{ tab.collapseUnchanged ? t("diff.expandUnchanged") : t("diff.collapseUnchanged") }}
       </Button>
       <Button size="xs" variant="ghost" @click="diffs.setUnified(tab.id, !tab.unified)">
-        {{ tab.unified ? "Side-by-side" : "Unified" }}
+        {{ tab.unified ? t("diff.sideBySide") : t("diff.unified") }}
       </Button>
       <Button v-if="canStage" size="xs" variant="outline" @click="stageSelectedLines">
-        Stage selected lines
+        {{ t("diff.stageSelectedLines") }}
       </Button>
     </div>
 
     <div v-if="tab.loading && !result" class="space-y-2 p-4">
-      <div class="text-xs text-muted-foreground">Loading diff…</div>
+      <div class="text-xs text-muted-foreground">{{ t("diff.loading") }}</div>
       <Skeleton class="h-4 w-2/3" />
       <Skeleton class="h-4 w-1/2" />
       <Skeleton class="h-4 w-3/4" />
       <Skeleton class="mt-4 h-40 w-full" />
     </div>
-    <div v-else-if="result?.binary" class="p-4 text-xs">Binary file — stage as a whole file.</div>
+    <div v-else-if="result?.binary" class="p-4 text-xs">{{ t("diff.binary") }}</div>
     <div v-else-if="result?.tooLarge" class="p-4 text-xs">
-      File is too large to show —
+      {{ t("diff.tooLarge") }}
       <button
         type="button"
         class="cursor-pointer underline"
         @click="diffs.reloadTab(tab)"
       >
-        Show anyway
+        {{ t("diff.showAnyway") }}
       </button>
     </div>
-    <div v-else-if="result && !result.hunks.length" class="space-y-2 p-4 text-xs text-muted-foreground">
-      <div>No differences</div>
-      <div v-if="result.eolMismatch">
-        Line endings differ (CRLF vs LF). Visible text matches after normalizing EOL.
-      </div>
+    <div
+      v-else-if="result && !result.hunks.length"
+      class="space-y-2 p-4 text-xs leading-5 text-muted-foreground"
+    >
+      <div>{{ t("diff.noDifferences") }}</div>
+      <div v-if="result.eolMismatch">{{ t("diff.eolMismatchShort") }}</div>
     </div>
     <div v-else-if="result" class="relative flex min-h-0 flex-1 flex-col">
       <div
         v-if="tab.loading"
-        class="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-foreground/80 px-2 py-0.5 text-[10px] text-background-solid"
+        class="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-foreground/80 px-2 py-0.5 text-[10px] leading-4 text-background-solid"
       >
-        Refreshing…
+        {{ t("diff.refreshing") }}
       </div>
+      <!-- Single bound string + explicit leading: avoids WebView double-paint of split text nodes. -->
       <div
         v-if="result.eolMismatch"
-        class="shrink-0 border-b bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
+        class="block shrink-0 border-b bg-muted/60 px-3 py-1.5 text-[11px] leading-5 text-muted-foreground"
+        role="status"
       >
-        Line endings differ (CRLF vs LF). Visible text is compared after normalizing EOL — identical
-        lines stay uncolored.
+        {{ t("diff.eolMismatch") }}
       </div>
       <div v-if="tab.unified" class="min-h-0 flex-1">
         <CodeMirrorDiff
@@ -240,25 +251,6 @@ const wsModes: { id: IgnoreWhitespace; label: string }[] = [
             :enable-inline="enableInline"
             @scroll="onRightScroll"
           />
-        </div>
-      </div>
-      <div
-        v-if="canStage || canUnstage"
-        class="max-h-40 shrink-0 overflow-auto border-t text-[11px]"
-      >
-        <div
-          v-for="hunk in visibleHunks"
-          :key="hunk.index"
-          class="flex items-center gap-2 border-b px-2 py-1"
-        >
-          <span class="font-mono text-muted-foreground">{{ hunk.header }}</span>
-          <div class="flex-1" />
-          <Button v-if="canStage" size="xs" variant="outline" @click="stageHunk(hunk.index)">
-            Stage Hunk
-          </Button>
-          <Button v-if="canUnstage" size="xs" variant="outline" @click="unstageHunk(hunk.index)">
-            Unstage Hunk
-          </Button>
         </div>
       </div>
     </div>
