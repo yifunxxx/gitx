@@ -150,9 +150,8 @@ pub async fn credential_session_set(
     }
 
     let dir = std::env::temp_dir().join("gitx");
-    fs::create_dir_all(&dir).map_err(|e| {
-        AppError::new(ErrorCode::FsError, format!("temp dir: {e}"))
-    })?;
+    fs::create_dir_all(&dir)
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("temp dir: {e}")))?;
     let file = dir.join(format!("askpass-{}.txt", std::process::id()));
 
     // Escape nothing special — helper parses line prefixes; disallow newlines in values.
@@ -182,16 +181,10 @@ pub async fn credential_session_set(
         }
         if let (Some(protocol), Some(host)) = (protocol, host) {
             if let Some(repo) = req.path.as_deref() {
-                stored_helper = credential_approve(
-                    &state,
-                    Path::new(repo),
-                    &protocol,
-                    &host,
-                    &user,
-                    &pass,
-                )
-                .await
-                .is_ok();
+                stored_helper =
+                    credential_approve(&state, Path::new(repo), &protocol, &host, &user, &pass)
+                        .await
+                        .is_ok();
             }
         }
     }
@@ -248,9 +241,8 @@ async fn credential_approve(
 ) -> Result<(), AppError> {
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let input = format!(
-        "protocol={protocol}\nhost={host}\nusername={username}\npassword={password}\n\n"
-    );
+    let input =
+        format!("protocol={protocol}\nhost={host}\nusername={username}\npassword={password}\n\n");
     let inv = GitInvocation::new(cwd, ["credential", "approve"])
         .kind(OpKind::Write)
         .stdin(input.into_bytes())
