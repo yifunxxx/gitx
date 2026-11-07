@@ -35,10 +35,19 @@ export function isEnabled(def: ActionDef, ctx: ActionContext): EnabledResult {
 export async function runAction(id: string, ctx: ActionContext): Promise<void> {
   const def = actions.get(id);
   if (!def) throw new Error(`Unknown action: ${id}`);
-  if (!isVisible(def, ctx)) return;
-  const en = isEnabled(def, ctx);
+  // Guard missing ctx (e.g. template `@click="runAction('X')"` without args) —
+  // otherwise `enabled` throws and the click looks like a silent no-op.
+  const safeCtx: ActionContext = ctx ?? {
+    repoIds: [],
+    selection: {},
+    source: "popup",
+    place: "unknown",
+    folderPath: null,
+  };
+  if (!isVisible(def, safeCtx)) return;
+  const en = isEnabled(def, safeCtx);
   if (en !== true) return;
-  await def.run(ctx);
+  await def.run(safeCtx);
 }
 
 export function searchActions(query: string, ctx: ActionContext): ActionDef[] {

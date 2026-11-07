@@ -25,6 +25,7 @@ import CreateTagDialog from "./CreateTagDialog.vue";
 import { buildRefTree } from "./buildRefTree";
 import type { RefEntry } from "@/lib/backend";
 import { runAction } from "@/actions";
+import type { ActionContext } from "@/actions";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useSyncStore } from "@/stores/syncStore";
 import { formatErrorMessage } from "@/lib/errors";
@@ -52,6 +53,18 @@ function openRefMenu(entry: RefEntry | null, e: MouseEvent) {
 
 function closeMenu() {
   menuFor.value = null;
+}
+
+const actionCtx = computed<ActionContext>(() => ({
+  repoIds: workspace.toplevel ? [workspace.toplevel] : [],
+  selection: {},
+  source: "popup",
+  place: "BranchesPopup",
+  folderPath: workspace.folderPath,
+}));
+
+async function runPopupAction(id: string) {
+  await runAction(id, actionCtx.value);
 }
 const groupByDir = computed(
   () => settings.settings?.git?.groupBranchesByDirectory ?? true,
@@ -164,8 +177,12 @@ async function onCopy(entry: RefEntry) {
 }
 
 async function onFetch() {
-  const summary = await branches.fetch();
-  toast({ title: summary?.message ?? "Fetched" });
+  try {
+    const summary = await branches.fetch();
+    if (summary) toast({ title: summary.message || "Fetched" });
+  } catch {
+    // Toast already shown by branchesStore.
+  }
 }
 
 async function onNewTag() {
@@ -239,12 +256,12 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
       </div>
 
       <div class="flex flex-wrap gap-1 border-b px-2 py-1.5">
-        <Button size="xs" variant="ghost" @click="runAction('Vcs.UpdateProject')">Update Project…</Button>
-        <Button size="xs" variant="ghost" @click="runAction('CheckinProject')">Commit…</Button>
-        <Button size="xs" variant="ghost" @click="runAction('Git.Push')">Push…</Button>
+        <Button size="xs" variant="ghost" @click="runPopupAction('Vcs.UpdateProject')">Update Project…</Button>
+        <Button size="xs" variant="ghost" @click="runPopupAction('CheckinProject')">Commit…</Button>
+        <Button size="xs" variant="ghost" @click="runPopupAction('Git.Push')">Push…</Button>
         <Button size="xs" variant="ghost" @click="onNewBranch">New Branch…</Button>
         <Button size="xs" variant="ghost" @click="onNewTag">New Tag…</Button>
-        <Button size="xs" variant="ghost" @click="runAction('Git.Configure.Remotes')">Remotes…</Button>
+        <Button size="xs" variant="ghost" @click="runPopupAction('Git.Configure.Remotes')">Remotes…</Button>
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto text-sm">

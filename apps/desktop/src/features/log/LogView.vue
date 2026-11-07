@@ -169,9 +169,14 @@ async function applySearch() {
   await log.applyFilters();
 }
 
+const commitListRef = ref<{ pointerDown?: boolean } | null>(null);
+
 function onListScroll(e: Event) {
   const el = e.target as HTMLElement;
   if (!el) return;
+  // Defer load-more while the scrollbar thumb is being dragged — appending
+  // rows mid-drag changes scrollHeight and makes the thumb jam (GIT-40).
+  if (commitListRef.value?.pointerDown) return;
   const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
   if (remaining < 80) void log.loadMore();
 }
@@ -526,6 +531,7 @@ async function ctxExtract() {
               <span>{{ t("log.colDate") }}</span>
             </div>
             <VirtualList
+              ref="commitListRef"
               :items="log.commits"
               :item-height="ROW_H"
               :get-key="(c) => c.sha"

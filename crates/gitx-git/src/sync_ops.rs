@@ -179,7 +179,15 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<UpdateInfo, AppError> {
         // Fetch upstream remote first.
-        let upstream = self.upstream_ref(cwd, cancel).await?;
+        let upstream = self.upstream_ref(cwd, cancel).await.map_err(|e| {
+            AppError::new(
+                ErrorCode::GitCommandFailed,
+                format!(
+                    "No upstream branch for Update Project — set upstream then retry. ({})",
+                    e.message
+                ),
+            )
+        })?;
         let (remote, _) = upstream
             .split_once('/')
             .map(|(r, b)| (r.to_string(), b.to_string()))

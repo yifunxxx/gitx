@@ -75,8 +75,12 @@ export function registerM2Actions() {
     scope: "global",
     enabled: (ctx) => !!ctx.folderPath,
     async run() {
-      const summary = await useBranchesStore().fetch();
-      toast({ title: summary?.message ?? "Fetched" });
+      try {
+        const summary = await useBranchesStore().fetch();
+        if (summary) toast({ title: summary.message || "Fetched" });
+      } catch {
+        // Toast already shown by branchesStore.
+      }
     },
   });
 
@@ -126,9 +130,13 @@ export function registerM2Actions() {
       const show = settings.settings?.git?.showOptionsBeforeUpdate ?? true;
       if (show) {
         await openDialog(UpdateProjectDialog, {});
-      } else {
-        const strategy = settings.settings?.git?.updateMethod ?? "merge";
+        return;
+      }
+      const strategy = settings.settings?.git?.updateMethod ?? "merge";
+      try {
         await useSyncStore().updateProject(strategy);
+      } catch {
+        // Toast already shown by syncStore.
       }
     },
   });

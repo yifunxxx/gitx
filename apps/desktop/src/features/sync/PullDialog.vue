@@ -52,17 +52,21 @@ onMounted(async () => {
 });
 
 async function ok() {
-  await sync.pull({
-    remote: remote.value,
-    branch: branch.value,
-    rebase: rebase.value,
-    ffOnly: ffOnly.value,
-    noFf: noFf.value,
-    squash: squash.value,
-    noCommit: noCommit.value,
-    noVerify: noVerify.value,
-  });
-  closeDialog(true);
+  try {
+    await sync.pull({
+      remote: remote.value,
+      branch: branch.value,
+      rebase: rebase.value,
+      ffOnly: ffOnly.value,
+      noFf: noFf.value,
+      squash: squash.value,
+      noCommit: noCommit.value,
+      noVerify: noVerify.value,
+    });
+    closeDialog(true);
+  } catch {
+    // Error toast from syncStore; keep dialog open.
+  }
 }
 </script>
 

@@ -28,6 +28,7 @@ import { promptDialog } from "@/composables/useConfirm";
 import { useChangesStore } from "@/stores/changesStore";
 import { useLogStore } from "@/stores/logStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useSyncStore } from "@/stores/syncStore";
 
 const { t } = useI18n();
 const layout = useLayoutStore();
@@ -36,6 +37,7 @@ const branches = useBranchesStore();
 const changes = useChangesStore();
 const log = useLogStore();
 const settings = useSettingsStore();
+const sync = useSyncStore();
 
 const ctx = computed<ActionContext>(() => ({
   repoIds: workspace.toplevel ? [workspace.toplevel] : [],
@@ -152,10 +154,10 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
         <Button
           variant="ghost"
           size="sm"
-          :disabled="!workspace.isRepo"
+          :disabled="!workspace.isRepo || sync.updating"
           @click="run('Vcs.UpdateProject')"
         >
-          <RotateCcw class="h-3.5 w-3.5" />
+          <RotateCcw class="h-3.5 w-3.5" :class="{ 'animate-spin': sync.updating }" />
         </Button>
       </Tip>
       <Tip :text="t('toolbar.commit')">

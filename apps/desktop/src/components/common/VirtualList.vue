@@ -18,6 +18,8 @@ const emit = defineEmits<{
 const root = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const viewportH = ref(400);
+/** True while the primary mouse button is held (native scrollbar thumb drag). */
+const pointerDown = ref(false);
 
 const totalH = computed(() => props.items.length * props.itemHeight);
 
@@ -43,13 +45,41 @@ const visible = computed(() => {
 
 const offsetY = computed(() => start.value * props.itemHeight);
 
-function onScroll(e: Event) {
-  const el = e.target as HTMLElement;
+let ro: ResizeObserver | null = null;
+let raf = 0;
+let pendingScroll: Event | null = null;
+
+function flushScroll() {
+  raf = 0;
+  const el = root.value;
+  const ev = pendingScroll;
+  pendingScroll = null;
+  if (!el) return;
+  // Read from the element so we stay in sync with native thumb drag.
   scrollTop.value = el.scrollTop;
-  emit("scroll", e);
+  if (ev) emit("scroll", ev);
 }
 
-let ro: ResizeObserver | null = null;
+function onScroll(e: Event) {
+  pendingScroll = e;
+  if (raf) return;
+  raf = requestAnimationFrame(flushScroll);
+}
+
+function onPointerDown(e: PointerEvent) {
+  if (e.button === 0) pointerDown.value = true;
+}
+
+function onPointerUp() {
+  const wasDown = pointerDown.value;
+  pointerDown.value = false;
+  // Emit a trailing scroll after thumb release so parents (e.g. Log load-more)
+  // can react without fighting the drag.
+  if (wasDown && root.value) {
+    pendingScroll = new Event("scroll");
+    if (!raf) raf = requestAnimationFrame(flushScroll);
+  }
+}
 
 onMounted(() => {
   const el = root.value;
@@ -59,17 +89,27 @@ onMounted(() => {
     if (root.value) viewportH.value = root.value.clientHeight || 400;
   });
   ro.observe(el);
+  // Track mouse-up globally so scrollbar thumb drag end is detected even
+  // when the pointer leaves the list (Windows native scrollbar).
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", onPointerUp);
 });
 
 onUnmounted(() => {
   ro?.disconnect();
   ro = null;
+  if (raf) cancelAnimationFrame(raf);
+  window.removeEventListener("pointerup", onPointerUp);
+  window.removeEventListener("pointercancel", onPointerUp);
 });
 
 watch(
   () => props.items.length,
   () => {
     // Keep scrollTop valid when the list shrinks (e.g. filter reset).
+    // Skip while the user is dragging the scrollbar — clamping mid-drag
+    // fights the native thumb and feels like a "stick"/jam.
+    if (pointerDown.value) return;
     const max = Math.max(0, totalH.value - viewportH.value);
     if (scrollTop.value > max && root.value) {
       root.value.scrollTop = max;
@@ -80,6 +120,7 @@ watch(
 
 defineExpose({
   el: root,
+  pointerDown,
   scrollToIndex(index: number) {
     if (!root.value) return;
     root.value.scrollTop = Math.max(0, index * props.itemHeight);
@@ -88,18 +129,34 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="root" class="min-h-0 flex-1 overflow-auto" @scroll.passive="onScroll">
-    <div :style="{ height: `${totalH}px`, position: 'relative' }">
-      <div :style="{ transform: `translateY(${offsetY}px)` }">
+  <div class="flex min-h-0 flex-1 flex-col">
+    <div
+      ref="root"
+      class="min-h-0 flex-1 overflow-auto"
+      @scroll.passive="onScroll"
+      @pointerdown="onPointerDown"
+    >
+      <!--
+        Phantom spacer owns scrollHeight. The window is position:absolute so
+        mid-drag virtualization re-renders cannot change layout flow / scrollHeight
+        (the classic native-scrollbar thumb "stick" with transform-only lists).
+      -->
+      <div class="relative w-full" :style="{ height: `${totalH}px` }">
         <div
-          v-for="row in visible"
-          :key="getKey(row.item, row.index)"
-          :style="{ height: `${itemHeight}px` }"
+          class="absolute left-0 right-0 top-0 will-change-transform"
+          :style="{ transform: `translate3d(0, ${offsetY}px, 0)` }"
         >
-          <slot :item="row.item" :index="row.index" />
+          <div
+            v-for="row in visible"
+            :key="getKey(row.item, row.index)"
+            :style="{ height: `${itemHeight}px` }"
+          >
+            <slot :item="row.item" :index="row.index" />
+          </div>
         </div>
       </div>
     </div>
+    <!-- Footer outside the scrollport so it does not inflate scrollHeight mid-drag. -->
     <slot name="footer" />
   </div>
 </template>

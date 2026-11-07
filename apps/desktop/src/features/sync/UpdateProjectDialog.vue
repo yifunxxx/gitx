@@ -37,8 +37,12 @@ async function ok() {
       },
     });
   }
-  await sync.updateProject(strategy.value);
-  closeDialog(true);
+  try {
+    await sync.updateProject(strategy.value);
+    closeDialog(true);
+  } catch {
+    // Error toast already shown by syncStore; keep dialog open for retry.
+  }
 }
 </script>
 
@@ -47,19 +51,22 @@ async function ok() {
     <div class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg">
       <h2 class="text-sm font-semibold">Update Project</h2>
       <div class="mt-3 space-y-2 text-xs">
-        <label class="flex items-center gap-2"><input v-model="strategy" type="radio" value="merge" /> Merge</label>
-        <label class="flex items-center gap-2"><input v-model="strategy" type="radio" value="rebase" /> Rebase</label>
+        <label class="flex items-center gap-2"><input v-model="strategy" type="radio" value="merge" :disabled="sync.updating" /> Merge</label>
+        <label class="flex items-center gap-2"><input v-model="strategy" type="radio" value="rebase" :disabled="sync.updating" /> Rebase</label>
         <label class="flex items-center gap-2">
-          <input v-model="strategy" type="radio" value="reset" /> Reset to the Remote Branch
+          <input v-model="strategy" type="radio" value="reset" :disabled="sync.updating" /> Reset to the Remote Branch
           <span class="text-warning">⚠ discards local commits not on remote</span>
         </label>
       </div>
       <label class="mt-3 flex items-center gap-2 text-xs">
-        <input v-model="dontShow" type="checkbox" /> Don't show again
+        <input v-model="dontShow" type="checkbox" :disabled="sync.updating" /> Don't show again
       </label>
+      <p v-if="sync.updating" class="mt-3 text-xs text-muted-foreground">Updating project…</p>
       <div class="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" @click="closeDialog(false)">Cancel</Button>
-        <Button size="sm" :disabled="sync.updating" @click="ok">Update</Button>
+        <Button variant="ghost" size="sm" :disabled="sync.updating" @click="closeDialog(false)">Cancel</Button>
+        <Button size="sm" :disabled="sync.updating" @click="ok">
+          {{ sync.updating ? "Updating…" : "Update" }}
+        </Button>
       </div>
     </div>
   </div>

@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
+import { useJobsStore } from "./jobsStore";
 
 export const useBranchesStore = defineStore("branches", () => {
   const refs = ref<RefsList | null>(null);
@@ -177,18 +178,37 @@ export const useBranchesStore = defineStore("branches", () => {
 
   async function fetch(remote?: string) {
     const ws = workspace();
-    if (!ws.repoPath) return null;
+    if (!ws.repoPath) {
+      toast({ title: "Fetch failed", description: "No repository open" });
+      return null;
+    }
     const path = ws.repoPath;
-    if (!path) return null;
-    const summary = await getBackend().fetchRun({
-      path,
-      remote: remote ?? null,
-      prune: true,
+    const jobs = useJobsStore();
+    const jobId = `fetch-${Date.now()}`;
+    jobs.started({
+      id: jobId,
+      title: remote ? `Fetching ${remote}…` : "Fetching remotes…",
     });
-    lastFetchAt.value = Date.now();
-    hasUnfetched.value = false;
-    await refresh();
-    return summary;
+    try {
+      const summary = await getBackend().fetchRun({
+        path,
+        remote: remote ?? null,
+        prune: true,
+      });
+      lastFetchAt.value = Date.now();
+      hasUnfetched.value = false;
+      await refresh();
+      return summary;
+    } catch (e) {
+      toast({
+        title: "Fetch failed",
+        description: formatErrorMessage(e),
+        persistent: true,
+      });
+      throw e;
+    } finally {
+      jobs.finished(jobId);
+    }
   }
 
   async function checkIncoming() {

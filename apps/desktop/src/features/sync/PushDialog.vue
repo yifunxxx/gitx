@@ -60,35 +60,39 @@ async function ok() {
     toast({ title: "Define a remote first" });
     return;
   }
-  if (!preview.value?.hasRemote) {
-    await defineRemote();
-  }
-  const result = await sync.push({
-    remote: remote.value,
-    branch: branch.value,
-    setUpstream: setUpstream.value,
-    forceWithLease: forceWithLease.value,
-    pushTags: pushTags.value === "none" ? null : pushTags.value,
-  });
-  if (result?.rejected) {
-    const choice = await openDialog<"rebase" | "merge" | null>(PushRejectedDialog, {
-      message: result.message,
-    });
-    if (choice === "rebase" || choice === "merge") {
-      await sync.pull({
-        remote: remote.value,
-        branch: branch.value,
-        rebase: choice === "rebase",
-      });
-      await sync.push({
-        remote: remote.value,
-        branch: branch.value,
-        setUpstream: false,
-        forceWithLease: false,
-      });
+  try {
+    if (!preview.value?.hasRemote) {
+      await defineRemote();
     }
+    const result = await sync.push({
+      remote: remote.value,
+      branch: branch.value,
+      setUpstream: setUpstream.value,
+      forceWithLease: forceWithLease.value,
+      pushTags: pushTags.value === "none" ? null : pushTags.value,
+    });
+    if (result?.rejected) {
+      const choice = await openDialog<"rebase" | "merge" | null>(PushRejectedDialog, {
+        message: result.message,
+      });
+      if (choice === "rebase" || choice === "merge") {
+        await sync.pull({
+          remote: remote.value,
+          branch: branch.value,
+          rebase: choice === "rebase",
+        });
+        await sync.push({
+          remote: remote.value,
+          branch: branch.value,
+          setUpstream: false,
+          forceWithLease: false,
+        });
+      }
+    }
+    closeDialog(true);
+  } catch {
+    // Error toast from syncStore; keep dialog open.
   }
-  closeDialog(true);
 }
 </script>
 
