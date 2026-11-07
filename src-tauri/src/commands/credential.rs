@@ -6,7 +6,6 @@ use gitx_git::{helper_bin, GitInvocation, OpKind};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::State;
 use tokio_util::sync::CancellationToken;
@@ -219,6 +218,7 @@ pub async fn credential_session_clear() -> Result<(), AppError> {
 fn write_secret_file(path: &PathBuf, bytes: &[u8]) -> Result<(), AppError> {
     #[cfg(unix)]
     {
+        use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
         let mut f = fs::OpenOptions::new()
             .write(true)

@@ -131,8 +131,11 @@ pub async fn remote_delete_branch(
     req: RemoteDeleteBranchReq,
 ) -> Result<(), AppError> {
     let path = PathBuf::from(&req.path);
+    let settings = state.settings.read().await;
+    let protected = settings.git.protected_branches.clone();
+    drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.remote_delete_branch(&path, &req.remote, &req.branch, &cancel)
+    git.remote_delete_branch(&path, &req.remote, &req.branch, &protected, &cancel)
         .await
 }
