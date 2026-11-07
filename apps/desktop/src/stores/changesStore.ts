@@ -47,6 +47,8 @@ export const useChangesStore = defineStore("changes", () => {
   /** Paths checked for changelist-mode commit. */
   const checkedPaths = ref<string[]>([]);
   const localVersion = ref(0);
+  /** Monotonic generation — drop stale refresh results. */
+  let refreshGen = 0;
 
   const stagingMode = computed(() => useSettingsStore().settings?.stagingMode ?? false);
   const showIgnoredFiles = computed(
@@ -71,6 +73,44 @@ export const useChangesStore = defineStore("changes", () => {
 
   function filesForChangelist(listId: string): FileChange[] {
     return changed.value.filter((f) => listIdForPath(f.path) === listId);
+  }
+
+  /** Paths that show checkboxes in a Changes section (changelist mode). */
+  function pathsForSection(section: ChangesSection): string[] {
+    if (section === "ignored") return [];
+    if (section === "unversioned") return unversioned.value.map((f) => f.path);
+    if (section === "staged") return staged.value.map((f) => f.path);
+    if (section === "unstaged") return unstaged.value.map((f) => f.path);
+    if (section.startsWith("changelist:")) {
+      return filesForChangelist(section.slice("changelist:".length)).map((f) => f.path);
+    }
+    return [];
+  }
+
+  function checkStateForSection(
+    section: ChangesSection,
+  ): "none" | "all" | "partial" {
+    const paths = pathsForSection(section);
+    if (!paths.length) return "none";
+    const set = new Set(checkedPaths.value);
+    let n = 0;
+    for (const p of paths) if (set.has(p)) n += 1;
+    if (n === 0) return "none";
+    if (n === paths.length) return "all";
+    return "partial";
+  }
+
+  function toggleCheckSection(section: ChangesSection) {
+    const paths = pathsForSection(section);
+    if (!paths.length) return;
+    const state = checkStateForSection(section);
+    const set = new Set(checkedPaths.value);
+    if (state === "all") {
+      for (const p of paths) set.delete(p);
+    } else {
+      for (const p of paths) set.add(p);
+    }
+    checkedPaths.value = [...set];
   }
 
   async function refreshChangelists() {
@@ -104,18 +144,21 @@ export const useChangesStore = defineStore("changes", () => {
       changelists.value = null;
       return;
     }
+    const gen = ++refreshGen;
     loading.value = true;
     error.value = null;
     try {
       const backend = getBackend();
       const includeIgnored = showIgnoredFiles.value;
       const next = await backend.statusGet({ repoId: id, path, includeIgnored });
+      if (gen !== refreshGen) return;
       if (next.version < localVersion.value) return;
       localVersion.value = next.version;
       snapshot.value = next;
       workspace.setBranch(next.branch);
       if (!stagingMode.value) {
         await refreshChangelists();
+        if (gen !== refreshGen) return;
       } else {
         changelists.value = null;
       }
@@ -123,9 +166,10 @@ export const useChangesStore = defineStore("changes", () => {
       const known = new Set(next.files.map((f) => f.path));
       checkedPaths.value = checkedPaths.value.filter((p) => known.has(p));
     } catch (e) {
+      if (gen !== refreshGen) return;
       error.value = formatErrorMessage(e);
     } finally {
-      loading.value = false;
+      if (gen === refreshGen) loading.value = false;
     }
   }
 
@@ -164,6 +208,11 @@ export const useChangesStore = defineStore("changes", () => {
     const set = new Set(checkedPaths.value);
     for (const p of paths) set.add(p);
     checkedPaths.value = [...set];
+  }
+
+  function uncheckAllInList(listId: string) {
+    const drop = new Set(filesForChangelist(listId).map((f) => f.path));
+    checkedPaths.value = checkedPaths.value.filter((p) => !drop.has(p));
   }
 
   async function stage(paths: string[]) {
@@ -294,6 +343,9 @@ export const useChangesStore = defineStore("changes", () => {
     activeListId,
     listIdForPath,
     filesForChangelist,
+    pathsForSection,
+    checkStateForSection,
+    toggleCheckSection,
     refresh,
     refreshChangelists,
     select,
@@ -301,6 +353,7 @@ export const useChangesStore = defineStore("changes", () => {
     toggleChecked,
     setChecked,
     checkAllInList,
+    uncheckAllInList,
     stage,
     unstage,
     add,

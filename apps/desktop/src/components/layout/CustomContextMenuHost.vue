@@ -13,7 +13,8 @@ import type { ActionContext } from "@/actions";
 import { resolveActionTitle } from "@/actions/titles";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore } from "@/stores/changesStore";
-import { clampMenuPosition, wasContextHandled } from "@/lib/contextMenu";
+import { wasContextHandled } from "@/lib/contextMenu";
+import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 
 const { t } = useI18n();
 const open = ref(false);
@@ -50,6 +51,8 @@ const items = computed(() =>
     }),
 );
 
+const estimatedHeight = computed(() => items.value.length * 28 + 16);
+
 function onContext(e: MouseEvent) {
   // Always suppress native browser menu in the product chrome.
   e.preventDefault();
@@ -67,11 +70,9 @@ function onContext(e: MouseEvent) {
     open.value = false;
     return;
   }
-  // Local file-row menus already stopPropagation; this is empty chrome / headers.
-  const pos = clampMenuPosition(e.clientX, e.clientY, 240, Math.min(420, items.value.length * 28 + 16));
   open.value = true;
-  x.value = pos.x;
-  y.value = pos.y;
+  x.value = e.clientX;
+  y.value = e.clientY;
 }
 
 function onClose() {
@@ -101,42 +102,37 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-[9998]"
-      @click="onClose"
-      @contextmenu.prevent="onClose"
+  <ContextMenuSurface
+    :open="open"
+    :anchor-x="x"
+    :anchor-y="y"
+    :width="240"
+    :estimated-height="estimatedHeight"
+    min-width-class="min-w-44"
+    @close="onClose"
+  >
+    <button
+      v-for="a in items"
+      :key="a.id"
+      type="button"
+      class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[13px] leading-4"
+      :class="
+        a.enabled
+          ? a.destructive
+            ? 'text-destructive hover:bg-accent'
+            : 'hover:bg-accent'
+          : 'cursor-default text-muted-foreground/60'
+      "
+      :disabled="!a.enabled"
+      @click="pick(a.id, a.enabled)"
     >
-      <div
-        class="absolute z-[9999] min-w-44 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
-        :style="{ left: `${x}px`, top: `${y}px` }"
-        @click.stop
+      <span>{{ a.title }}</span>
+      <kbd
+        v-if="a.shortcut"
+        class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
       >
-        <button
-          v-for="a in items"
-          :key="a.id"
-          type="button"
-          class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[13px] leading-4"
-          :class="
-            a.enabled
-              ? a.destructive
-                ? 'text-destructive hover:bg-accent'
-                : 'hover:bg-accent'
-              : 'cursor-default text-muted-foreground/60'
-          "
-          :disabled="!a.enabled"
-          @click="pick(a.id, a.enabled)"
-        >
-          <span>{{ a.title }}</span>
-          <kbd
-            v-if="a.shortcut"
-            class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-          >
-            {{ a.shortcut }}
-          </kbd>
-        </button>
-      </div>
-    </div>
-  </Teleport>
+        {{ a.shortcut }}
+      </kbd>
+    </button>
+  </ContextMenuSurface>
 </template>

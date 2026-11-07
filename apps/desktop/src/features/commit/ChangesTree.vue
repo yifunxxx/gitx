@@ -10,6 +10,8 @@ import {
   type PathTreeNode,
 } from "@/lib/path-tree/buildPathTree";
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
+import VirtualList from "@/components/common/VirtualList.vue";
+import IndeterminateCheckbox from "@/components/common/IndeterminateCheckbox.vue";
 import { markContextHandled } from "@/lib/contextMenu";
 import { useI18n } from "vue-i18n";
 import { statusClass } from "./statusColor";
@@ -42,6 +44,8 @@ type FileRow = {
 };
 
 type Row = HeaderRow | FileRow;
+
+const ROW_H = 22;
 
 /** Expand overrides keyed by `${section}::${folderId}`. */
 const expanded = ref<Set<string>>(new Set());
@@ -108,7 +112,7 @@ const rows = computed<Row[]>(() => {
   out.push({
     kind: "header",
     section: "unversioned",
-    label: "Unversioned Files",
+    label: t("changelist.unversioned"),
     count: changes.unversioned.length,
   });
   out.push(...sectionRows("unversioned", changes.unversioned));
@@ -117,7 +121,7 @@ const rows = computed<Row[]>(() => {
     out.push({
       kind: "header",
       section: "ignored",
-      label: "Ignored Files",
+      label: t("changelist.ignored"),
       count: changes.ignored.length,
     });
     out.push(...sectionRows("ignored", changes.ignored));
@@ -204,6 +208,22 @@ function showCheckbox(row: FileRow) {
   );
 }
 
+function showHeaderCheckbox(row: HeaderRow) {
+  return !changes.stagingMode && row.section !== "ignored" && row.count > 0;
+}
+
+function headerChecked(row: HeaderRow) {
+  return changes.checkStateForSection(row.section) === "all";
+}
+
+function headerIndeterminate(row: HeaderRow) {
+  return changes.checkStateForSection(row.section) === "partial";
+}
+
+function onHeaderCheck(row: HeaderRow) {
+  changes.toggleCheckSection(row.section);
+}
+
 function isSelected(row: FileRow) {
   const path = row.node.file?.change.path;
   return (
@@ -229,12 +249,28 @@ function rowKey(row: Row, i: number) {
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 overflow-auto text-[12.5px]">
-    <template v-for="(row, i) in rows" :key="rowKey(row, i)">
+  <div v-if="isEmpty" class="min-h-0 flex-1 px-3 py-6 text-xs text-muted-foreground">
+    {{ t("empty.noChanges") }}
+  </div>
+  <VirtualList
+    v-else
+    class="text-[12.5px]"
+    :items="rows"
+    :item-height="ROW_H"
+    :get-key="(row, i) => rowKey(row, i)"
+  >
+    <template #default="{ item: row }">
       <div
         v-if="row.kind === 'header'"
         class="flex h-[22px] items-center gap-1 px-2 text-foreground"
       >
+        <IndeterminateCheckbox
+          v-if="showHeaderCheckbox(row)"
+          :checked="headerChecked(row)"
+          :indeterminate="headerIndeterminate(row)"
+          :title="t('commitTw.selectAll')"
+          @change="onHeaderCheck(row)"
+        />
         <span :class="row.active ? 'font-bold' : 'font-medium'">{{ row.label }}</span>
         <span class="text-muted-foreground">({{ row.count }})</span>
       </div>
@@ -284,8 +320,5 @@ function rowKey(row: Row, i: number) {
         </span>
       </div>
     </template>
-    <div v-if="isEmpty" class="px-3 py-6 text-xs text-muted-foreground">
-      {{ t("empty.noChanges") }}
-    </div>
-  </div>
+  </VirtualList>
 </template>

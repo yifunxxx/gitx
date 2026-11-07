@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Plus, Minus, RefreshCw, FileDiff, ListPlus } from "@lucide/vue";
+import { Plus, Minus, RefreshCw, ListPlus } from "@lucide/vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import Skeleton from "@/components/common/Skeleton.vue";
+import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import ChangesTree from "@/features/commit/ChangesTree.vue";
@@ -21,7 +22,6 @@ import { useHistoryStore } from "@/stores/historyStore";
 import { toast } from "@/composables/useToast";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { getBackend } from "@/lib/backend";
-import { clampMenuPosition } from "@/lib/contextMenu";
 import { runAction } from "@/actions";
 
 const { t } = useI18n();
@@ -265,11 +265,11 @@ async function createPatchSelected() {
 
 function onContext(payload: { path: string; section: ChangesSection; x: number; y: number }) {
   layout.vcsPopupOpen = false;
-  const pos = clampMenuPosition(payload.x, payload.y, 240, 360);
+  // Placement (flip / clamp / scroll) is handled by ContextMenuSurface.
   ctxMenu.value = {
     open: true,
-    x: pos.x,
-    y: pos.y,
+    x: payload.x,
+    y: payload.y,
     path: payload.path,
     section: payload.section,
   };
@@ -363,11 +363,7 @@ async function runCtx(action: string) {
             <RefreshCw class="h-3.5 w-3.5" />
           </Button>
         </Tip>
-        <Tip :text="t('actions.showDiff')">
-          <Button variant="ghost" size="icon" @click="showDiffSelected">
-            <FileDiff class="h-3.5 w-3.5" />
-          </Button>
-        </Tip>
+        <!-- Show Diff removed (GIT-38): left-click already opens Diff. -->
         <template v-if="changes.stagingMode">
           <Tip :text="t('actions.stage')">
             <Button variant="ghost" size="icon" @click="stageSelected">
@@ -424,160 +420,161 @@ async function runCtx(action: string) {
       </div>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="ctxMenu?.open"
-        class="fixed inset-0 z-[9998]"
-        @click="closeCtx"
-        @contextmenu.prevent="closeCtx"
+    <ContextMenuSurface
+      :open="!!ctxMenu?.open"
+      :anchor-x="ctxMenu?.x ?? 0"
+      :anchor-y="ctxMenu?.y ?? 0"
+      :width="240"
+      :estimated-height="420"
+      @close="closeCtx"
+    >
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('showDiff')"
       >
-        <div
-          class="absolute z-[9999] min-w-48 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
-          :style="{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }"
-          @click.stop
+        {{ t("commitTw.showDiff") }}
+      </button>
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('showHistory')"
+      >
+        {{ t("commitTw.showHistory") }}
+      </button>
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('openFile')"
+      >
+        {{ t("commitTw.openFile") }}
+      </button>
+      <div class="my-1 h-px bg-border" />
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('commit')"
+      >
+        {{ t("commitTw.commitFiles") }}
+      </button>
+      <button
+        v-if="ctxIsTrackedChange"
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('rollback')"
+      >
+        {{ t("commitTw.rollback") }}
+      </button>
+      <div class="my-1 h-px bg-border" />
+      <button
+        v-if="changes.stagingMode && !ctxIsStaged && !ctxIsUnversioned"
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('stage')"
+      >
+        {{ t("actions.stage") }}
+      </button>
+      <button
+        v-if="changes.stagingMode && ctxIsStaged"
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('unstage')"
+      >
+        {{ t("actions.unstage") }}
+      </button>
+      <button
+        v-if="ctxIsUnversioned"
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('add')"
+      >
+        {{ t("actions.addToVcs") }}
+      </button>
+      <template
+        v-if="
+          ctxMenu &&
+          !changes.stagingMode &&
+          !ctxIsUnversioned &&
+          ctxMenu.section !== 'ignored'
+        "
+      >
+        <button
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('moveChangelist')"
         >
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('showDiff')"
-          >
-            {{ t("commitTw.showDiff") }}
-          </button>
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('showHistory')"
-          >
-            {{ t("commitTw.showHistory") }}
-          </button>
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('openFile')"
-          >
-            {{ t("commitTw.openFile") }}
-          </button>
-          <div class="my-1 h-px bg-border" />
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('commit')"
-          >
-            {{ t("commitTw.commitFiles") }}
-          </button>
-          <button
-            v-if="ctxIsTrackedChange"
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('rollback')"
-          >
-            {{ t("commitTw.rollback") }}
-          </button>
-          <div class="my-1 h-px bg-border" />
-          <button
-            v-if="changes.stagingMode && !ctxIsStaged && !ctxIsUnversioned"
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('stage')"
-          >
-            {{ t("actions.stage") }}
-          </button>
-          <button
-            v-if="changes.stagingMode && ctxIsStaged"
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('unstage')"
-          >
-            {{ t("actions.unstage") }}
-          </button>
-          <button
-            v-if="ctxIsUnversioned"
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('add')"
-          >
-            {{ t("actions.addToVcs") }}
-          </button>
-          <template v-if="!changes.stagingMode && !ctxIsUnversioned && ctxMenu.section !== 'ignored'">
-            <button
-              type="button"
-              class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-              @click="runCtx('moveChangelist')"
-            >
-              {{ t("commitTw.moveToChangelist") }}
-            </button>
-            <button
-              type="button"
-              class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-              @click="runCtx('newChangelist')"
-            >
-              {{ t("changelist.new") }}
-            </button>
-          </template>
-          <div class="my-1 h-px bg-border" />
-          <button
-            v-if="!ctxIsUnversioned"
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('shelve')"
-          >
-            {{ t("shelf.create") }}
-          </button>
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('stash')"
-          >
-            {{ t("stash.create") }}
-          </button>
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('patch')"
-          >
-            {{ t("commitTw.createPatch") }}
-          </button>
-          <div class="my-1 h-px bg-border" />
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('ignore')"
-          >
-            {{ t("commitTw.ignore") }}
-          </button>
-          <button
-            v-if="ctxIsTrackedChange"
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-hover-surface"
-            @click="runCtx('untrack')"
-          >
-            {{ t("commitTw.untrack") }}
-          </button>
-          <div class="my-1 h-px bg-border" />
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('copyPath')"
-          >
-            {{ t("commitTw.copyPath") }}
-          </button>
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('copyRelative')"
-          >
-            {{ t("commitTw.copyRelativePath") }}
-          </button>
-          <div class="my-1 h-px bg-border" />
-          <button
-            type="button"
-            class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-            @click="runCtx('refresh')"
-          >
-            {{ t("actions.refreshStatus") }}
-          </button>
-        </div>
-      </div>
-    </Teleport>
+          {{ t("commitTw.moveToChangelist") }}
+        </button>
+        <button
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('newChangelist')"
+        >
+          {{ t("changelist.new") }}
+        </button>
+      </template>
+      <div class="my-1 h-px bg-border" />
+      <button
+        v-if="!ctxIsUnversioned"
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('shelve')"
+      >
+        {{ t("shelf.create") }}
+      </button>
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('stash')"
+      >
+        {{ t("stash.create") }}
+      </button>
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('patch')"
+      >
+        {{ t("commitTw.createPatch") }}
+      </button>
+      <div class="my-1 h-px bg-border" />
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('ignore')"
+      >
+        {{ t("commitTw.ignore") }}
+      </button>
+      <button
+        v-if="ctxIsTrackedChange"
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-hover-surface"
+        @click="runCtx('untrack')"
+      >
+        {{ t("commitTw.untrack") }}
+      </button>
+      <div class="my-1 h-px bg-border" />
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('copyPath')"
+      >
+        {{ t("commitTw.copyPath") }}
+      </button>
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('copyRelative')"
+      >
+        {{ t("commitTw.copyRelativePath") }}
+      </button>
+      <div class="my-1 h-px bg-border" />
+      <button
+        type="button"
+        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+        @click="runCtx('refresh')"
+      >
+        {{ t("actions.refreshStatus") }}
+      </button>
+    </ContextMenuSurface>
   </div>
 </template>

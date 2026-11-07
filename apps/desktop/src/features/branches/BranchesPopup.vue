@@ -28,7 +28,8 @@ import { runAction } from "@/actions";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useSyncStore } from "@/stores/syncStore";
 import { formatErrorMessage } from "@/lib/errors";
-import { clampMenuPosition, markContextHandled } from "@/lib/contextMenu";
+import { markContextHandled } from "@/lib/contextMenu";
+import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 
 const { t } = useI18n();
 const branches = useBranchesStore();
@@ -45,7 +46,7 @@ const menuPos = ref({ x: 0, y: 0 });
 function openRefMenu(entry: RefEntry | null, e: MouseEvent) {
   if (!entry) return;
   markContextHandled(e);
-  menuPos.value = clampMenuPosition(e.clientX, e.clientY, 260, 320);
+  menuPos.value = { x: e.clientX, y: e.clientY };
   menuFor.value = entry;
 }
 
@@ -334,67 +335,63 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
         </div>
       </div>
 
-      <Teleport to="body">
-        <div
-          v-if="menuFor"
-          class="fixed inset-0 z-[70]"
-          @click="closeMenu"
-          @contextmenu.prevent="closeMenu"
-        >
-          <div
-            class="absolute z-[71] min-w-48 rounded-md border bg-popover p-1 text-sm shadow-lg ring-1 ring-foreground/10"
-            :style="{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }"
-            @click.stop
+      <ContextMenuSurface
+        :open="!!menuFor"
+        :anchor-x="menuPos.x"
+        :anchor-y="menuPos.y"
+        :width="260"
+        :estimated-height="320"
+        @close="closeMenu"
+      >
+        <template v-if="menuFor">
+          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onCheckout(menuFor); closeMenu()">{{ t("branches.checkout") }}</button>
+          <button v-if="menuFor.kind === 'localBranch'" type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onRename(menuFor); closeMenu()">{{ t("branches.rename") }}</button>
+          <button
+            v-if="!menuFor.isHead"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="onMergeIntoCurrent(menuFor); closeMenu()"
           >
-            <button type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onCheckout(menuFor!); closeMenu()">{{ t("branches.checkout") }}</button>
-            <button v-if="menuFor.kind === 'localBranch'" type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onRename(menuFor!); closeMenu()">{{ t("branches.rename") }}</button>
-            <button
-              v-if="!menuFor.isHead"
-              type="button"
-              class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
-              @click="onMergeIntoCurrent(menuFor!); closeMenu()"
-            >
-              {{ t("branches.mergeIntoCurrent", { name: menuFor.name }) }}
-            </button>
-            <button
-              v-if="!menuFor.isHead"
-              type="button"
-              class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
-              @click="onRebaseCurrentOnto(menuFor!); closeMenu()"
-            >
-              {{ t("branches.rebaseOnto", { name: menuFor.name }) }}
-            </button>
-            <button
-              v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
-              type="button"
-              class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
-              @click="onCheckoutAndRebase(menuFor!); closeMenu()"
-            >
-              {{ t("branches.checkoutAndRebase") }}
-            </button>
-            <button
-              v-if="menuFor.kind === 'remoteBranch'"
-              type="button"
-              class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
-              @click="onPullUsing(menuFor!, false); closeMenu()"
-            >
-              {{ t("branches.pullMerge") }}
-            </button>
-            <button
-              v-if="menuFor.kind === 'remoteBranch'"
-              type="button"
-              class="block w-full rounded px-2 py-1 text-left hover:bg-accent"
-              @click="onPullUsing(menuFor!, true); closeMenu()"
-            >
-              {{ t("branches.pullRebase") }}
-            </button>
-            <button type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onCompare(menuFor!); closeMenu()">{{ t("branches.compareWithCurrent") }}</button>
-            <button type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="onCopy(menuFor!); closeMenu()">{{ t("branches.copyName") }}</button>
-            <button v-if="menuFor.kind === 'localBranch' && !menuFor.isHead" type="button" class="block w-full rounded px-2 py-1 text-left text-destructive hover:bg-accent" @click="onDelete(menuFor!); closeMenu()">{{ t("branches.delete") }}</button>
-            <button type="button" class="block w-full rounded px-2 py-1 text-left hover:bg-accent" @click="closeMenu()">{{ t("common.close") }}</button>
-          </div>
-        </div>
-      </Teleport>
+            {{ t("branches.mergeIntoCurrent", { name: menuFor.name }) }}
+          </button>
+          <button
+            v-if="!menuFor.isHead"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="onRebaseCurrentOnto(menuFor); closeMenu()"
+          >
+            {{ t("branches.rebaseOnto", { name: menuFor.name }) }}
+          </button>
+          <button
+            v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="onCheckoutAndRebase(menuFor); closeMenu()"
+          >
+            {{ t("branches.checkoutAndRebase") }}
+          </button>
+          <button
+            v-if="menuFor.kind === 'remoteBranch'"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="onPullUsing(menuFor, false); closeMenu()"
+          >
+            {{ t("branches.pullMerge") }}
+          </button>
+          <button
+            v-if="menuFor.kind === 'remoteBranch'"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="onPullUsing(menuFor, true); closeMenu()"
+          >
+            {{ t("branches.pullRebase") }}
+          </button>
+          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onCompare(menuFor); closeMenu()">{{ t("branches.compareWithCurrent") }}</button>
+          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onCopy(menuFor); closeMenu()">{{ t("branches.copyName") }}</button>
+          <button v-if="menuFor.kind === 'localBranch' && !menuFor.isHead" type="button" class="block w-full rounded px-2 py-1 text-left text-sm text-destructive hover:bg-accent" @click="onDelete(menuFor); closeMenu()">{{ t("branches.delete") }}</button>
+          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="closeMenu()">{{ t("common.close") }}</button>
+        </template>
+      </ContextMenuSurface>
 
       <div class="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
         {{ workspace.repoPath ?? "No repository" }}

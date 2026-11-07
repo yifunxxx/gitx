@@ -194,21 +194,13 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
             @patch="onKeymapPatch"
           />
 
-          <div v-else class="space-y-4">
+          <div v-else class="space-y-1">
             <div
               v-for="field in filteredFields"
               :key="field.id"
-              class="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-start gap-3 border-b border-border/50 pb-3 last:border-0"
+              class="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-center gap-3 border-b border-border/40 py-1.5 last:border-0"
             >
-              <div>
-                <div class="text-xs font-medium">{{ t(field.titleKey) }}</div>
-                <div
-                  v-if="field.scope"
-                  class="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground"
-                >
-                  {{ field.scope }}
-                </div>
-              </div>
+              <div class="text-xs font-medium leading-5">{{ t(field.titleKey) }}</div>
 
               <div class="flex flex-col gap-1">
                 <Select

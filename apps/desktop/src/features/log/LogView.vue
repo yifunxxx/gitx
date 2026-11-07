@@ -13,13 +13,15 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
+import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
+import VirtualList from "@/components/common/VirtualList.vue";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
-import { clampMenuPosition, markContextHandled } from "@/lib/contextMenu";
+import { markContextHandled } from "@/lib/contextMenu";
 import {
   Select,
   SelectContent,
@@ -41,6 +43,7 @@ const diffs = useDiffStore();
 const layout = useLayoutStore();
 const rewrite = useRewriteStore();
 
+const ROW_H = 22;
 const textDraft = ref("");
 const authorDraft = ref("");
 const revDraft = ref("");
@@ -180,8 +183,8 @@ function onCommitClick(sha: string, e: MouseEvent) {
 function onCommitContext(sha: string, e: MouseEvent) {
   markContextHandled(e);
   if (!log.selectedShas.includes(sha)) void log.select(sha, false);
-  const pos = clampMenuPosition(e.clientX, e.clientY, 260, 420);
-  ctx.value = { open: true, x: pos.x, y: pos.y };
+  // Placement (flip / clamp / scroll) handled by ContextMenuSurface.
+  ctx.value = { open: true, x: e.clientX, y: e.clientY };
 }
 
 function closeCtx() {
@@ -522,56 +525,68 @@ async function ctxExtract() {
               <span>{{ t("log.colAuthor") }}</span>
               <span>{{ t("log.colDate") }}</span>
             </div>
-            <div class="min-h-0 flex-1 overflow-auto" @scroll.passive="onListScroll">
-              <button
-                v-for="(c, idx) in log.commits"
-                :key="c.sha"
-                type="button"
-                class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
-                :style="{
-                  gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
-                }"
-                :class="
-                  log.selectedShas.includes(c.sha)
-                    ? 'bg-selection text-selection-foreground'
-                    : 'hover:bg-hover-surface'
-                "
-                @click="onCommitClick(c.sha, $event)"
-                @contextmenu="onCommitContext(c.sha, $event)"
-              >
-                <span class="flex h-full items-center justify-start">
-                  <CommitGraphCell
-                    :graph="c.graph"
-                    :edge-colors="graphLayout.edgeColors[idx] ?? []"
-                    :incoming="graphLayout.incoming[idx] ?? false"
-                    :max-lane="graphLayout.maxLane"
-                    :lane-labels="graphLayout.laneLabels"
-                    :node-label="graphLayout.nodeLabels[idx]"
-                  />
-                </span>
-                <span class="flex min-w-0 items-center gap-1 truncate">
-                  <span
-                    v-for="refName in visibleRefs(c.refs)"
-                    :key="refName"
-                    class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
-                  >
-                    {{ refName }}
+            <VirtualList
+              :items="log.commits"
+              :item-height="ROW_H"
+              :get-key="(c) => c.sha"
+              @scroll="onListScroll"
+            >
+              <template #default="{ item: c, index: idx }">
+                <button
+                  type="button"
+                  class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
+                  :style="{
+                    gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
+                  }"
+                  :class="
+                    log.selectedShas.includes(c.sha)
+                      ? 'bg-selection text-selection-foreground'
+                      : 'hover:bg-hover-surface'
+                  "
+                  @click="onCommitClick(c.sha, $event)"
+                  @contextmenu="onCommitContext(c.sha, $event)"
+                >
+                  <span class="flex h-full items-center justify-start">
+                    <CommitGraphCell
+                      :graph="c.graph"
+                      :edge-colors="graphLayout.edgeColors[idx] ?? []"
+                      :incoming="graphLayout.incoming[idx] ?? false"
+                      :max-lane="graphLayout.maxLane"
+                      :lane-labels="graphLayout.laneLabels"
+                      :node-label="graphLayout.nodeLabels[idx]"
+                    />
                   </span>
-                  <span class="truncate">{{ c.subject }}</span>
-                </span>
-                <span class="truncate text-muted-foreground">{{ c.author }}</span>
-                <span class="truncate text-muted-foreground">{{ formatTime(c.authorTime) }}</span>
-              </button>
-              <div
-                v-if="log.truncated || log.loadingMore"
-                class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
-              >
-                <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
-                <button v-else type="button" class="hover:text-foreground" @click="log.loadMore()">
-                  {{ t("log.loadMore") }}
+                  <span class="flex min-w-0 items-center gap-1 truncate">
+                    <span
+                      v-for="refName in visibleRefs(c.refs)"
+                      :key="refName"
+                      class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
+                    >
+                      {{ refName }}
+                    </span>
+                    <span class="truncate">{{ c.subject }}</span>
+                  </span>
+                  <span class="truncate text-muted-foreground">{{ c.author }}</span>
+                  <span class="truncate text-muted-foreground">{{ formatTime(c.authorTime) }}</span>
                 </button>
-              </div>
-            </div>
+              </template>
+              <template #footer>
+                <div
+                  v-if="log.truncated || log.loadingMore"
+                  class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
+                >
+                  <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
+                  <button
+                    v-else
+                    type="button"
+                    class="hover:text-foreground"
+                    @click="log.loadMore()"
+                  >
+                    {{ t("log.loadMore") }}
+                  </button>
+                </div>
+              </template>
+            </VirtualList>
           </div>
         </Pane>
         <Pane :size="42" min-size="24">
@@ -617,118 +632,112 @@ async function ctxExtract() {
       </Splitpanes>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="ctx.open"
-        class="fixed inset-0 z-[9998]"
-        @click="closeCtx"
-        @contextmenu.prevent="closeCtx"
+    <ContextMenuSurface
+      :open="ctx.open"
+      :anchor-x="ctx.x"
+      :anchor-y="ctx.y"
+      :width="260"
+      :estimated-height="420"
+      @close="closeCtx"
+    >
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxCopy"
       >
-        <div
-          class="absolute z-[9999] min-w-48 rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
-          :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }"
-          @click.stop
-        >
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxCopy"
-          >
-            {{ t("log.copyRevision") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxCherryPick"
-          >
-            {{ t("actions.cherryPick") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxReword"
-          >
-            {{ t("actions.reword") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxInteractive"
-          >
-            {{ t("actions.interactiveRebase") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxSquash"
-          >
-            {{ t("actions.squash") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxDrop"
-          >
-            {{ t("actions.dropCommits") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxUncommit"
-          >
-            {{ t("actions.uncommit") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxRevert"
-          >
-            {{ t("actions.revert") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxReset"
-          >
-            {{ t("actions.reset") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxExtract"
-          >
-            {{ t("actions.extractSelected") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxCompareLocal"
-          >
-            {{ t("history.compareWithLocal") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxCompareVersions"
-          >
-            {{ t("history.compareVersions") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxCombined"
-          >
-            {{ t("history.showAllChanges") }}
-          </button>
-          <button
-            type="button"
-            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-            @click="ctxRepoAtRev"
-          >
-            {{ t("history.repoAtRevision") }}
-          </button>
-        </div>
-      </div>
-    </Teleport>
+        {{ t("log.copyRevision") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxCherryPick"
+      >
+        {{ t("actions.cherryPick") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxReword"
+      >
+        {{ t("actions.reword") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxInteractive"
+      >
+        {{ t("actions.interactiveRebase") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxSquash"
+      >
+        {{ t("actions.squash") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxDrop"
+      >
+        {{ t("actions.dropCommits") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxUncommit"
+      >
+        {{ t("actions.uncommit") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxRevert"
+      >
+        {{ t("actions.revert") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxReset"
+      >
+        {{ t("actions.reset") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxExtract"
+      >
+        {{ t("actions.extractSelected") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxCompareLocal"
+      >
+        {{ t("history.compareWithLocal") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxCompareVersions"
+      >
+        {{ t("history.compareVersions") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxCombined"
+      >
+        {{ t("history.showAllChanges") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="ctxRepoAtRev"
+      >
+        {{ t("history.repoAtRevision") }}
+      </button>
+    </ContextMenuSurface>
   </div>
 </template>

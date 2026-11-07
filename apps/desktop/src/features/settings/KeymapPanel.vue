@@ -111,11 +111,11 @@ function resetAll() {
         </thead>
         <tbody>
           <tr v-for="row in rows" :key="row.id" class="border-b border-border/60 hover:bg-accent/40">
-            <td class="px-2 py-1.5">
-              <div class="font-medium">{{ row.title }}</div>
-              <div class="font-mono text-[10px] text-muted-foreground">{{ row.id }}</div>
+            <td class="px-2 py-1">
+              <div class="font-medium leading-5">{{ row.title }}</div>
+              <div class="font-mono text-[10px] leading-4 text-muted-foreground">{{ row.id }}</div>
             </td>
-            <td class="px-2 py-1.5">
+            <td class="px-2 py-1">
               <span
                 v-if="recordingId === row.id"
                 class="rounded bg-info/15 px-1.5 py-0.5 text-info"
@@ -130,7 +130,7 @@ function resetAll() {
               </kbd>
               <span v-else class="text-muted-foreground">—</span>
             </td>
-            <td class="px-2 py-1.5 text-right">
+            <td class="px-2 py-1 text-right">
               <Button size="xs" variant="ghost" @click="recordingId = row.id">
                 {{ t("settings.keymap.rebind") }}
               </Button>

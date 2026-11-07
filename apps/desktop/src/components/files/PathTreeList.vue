@@ -8,6 +8,7 @@ import {
   type PathTreeNode,
 } from "@/lib/path-tree/buildPathTree";
 import FileTypeIcon from "./FileTypeIcon.vue";
+import VirtualList from "@/components/common/VirtualList.vue";
 import { markContextHandled } from "@/lib/contextMenu";
 import { useI18n } from "vue-i18n";
 
@@ -36,6 +37,7 @@ const emit = defineEmits<{
   context: [payload: { file: T; x: number; y: number }];
 }>();
 
+const ROW_H = 22;
 /** Explicit expand/collapse overrides; default = expanded. */
 const expanded = ref<Set<string>>(new Set());
 
@@ -84,41 +86,47 @@ function labelFor(node: PathTreeNode<T>) {
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 overflow-auto text-[12.5px]">
-    <div
-      v-for="row in rows"
-      :key="row.node.id"
-      class="flex h-[22px] cursor-pointer items-center gap-0.5 pr-2 hover:bg-accent/50"
-      :class="selectedPath && row.node.file?.path === selectedPath ? 'bg-accent' : ''"
-      :style="{ paddingLeft: `${8 + row.node.depth * 12}px` }"
-      @click="onRowClick(row.node)"
-      @dblclick="onRowDblClick(row.node)"
-      @contextmenu="onContext(row.node, $event)"
-    >
-      <button
-        v-if="row.node.kind === 'folder' && row.node.children?.length"
-        type="button"
-        class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center text-muted-foreground"
-        @click.stop="toggleFolder(row.node)"
-      >
-        <ChevronDown v-if="row.expanded" class="h-3 w-3" />
-        <ChevronRight v-else class="h-3 w-3" />
-      </button>
-      <span v-else class="inline-block h-4 w-4 shrink-0" />
-      <FileTypeIcon
-        :name="row.node.name"
-        :kind="row.node.kind"
-        :expanded="row.expanded"
-      />
-      <span
-        class="min-w-0 truncate"
-        :class="row.node.file ? statusClass(row.node.file) : 'text-foreground'"
-      >
-        {{ labelFor(row.node) }}
-      </span>
-    </div>
-    <div v-if="!files.length" class="px-3 py-4 text-xs text-muted-foreground">
-      {{ resolvedEmpty }}
-    </div>
+  <div v-if="!files.length" class="min-h-0 flex-1 px-3 py-4 text-xs text-muted-foreground">
+    {{ resolvedEmpty }}
   </div>
+  <VirtualList
+    v-else
+    class="text-[12.5px]"
+    :items="rows"
+    :item-height="ROW_H"
+    :get-key="(row) => row.node.id"
+  >
+    <template #default="{ item: row }">
+      <div
+        class="flex h-[22px] cursor-pointer items-center gap-0.5 pr-2 hover:bg-accent/50"
+        :class="selectedPath && row.node.file?.path === selectedPath ? 'bg-accent' : ''"
+        :style="{ paddingLeft: `${8 + row.node.depth * 12}px` }"
+        @click="onRowClick(row.node)"
+        @dblclick="onRowDblClick(row.node)"
+        @contextmenu="onContext(row.node, $event)"
+      >
+        <button
+          v-if="row.node.kind === 'folder' && row.node.children?.length"
+          type="button"
+          class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center text-muted-foreground"
+          @click.stop="toggleFolder(row.node)"
+        >
+          <ChevronDown v-if="row.expanded" class="h-3 w-3" />
+          <ChevronRight v-else class="h-3 w-3" />
+        </button>
+        <span v-else class="inline-block h-4 w-4 shrink-0" />
+        <FileTypeIcon
+          :name="row.node.name"
+          :kind="row.node.kind"
+          :expanded="row.expanded"
+        />
+        <span
+          class="min-w-0 truncate"
+          :class="row.node.file ? statusClass(row.node.file) : 'text-foreground'"
+        >
+          {{ labelFor(row.node) }}
+        </span>
+      </div>
+    </template>
+  </VirtualList>
 </template>

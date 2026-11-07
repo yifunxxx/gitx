@@ -5,6 +5,7 @@ import { useCommitStore } from "@/stores/commitStore";
 import { useLogStore } from "@/stores/logStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -54,35 +55,41 @@ async function onAmendTargetChange(value: string) {
     });
   }
 }
-
-const recentLocal = () => amendOptions.value;
 </script>
 
 <template>
   <div class="flex shrink-0 flex-col border-t bg-sidebar">
     <div class="flex flex-wrap items-center gap-3 border-b px-2 py-1.5 text-xs">
-      <label class="flex items-center gap-1.5">
-        <input
-          type="checkbox"
-          class="accent-foreground"
-          :checked="commit.amend"
-          @change="onAmendChange"
-        />
-        {{ t("commit.amend") }}
-      </label>
-      <label class="flex items-center gap-1.5 text-muted-foreground">
-        {{ t("commit.amendCommit") }}
-        <Select :model-value="amendTarget" @update:model-value="(v) => onAmendTargetChange(String(v ?? 'HEAD'))">
-          <SelectTrigger class="h-6 max-w-[12rem] text-[11px]">
-            <SelectValue :placeholder="'HEAD'" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="opt in recentLocal()" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </label>
+      <Tip :text="t('commit.amendTip')">
+        <label class="flex cursor-pointer items-center gap-1.5">
+          <input
+            type="checkbox"
+            class="accent-foreground"
+            :checked="commit.amend"
+            @change="onAmendChange"
+          />
+          {{ t("commit.amend") }}
+        </label>
+      </Tip>
+      <!-- Only when Amend is on: pick HEAD (default) or an earlier commit to fixup into. -->
+      <Tip v-if="commit.amend" :text="t('commit.amendTargetTip')">
+        <label class="flex items-center gap-1.5 text-muted-foreground">
+          <span>{{ t("commit.amendTarget") }}</span>
+          <Select
+            :model-value="amendTarget"
+            @update:model-value="(v) => onAmendTargetChange(String(v ?? 'HEAD'))"
+          >
+            <SelectTrigger class="h-6 max-w-[12rem] text-[11px]">
+              <SelectValue :placeholder="'HEAD'" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in amendOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+      </Tip>
       <label class="flex items-center gap-1.5 text-muted-foreground">
         <input v-model="commit.runHooks" type="checkbox" class="accent-foreground" />
         {{ t("commit.runHooks") }}

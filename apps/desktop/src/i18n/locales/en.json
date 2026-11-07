@@ -341,6 +341,7 @@
     "copyRelativePath": "Copy Relative Path",
     "copiedPath": "Path copied",
     "createPatch": "Create Patch…",
+    "selectAll": "Select / deselect all files in this section",
     "menuGapNote": "Delete to trash not wired (IDEA Delete parity deferred)"
   },
   "changelist": {
@@ -390,6 +391,9 @@
   },
   "commit": {
     "amend": "Amend",
+    "amendTip": "Rewrite the latest commit (clean worktree, or with staged changes; replaces the previous message and content)",
+    "amendTarget": "Target",
+    "amendTargetTip": "HEAD amends the tip commit; picking an older commit fixups into it",
     "runHooks": "Run Git hooks",
     "messagePlaceholder": "Commit message",
     "amendCommit": "Amend Commit…",

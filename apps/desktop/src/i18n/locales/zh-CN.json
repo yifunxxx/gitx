@@ -341,6 +341,7 @@
     "copyRelativePath": "复制相对路径",
     "copiedPath": "已复制路径",
     "createPatch": "创建补丁…",
+    "selectAll": "全选 / 取消全选此区文件",
     "menuGapNote": "删除到回收站未接（与 IDEA Delete 对齐待办）"
   },
   "changelist": {
@@ -390,6 +391,9 @@
   },
   "commit": {
     "amend": "Amend",
+    "amendTip": "修改最近一次提交（需工作区干净，或配合已暂存改动；会覆盖上次提交说明与内容）",
+    "amendTarget": "目标",
+    "amendTargetTip": "默认 HEAD = 修改最近一次提交；选更早的提交则 Fixup 进该提交",
     "runHooks": "运行 Git hooks",
     "messagePlaceholder": "提交说明",
     "amendCommit": "Amend Commit…",
