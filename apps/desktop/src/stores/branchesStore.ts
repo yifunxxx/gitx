@@ -6,6 +6,8 @@ import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
+import { handleAuthFailure } from "@/composables/useCredentials";
+import { i18n } from "@/i18n";
 import { useJobsStore } from "./jobsStore";
 
 export const useBranchesStore = defineStore("branches", () => {
@@ -189,7 +191,7 @@ export const useBranchesStore = defineStore("branches", () => {
       id: jobId,
       title: remote ? `Fetching ${remote}…` : "Fetching remotes…",
     });
-    try {
+    const run = async () => {
       const summary = await getBackend().fetchRun({
         path,
         remote: remote ?? null,
@@ -199,11 +201,41 @@ export const useBranchesStore = defineStore("branches", () => {
       hasUnfetched.value = false;
       await refresh();
       return summary;
+    };
+    try {
+      return await run();
     } catch (e) {
+      const retryOk = await handleAuthFailure(e, {
+        title: String(i18n.global.t("auth.title")),
+        url: remotes.value[0]?.fetchUrl,
+      });
+      if (retryOk) {
+        try {
+          return await run();
+        } catch (e2) {
+          toast({
+            title: "Fetch failed",
+            description: formatErrorMessage(e2),
+            persistent: true,
+          });
+          throw e2;
+        }
+      }
       toast({
         title: "Fetch failed",
         description: formatErrorMessage(e),
         persistent: true,
+        action: {
+          label: String(i18n.global.t("auth.enterCredentials")),
+          onClick: () => {
+            void handleAuthFailure(e, {
+              title: String(i18n.global.t("auth.title")),
+              url: remotes.value[0]?.fetchUrl,
+            }).then((ok) => {
+              if (ok) void fetch(remote);
+            });
+          },
+        },
       });
       throw e;
     } finally {

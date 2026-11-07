@@ -143,6 +143,19 @@ impl GitRunner {
             .env("LC_ALL", "C");
         crate::process_win::hide_console_tokio(&mut cmd);
 
+        // Network ops: point git/ssh at gitx-helper askpass so credentials can be
+        // supplied without a TTY (GIT_TERMINAL_PROMPT=0). Helper reads GITX_ASKPASS_FILE.
+        if matches!(inv.kind, OpKind::Network | OpKind::NetworkWrite) {
+            let helper = helper_bin();
+            cmd.env("GIT_ASKPASS", &helper);
+            cmd.env("SSH_ASKPASS", &helper);
+            cmd.env("SSH_ASKPASS_REQUIRE", "force");
+            // DISPLAY is required on some platforms before SSH_ASKPASS is honored.
+            if std::env::var_os("DISPLAY").is_none() {
+                cmd.env("DISPLAY", ":0");
+            }
+        }
+
         for (k, v) in &inv.env {
             cmd.env(k, v);
         }
@@ -155,7 +168,6 @@ impl GitRunner {
 
         // Standard CLI-first flags from the framework plan.
         // Callers still pass their own args; we inject safe defaults via -c.
-        // (Applied only when the first arg is not already a global option chain — stub keeps it simple.)
         inject_base_config(&mut cmd, inv.kind);
 
         #[cfg(unix)]
@@ -266,8 +278,64 @@ impl GitRunner {
 }
 
 fn inject_base_config(cmd: &mut Command, kind: OpKind) {
-    // Env already set; keep a hook for future -c injection based on OpKind.
-    let _ = (cmd, kind);
+    // When Settings → Use credential helper is off, clear helpers so askpass owns auth.
+    // Prefer GIT_CONFIG_* env (works regardless of argv position vs subcommand).
+    // GITX_USE_CREDENTIAL_HELPER is maintained by credential_session / settings path.
+    if matches!(kind, OpKind::Network | OpKind::NetworkWrite) {
+        let use_helper = std::env::var("GITX_USE_CREDENTIAL_HELPER")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(true);
+        if !use_helper {
+            cmd.env("GIT_CONFIG_COUNT", "1");
+            cmd.env("GIT_CONFIG_KEY_0", "credential.helper");
+            cmd.env("GIT_CONFIG_VALUE_0", "");
+        }
+    }
+}
+
+/// Resolve `gitx-helper` beside the running binary (Tauri sidecar / cargo target).
+pub fn helper_bin() -> String {
+    if let Ok(p) = std::env::var("GITX_HELPER_PATH") {
+        return p;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("gitx-helper");
+            if candidate.exists() {
+                return candidate.to_string_lossy().into_owned();
+            }
+            #[cfg(windows)]
+            {
+                let candidate = dir.join("gitx-helper.exe");
+                if candidate.exists() {
+                    return candidate.to_string_lossy().into_owned();
+                }
+                // Tauri externalBin renames sidecars with the target triple.
+                if let Ok(rd) = std::fs::read_dir(dir) {
+                    for ent in rd.flatten() {
+                        let name = ent.file_name();
+                        let s = name.to_string_lossy();
+                        if s.starts_with("gitx-helper") && s.ends_with(".exe") {
+                            return ent.path().to_string_lossy().into_owned();
+                        }
+                    }
+                }
+            }
+            #[cfg(unix)]
+            {
+                if let Ok(rd) = std::fs::read_dir(dir) {
+                    for ent in rd.flatten() {
+                        let name = ent.file_name();
+                        let s = name.to_string_lossy();
+                        if s.starts_with("gitx-helper") {
+                            return ent.path().to_string_lossy().into_owned();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "gitx-helper".into()
 }
 
 /// Parse `wsl.exe -d Distro git` style bins into (distro, "git").

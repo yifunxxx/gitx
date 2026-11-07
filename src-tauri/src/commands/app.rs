@@ -118,6 +118,17 @@ pub async fn settings_set(
             }
         }
     }
+    // SAFETY: single-process desktop app; bridges Settings into GitRunner.
+    unsafe {
+        std::env::set_var(
+            "GITX_USE_CREDENTIAL_HELPER",
+            if settings.git.use_credential_helper {
+                "1"
+            } else {
+                "0"
+            },
+        );
+    }
     *state.settings.write().await = settings.clone();
     Ok(settings)
 }
@@ -126,6 +137,16 @@ pub async fn settings_set(
 #[specta::specta]
 pub async fn settings_reload(state: State<'_, AppState>) -> Result<AppSettings, AppError> {
     let settings = load_app_settings(&state.settings_path)?;
+    unsafe {
+        std::env::set_var(
+            "GITX_USE_CREDENTIAL_HELPER",
+            if settings.git.use_credential_helper {
+                "1"
+            } else {
+                "0"
+            },
+        );
+    }
     *state.settings.write().await = settings.clone();
     Ok(settings)
 }

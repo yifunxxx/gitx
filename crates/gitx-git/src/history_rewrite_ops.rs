@@ -1685,26 +1685,7 @@ impl GitRunner {
 }
 
 fn helper_bin() -> String {
-    if let Ok(p) = std::env::var("GITX_HELPER_PATH") {
-        return p;
-    }
-    // Prefer sibling of current executable (Tauri sidecar / cargo target).
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidate = dir.join("gitx-helper");
-            if candidate.exists() {
-                return candidate.to_string_lossy().into_owned();
-            }
-            #[cfg(windows)]
-            {
-                let candidate = dir.join("gitx-helper.exe");
-                if candidate.exists() {
-                    return candidate.to_string_lossy().into_owned();
-                }
-            }
-        }
-    }
-    "gitx-helper".into()
+    crate::runner::helper_bin()
 }
 
 fn companion_wt_ref(backup_ref: &str) -> Option<String> {

@@ -63,6 +63,17 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # Tauri externalBin expects src-tauri/binaries/gitx-helper-<triple>.exe
+      - name: Build gitx-helper sidecar
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          cargo build -p gitx-helper --release
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          $triple = (rustc -vV | Select-String "host:").ToString().Split()[-1]
+          Copy-Item target/release/gitx-helper.exe "src-tauri/binaries/gitx-helper-$triple.exe" -Force
+          Get-ChildItem src-tauri/binaries | Format-Table Name, Length
+
       - name: Build Windows app (NSIS + MSI)
         run: pnpm tauri:build
 

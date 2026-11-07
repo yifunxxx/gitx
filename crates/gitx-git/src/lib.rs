@@ -32,7 +32,7 @@ pub use detect::{
 pub use jobs::{JobEvent, JobManager, JobProgress, JobState};
 pub use ops::RawLogCommit;
 pub use progress::ProgressParser;
-pub use runner::{GitInvocation, GitOutput, GitRunner, OpKind};
+pub use runner::{helper_bin, GitInvocation, GitOutput, GitRunner, OpKind};
 pub use scheduler::RepoScheduler;
 pub use status::parse_status_porcelain_v2;
 pub use stderr::StderrClassifier;

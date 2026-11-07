@@ -10,6 +10,8 @@ import { useLayoutStore } from "./layoutStore";
 import { useJobsStore } from "./jobsStore";
 import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
+import { handleAuthFailure } from "@/composables/useCredentials";
+import { i18n } from "@/i18n";
 
 export const useSyncStore = defineStore("sync", () => {
   const lastUpdate = ref<UpdateInfo | null>(null);
@@ -21,6 +23,31 @@ export const useSyncStore = defineStore("sync", () => {
     await useBranchesStore().refresh();
     await useChangesStore().refresh();
     await useLogStore().load(true);
+  }
+
+  async function onAuthOrToast<T>(
+    title: string,
+    e: unknown,
+    retry: () => Promise<T>,
+  ): Promise<T> {
+    const retryOk = await handleAuthFailure(e, { title: i18n.global.t("auth.title") });
+    if (retryOk) {
+      return retry();
+    }
+    toast({
+      title,
+      description: formatErrorMessage(e),
+      persistent: true,
+      action: {
+        label: String(i18n.global.t("auth.enterCredentials")),
+        onClick: () => {
+          void handleAuthFailure(e, { title: i18n.global.t("auth.title") }).then((ok) => {
+            if (ok) void retry();
+          });
+        },
+      },
+    });
+    throw e;
   }
 
   async function pull(opts: {
@@ -45,9 +72,9 @@ export const useSyncStore = defineStore("sync", () => {
       id: jobId,
       title: `Pulling ${opts.remote}/${opts.branch}…`,
     });
-    try {
+    const run = async () => {
       const result = await getBackend().pullRun({
-        path: ws.repoPath,
+        path: ws.repoPath!,
         remote: opts.remote,
         branch: opts.branch,
         rebase: !!opts.rebase,
@@ -72,13 +99,11 @@ export const useSyncStore = defineStore("sync", () => {
       toast({ title: result.message });
       await afterSync();
       return result;
+    };
+    try {
+      return await run();
     } catch (e) {
-      toast({
-        title: "Pull failed",
-        description: formatErrorMessage(e),
-        persistent: true,
-      });
-      throw e;
+      return await onAuthOrToast("Pull failed", e, run);
     } finally {
       pulling.value = false;
       jobs.finished(jobId);
@@ -99,10 +124,10 @@ export const useSyncStore = defineStore("sync", () => {
       title: `Updating project (${strategy})…`,
       message: "Fetching…",
     });
-    try {
+    const run = async () => {
       jobs.progress(jobId, { message: "Fetching & updating…" });
       const info = await getBackend().updateProjectRun({
-        path: ws.repoPath,
+        path: ws.repoPath!,
         strategy,
       });
       lastUpdate.value = info;
@@ -115,13 +140,11 @@ export const useSyncStore = defineStore("sync", () => {
       }
       await afterSync();
       return info;
+    };
+    try {
+      return await run();
     } catch (e) {
-      toast({
-        title: "Update Project failed",
-        description: formatErrorMessage(e),
-        persistent: true,
-      });
-      throw e;
+      return await onAuthOrToast("Update Project failed", e, run);
     } finally {
       updating.value = false;
       jobs.finished(jobId);
@@ -153,9 +176,9 @@ export const useSyncStore = defineStore("sync", () => {
       id: jobId,
       title: `Pushing to ${opts.remote}/${opts.branch}…`,
     });
-    try {
+    const run = async () => {
       const result = await getBackend().pushRun({
-        path: ws.repoPath,
+        path: ws.repoPath!,
         remote: opts.remote,
         branch: opts.branch,
         setUpstream: opts.setUpstream,
@@ -173,13 +196,11 @@ export const useSyncStore = defineStore("sync", () => {
       }
       await afterSync();
       return result;
+    };
+    try {
+      return await run();
     } catch (e) {
-      toast({
-        title: "Push failed",
-        description: formatErrorMessage(e),
-        persistent: true,
-      });
-      throw e;
+      return await onAuthOrToast("Push failed", e, run);
     } finally {
       pushing.value = false;
       jobs.finished(jobId);

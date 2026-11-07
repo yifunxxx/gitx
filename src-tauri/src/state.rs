@@ -27,6 +27,18 @@ impl AppState {
             .map(|s| s.to_string())
             .or_else(|| gitx_git::detect_git(None).ok().map(|d| d.path))
             .unwrap_or_else(|| "git".into());
+        // Bridge Settings → GitRunner for network askpass / credential.helper policy.
+        // SAFETY: single-process desktop app.
+        unsafe {
+            std::env::set_var(
+                "GITX_USE_CREDENTIAL_HELPER",
+                if settings.git.use_credential_helper {
+                    "1"
+                } else {
+                    "0"
+                },
+            );
+        }
         Self {
             settings: Arc::new(RwLock::new(settings)),
             settings_path,

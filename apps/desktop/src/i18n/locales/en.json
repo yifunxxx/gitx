@@ -411,6 +411,16 @@
     "compareVersions": "Compare Versions",
     "showAllChanges": "Show All Changes"
   },
+  "auth": {
+    "title": "Credentials required",
+    "hint": "Git cannot prompt in a terminal. Enter your username and password (or access token). Credentials are supplied via gitx-helper askpass for this operation; when checked below they are also stored in the system credential helper.",
+    "username": "Username",
+    "password": "Password / Token",
+    "useCredentialHelper": "Save with credential helper",
+    "storeHint": "After saving, later fetch / pull / push / Update Project can reuse them without prompting again.",
+    "saveAndRetry": "Save and Retry",
+    "enterCredentials": "Enter credentials…"
+  },
   "branches": {
     "search": "Search branches…",
     "local": "Local",
@@ -427,7 +437,21 @@
     "compareWithCurrent": "Compare with current",
     "copyName": "Copy Branch Name",
     "delete": "Delete",
-    "noRemotes": "No remotes — Manage Remotes…"
+    "noRemotes": "No remotes — Manage Remotes…",
+    "newBranchFrom": "New Branch from '{name}'…",
+    "push": "Push…",
+    "checkedOut": "Checked out {name}",
+    "checkoutFailed": "Checkout failed",
+    "created": "Created {name}",
+    "createFailed": "Create branch failed",
+    "renamed": "Renamed to {name}",
+    "renameFailed": "Rename failed",
+    "deleteConfirm": "Delete branch '{name}'?",
+    "deleteHint": "Not fully merged branches can be restored from the notification.",
+    "deleted": "Deleted {name}",
+    "deleteFailed": "Delete failed",
+    "copied": "Copied '{name}'",
+    "deleteRemoteHint": "Deleting a remote branch requires push access"
   },
   "workspace": {
     "path": "Path",

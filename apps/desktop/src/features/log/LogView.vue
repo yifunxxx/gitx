@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import PathTreeList from "@/components/files/PathTreeList.vue";
 import type { ChangedFile } from "@/lib/backend";
+import BranchesPane from "@/features/branches/BranchesPane.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
 
 const { t } = useI18n();
@@ -511,127 +512,141 @@ async function ctxExtract() {
         </button>
       </div>
 
-      <EmptyState
-        v-if="!log.loading && !log.commits.length"
-        :title="t('log.noMatchesTitle')"
-        :description="t('log.noMatchesHint')"
-      />
-      <Splitpanes v-else class="min-h-0 flex-1">
-        <Pane :size="58" min-size="30">
-          <div class="flex h-full min-h-0 flex-col">
-            <div
-              class="grid h-7 shrink-0 items-center border-b px-2 text-[11px] text-muted-foreground"
-              :style="{
-                gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
-              }"
-            >
-              <span>{{ t("log.colGraph") }}</span>
-              <span>{{ t("log.colMessage") }}</span>
-              <span>{{ t("log.colAuthor") }}</span>
-              <span>{{ t("log.colDate") }}</span>
-            </div>
-            <VirtualList
-              ref="commitListRef"
-              :items="log.commits"
-              :item-height="ROW_H"
-              :get-key="(c) => c.sha"
-              @scroll="onListScroll"
-            >
-              <template #default="{ item: c, index: idx }">
-                <button
-                  type="button"
-                  class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
+      <Splitpanes class="min-h-0 flex-1">
+        <Pane :size="18" min-size="12" max-size="36">
+          <BranchesPane />
+        </Pane>
+        <Pane :size="82" min-size="40">
+          <EmptyState
+            v-if="!log.loading && !log.commits.length"
+            :title="t('log.noMatchesTitle')"
+            :description="t('log.noMatchesHint')"
+          />
+          <Splitpanes v-else class="h-full min-h-0">
+            <Pane :size="58" min-size="30">
+              <div class="flex h-full min-h-0 flex-col">
+                <div
+                  class="grid h-7 shrink-0 items-center border-b px-2 text-[11px] text-muted-foreground"
                   :style="{
                     gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
                   }"
-                  :class="
-                    log.selectedShas.includes(c.sha)
-                      ? 'bg-selection text-selection-foreground'
-                      : 'hover:bg-hover-surface'
-                  "
-                  @click="onCommitClick(c.sha, $event)"
-                  @contextmenu="onCommitContext(c.sha, $event)"
                 >
-                  <span class="flex h-full items-center justify-start">
-                    <CommitGraphCell
-                      :graph="c.graph"
-                      :edge-colors="graphLayout.edgeColors[idx] ?? []"
-                      :incoming="graphLayout.incoming[idx] ?? false"
-                      :max-lane="graphLayout.maxLane"
-                      :lane-labels="graphLayout.laneLabels"
-                      :node-label="graphLayout.nodeLabels[idx]"
-                    />
-                  </span>
-                  <span class="flex min-w-0 items-center gap-1 truncate">
-                    <span
-                      v-for="refName in visibleRefs(c.refs)"
-                      :key="refName"
-                      class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
+                  <span>{{ t("log.colGraph") }}</span>
+                  <span>{{ t("log.colMessage") }}</span>
+                  <span>{{ t("log.colAuthor") }}</span>
+                  <span>{{ t("log.colDate") }}</span>
+                </div>
+                <VirtualList
+                  ref="commitListRef"
+                  :items="log.commits"
+                  :item-height="ROW_H"
+                  :get-key="(c) => c.sha"
+                  @scroll="onListScroll"
+                >
+                  <template #default="{ item: c, index: idx }">
+                    <button
+                      type="button"
+                      class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
+                      :style="{
+                        gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
+                      }"
+                      :class="
+                        log.selectedShas.includes(c.sha)
+                          ? 'bg-selection text-selection-foreground'
+                          : 'hover:bg-hover-surface'
+                      "
+                      @click="onCommitClick(c.sha, $event)"
+                      @contextmenu="onCommitContext(c.sha, $event)"
                     >
-                      {{ refName }}
-                    </span>
-                    <span class="truncate">{{ c.subject }}</span>
-                  </span>
-                  <span class="truncate text-muted-foreground">{{ c.author }}</span>
-                  <span class="truncate text-muted-foreground">{{ formatTime(c.authorTime) }}</span>
-                </button>
-              </template>
-              <template #footer>
-                <div
-                  v-if="log.truncated || log.loadingMore"
-                  class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
-                >
-                  <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
-                  <button
-                    v-else
-                    type="button"
-                    class="hover:text-foreground"
-                    @click="log.loadMore()"
-                  >
-                    {{ t("log.loadMore") }}
-                  </button>
-                </div>
-              </template>
-            </VirtualList>
-          </div>
-        </Pane>
-        <Pane :size="42" min-size="24">
-          <Splitpanes horizontal class="h-full">
-            <Pane :size="45">
-              <div class="flex h-full min-h-0 flex-col">
-                <div class="border-b px-2 py-1 text-[11px] font-medium">
-                  {{ t("log.changedFiles") }}
-                </div>
-                <PathTreeList
-                  :files="log.changedFiles"
-                  :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
-                  empty-text=""
-                  @open="(f) => openChangedFile(f.path, f.origPath)"
-                  @context="({ file }) => showFileHistory(file.path)"
-                />
+                      <span class="flex h-full items-center justify-start">
+                        <CommitGraphCell
+                          :graph="c.graph"
+                          :edge-colors="graphLayout.edgeColors[idx] ?? []"
+                          :incoming="graphLayout.incoming[idx] ?? false"
+                          :max-lane="graphLayout.maxLane"
+                          :lane-labels="graphLayout.laneLabels"
+                          :node-label="graphLayout.nodeLabels[idx]"
+                        />
+                      </span>
+                      <span class="flex min-w-0 items-center gap-1 truncate">
+                        <span
+                          v-for="refName in visibleRefs(c.refs)"
+                          :key="refName"
+                          class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
+                        >
+                          {{ refName }}
+                        </span>
+                        <span class="truncate">{{ c.subject }}</span>
+                      </span>
+                      <span class="truncate text-muted-foreground">{{ c.author }}</span>
+                      <span class="truncate text-muted-foreground">{{
+                        formatTime(c.authorTime)
+                      }}</span>
+                    </button>
+                  </template>
+                  <template #footer>
+                    <div
+                      v-if="log.truncated || log.loadingMore"
+                      class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
+                    >
+                      <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
+                      <button
+                        v-else
+                        type="button"
+                        class="hover:text-foreground"
+                        @click="log.loadMore()"
+                      >
+                        {{ t("log.loadMore") }}
+                      </button>
+                    </div>
+                  </template>
+                </VirtualList>
               </div>
             </Pane>
-            <Pane :size="55">
-              <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
-                <div class="font-mono text-[11px] text-muted-foreground">{{ log.details.sha }}</div>
-                <div class="mt-1 font-medium">{{ log.details.subject }}</div>
-                <pre
-                  v-if="log.details.body"
-                  class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
-                  >{{ log.details.body }}</pre>
-                <dl
-                  class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
-                >
-                  <dt>{{ t("log.author") }}</dt>
-                  <dd>{{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;</dd>
-                  <dt>{{ t("log.date") }}</dt>
-                  <dd>{{ formatTime(log.details.authorTime) }}</dd>
-                  <dt>{{ t("log.parents") }}</dt>
-                  <dd class="font-mono">
-                    {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
-                  </dd>
-                </dl>
-              </div>
+            <Pane :size="42" min-size="24">
+              <Splitpanes horizontal class="h-full">
+                <Pane :size="45">
+                  <div class="flex h-full min-h-0 flex-col">
+                    <div class="border-b px-2 py-1 text-[11px] font-medium">
+                      {{ t("log.changedFiles") }}
+                    </div>
+                    <PathTreeList
+                      :files="log.changedFiles"
+                      :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
+                      empty-text=""
+                      @open="(f) => openChangedFile(f.path, f.origPath)"
+                      @context="({ file }) => showFileHistory(file.path)"
+                    />
+                  </div>
+                </Pane>
+                <Pane :size="55">
+                  <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
+                    <div class="font-mono text-[11px] text-muted-foreground">
+                      {{ log.details.sha }}
+                    </div>
+                    <div class="mt-1 font-medium">{{ log.details.subject }}</div>
+                    <pre
+                      v-if="log.details.body"
+                      class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
+                      >{{ log.details.body }}</pre
+                    >
+                    <dl
+                      class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+                    >
+                      <dt>{{ t("log.author") }}</dt>
+                      <dd>
+                        {{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;
+                      </dd>
+                      <dt>{{ t("log.date") }}</dt>
+                      <dd>{{ formatTime(log.details.authorTime) }}</dd>
+                      <dt>{{ t("log.parents") }}</dt>
+                      <dd class="font-mono">
+                        {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
+                      </dd>
+                    </dl>
+                  </div>
+                </Pane>
+              </Splitpanes>
             </Pane>
           </Splitpanes>
         </Pane>

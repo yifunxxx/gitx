@@ -18,6 +18,7 @@ use commands::conflicts::{
     conflict_accept_side, conflict_mark_resolved, conflict_merge3, conflict_resolve_simple,
     conflict_save_result, conflict_versions, conflicts_list,
 };
+use commands::credential::{credential_session_clear, credential_session_set};
 use commands::diff::diff_file;
 use commands::history::{
     blame_file, blob_read, checkout_path_from_rev, file_history, list_refs, log_changed_files,
@@ -38,7 +39,8 @@ use commands::refs::{
     compare_branches, favorites_set, refs_list, tag_create, tag_delete, tag_push,
 };
 use commands::remotes::{
-    remote_add, remote_edit, remote_list, remote_remove, remote_remove_preview,
+    remote_add, remote_delete_branch, remote_edit, remote_list, remote_remove,
+    remote_remove_preview,
 };
 use commands::rewrite::{
     cherry_pick_abort, cherry_pick_continue, cherry_pick_run, cherry_pick_skip, drop_changes,
@@ -136,6 +138,7 @@ pub fn run() {
             remote_edit,
             remote_remove_preview,
             remote_remove,
+            remote_delete_branch,
             fetch_run,
             pull_run,
             update_project_run,
@@ -232,6 +235,8 @@ pub fn run() {
             parse_wsl_path,
             sync_fork,
             submodule_update,
+            credential_session_set,
+            credential_session_clear,
         ]);
 
     #[cfg(debug_assertions)]

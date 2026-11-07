@@ -17,6 +17,9 @@ import type {
   CloneCheckUrlReq,
   CloneResult,
   CloneRunReq,
+  CredentialSessionReq,
+  CredentialSessionRes,
+  RemoteDeleteBranchReq,
   CombinedDiffReq,
   CombinedDiffResult,
   CommitCreateReq,
@@ -226,6 +229,7 @@ export type Backend = {
   remoteEdit(req: RemoteEditReq): Promise<null>;
   remoteRemovePreview(req: RemoteRemoveReq): Promise<RemoteRemovePreview>;
   remoteRemove(req: RemoteRemoveReq): Promise<null>;
+  remoteDeleteBranch(req: RemoteDeleteBranchReq): Promise<null>;
   fetchRun(req: FetchRunReq): Promise<FetchSummary>;
   pullRun(req: PullRunReq): Promise<PullResult>;
   updateProjectRun(req: UpdateProjectReq): Promise<UpdateInfo>;
@@ -322,6 +326,8 @@ export type Backend = {
   parseWslPath(req: ParseWslPathReq): Promise<WslPathInfo | null>;
   syncFork(req: SyncForkReq): Promise<SyncForkResult>;
   submoduleUpdate(req: SubmoduleUpdateReq): Promise<SubmoduleUpdateResult>;
+  credentialSessionSet(req: CredentialSessionReq): Promise<CredentialSessionRes>;
+  credentialSessionClear(): Promise<null>;
 };
 
 export const tauriBackend: Backend = {
@@ -377,6 +383,7 @@ export const tauriBackend: Backend = {
   remoteEdit: (req) => commands.remoteEdit(req),
   remoteRemovePreview: (req) => commands.remoteRemovePreview(req),
   remoteRemove: (req) => commands.remoteRemove(req),
+  remoteDeleteBranch: (req) => commands.remoteDeleteBranch(req),
   fetchRun: (req) => commands.fetchRun(req),
   pullRun: (req) => commands.pullRun(req),
   updateProjectRun: (req) => commands.updateProjectRun(req),
@@ -469,6 +476,8 @@ export const tauriBackend: Backend = {
   parseWslPath: (req) => commands.parseWslPath(req),
   syncFork: (req) => commands.syncFork(req),
   submoduleUpdate: (req) => commands.submoduleUpdate(req),
+  credentialSessionSet: (req) => commands.credentialSessionSet(req),
+  credentialSessionClear: () => commands.credentialSessionClear(),
 };
 
 export function getBackend(): Backend {

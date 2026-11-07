@@ -4,6 +4,7 @@ pub mod clone_cmd;
 pub mod commit;
 pub mod compare;
 pub mod conflicts;
+pub mod credential;
 pub mod diff;
 pub mod history;
 pub mod ignore;

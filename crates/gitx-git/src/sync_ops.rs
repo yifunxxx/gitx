@@ -745,12 +745,6 @@ impl GitRunner {
                         rejected: true,
                         set_upstream: false,
                     })
-                } else if msg.contains("authentication")
-                    || msg.contains("could not read username")
-                    || msg.contains("permission denied")
-                {
-                    Err(AppError::new(ErrorCode::AuthRequired, e.message)
-                        .with_stderr(e.git_stderr.unwrap_or_default()))
                 } else {
                     Err(map_network_err(e))
                 }
@@ -989,10 +983,21 @@ fn map_network_err(e: AppError) -> AppError {
             .with_command(e.command.unwrap_or_default())
     } else if msg.contains("authentication")
         || msg.contains("could not read username")
+        || msg.contains("could not read password")
+        || msg.contains("terminal prompts disabled")
+        || msg.contains("authentication failed")
+        || msg.contains("http basic access authentication failed")
+        || msg.contains("invalid username or password")
         || msg.contains("permission denied (publickey)")
+        || (msg.contains("permission denied")
+            && (msg.contains("publickey") || msg.contains("password")))
     {
         AppError::new(ErrorCode::AuthRequired, e.message)
             .with_stderr(e.git_stderr.unwrap_or_default())
+            .with_recover(vec![
+                gitx_core::RecoverAction::Retry,
+                gitx_core::RecoverAction::ShowDetails,
+            ])
     } else if msg.contains("divergent branches") || msg.contains("need to specify how to reconcile")
     {
         AppError::new(ErrorCode::DivergentBranches, e.message)

@@ -44,6 +44,14 @@ pub struct RemoteRemovePreview {
     pub tracking_count: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteDeleteBranchReq {
+    pub path: String,
+    pub remote: String,
+    pub branch: String,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn remote_list(
@@ -114,4 +122,17 @@ pub async fn remote_remove(
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
     git.remote_remove(&path, &req.name, &cancel).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn remote_delete_branch(
+    state: State<'_, AppState>,
+    req: RemoteDeleteBranchReq,
+) -> Result<(), AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    git.remote_delete_branch(&path, &req.remote, &req.branch, &cancel)
+        .await
 }

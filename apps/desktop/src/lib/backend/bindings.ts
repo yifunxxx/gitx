@@ -890,6 +890,25 @@ export type PatchApplyClipboardReq = {
   patchText: string
   threeWay?: boolean
 }
+export type RemoteDeleteBranchReq = {
+  path: string
+  remote: string
+  branch: string
+}
+export type CredentialSessionReq = {
+  path?: string | null
+  protocol?: string | null
+  host?: string | null
+  username: string
+  password: string
+  storeHelper: boolean
+  url?: string | null
+}
+export type CredentialSessionRes = {
+  askpassFile: string
+  helperBin: string
+  storedHelper: boolean
+}
 
 
 export const commands = {
@@ -1054,6 +1073,9 @@ export const commands = {
   },
   async remoteRemove(req: RemoteRemoveReq): Promise<null> {
     return invoke("remote_remove", { req })
+  },
+  async remoteDeleteBranch(req: RemoteDeleteBranchReq): Promise<null> {
+    return invoke("remote_delete_branch", { req })
   },
   async fetchRun(req: FetchRunReq): Promise<FetchSummary> {
     return invoke("fetch_run", { req })
@@ -1332,6 +1354,12 @@ export const commands = {
   },
   async submoduleUpdate(req: SubmoduleUpdateReq): Promise<SubmoduleUpdateResult> {
     return invoke("submodule_update", { req })
+  },
+  async credentialSessionSet(req: CredentialSessionReq): Promise<CredentialSessionRes> {
+    return invoke("credential_session_set", { req })
+  },
+  async credentialSessionClear(): Promise<null> {
+    return invoke("credential_session_clear")
   },
 }
 

@@ -108,7 +108,20 @@ async function onCheckout(entry: RefEntry) {
 }
 
 async function onNewBranch() {
-  const start = branches.refs?.current ?? "HEAD";
+  await onNewBranchFromPoint(branches.refs?.current ?? "HEAD");
+}
+
+async function onNewBranchFrom(entry: RefEntry) {
+  const start =
+    entry.kind === "tag"
+      ? entry.fullName
+      : entry.kind === "remoteBranch"
+        ? entry.name
+        : entry.name;
+  await onNewBranchFromPoint(start);
+}
+
+async function onNewBranchFromPoint(start: string) {
   const result = await openDialog<{
     name: string;
     checkout: boolean;
@@ -362,6 +375,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
       >
         <template v-if="menuFor">
           <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onCheckout(menuFor); closeMenu()">{{ t("branches.checkout") }}</button>
+          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onNewBranchFrom(menuFor); closeMenu()">{{ t("branches.newBranchFrom", { name: menuFor.name }) }}</button>
           <button v-if="menuFor.kind === 'localBranch'" type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onRename(menuFor); closeMenu()">{{ t("branches.rename") }}</button>
           <button
             v-if="!menuFor.isHead"
@@ -386,6 +400,14 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             @click="onCheckoutAndRebase(menuFor); closeMenu()"
           >
             {{ t("branches.checkoutAndRebase") }}
+          </button>
+          <button
+            v-if="menuFor.kind === 'localBranch'"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="runPopupAction('Git.Push'); closeMenu()"
+          >
+            {{ t("branches.push") }}
           </button>
           <button
             v-if="menuFor.kind === 'remoteBranch'"

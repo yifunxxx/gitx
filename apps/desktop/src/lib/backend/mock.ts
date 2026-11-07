@@ -643,7 +643,14 @@ function mockLog(): LogCommit[] {
 
 
 let mockBranch = "main";
-let mockBranches = ["main", "develop"];
+let mockBranches = [
+  "main",
+  "develop",
+  "dev-3.1.0",
+  "release_1.0.1-2503.1",
+  "release_1.0.1-2503.2",
+  "feature/auth-ui",
+];
 let mockRemotes: { name: string; fetchUrl: string; pushUrl: string | null }[] = [
   { name: "origin", fetchUrl: "https://example.com/gitx.git", pushUrl: null },
 ];
@@ -1213,6 +1220,10 @@ export const mockBackend: Backend = {
   },
   async remoteRemove(req) {
     mockRemotes = mockRemotes.filter((r) => r.name !== req.name);
+    return null;
+  },
+  async remoteDeleteBranch(req) {
+    emitConsole("cmd", `git push ${req.remote} --delete ${req.branch}`);
     return null;
   },
   async fetchRun() {
@@ -1963,5 +1974,16 @@ export const mockBackend: Backend = {
   },
   async submoduleUpdate() {
     return { items: [], message: "No .gitmodules" };
+  },
+  async credentialSessionSet(req) {
+    emitConsole("cmd", `# credential session for ${req.host ?? req.url ?? "remote"}`);
+    return {
+      askpassFile: "/tmp/gitx-askpass-mock.txt",
+      helperBin: "gitx-helper",
+      storedHelper: !!req.storeHelper,
+    };
+  },
+  async credentialSessionClear() {
+    return null;
   },
 };

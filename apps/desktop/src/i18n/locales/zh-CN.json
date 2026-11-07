@@ -411,6 +411,16 @@
     "compareVersions": "比较版本",
     "showAllChanges": "显示全部更改"
   },
+  "auth": {
+    "title": "需要凭据",
+    "hint": "Git 无法在终端询问密码。请在此输入用户名与密码（或访问令牌）。凭据通过 gitx-helper askpass 提供给本次操作；若勾选下方选项，也会写入系统 credential helper。",
+    "username": "用户名",
+    "password": "密码 / Token",
+    "useCredentialHelper": "使用 credential helper 保存",
+    "storeHint": "保存后，后续 fetch / pull / push / 更新项目可自动使用，无需再次输入。",
+    "saveAndRetry": "保存并重试",
+    "enterCredentials": "输入凭据…"
+  },
   "branches": {
     "search": "搜索分支…",
     "local": "本地",
@@ -427,7 +437,21 @@
     "compareWithCurrent": "与当前分支比较",
     "copyName": "复制分支名",
     "delete": "删除",
-    "noRemotes": "无远程 — 管理 Remotes…"
+    "noRemotes": "无远程 — 管理 Remotes…",
+    "newBranchFrom": "从 '{name}' 新建分支…",
+    "push": "推送…",
+    "checkedOut": "已检出 {name}",
+    "checkoutFailed": "检出失败",
+    "created": "已创建 {name}",
+    "createFailed": "创建分支失败",
+    "renamed": "已重命名为 {name}",
+    "renameFailed": "重命名失败",
+    "deleteConfirm": "删除分支 '{name}'？",
+    "deleteHint": "未完全合并的分支可从通知中恢复。",
+    "deleted": "已删除 {name}",
+    "deleteFailed": "删除失败",
+    "copied": "已复制 '{name}'",
+    "deleteRemoteHint": "远程分支删除需要推送权限"
   },
   "workspace": {
     "path": "路径",
