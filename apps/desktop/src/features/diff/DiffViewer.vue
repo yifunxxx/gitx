@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import Skeleton from "@/components/common/Skeleton.vue";
 import { useDiffStore } from "@/stores/diffStore";
 import { useChangesStore } from "@/stores/changesStore";
@@ -136,40 +137,50 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
       <span class="font-medium">{{ tab.path }}</span>
       <span class="text-muted-foreground">{{ sideSummary }}</span>
       <div class="flex-1" />
-      <label class="flex cursor-pointer items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-        {{ t("diff.whitespace") }}
-        <Select
-          :model-value="tab.ignoreWhitespace"
-          @update:model-value="
-            (v) => {
-              if (!tab) return;
-              diffs.setIgnoreWhitespace(tab.id, String(v ?? 'none') as IgnoreWhitespace);
-            }
-          "
+      <Tip :text="t('toolbar.diffWhitespace')">
+        <label
+          class="flex cursor-pointer items-center gap-1 text-[11px] leading-4 text-muted-foreground"
         >
-          <SelectTrigger class="h-6 w-auto min-w-[9rem] text-[11px]">
-            <SelectValue>{{ wsLabel(tab.ignoreWhitespace) }}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="m in wsModes" :key="m.id" :value="m.id">
-              {{ t(m.key) }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </label>
-      <Button
-        size="xs"
-        variant="ghost"
-        @click="diffs.setCollapseUnchanged(tab.id, !tab.collapseUnchanged)"
-      >
-        {{ tab.collapseUnchanged ? t("diff.expandUnchanged") : t("diff.collapseUnchanged") }}
-      </Button>
-      <Button size="xs" variant="ghost" @click="diffs.setUnified(tab.id, !tab.unified)">
-        {{ tab.unified ? t("diff.sideBySide") : t("diff.unified") }}
-      </Button>
-      <Button v-if="canStage" size="xs" variant="outline" @click="stageSelectedLines">
-        {{ t("diff.stageSelectedLines") }}
-      </Button>
+          {{ t("diff.whitespace") }}
+          <Select
+            :model-value="tab.ignoreWhitespace"
+            @update:model-value="
+              (v) => {
+                if (!tab) return;
+                diffs.setIgnoreWhitespace(tab.id, String(v ?? 'none') as IgnoreWhitespace);
+              }
+            "
+          >
+            <SelectTrigger class="h-6 w-auto min-w-[9rem] text-[11px]">
+              <SelectValue>{{ wsLabel(tab.ignoreWhitespace) }}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="m in wsModes" :key="m.id" :value="m.id">
+                {{ t(m.key) }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+      </Tip>
+      <Tip :text="t('toolbar.diffCollapse')">
+        <Button
+          size="xs"
+          variant="ghost"
+          @click="diffs.setCollapseUnchanged(tab.id, !tab.collapseUnchanged)"
+        >
+          {{ tab.collapseUnchanged ? t("diff.expandUnchanged") : t("diff.collapseUnchanged") }}
+        </Button>
+      </Tip>
+      <Tip :text="t('toolbar.diffLayout')">
+        <Button size="xs" variant="ghost" @click="diffs.setUnified(tab.id, !tab.unified)">
+          {{ tab.unified ? t("diff.sideBySide") : t("diff.unified") }}
+        </Button>
+      </Tip>
+      <Tip v-if="canStage" :text="t('toolbar.diffStageLines')">
+        <Button size="xs" variant="outline" @click="stageSelectedLines">
+          {{ t("diff.stageSelectedLines") }}
+        </Button>
+      </Tip>
     </div>
 
     <div v-if="tab.loading && !result" class="space-y-2 p-4">
@@ -182,11 +193,7 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
     <div v-else-if="result?.binary" class="p-4 text-xs">{{ t("diff.binary") }}</div>
     <div v-else-if="result?.tooLarge" class="p-4 text-xs">
       {{ t("diff.tooLarge") }}
-      <button
-        type="button"
-        class="cursor-pointer underline"
-        @click="diffs.reloadTab(tab)"
-      >
+      <button type="button" class="cursor-pointer underline" @click="diffs.reloadTab(tab)">
         {{ t("diff.showAnyway") }}
       </button>
     </div>

@@ -11,6 +11,10 @@ const props = defineProps<{
   incoming?: boolean;
   rowHeight?: number;
   laneWidth?: number;
+  /** Human labels for each lane (branch / tag / short sha). */
+  laneLabels?: Record<number, string>;
+  /** Label for this commit's node (refs on the commit). */
+  nodeLabel?: string;
 }>();
 
 const H = computed(() => props.rowHeight ?? 22);
@@ -30,6 +34,10 @@ function cy() {
 
 function laneColor(color: number) {
   return `rgb(var(--graph-lane-${color % 12}))`;
+}
+
+function tipForLane(lane: number) {
+  return props.laneLabels?.[lane] ?? "";
 }
 
 type Seg =
@@ -74,7 +82,8 @@ function curvePath(from: number, to: number) {
     :width="width"
     :height="height"
     :viewBox="`0 0 ${width} ${height}`"
-    aria-hidden="true"
+    role="img"
+    :aria-label="nodeLabel || tipForLane(graph.lane) || undefined"
   >
     <g
       v-for="(s, i) in segments"
@@ -84,13 +93,11 @@ function curvePath(from: number, to: number) {
       stroke-linecap="round"
       :stroke="laneColor(s.color)"
     >
-      <line
-        v-if="s.kind === 'through'"
-        :x1="cx(s.lane)"
-        y1="0"
-        :x2="cx(s.lane)"
-        :y2="height"
-      />
+      <title v-if="s.kind !== 'curve' && tipForLane(s.lane)">{{ tipForLane(s.lane) }}</title>
+      <title v-else-if="s.kind === 'curve' && (tipForLane(s.from) || tipForLane(s.to))">
+        {{ tipForLane(s.from) || tipForLane(s.to) }}
+      </title>
+      <line v-if="s.kind === 'through'" :x1="cx(s.lane)" y1="0" :x2="cx(s.lane)" :y2="height" />
       <line
         v-else-if="s.kind === 'down'"
         :x1="cx(s.lane)"
@@ -99,25 +106,57 @@ function curvePath(from: number, to: number) {
         :y2="height"
       />
       <path v-else :d="curvePath(s.from, s.to)" />
+      <!-- Wider invisible hit target for hover tip -->
+      <line
+        v-if="s.kind === 'through' || s.kind === 'down'"
+        :x1="cx(s.lane)"
+        :y1="s.kind === 'down' ? cy() : 0"
+        :x2="cx(s.lane)"
+        :y2="height"
+        stroke="transparent"
+        stroke-width="10"
+      >
+        <title v-if="tipForLane(s.lane)">{{ tipForLane(s.lane) }}</title>
+      </line>
     </g>
-    <line
-      v-if="incoming"
-      :x1="cx(graph.lane)"
-      y1="0"
-      :x2="cx(graph.lane)"
-      :y2="cy()"
-      fill="none"
-      stroke-width="2"
-      stroke-linecap="round"
-      :stroke="laneColor(graph.color)"
-    />
-    <circle
-      :cx="cx(graph.lane)"
-      :cy="cy()"
-      r="3.5"
-      :fill="laneColor(graph.color)"
-      class="stroke-background"
-      stroke-width="1.5"
-    />
+    <g v-if="incoming">
+      <line
+        :x1="cx(graph.lane)"
+        y1="0"
+        :x2="cx(graph.lane)"
+        :y2="cy()"
+        fill="none"
+        stroke-width="2"
+        stroke-linecap="round"
+        :stroke="laneColor(graph.color)"
+      />
+      <line
+        :x1="cx(graph.lane)"
+        y1="0"
+        :x2="cx(graph.lane)"
+        :y2="cy()"
+        stroke="transparent"
+        stroke-width="10"
+      >
+        <title v-if="tipForLane(graph.lane) || nodeLabel">
+          {{ nodeLabel || tipForLane(graph.lane) }}
+        </title>
+      </line>
+    </g>
+    <g>
+      <circle
+        :cx="cx(graph.lane)"
+        :cy="cy()"
+        r="3.5"
+        :fill="laneColor(graph.color)"
+        class="stroke-background"
+        stroke-width="1.5"
+      />
+      <circle :cx="cx(graph.lane)" :cy="cy()" r="7" fill="transparent">
+        <title v-if="nodeLabel || tipForLane(graph.lane)">
+          {{ nodeLabel || tipForLane(graph.lane) }}
+        </title>
+      </circle>
+    </g>
   </svg>
 </template>

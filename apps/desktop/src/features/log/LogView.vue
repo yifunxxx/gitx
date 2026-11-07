@@ -14,6 +14,7 @@ import { useRewriteStore } from "@/stores/rewriteStore";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
@@ -83,23 +84,49 @@ function mapStatus(s: string): FileChangeKind {
   }
 }
 
-/** Precompute edge colors + column width while walking newest→oldest. */
+function tidyRef(name: string) {
+  return name
+    .replace(/^HEAD -> /, "")
+    .replace(/^tag: /, "")
+    .replace(/^refs\/heads\//, "")
+    .replace(/^refs\/remotes\//, "")
+    .replace(/^refs\/tags\//, "");
+}
+
+/** Precompute edge colors, lane labels, and column width while walking newest→oldest. */
 const graphLayout = computed(() => {
   const laneColors = new Map<number, number>();
   const pendingIncoming = new Set<number>();
+  const laneLabels: Record<number, string> = {};
   let maxLane = 0;
   const edgeColors: number[][] = [];
   const incoming: boolean[] = [];
+  const nodeLabels: string[] = [];
+
   for (const c of log.commits) {
     maxLane = Math.max(maxLane, c.graph.lane);
     incoming.push(pendingIncoming.has(c.graph.lane));
     pendingIncoming.delete(c.graph.lane);
+
+    const refs = visibleRefs(c.refs).map(tidyRef).filter(Boolean);
+    const nodeLabel = refs.length ? refs.join(", ") : c.shortSha;
+    nodeLabels.push(nodeLabel);
+    // Prefer first-seen (newer tip) label for a lane; keep until replaced by a tip with refs.
+    if (refs.length && !laneLabels[c.graph.lane]) {
+      laneLabels[c.graph.lane] = refs.join(", ");
+    } else if (!laneLabels[c.graph.lane]) {
+      laneLabels[c.graph.lane] = c.shortSha;
+    }
+
     const colors: number[] = [];
     for (const e of c.graph.edges) {
       maxLane = Math.max(maxLane, e.fromLane, e.toLane);
       const color = laneColors.get(e.fromLane) ?? c.graph.color;
       colors.push(color);
       pendingIncoming.add(e.toLane);
+      if (laneLabels[e.fromLane] && !laneLabels[e.toLane]) {
+        laneLabels[e.toLane] = laneLabels[e.fromLane]!;
+      }
     }
     edgeColors.push(colors);
     laneColors.set(c.graph.lane, c.graph.color);
@@ -109,8 +136,21 @@ const graphLayout = computed(() => {
       laneColors.set(e.toLane, color);
     });
   }
+
+  // Fill missing lanes with i18n fallback.
+  for (let i = 0; i <= maxLane; i++) {
+    if (!laneLabels[i]) laneLabels[i] = t("log.laneUntitled", { lane: i });
+  }
+
   const colPx = Math.max(56, (maxLane + 1) * 16 + 12);
-  return { edgeColors, incoming, maxLane, colPx };
+  return { edgeColors, incoming, maxLane, colPx, laneLabels, nodeLabels };
+});
+
+const indexLabel = computed(() => {
+  const st = log.indexStatus;
+  if (!st) return "";
+  if (!st.ready) return t("log.indexEmpty");
+  return t("log.indexed", { count: st.commitCount });
 });
 
 function visibleRefs(refs: string[]) {
@@ -124,6 +164,13 @@ async function applySearch() {
   log.setRevisions(revDraft.value.trim() ? [revDraft.value.trim()] : []);
   log.setPathsFilter(pathDraft.value.trim() ? [pathDraft.value.trim()] : []);
   await log.applyFilters();
+}
+
+function onListScroll(e: Event) {
+  const el = e.target as HTMLElement;
+  if (!el) return;
+  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+  if (remaining < 80) void log.loadMore();
 }
 
 function onCommitClick(sha: string, e: MouseEvent) {
@@ -288,35 +335,35 @@ async function ctxExtract() {
   <div class="flex h-full min-h-0 flex-col" @click="closeCtx">
     <EmptyState
       v-if="!workspace.isRepo"
-      title="No repository"
-      description="Open or create a Git repository to see history."
+      :title="t('log.noRepoTitle')"
+      :description="t('log.noRepoHint')"
     />
-    <ErrorState v-else-if="log.error" title="Log failed" :message="log.error" />
+    <ErrorState v-else-if="log.error" :title="t('log.failed')" :message="log.error" />
     <template v-else>
       <div class="flex flex-wrap items-center gap-1 border-b bg-dbx-chrome px-2 py-1 text-[11px]">
         <Filter class="h-3.5 w-3.5 text-muted-foreground" />
         <input
           v-model="textDraft"
           class="h-6 w-36 rounded border bg-background px-1.5"
-          placeholder="Search message / hash"
+          :placeholder="t('log.searchPlaceholder')"
           @keydown.enter="applySearch"
         />
         <input
           v-model="authorDraft"
           class="h-6 w-24 rounded border bg-background px-1.5"
-          placeholder="User"
+          :placeholder="t('log.userPlaceholder')"
           @keydown.enter="applySearch"
         />
         <input
           v-model="revDraft"
           class="h-6 w-28 rounded border bg-background px-1.5"
-          placeholder="Branch / a..b"
+          :placeholder="t('log.branchPlaceholder')"
           @keydown.enter="applySearch"
         />
         <input
           v-model="pathDraft"
           class="h-6 w-28 rounded border bg-background px-1.5"
-          placeholder="Paths"
+          :placeholder="t('log.pathsPlaceholder')"
           @keydown.enter="applySearch"
         />
         <Select
@@ -329,45 +376,60 @@ async function ctxExtract() {
           "
         >
           <SelectTrigger class="h-6 w-auto min-w-[6.5rem] text-[11px]">
-            <SelectValue placeholder="Any date" />
+            <SelectValue :placeholder="t('log.anyDate')" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Any date</SelectItem>
-            <SelectItem value="24h">Last 24h</SelectItem>
-            <SelectItem value="7d">Last 7 days</SelectItem>
+            <SelectItem value="all">{{ t("log.anyDate") }}</SelectItem>
+            <SelectItem value="24h">{{ t("log.last24h") }}</SelectItem>
+            <SelectItem value="7d">{{ t("log.last7d") }}</SelectItem>
           </SelectContent>
         </Select>
-        <Button size="xs" variant="secondary" @click="applySearch">Apply</Button>
-        <Button size="xs" variant="ghost" @click="log.clearAllFilters(); applySearch()">
-          Clear
-        </Button>
+        <Tip :text="t('log.applyTip')">
+          <Button size="xs" variant="secondary" @click="applySearch">{{
+            t("common.apply")
+          }}</Button>
+        </Tip>
+        <Tip :text="t('log.clearTip')">
+          <Button
+            size="xs"
+            variant="ghost"
+            @click="
+              log.clearAllFilters();
+              applySearch();
+            "
+          >
+            {{ t("log.clear") }}
+          </Button>
+        </Tip>
         <div class="mx-1 h-4 w-px bg-border" />
-        <Button
-          size="xs"
-          variant="ghost"
-          :class="log.showGraphOptions ? 'bg-accent' : ''"
-          @click="log.showGraphOptions = !log.showGraphOptions"
-        >
-          <Eye class="mr-1 h-3 w-3" />
-          Graph
-        </Button>
+        <Tip :text="t('log.graphTip')">
+          <Button
+            size="xs"
+            variant="ghost"
+            :class="log.showGraphOptions ? 'bg-accent' : ''"
+            @click="log.showGraphOptions = !log.showGraphOptions"
+          >
+            <Eye class="mr-1 h-3 w-3" />
+            {{ t("log.graph") }}
+          </Button>
+        </Tip>
         <div class="flex flex-1 items-center gap-1">
           <Search class="h-3.5 w-3.5 text-muted-foreground" />
           <input
             v-model="log.goToInput"
             class="h-6 min-w-[8rem] flex-1 rounded border bg-background px-1.5"
-            placeholder="Go to Hash / Branch / Tag"
+            :placeholder="t('log.goToPlaceholder')"
             @keydown.enter="log.goToHashOrRef()"
           />
         </div>
-        <span
-          v-if="log.indexStatus"
-          class="truncate text-muted-foreground"
-          :title="log.indexStatus.message"
-        >
-          {{ log.indexStatus.message }}
+        <span v-if="indexLabel" class="truncate text-muted-foreground" :title="indexLabel">
+          {{ indexLabel }}
         </span>
-        <Button size="xs" variant="ghost" @click="log.rebuildIndex()">Rebuild index</Button>
+        <Tip :text="t('log.rebuildIndexTip')">
+          <Button size="xs" variant="ghost" @click="log.rebuildIndex()">
+            {{ t("log.rebuildIndex") }}
+          </Button>
+        </Tip>
       </div>
 
       <div
@@ -375,7 +437,7 @@ async function ctxExtract() {
         class="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-[11px]"
       >
         <label class="flex items-center gap-1">
-          Sort
+          {{ t("log.sort") }}
           <Select
             :model-value="log.filters.order ?? 'date'"
             @update:model-value="
@@ -389,26 +451,40 @@ async function ctxExtract() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="date">Date</SelectItem>
-              <SelectItem value="topo">Topological</SelectItem>
+              <SelectItem value="date">{{ t("log.sortDate") }}</SelectItem>
+              <SelectItem value="topo">{{ t("log.sortTopo") }}</SelectItem>
             </SelectContent>
           </Select>
         </label>
         <label class="flex items-center gap-1">
-          <input type="checkbox" :checked="!!log.filters.firstParent" @change="log.toggleFirstParent(); applySearch()" />
-          First parent
+          <input
+            type="checkbox"
+            :checked="!!log.filters.firstParent"
+            @change="
+              log.toggleFirstParent();
+              applySearch();
+            "
+          />
+          {{ t("log.firstParent") }}
         </label>
         <label class="flex items-center gap-1">
-          <input type="checkbox" :checked="!!log.filters.noMerges" @change="log.toggleNoMerges(); applySearch()" />
-          No merges
+          <input
+            type="checkbox"
+            :checked="!!log.filters.noMerges"
+            @change="
+              log.toggleNoMerges();
+              applySearch();
+            "
+          />
+          {{ t("log.noMerges") }}
         </label>
         <label class="flex items-center gap-1">
           <input v-model="log.compactRefs" type="checkbox" />
-          Compact references
+          {{ t("log.compactRefs") }}
         </label>
         <label class="flex items-center gap-1">
           <input v-model="log.showTagNames" type="checkbox" />
-          Tag names
+          {{ t("log.tagNames") }}
         </label>
       </div>
 
@@ -418,7 +494,10 @@ async function ctxExtract() {
           :key="chip.key"
           type="button"
           class="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] hover:bg-accent"
-          @click="log.clearFilter(chip.key); applySearch()"
+          @click="
+            log.clearFilter(chip.key);
+            applySearch();
+          "
         >
           {{ chip.label }} ×
         </button>
@@ -426,8 +505,8 @@ async function ctxExtract() {
 
       <EmptyState
         v-if="!log.loading && !log.commits.length"
-        title="No commits matching filters"
-        description="Clear filters or adjust Branch / User / Date / Paths."
+        :title="t('log.noMatchesTitle')"
+        :description="t('log.noMatchesHint')"
       />
       <Splitpanes v-else class="min-h-0 flex-1">
         <Pane :size="58" min-size="30">
@@ -438,12 +517,12 @@ async function ctxExtract() {
                 gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
               }"
             >
-              <span>Graph</span>
-              <span>Message</span>
-              <span>Author</span>
-              <span>Date</span>
+              <span>{{ t("log.colGraph") }}</span>
+              <span>{{ t("log.colMessage") }}</span>
+              <span>{{ t("log.colAuthor") }}</span>
+              <span>{{ t("log.colDate") }}</span>
             </div>
-            <div class="min-h-0 flex-1 overflow-auto">
+            <div class="min-h-0 flex-1 overflow-auto" @scroll.passive="onListScroll">
               <button
                 v-for="(c, idx) in log.commits"
                 :key="c.sha"
@@ -452,9 +531,7 @@ async function ctxExtract() {
                 :style="{
                   gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
                 }"
-                :class="
-                  log.selectedShas.includes(c.sha) ? 'bg-accent' : 'hover:bg-accent/40'
-                "
+                :class="log.selectedShas.includes(c.sha) ? 'bg-accent' : 'hover:bg-accent/40'"
                 @click="onCommitClick(c.sha, $event)"
                 @contextmenu="onCommitContext(c.sha, $event)"
               >
@@ -464,6 +541,8 @@ async function ctxExtract() {
                     :edge-colors="graphLayout.edgeColors[idx] ?? []"
                     :incoming="graphLayout.incoming[idx] ?? false"
                     :max-lane="graphLayout.maxLane"
+                    :lane-labels="graphLayout.laneLabels"
+                    :node-label="graphLayout.nodeLabels[idx]"
                   />
                 </span>
                 <span class="flex min-w-0 items-center gap-1 truncate">
@@ -479,14 +558,15 @@ async function ctxExtract() {
                 <span class="truncate text-muted-foreground">{{ c.author }}</span>
                 <span class="truncate text-muted-foreground">{{ formatTime(c.authorTime) }}</span>
               </button>
-              <button
-                v-if="log.truncated"
-                type="button"
-                class="w-full py-2 text-xs text-muted-foreground hover:text-foreground"
-                @click="log.loadMore()"
+              <div
+                v-if="log.truncated || log.loadingMore"
+                class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
               >
-                Load more…
-              </button>
+                <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
+                <button v-else type="button" class="hover:text-foreground" @click="log.loadMore()">
+                  {{ t("log.loadMore") }}
+                </button>
+              </div>
             </div>
           </div>
         </Pane>
@@ -494,7 +574,9 @@ async function ctxExtract() {
           <Splitpanes horizontal class="h-full">
             <Pane :size="45">
               <div class="flex h-full min-h-0 flex-col">
-                <div class="border-b px-2 py-1 text-[11px] font-medium">Changed Files</div>
+                <div class="border-b px-2 py-1 text-[11px] font-medium">
+                  {{ t("log.changedFiles") }}
+                </div>
                 <PathTreeList
                   :files="log.changedFiles"
                   :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
@@ -511,13 +593,15 @@ async function ctxExtract() {
                 <pre
                   v-if="log.details.body"
                   class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
-                >{{ log.details.body }}</pre>
-                <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                  <dt>Author</dt>
+                  >{{ log.details.body }}</pre>
+                <dl
+                  class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+                >
+                  <dt>{{ t("log.author") }}</dt>
                   <dd>{{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;</dd>
-                  <dt>Date</dt>
+                  <dt>{{ t("log.date") }}</dt>
                   <dd>{{ formatTime(log.details.authorTime) }}</dd>
-                  <dt>Parents</dt>
+                  <dt>{{ t("log.parents") }}</dt>
                   <dd class="font-mono">
                     {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
                   </dd>
@@ -541,46 +625,102 @@ async function ctxExtract() {
           :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }"
           @click.stop
         >
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCopy">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxCopy"
+          >
             {{ t("log.copyRevision") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCherryPick">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxCherryPick"
+          >
             {{ t("actions.cherryPick") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReword">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxReword"
+          >
             {{ t("actions.reword") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxInteractive">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxInteractive"
+          >
             {{ t("actions.interactiveRebase") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxSquash">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxSquash"
+          >
             {{ t("actions.squash") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxDrop">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxDrop"
+          >
             {{ t("actions.dropCommits") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxUncommit">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxUncommit"
+          >
             {{ t("actions.uncommit") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRevert">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxRevert"
+          >
             {{ t("actions.revert") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxReset">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxReset"
+          >
             {{ t("actions.reset") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxExtract">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxExtract"
+          >
             {{ t("actions.extractSelected") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareLocal">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxCompareLocal"
+          >
             {{ t("history.compareWithLocal") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCompareVersions">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxCompareVersions"
+          >
             {{ t("history.compareVersions") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxCombined">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxCombined"
+          >
             {{ t("history.showAllChanges") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent" @click="ctxRepoAtRev">
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+            @click="ctxRepoAtRev"
+          >
             {{ t("history.repoAtRevision") }}
           </button>
         </div>

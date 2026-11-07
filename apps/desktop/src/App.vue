@@ -14,6 +14,7 @@ import CustomContextMenuHost from "@/components/layout/CustomContextMenuHost.vue
 import ToastHost from "@/components/common/ToastHost.vue";
 import DialogHost from "@/components/common/DialogHost.vue";
 import BranchesPopup from "@/features/branches/BranchesPopup.vue";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -128,64 +129,59 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <TitleBar />
-    <div class="flex min-h-0 flex-1">
-      <ToolWindowStripe />
-      <div class="min-h-0 min-w-0 flex-1">
-        <Splitpanes class="default-theme h-full" horizontal>
-          <Pane :size="layout.bottomOpen ? 100 - layout.bottomSize : 100" min-size="30">
-            <Splitpanes class="h-full">
-              <Pane
-                v-if="layout.leftOpen && layout.commitTwMode !== 'float'"
-                :size="layout.leftSize"
-                min-size="16"
-                max-size="50"
-              >
-                <CommitToolWindow />
-              </Pane>
-              <Pane
-                :size="
-                  layout.leftOpen && layout.commitTwMode !== 'float'
-                    ? 100 - layout.leftSize
-                    : 100
-                "
-                min-size="30"
-              >
-                <EditorTabs />
-              </Pane>
-            </Splitpanes>
-          </Pane>
-          <Pane
-            v-if="layout.bottomOpen"
-            :size="layout.bottomSize"
-            min-size="15"
-            max-size="60"
-          >
-            <GitToolWindow />
-          </Pane>
-        </Splitpanes>
+  <TooltipProvider :delay-duration="350" :skip-delay-duration="200">
+    <div class="flex h-full min-h-0 flex-col overflow-hidden">
+      <TitleBar />
+      <div class="flex min-h-0 flex-1">
+        <ToolWindowStripe />
+        <div class="min-h-0 min-w-0 flex-1">
+          <Splitpanes class="default-theme h-full" horizontal>
+            <Pane :size="layout.bottomOpen ? 100 - layout.bottomSize : 100" min-size="30">
+              <Splitpanes class="h-full">
+                <Pane
+                  v-if="layout.leftOpen && layout.commitTwMode !== 'float'"
+                  :size="layout.leftSize"
+                  min-size="16"
+                  max-size="50"
+                >
+                  <CommitToolWindow />
+                </Pane>
+                <Pane
+                  :size="
+                    layout.leftOpen && layout.commitTwMode !== 'float' ? 100 - layout.leftSize : 100
+                  "
+                  min-size="30"
+                >
+                  <EditorTabs />
+                </Pane>
+              </Splitpanes>
+            </Pane>
+            <Pane v-if="layout.bottomOpen" :size="layout.bottomSize" min-size="15" max-size="60">
+              <GitToolWindow />
+            </Pane>
+          </Splitpanes>
+        </div>
       </div>
-    </div>
-    <!-- Float mode: in-app panel only — never a second OS / Webview window. -->
-    <div
-      v-if="layout.commitTwMode === 'float'"
-      class="pointer-events-none fixed inset-x-4 bottom-12 top-14 z-40 flex justify-start"
-    >
+      <!-- Float mode: in-app panel only — never a second OS / Webview window. -->
       <div
-        class="pointer-events-auto flex h-full w-[min(420px,42vw)] min-w-[280px] flex-col overflow-hidden rounded-md border bg-sidebar shadow-lg ring-1 ring-foreground/10"
+        v-if="layout.commitTwMode === 'float'"
+        class="pointer-events-none fixed inset-x-4 bottom-12 top-14 z-40 flex justify-start"
       >
-        <CommitToolWindow />
+        <div
+          class="pointer-events-auto flex h-full w-[min(420px,42vw)] min-w-[280px] flex-col overflow-hidden rounded-md border bg-sidebar shadow-lg ring-1 ring-foreground/10"
+        >
+          <CommitToolWindow />
+        </div>
       </div>
+      <StatusBar />
+      <FindActionPalette />
+      <VcsOperationsPopup />
+      <CustomContextMenuHost />
+      <ToastHost />
+      <DialogHost />
+      <BranchesPopup />
     </div>
-    <StatusBar />
-    <FindActionPalette />
-    <VcsOperationsPopup />
-    <CustomContextMenuHost />
-    <ToastHost />
-    <DialogHost />
-    <BranchesPopup />
-  </div>
+  </TooltipProvider>
 </template>
 
 <style>

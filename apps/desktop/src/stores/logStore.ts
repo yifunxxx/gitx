@@ -11,6 +11,8 @@ import type {
 } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { formatErrorMessage } from "@/lib/errors";
+import { toast } from "@/composables/useToast";
+import { i18n } from "@/i18n";
 
 const emptyFilters = (): LogFilters => ({
   text: null,
@@ -29,6 +31,7 @@ const emptyFilters = (): LogFilters => ({
 export const useLogStore = defineStore("log", () => {
   const commits = ref<LogCommit[]>([]);
   const loading = ref(false);
+  const loadingMore = ref(false);
   const error = ref<string | null>(null);
   const truncated = ref(false);
   const nextOffset = ref(0);
@@ -43,19 +46,42 @@ export const useLogStore = defineStore("log", () => {
   const indexStatus = ref<IndexStatus | null>(null);
   const goToInput = ref("");
 
+  /** Monotonic generation — supersedes in-flight loads (dedupe / cancel). */
+  let loadGen = 0;
+
   const activeFilterChips = computed(() => {
+    const t = i18n.global.t;
     const chips: { key: string; label: string }[] = [];
-    if (filters.value.text) chips.push({ key: "text", label: `Text: ${filters.value.text}` });
+    if (filters.value.text)
+      chips.push({ key: "text", label: String(t("log.chipText", { value: filters.value.text })) });
     if (filters.value.authors?.length)
-      chips.push({ key: "authors", label: `User: ${filters.value.authors.join(", ")}` });
-    if (filters.value.since) chips.push({ key: "since", label: `Since: ${filters.value.since}` });
-    if (filters.value.until) chips.push({ key: "until", label: `Until: ${filters.value.until}` });
+      chips.push({
+        key: "authors",
+        label: String(t("log.chipUser", { value: filters.value.authors.join(", ") })),
+      });
+    if (filters.value.since)
+      chips.push({
+        key: "since",
+        label: String(t("log.chipSince", { value: filters.value.since })),
+      });
+    if (filters.value.until)
+      chips.push({
+        key: "until",
+        label: String(t("log.chipUntil", { value: filters.value.until })),
+      });
     if (filters.value.paths?.length)
-      chips.push({ key: "paths", label: `Paths: ${filters.value.paths.join(", ")}` });
+      chips.push({
+        key: "paths",
+        label: String(t("log.chipPaths", { value: filters.value.paths.join(", ") })),
+      });
     if (filters.value.revisions?.length)
-      chips.push({ key: "revisions", label: `Branch: ${filters.value.revisions.join(" ")}` });
-    if (filters.value.firstParent) chips.push({ key: "firstParent", label: "First parent" });
-    if (filters.value.noMerges) chips.push({ key: "noMerges", label: "No merges" });
+      chips.push({
+        key: "revisions",
+        label: String(t("log.chipBranch", { value: filters.value.revisions.join(" ") })),
+      });
+    if (filters.value.firstParent)
+      chips.push({ key: "firstParent", label: String(t("log.firstParent")) });
+    if (filters.value.noMerges) chips.push({ key: "noMerges", label: String(t("log.noMerges")) });
     return chips;
   });
 
@@ -63,10 +89,23 @@ export const useLogStore = defineStore("log", () => {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath || !workspace.repoId || !workspace.isRepo) {
       commits.value = [];
+      truncated.value = false;
+      loading.value = false;
+      loadingMore.value = false;
       return;
     }
-    loading.value = true;
-    error.value = null;
+
+    if (!reset && (loading.value || loadingMore.value || !truncated.value)) return;
+
+    const gen = ++loadGen;
+    if (reset) {
+      loading.value = true;
+      loadingMore.value = false;
+      error.value = null;
+    } else {
+      loadingMore.value = true;
+    }
+
     try {
       const backend = getBackend();
       const offset = reset ? 0 : nextOffset.value;
@@ -77,21 +116,56 @@ export const useLogStore = defineStore("log", () => {
         limit: 100,
         filters: filters.value,
       });
-      commits.value = reset ? page.commits : [...commits.value, ...page.commits];
-      truncated.value = page.truncated;
-      nextOffset.value = page.nextOffset;
+      if (gen !== loadGen) return;
+
       if (reset) {
+        commits.value = page.commits;
+        truncated.value = page.truncated;
+        nextOffset.value = page.nextOffset;
         selectedSha.value = null;
         selectedShas.value = [];
+      } else {
+        const seen = new Set(commits.value.map((c) => c.sha));
+        const added = page.commits.filter((c) => !seen.has(c.sha));
+        if (added.length === 0) {
+          // Empty / duplicate page → stop infinite spinner loops.
+          truncated.value = false;
+        } else {
+          commits.value = [...commits.value, ...added];
+          truncated.value = page.truncated;
+          nextOffset.value = page.nextOffset;
+        }
       }
-      if (!selectedSha.value && page.commits[0]) {
-        await select(page.commits[0].sha);
-      }
+
       void refreshIndexStatus();
     } catch (e) {
-      error.value = formatErrorMessage(e);
+      if (gen !== loadGen) return;
+      const msg = formatErrorMessage(e);
+      if (reset) {
+        error.value = msg;
+      } else {
+        // Keep existing rows; never leave load-more spinning forever.
+        truncated.value = true;
+        toast({
+          title: String(i18n.global.t("log.loadMoreFailed")),
+          description: msg,
+        });
+      }
     } finally {
-      loading.value = false;
+      if (gen === loadGen) {
+        loading.value = false;
+        loadingMore.value = false;
+      }
+    }
+
+    // Select after clearing loading so a hung details IPC cannot pin the spinner.
+    if (gen === loadGen && reset && !selectedSha.value && commits.value[0]) {
+      void select(commits.value[0].sha).catch((e) => {
+        toast({
+          title: String(i18n.global.t("log.failed")),
+          description: formatErrorMessage(e),
+        });
+      });
     }
   }
 
@@ -110,16 +184,24 @@ export const useLogStore = defineStore("log", () => {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath) return;
     const backend = getBackend();
-    const [d, files] = await Promise.all([
-      backend.logCommitDetails({ path: workspace.repoPath, sha }),
-      backend.logChangedFiles({ path: workspace.repoPath, sha }),
-    ]);
-    details.value = d;
-    changedFiles.value = files;
+    try {
+      const [d, files] = await Promise.all([
+        backend.logCommitDetails({ path: workspace.repoPath, sha }),
+        backend.logChangedFiles({ path: workspace.repoPath, sha }),
+      ]);
+      if (selectedSha.value !== sha) return;
+      details.value = d;
+      changedFiles.value = files;
+    } catch (e) {
+      if (selectedSha.value !== sha) return;
+      details.value = null;
+      changedFiles.value = [];
+      throw e;
+    }
   }
 
   async function loadMore() {
-    if (!truncated.value || loading.value) return;
+    if (!truncated.value || loading.value || loadingMore.value) return;
     await load(false);
   }
 
@@ -208,9 +290,7 @@ export const useLogStore = defineStore("log", () => {
   async function goToHashOrRef() {
     const q = goToInput.value.trim();
     if (!q) return;
-    const hit = commits.value.find(
-      (c) => c.sha.startsWith(q) || c.refs.some((r) => r.includes(q)),
-    );
+    const hit = commits.value.find((c) => c.sha.startsWith(q) || c.refs.some((r) => r.includes(q)));
     if (hit) {
       await select(hit.sha);
       return;
@@ -232,7 +312,14 @@ export const useLogStore = defineStore("log", () => {
   async function rebuildIndex() {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath) return;
-    indexStatus.value = await getBackend().logIndexRebuild({ path: workspace.repoPath });
+    try {
+      indexStatus.value = await getBackend().logIndexRebuild({ path: workspace.repoPath });
+    } catch (e) {
+      toast({
+        title: String(i18n.global.t("log.rebuildIndex")),
+        description: formatErrorMessage(e),
+      });
+    }
   }
 
   function copySelectedSha() {
@@ -244,6 +331,7 @@ export const useLogStore = defineStore("log", () => {
   return {
     commits,
     loading,
+    loadingMore,
     error,
     truncated,
     selectedSha,

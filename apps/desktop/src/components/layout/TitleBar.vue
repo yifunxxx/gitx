@@ -13,6 +13,7 @@ import {
   Upload,
 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import WindowControls from "./WindowControls.vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -62,10 +63,8 @@ const branchLabel = computed(() => {
 
 const branchTitle = computed(() => {
   const b = workspace.branch;
-  if (!b) return t("actions.branches");
-  const up = b.upstream
-    ? `${t("status.upstream")}: ${b.upstream}`
-    : t("status.noUpstream");
+  if (!b) return t("toolbar.branches");
+  const up = b.upstream ? `${t("status.upstream")}: ${b.upstream}` : t("status.noUpstream");
   const fetched = branches.lastFetchAt
     ? `${t("status.lastFetch")}: ${new Date(branches.lastFetchAt).toLocaleTimeString()}`
     : t("status.notFetched");
@@ -115,89 +114,88 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
     class="flex h-10 shrink-0 items-center gap-1 border-b bg-dbx-chrome px-2"
     data-tauri-drag-region
   >
-    <Button variant="ghost" size="icon" class="shrink-0" @click="layout.vcsPopupOpen = true">
-      <Menu class="h-4 w-4" />
-    </Button>
+    <Tip :text="t('toolbar.menu')">
+      <Button variant="ghost" size="icon" class="shrink-0" @click="layout.vcsPopupOpen = true">
+        <Menu class="h-4 w-4" />
+      </Button>
+    </Tip>
 
-    <Button variant="ghost" size="sm" class="gap-1.5" @click="openFolder">
-      <FolderOpen class="h-3.5 w-3.5" />
-      <span class="max-w-[160px] truncate">
-        {{
-          workspace.folderPath
-            ? workspace.folderPath.split(/[\\/]/).pop()
-            : t("welcome.openFolder")
-        }}
-      </span>
-    </Button>
+    <Tip :text="t('toolbar.openFolder')">
+      <Button variant="ghost" size="sm" class="gap-1.5" @click="openFolder">
+        <FolderOpen class="h-3.5 w-3.5" />
+        <span class="max-w-[160px] truncate">
+          {{
+            workspace.folderPath
+              ? workspace.folderPath.split(/[\\/]/).pop()
+              : t("welcome.openFolder")
+          }}
+        </span>
+      </Button>
+    </Tip>
 
-    <button
-      type="button"
-      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-      :title="branchTitle"
-      :disabled="!workspace.isRepo"
-      @click="branches.openPopup()"
-    >
-      <GitBranch class="h-3.5 w-3.5" />
-      <span>{{ branchLabel }}</span>
-    </button>
+    <Tip :text="branchTitle" side="bottom">
+      <button
+        type="button"
+        class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+        :disabled="!workspace.isRepo"
+        @click="branches.openPopup()"
+      >
+        <GitBranch class="h-3.5 w-3.5" />
+        <span>{{ branchLabel }}</span>
+      </button>
+    </Tip>
 
     <div class="flex-1" data-tauri-drag-region />
 
     <div class="flex items-center gap-0.5">
-      <Button
-        variant="ghost"
-        size="sm"
-        :title="t('actions.updateProject')"
-        :disabled="!workspace.isRepo"
-        @click="run('Vcs.UpdateProject')"
-      >
-        <RotateCcw class="h-3.5 w-3.5" />
-      </Button>
-      <Button variant="ghost" size="sm" :title="t('actions.commit')" @click="run('CheckinProject')">
-        <Check class="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        :title="t('actions.push')"
-        :disabled="!workspace.isRepo"
-        @click="run('Git.Push')"
-      >
-        <Upload class="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        :title="t('toolWindows.log')"
-        @click="layout.bottomOpen = true; layout.activeBottomTab = 'log'"
-      >
-        <History class="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        :title="isDark ? t('settings.theme.light') : t('settings.theme.dark')"
-        @click="settings.toggleTheme()"
-      >
-        <Sun v-if="isDark" class="h-3.5 w-3.5" />
-        <Moon v-else class="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        :title="t('actions.findAction')"
-        @click="layout.findActionOpen = true"
-      >
-        <Search class="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        :title="t('settings.title')"
-        @click="run('Settings')"
-      >
-        <Settings class="h-3.5 w-3.5" />
-      </Button>
+      <Tip :text="t('toolbar.updateProject')">
+        <Button
+          variant="ghost"
+          size="sm"
+          :disabled="!workspace.isRepo"
+          @click="run('Vcs.UpdateProject')"
+        >
+          <RotateCcw class="h-3.5 w-3.5" />
+        </Button>
+      </Tip>
+      <Tip :text="t('toolbar.commit')">
+        <Button variant="ghost" size="sm" @click="run('CheckinProject')">
+          <Check class="h-3.5 w-3.5" />
+        </Button>
+      </Tip>
+      <Tip :text="t('toolbar.push')">
+        <Button variant="ghost" size="sm" :disabled="!workspace.isRepo" @click="run('Git.Push')">
+          <Upload class="h-3.5 w-3.5" />
+        </Button>
+      </Tip>
+      <Tip :text="t('toolbar.showLog')">
+        <Button
+          variant="ghost"
+          size="sm"
+          @click="
+            layout.bottomOpen = true;
+            layout.activeBottomTab = 'log';
+          "
+        >
+          <History class="h-3.5 w-3.5" />
+        </Button>
+      </Tip>
+      <Tip :text="isDark ? t('toolbar.themeLight') : t('toolbar.themeDark')">
+        <Button variant="ghost" size="icon" @click="settings.toggleTheme()">
+          <Sun v-if="isDark" class="h-3.5 w-3.5" />
+          <Moon v-else class="h-3.5 w-3.5" />
+        </Button>
+      </Tip>
+      <Tip :text="t('toolbar.findAction')">
+        <Button variant="ghost" size="icon" @click="layout.findActionOpen = true">
+          <Search class="h-3.5 w-3.5" />
+        </Button>
+      </Tip>
+      <Tip :text="t('toolbar.settings')">
+        <Button variant="ghost" size="icon" @click="run('Settings')">
+          <Settings class="h-3.5 w-3.5" />
+        </Button>
+      </Tip>
     </div>
 
     <WindowControls />

@@ -6,6 +6,7 @@ import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import Skeleton from "@/components/common/Skeleton.vue";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -119,10 +120,7 @@ async function unstageSelected() {
 }
 
 async function stageAll() {
-  const paths = [
-    ...changes.unstaged.map((f) => f.path),
-    ...changes.unversioned.map((f) => f.path),
-  ];
+  const paths = [...changes.unstaged.map((f) => f.path), ...changes.unversioned.map((f) => f.path)];
   if (!paths.length) return;
   await changes.stage(paths);
   toast({ title: t("commitTw.stageAll") });
@@ -266,15 +264,19 @@ async function runCtx(action: string) {
     <div class="flex h-8 items-center justify-between border-b px-2 text-xs font-medium">
       <span>
         {{ t("toolWindows.commit") }}
-        <span class="ml-1 text-[10px] font-normal text-muted-foreground">{{ commitTwModeLabel }}</span>
+        <span class="ml-1 text-[10px] font-normal text-muted-foreground">{{
+          commitTwModeLabel
+        }}</span>
       </span>
       <div class="flex items-center gap-0.5">
         <DropdownMenu>
-          <DropdownMenuTrigger>
-            <Button variant="ghost" size="icon" :title="t('commitTw.viewMode')">
-              <MoreVertical class="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
+          <Tip :text="t('commitTw.viewMode')">
+            <DropdownMenuTrigger>
+              <Button variant="ghost" size="icon">
+                <MoreVertical class="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+          </Tip>
           <DropdownMenuContent align="end" class="w-52">
             <DropdownMenuLabel>{{ t("commitTw.viewAs") }}</DropdownMenuLabel>
             <DropdownMenuItem
@@ -304,34 +306,49 @@ async function runCtx(action: string) {
             </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant="ghost" size="icon" :title="t('actions.refreshStatus')" @click="changes.refresh()">
-          <RefreshCw class="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" :title="t('actions.showDiff')" @click="showDiffSelected">
-          <FileDiff class="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          :title="t('settings.fields.showIgnoredFiles')"
-          @click="changes.toggleShowIgnored()"
-        >
-          <Eye class="h-3.5 w-3.5" />
-        </Button>
+        <Tip :text="t('actions.refreshStatus')">
+          <Button variant="ghost" size="icon" @click="changes.refresh()">
+            <RefreshCw class="h-3.5 w-3.5" />
+          </Button>
+        </Tip>
+        <Tip :text="t('actions.showDiff')">
+          <Button variant="ghost" size="icon" @click="showDiffSelected">
+            <FileDiff class="h-3.5 w-3.5" />
+          </Button>
+        </Tip>
+        <Tip :text="t('settings.fields.showIgnoredFiles')">
+          <Button variant="ghost" size="icon" @click="changes.toggleShowIgnored()">
+            <Eye class="h-3.5 w-3.5" />
+          </Button>
+        </Tip>
         <template v-if="changes.stagingMode">
-          <Button variant="ghost" size="icon" :title="t('actions.stage')" @click="stageSelected">
-            <Plus class="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" :title="t('actions.unstage')" @click="unstageSelected">
-            <Minus class="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="xs" @click="stageAll">{{ t("commitTw.stageAll") }}</Button>
+          <Tip :text="t('actions.stage')">
+            <Button variant="ghost" size="icon" @click="stageSelected">
+              <Plus class="h-3.5 w-3.5" />
+            </Button>
+          </Tip>
+          <Tip :text="t('actions.unstage')">
+            <Button variant="ghost" size="icon" @click="unstageSelected">
+              <Minus class="h-3.5 w-3.5" />
+            </Button>
+          </Tip>
+          <Tip :text="t('commitTw.stageAll')">
+            <Button variant="ghost" size="xs" @click="stageAll">{{
+              t("commitTw.stageAll")
+            }}</Button>
+          </Tip>
         </template>
         <template v-else>
-          <Button variant="ghost" size="icon" :title="t('changelist.new')" @click="newChangelist">
-            <ListPlus class="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="xs" @click="newChangelist">{{ t("changelist.new") }}</Button>
+          <Tip :text="t('changelist.new')">
+            <Button variant="ghost" size="icon" @click="newChangelist">
+              <ListPlus class="h-3.5 w-3.5" />
+            </Button>
+          </Tip>
+          <Tip :text="t('changelist.new')">
+            <Button variant="ghost" size="xs" @click="newChangelist">{{
+              t("changelist.new")
+            }}</Button>
+          </Tip>
         </template>
       </div>
     </div>
@@ -360,10 +377,7 @@ async function runCtx(action: string) {
       </div>
       <ChangesTree v-else @open-diff="openDiff" @open-file="openFile" @context="onContext" />
       <CommitMessageEditor v-if="showMessageEditor" />
-      <div
-        v-else
-        class="border-t px-2 py-1 text-[11px] text-muted-foreground"
-      >
+      <div v-else class="border-t px-2 py-1 text-[11px] text-muted-foreground">
         {{ t("commitTw.controlsHidden") }}
       </div>
     </template>
