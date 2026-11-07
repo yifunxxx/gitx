@@ -42,6 +42,17 @@ jobs:
       - run: cargo test -p gitx-core -p gitx-git -p gitx-testkit -p gitx-meta --workspace --exclude gitx
       - run: cargo clippy -p gitx-core -p gitx-git -p gitx-helper -p gitx-meta -p gitx-watch -- -D warnings
       - run: cargo build -p gitx-helper
+      # tauri.conf externalBin expects src-tauri/binaries/gitx-helper-<triple>
+      - name: Stage gitx-helper sidecar for tauri build
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/binaries
+          triple="$(rustc -vV | sed -n 's/^host: //p')"
+          src="target/debug/gitx-helper"
+          if [[ ! -f "$src" ]]; then src="target/debug/gitx-helper.exe"; fi
+          cp "$src" "src-tauri/binaries/gitx-helper-${triple}"
+          # Windows-style name is unused on Linux CI; keep bare name for helper_bin sibling lookup.
+          ls -la src-tauri/binaries/
       - run: cargo build -p gitx
 
   # Full desktop e2e (tauri-driver) is deferred — smoke via web mock in M0.

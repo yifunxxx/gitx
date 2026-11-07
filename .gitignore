@@ -1,3 +1,7 @@
+# Tauri externalBin sidecars (CI/Release stage these; keep .gitkeep only)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+
 # Rust
 debug/
 target/
