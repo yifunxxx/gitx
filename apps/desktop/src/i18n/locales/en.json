@@ -178,6 +178,7 @@
     "stageLinesTitle": "Stage lines",
     "stageLinesPrompt": "New-side line numbers to stage (comma or space separated)",
     "noValidLines": "No valid line numbers",
+    "onlyChangedLines": "Enter only added or modified line numbers highlighted on the new side",
     "linesStaged": "Lines staged",
     "linesStagedCount": "{count} line(s)",
     "stageLinesFailed": "Could not stage lines",

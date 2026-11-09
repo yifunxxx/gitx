@@ -127,12 +127,23 @@ watch(
 );
 onBeforeUnmount(() => { stageGeneration += 1; });
 
+const stageableLines = computed(() => {
+  const lines = new Set<number>();
+  for (const hunk of visibleHunks.value) {
+    let number = hunk.newStart;
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) lines.add(number);
+      if (line.startsWith("+") || line.startsWith(" ")) number += 1;
+    }
+  }
+  return lines;
+});
 const canStage = computed(() =>
   tab.value?.kind === "file" && tab.value.left === "index" &&
   tab.value.right === "worktree" && !tab.value.leftRev && !tab.value.rightRev &&
   (!tab.value.leftPath || tab.value.leftPath === tab.value.path) &&
-  !tab.value.loading && !tab.value.error && !!result.value?.hunks.length &&
-  !result.value.binary && !result.value.tooLarge,
+  !tab.value.loading && !tab.value.error && stageableLines.value.size > 0 &&
+  !result.value?.binary && !result.value?.tooLarge,
 );
 
 async function stageSelectedLines() {
@@ -157,6 +168,10 @@ async function stageSelectedLines() {
     if (tokens.some((s) => !/^\d+$/.test(s)) ||
         lines.some((n) => !Number.isInteger(n) || n <= 0 || n > 0xffffffff)) {
       toast({ title: t("diff.noValidLines") });
+      return;
+    }
+    if (lines.some((line) => !stageableLines.value.has(line))) {
+      toast({ title: t("diff.onlyChangedLines") });
       return;
     }
     await getBackend().stageLines({ repoId, path: repoPath, filePath: path, lines });

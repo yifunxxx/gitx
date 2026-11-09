@@ -178,6 +178,7 @@
     "stageLinesTitle": "暂存行",
     "stageLinesPrompt": "输入要暂存的新侧行号（逗号或空格分隔）",
     "noValidLines": "没有有效的行号",
+    "onlyChangedLines": "请仅输入新侧高亮的新增或修改行号",
     "linesStaged": "已暂存行",
     "linesStagedCount": "{count} 行",
     "stageLinesFailed": "暂存行失败",

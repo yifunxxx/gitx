@@ -36,7 +36,7 @@ beforeEach(() => {
     collapseUnchanged: true, unified: false, ignoreWhitespace: "none",
     result: {
       binary: false, tooLarge: false,
-      hunks: [{ header: "@@ -1 +1,2 @@", oldStart: 1, newStart: 1, lines: [" old", "+new"] }],
+      hunks: [{ header: "@@ -1 +1,3 @@", oldStart: 1, newStart: 1, lines: [" old", "+new", "+third"] }],
     },
   };
   mocks.diffs = reactive({
@@ -152,13 +152,21 @@ it("reports refresh failure separately after a successful write", async () => {
   }));
 });
 
-it.each(["head", "binary", "tooLarge", "loading", "historical", "empty"])(
+it.each(["1", "2, 999"])("rejects unchanged or out-of-range input %s", async (input) => {
+  mocks.prompt.mockResolvedValue(input);
+  await click();
+  expect(mocks.stageLines).not.toHaveBeenCalled();
+  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "diff.onlyChangedLines" }));
+});
+
+it.each(["head", "binary", "tooLarge", "loading", "historical", "empty", "deletions"])(
   "does not offer line staging for %s comparisons", async (kind) => {
     const tab = mocks.diffs.tabs[0];
     if (kind === "head") tab.left = "head";
     else if (kind === "historical") tab.leftRev = "abc123";
     else if (kind === "loading") tab.loading = true;
     else if (kind === "empty") tab.result.hunks = [];
+    else if (kind === "deletions") tab.result.hunks[0].lines = ["-old", " remaining"];
     else tab.result[kind] = true;
     await flushPromises();
     expect(button()).toBeUndefined();
