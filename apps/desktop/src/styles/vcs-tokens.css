@@ -1,13 +1,14 @@
 :root {
-  --vcs-modified: 37 99 235;
-  --vcs-added: 22 163 74;
-  --vcs-deleted: 115 115 115;
-  --vcs-renamed: 124 58 237;
-  --vcs-unversioned: 153 80 52;
-  --vcs-ignored: 113 128 58;
-  --vcs-conflict: 220 38 38;
-  --vcs-merged-with-conflicts: 234 88 12;
-  --vcs-changelist-inactive: 161 161 161;
+  /* File labels must remain legible over the blue selection surface. */
+  --vcs-modified: 29 73 205;
+  --vcs-added: 20 100 52;
+  --vcs-deleted: 85 85 85;
+  --vcs-renamed: 109 40 217;
+  --vcs-unversioned: 139 69 23;
+  --vcs-ignored: 77 95 26;
+  --vcs-conflict: 175 24 24;
+  --vcs-merged-with-conflicts: 154 52 18;
+  --vcs-changelist-inactive: 85 85 85;
 
   --diff-insert-bg: 187 247 208;
   --diff-insert-strong: 22 163 74;
@@ -18,22 +19,22 @@
   --diff-word-insert: 74 222 128;
   --diff-word-delete: 248 113 113;
 
-  --gutter-added: 22 163 74;
+  --gutter-added: 21 128 61;
   --gutter-modified: 37 99 235;
   --gutter-deleted: 220 38 38;
 
   --graph-lane-0: 37 99 235;
-  --graph-lane-1: 22 163 74;
-  --graph-lane-2: 234 88 12;
+  --graph-lane-1: 21 128 61;
+  --graph-lane-2: 194 65 12;
   --graph-lane-3: 124 58 237;
-  --graph-lane-4: 8 145 178;
+  --graph-lane-4: 14 116 144;
   --graph-lane-5: 219 39 119;
-  --graph-lane-6: 202 138 4;
+  --graph-lane-6: 161 98 7;
   --graph-lane-7: 79 70 229;
-  --graph-lane-8: 5 150 105;
+  --graph-lane-8: 4 120 87;
   --graph-lane-9: 225 29 72;
-  --graph-lane-10: 14 165 233;
-  --graph-lane-11: 168 85 247;
+  --graph-lane-10: 3 105 161;
+  --graph-lane-11: 147 51 234;
 
   --ref-head: 23 23 23;
   --ref-local: 37 99 235;
@@ -47,6 +48,34 @@
 }
 
 .dark {
+  --vcs-modified: 147 197 253;
+  --vcs-added: 74 222 128;
+  --vcs-deleted: 185 187 193;
+  --vcs-renamed: 216 180 254;
+  --vcs-unversioned: 253 186 116;
+  --vcs-ignored: 190 242 100;
+  --vcs-conflict: 252 165 165;
+  --vcs-merged-with-conflicts: 253 186 116;
+  --vcs-changelist-inactive: 185 187 193;
+
+  --gutter-added: 74 222 128;
+  --gutter-modified: 147 197 253;
+  --gutter-deleted: 252 165 165;
+
+  /* Dark surfaces need their own palette, including selected log rows. */
+  --graph-lane-0: 96 165 250;
+  --graph-lane-1: 74 222 128;
+  --graph-lane-2: 251 146 60;
+  --graph-lane-3: 196 181 253;
+  --graph-lane-4: 34 211 238;
+  --graph-lane-5: 244 114 182;
+  --graph-lane-6: 250 204 21;
+  --graph-lane-7: 165 180 252;
+  --graph-lane-8: 52 211 153;
+  --graph-lane-9: 251 113 133;
+  --graph-lane-10: 56 189 248;
+  --graph-lane-11: 216 180 254;
+
   --diff-insert-bg: 20 83 45;
   --diff-delete-bg: 127 29 29;
   --diff-modify-bg: 30 58 138;
