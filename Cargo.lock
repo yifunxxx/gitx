@@ -1305,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "gitx"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "gitx-diff",
@@ -1334,7 +1334,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-core"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-diff"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "similar",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-git"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "gitx-diff",
@@ -1375,14 +1375,14 @@ dependencies = [
 
 [[package]]
 name = "gitx-graph"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
 ]
 
 [[package]]
 name = "gitx-helper"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "gitx-git",
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-index"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "rusqlite",
@@ -1405,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-meta"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "serde",
@@ -1418,14 +1418,14 @@ dependencies = [
 
 [[package]]
 name = "gitx-read"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
 ]
 
 [[package]]
 name = "gitx-testkit"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "tempfile",
@@ -1434,7 +1434,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-watch"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gitx-core",
  "notify",
