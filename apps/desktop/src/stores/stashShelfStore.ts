@@ -26,6 +26,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
   const error = ref<string | null>(null);
   const selectedStashSha = ref<string | null>(null);
   const selectedShelfId = ref<string | null>(null);
+  const selectedDeletedShelfId = ref<string | null>(null);
   const showDeleted = ref(false);
   let refreshGeneration = 0;
   let repositoryGeneration = 0;
@@ -43,6 +44,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
       deletedShelves.value = [];
       selectedStashSha.value = null;
       selectedShelfId.value = null;
+      selectedDeletedShelfId.value = null;
       loading.value = false;
       error.value = null;
     },
@@ -83,11 +85,33 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
       deletedShelves.value = deleted;
       if (!s.some((entry) => entry.sha === selectedStashSha.value)) selectedStashSha.value = null;
       if (!sh.some((entry) => entry.id === selectedShelfId.value)) selectedShelfId.value = null;
+      if (!deleted.some((entry) => entry.id === selectedDeletedShelfId.value))
+        selectedDeletedShelfId.value = null;
     } catch (e) {
       if (current()) error.value = formatErrorMessage(e);
     } finally {
       if (generation === refreshGeneration) loading.value = false;
     }
+  }
+
+  async function setShowDeleted(show: boolean) {
+    if (showDeleted.value === show) return;
+    showDeleted.value = show;
+    deletedShelves.value = [];
+    selectedDeletedShelfId.value = null;
+    await refresh();
+  }
+
+  async function restoreShelf(id: string) {
+    if (!showDeleted.value || !deletedShelves.value.some((entry) => entry.id === id)) return false;
+    return mutate(async (path, current) => {
+      const restored = await getBackend().shelfRestore({ path, id });
+      if (!current()) return false;
+      if (selectedDeletedShelfId.value === id) {
+        selectedDeletedShelfId.value = null;
+        selectedShelfId.value = restored.id;
+      }
+    }, "shelf.restored");
   }
 
   function stashRefOf(entry: StashEntry) {
@@ -304,7 +328,10 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
           });
         }
         if (!patchFile || !current()) return false;
-        const name = patchFile.split(/[\\/]/).pop()?.replace(/\.(patch|diff)$/i, "");
+        const name = patchFile
+          .split(/[\\/]/)
+          .pop()
+          ?.replace(/\.(patch|diff)$/i, "");
         const entry = await getBackend().shelfImport({
           path,
           patchFile,
@@ -350,7 +377,10 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     busy,
     repositoryToken: () => repositoryGeneration,
     selectedShelfId,
+    selectedDeletedShelfId,
     showDeleted,
+    setShowDeleted,
+    restoreShelf,
     combineTab,
     refresh,
     stashRefOf,

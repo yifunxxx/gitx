@@ -387,6 +387,12 @@
     "clearConfirm": "清除全部 {count} 条 Stash？本地修改不会被应用。"
   },
   "shelf": {
+    "showDeleted": "显示最近删除",
+    "recentlyDeleted": "最近删除",
+    "deletedEmpty": "没有已删除的 Shelf",
+    "restore": "恢复",
+    "restored": "Shelf 已恢复",
+    "restoreHint": "恢复到 Shelf 列表，不会修改工作区",
     "importPatch": "导入补丁…",
     "patchFiles": "补丁文件",
     "patchPath": "补丁文件路径",

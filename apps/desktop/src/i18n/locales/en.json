@@ -387,6 +387,12 @@
     "clearConfirm": "Clear all {count} stashes without applying them?"
   },
   "shelf": {
+    "showDeleted": "Show recently deleted",
+    "recentlyDeleted": "Recently deleted",
+    "deletedEmpty": "No deleted shelves",
+    "restore": "Restore",
+    "restored": "Shelf restored",
+    "restoreHint": "Restores to the Shelf list without changing the working tree",
     "importPatch": "Import Patch…",
     "patchFiles": "Patch files",
     "patchPath": "Patch file path",

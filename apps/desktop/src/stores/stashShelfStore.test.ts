@@ -3,12 +3,15 @@ import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
 import { flushPromises } from "@vue/test-utils";
 import { useStashShelfStore } from "./stashShelfStore";
+import type { ShelfEntry } from "@/lib/backend";
 
 const mocks = vi.hoisted(() => ({
   workspace: { repoPath: "A", isRepo: true, navigationToken: (): number => 0 },
   backend: {
     stashList: vi.fn(),
     shelfList: vi.fn(),
+    shelfListDeleted: vi.fn(),
+    shelfRestore: vi.fn(),
     shelfCreate: vi.fn(),
     stashCreate: vi.fn(),
     stashApply: vi.fn(),
@@ -59,12 +62,17 @@ const entry = (sha: string, index: number) => ({
   time: 1,
   branch: "main",
 });
+const shelf = (id: string): ShelfEntry => ({
+  id, message: id, paths: [`${id}.txt`], createdAt: 1,
+  baseSha: "base", sourceChangelist: null, binary: false, system: false,
+});
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.workspace = reactive({ repoPath: "A", isRepo: true, navigationToken: () => 0 });
   setActivePinia(createPinia());
   mocks.backend.stashList.mockResolvedValue([]);
   mocks.backend.shelfList.mockResolvedValue([]);
+  mocks.backend.shelfListDeleted.mockResolvedValue([]);
   mocks.refresh.mockResolvedValue(undefined);
 });
 it("keeps the selected SHA when stash indexes change and clears it after removal", async () => {
@@ -485,4 +493,129 @@ it("keeps import errors visible and does not select a late result in another rep
   expect(store.selectedShelfId).toBeNull();
   expect(mocks.toast).toHaveBeenCalledTimes(notifications);
   expect(store.busy).toBe(false);
+});
+
+
+it("loads recently deleted only on request and clears hidden selection", async () => {
+  const store = useStashShelfStore();
+  mocks.backend.shelfListDeleted.mockResolvedValue([shelf("deleted")]);
+  await store.refresh();
+  expect(mocks.backend.shelfListDeleted).not.toHaveBeenCalled();
+  await store.setShowDeleted(true);
+  expect(store.deletedShelves).toEqual([shelf("deleted")]);
+  store.selectedDeletedShelfId = "deleted";
+  await store.setShowDeleted(false);
+  expect(store.deletedShelves).toEqual([]);
+  expect(store.selectedDeletedShelfId).toBeNull();
+  expect(mocks.backend.shelfListDeleted).toHaveBeenCalledExactlyOnceWith({ path: "A" });
+});
+
+it("discards stale results after rapid show hide show", async () => {
+  const store = useStashShelfStore();
+  const old = deferred();
+  mocks.backend.shelfListDeleted.mockReturnValueOnce(old.promise);
+  const first = store.setShowDeleted(true);
+  await store.setShowDeleted(false);
+  mocks.backend.shelfListDeleted.mockResolvedValue([shelf("current")]);
+  await store.setShowDeleted(true);
+  old.resolve([shelf("stale")]);
+  await first;
+  expect(store.deletedShelves).toEqual([shelf("current")]);
+  expect(store.loading).toBe(false);
+});
+
+it("restores the selected shelf and blocks duplicate writes through refresh", async () => {
+  const store = useStashShelfStore();
+  store.showDeleted = true;
+  store.deletedShelves = [shelf("saved")];
+  store.selectedDeletedShelfId = "saved";
+  const write = deferred();
+  const refresh = deferred();
+  mocks.backend.shelfRestore.mockReturnValue(write.promise);
+  mocks.backend.shelfList.mockReturnValue(refresh.promise);
+  const pending = store.restoreShelf("saved");
+  expect(await store.restoreShelf("saved")).toBe(false);
+  write.resolve(shelf("saved"));
+  await flushPromises();
+  expect(store.selectedShelfId).toBe("saved");
+  expect(store.selectedDeletedShelfId).toBeNull();
+  expect(store.busy).toBe(true);
+  expect(await store.restoreShelf("saved")).toBe(false);
+  refresh.resolve([shelf("saved")]);
+  expect(await pending).toBe(true);
+  expect(store.deletedShelves).toEqual([]);
+  expect(store.shelves).toEqual([shelf("saved")]);
+  expect(store.selectedShelfId).toBe("saved");
+  expect(store.busy).toBe(false);
+  expect(mocks.backend.shelfRestore).toHaveBeenCalledExactlyOnceWith({ path: "A", id: "saved" });
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.restored" });
+});
+
+it.each([false, true])("ignores a restore response after navigation (path change %s)", async (switchPath) => {
+  const store = useStashShelfStore();
+  let navigation = 0;
+  mocks.workspace.navigationToken = () => navigation;
+  store.showDeleted = true;
+  store.deletedShelves = [shelf("saved")];
+  store.selectedDeletedShelfId = "saved";
+  const write = deferred();
+  mocks.backend.shelfRestore.mockReturnValue(write.promise);
+  const pending = store.restoreShelf("saved");
+  if (switchPath) {
+    mocks.workspace.repoPath = "B";
+    mocks.workspace.repoPath = "A";
+    expect(store.selectedDeletedShelfId).toBeNull();
+    expect(store.deletedShelves).toEqual([]);
+    store.deletedShelves = [shelf("saved")];
+    expect(await store.restoreShelf("saved")).toBe(false);
+  } else navigation++;
+  write.resolve(shelf("saved"));
+  expect(await pending).toBe(false);
+  expect(store.selectedShelfId).toBeNull();
+  expect(mocks.backend.shelfRestore).toHaveBeenCalledOnce();
+  expect(mocks.backend.shelfList).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalled();
+});
+
+it("preserves a deleted entry and reports restore failures", async () => {
+  const store = useStashShelfStore();
+  store.showDeleted = true;
+  store.deletedShelves = [shelf("saved")];
+  store.selectedDeletedShelfId = "saved";
+  mocks.backend.shelfListDeleted.mockResolvedValue([shelf("saved")]);
+  mocks.backend.shelfRestore.mockRejectedValue(new Error("destination exists"));
+  expect(await store.restoreShelf("saved")).toBe(false);
+  expect(store.deletedShelves).toEqual([shelf("saved")]);
+  expect(store.selectedDeletedShelfId).toBe("saved");
+  expect(store.selectedShelfId).toBeNull();
+  expect(store.error).toBe("destination exists");
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "destination exists" });
+  expect(store.busy).toBe(false);
+});
+
+it("rejects missing or hidden restore targets", async () => {
+  const store = useStashShelfStore();
+  store.deletedShelves = [shelf("saved")];
+  expect(await store.restoreShelf("saved")).toBe(false);
+  store.showDeleted = true;
+  expect(await store.restoreShelf("missing")).toBe(false);
+  expect(mocks.backend.shelfRestore).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("does not override selection changed during restore (hide %s)", async (hide) => {
+  const store = useStashShelfStore();
+  store.showDeleted = true;
+  store.deletedShelves = [shelf("saved"), shelf("other")];
+  store.selectedDeletedShelfId = "saved";
+  mocks.backend.shelfListDeleted.mockResolvedValue([shelf("other")]);
+  mocks.backend.shelfList.mockResolvedValue([shelf("saved")]);
+  const write = deferred();
+  mocks.backend.shelfRestore.mockReturnValue(write.promise);
+  const pending = store.restoreShelf("saved");
+  if (hide) await store.setShowDeleted(false);
+  else store.selectedDeletedShelfId = "other";
+  write.resolve(shelf("saved"));
+  expect(await pending).toBe(true);
+  expect(store.selectedShelfId).toBeNull();
+  expect(store.selectedDeletedShelfId).toBe(hide ? null : "other");
 });

@@ -685,7 +685,17 @@ let mockShelves: ShelfEntry[] = [
     system: false,
   },
 ];
+let mockDeletedShelves: ShelfEntry[] = [];
 let nextShelfId = 2;
+
+function moveShelfToDeleted(id: string) {
+  const entry = mockShelves.find((s) => s.id === id);
+  if (!entry) throw { code: "notFound", message: "shelf not found" };
+  if (mockDeletedShelves.some((s) => s.id === id))
+    throw { code: "invalidInput", message: "deleted shelf already exists" };
+  mockDeletedShelves.unshift(entry);
+  mockShelves = mockShelves.filter((s) => s.id !== id);
+}
 
 function statusSnapshot(path: string, includeIgnored = false): StatusSnapshot {
   const list = includeIgnored
@@ -1789,7 +1799,7 @@ export const mockBackend: Backend = {
     return structuredClone(mockShelves.filter((s) => !s.system));
   },
   async shelfListDeleted() {
-    return [];
+    return structuredClone(mockDeletedShelves.filter((s) => !s.system));
   },
   async shelfCreate(req) {
     const entry: ShelfEntry = {
@@ -1807,18 +1817,23 @@ export const mockBackend: Backend = {
   },
   async shelfUnshelve(req) {
     const entry = mockShelves.find((s) => s.id === req.id);
+    if (!entry) throw { code: "notFound", message: "shelf not found" };
     if (req.removeApplied !== false) {
-      mockShelves = mockShelves.filter((s) => s.id !== req.id);
+      moveShelfToDeleted(req.id);
     }
-    return { applied: entry?.paths ?? [], failed: [] };
+    return { applied: [...entry.paths], failed: [] };
   },
   async shelfDelete(req) {
-    mockShelves = mockShelves.filter((s) => s.id !== req.id);
+    moveShelfToDeleted(req.id);
     return null;
   },
   async shelfRestore(req) {
-    const entry = mockShelves.find((s) => s.id === req.id);
+    const entry = mockDeletedShelves.find((s) => s.id === req.id);
     if (!entry) throw { code: "notFound", message: "shelf not found" };
+    if (mockShelves.some((s) => s.id === req.id))
+      throw { code: "invalidInput", message: "shelf already exists" };
+    mockShelves.unshift(entry);
+    mockDeletedShelves = mockDeletedShelves.filter((s) => s.id !== req.id);
     return structuredClone(entry);
   },
   async shelfRename(req) {

@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useI18n } from "vue-i18n";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import { markContextHandled } from "@/lib/contextMenu";
+import ShelfList from "./ShelfList.vue";
 
 const props = defineProps<{
   mode: "combined" | "stash" | "shelf";
@@ -15,7 +16,6 @@ const { t } = useI18n();
 const store = useStashShelfStore();
 const workspace = useWorkspaceStore();
 const reinstateIndex = ref(false);
-const removeAppliedShelf = ref(false);
 const stashRows = ref<HTMLElement | null>(null);
 const menu = ref<{
   sha: string;
@@ -157,11 +157,6 @@ watch(
 async function newStash() {
   await store.promptStash();
 }
-
-async function renameSelectedShelf() {
-  if (!store.selectedShelfId) return;
-  await store.promptRenameShelf(store.selectedShelfId);
-}
 </script>
 
 <template>
@@ -270,45 +265,7 @@ async function renameSelectedShelf() {
         </fieldset>
       </template>
 
-      <template v-if="showShelves">
-        <div class="px-2 py-1 font-medium text-muted-foreground">{{ t("shelf.section") }}</div>
-        <div
-          v-for="s in store.shelves"
-          :key="s.id"
-          class="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-accent/50"
-          :class="store.selectedShelfId === s.id ? 'bg-accent' : ''"
-          @click="store.selectedShelfId = s.id"
-        >
-          <span class="truncate">{{ s.message }}</span>
-          <span class="text-muted-foreground">({{ s.paths.length }})</span>
-        </div>
-        <div v-if="!store.shelves.length" class="px-3 py-2 text-muted-foreground">
-          {{ t("shelf.empty") }}
-        </div>
-        <fieldset
-          v-if="store.selectedShelfId"
-          :disabled="store.busy"
-          class="flex flex-wrap items-center gap-1 px-2 py-1"
-        >
-          <Button
-            size="xs"
-            variant="outline"
-            @click="store.unshelve(store.selectedShelfId!, removeAppliedShelf)"
-          >
-            {{ t("shelf.unshelve") }}
-          </Button>
-          <label class="mr-2 flex items-center gap-1 text-[11px]">
-            <input v-model="removeAppliedShelf" type="checkbox" />
-            {{ t("shelf.removeApplied") }}
-          </label>
-          <Button size="xs" variant="outline" @click="renameSelectedShelf">
-            {{ t("shelf.rename") }}
-          </Button>
-          <Button size="xs" variant="outline" @click="store.deleteShelf(store.selectedShelfId!)">
-            {{ t("shelf.delete") }}
-          </Button>
-        </fieldset>
-      </template>
+      <ShelfList v-if="showShelves" />
     </div>
     <ContextMenuSurface
       :open="!!menu"
