@@ -89,6 +89,33 @@ async function open(entry: "tree" | "context" | "shortcut", section: ChangesSect
 }
 
 describe.each(["tree", "context", "shortcut"] as const)("%s change diff", (entry) => {
+  it.each(["R", "C"])(
+    "compares the original HEAD path for staged %s changes",
+    async (indexStatus) => {
+      mocks.changes.staged = [{ path: "中文 added.txt", origPath: "old name.txt", indexStatus }];
+      await open(entry, "changelist:default");
+      expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
+        "中文 added.txt",
+        "head",
+        "index",
+        {
+          leftPath: "old name.txt",
+        },
+      );
+    },
+  );
+
+  it("uses the destination path on both sides of an unstaged edit after a staged rename", async () => {
+    mocks.changes.staged = [{ path: "中文 added.txt", origPath: "old name.txt", indexStatus: "R" }];
+    mocks.changes.unstaged = [{ path: "中文 added.txt" }];
+    await open(entry, "changelist:default");
+    expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
+      "中文 added.txt",
+      "index",
+      "worktree",
+    );
+  });
+
   it.each(["added", "modified", "deleted", "renamed"])(
     "shows a staged-only %s in a changelist",
     async (kind) => {

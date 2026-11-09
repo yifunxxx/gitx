@@ -134,7 +134,10 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
 <template>
   <div v-if="tab" class="flex h-full min-h-0 flex-col">
     <div class="flex h-8 flex-wrap items-center gap-2 border-b bg-dbx-chrome px-2 text-xs">
-      <span class="font-medium">{{ tab.path }}</span>
+      <span class="font-medium">
+        <template v-if="tab.leftPath && tab.leftPath !== tab.path">{{ tab.leftPath }} → </template>
+        {{ tab.path }}
+      </span>
       <span class="text-muted-foreground">{{ sideSummary }}</span>
       <div class="flex-1" />
       <Tip :text="t('toolbar.diffWhitespace')">

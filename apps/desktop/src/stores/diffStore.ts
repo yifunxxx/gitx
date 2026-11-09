@@ -12,6 +12,7 @@ export type DiffTab = {
   right: DiffSide;
   leftRev?: string;
   rightRev?: string;
+  leftPath?: string;
   title: string;
   result: DiffFileResult | null;
   loading: boolean;
@@ -93,17 +94,21 @@ export const useDiffStore = defineStore("diff", () => {
     filePath: string,
     left: DiffSide = "index",
     right: DiffSide = "worktree",
-    opts?: { force?: boolean },
+    opts?: { force?: boolean; leftPath?: string },
   ) {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath || !workspace.repoId) return;
 
-    const id = `${left}:${right}:${filePath}`;
+    const leftPath = opts?.leftPath && opts.leftPath !== filePath ? opts.leftPath : undefined;
+    const id = leftPath
+      ? `file:${JSON.stringify([left, right, filePath, leftPath])}`
+      : `${left}:${right}:${filePath}`;
     const tab = ensureTab({
       id,
       path: filePath,
       left,
       right,
+      leftPath,
       title: filePath.split(/[\\/]/).pop() ?? filePath,
       result: null,
       loading: true,
@@ -140,6 +145,7 @@ export const useDiffStore = defineStore("diff", () => {
       right: "worktree",
       leftRev,
       rightRev,
+      leftPath,
       title: `${filePath.split(/[\\/]/).pop() ?? filePath} (${leftRev.slice(0, 7)}…${rightRev.slice(0, 7)})`,
       result: null,
       loading: true,
@@ -182,14 +188,14 @@ export const useDiffStore = defineStore("diff", () => {
       let result: DiffFileResult;
       // Re-read live fields after possible concurrent patches.
       const live = liveTab(id)!;
-      if (live.leftRev && live.rightRev) {
+      if ((live.leftRev && live.rightRev) || live.leftPath) {
         result = await backend.diffFileAt({
           repoId: workspace.repoId,
           path: workspace.repoPath,
           filePath: live.path,
-          leftRev: live.leftRev,
-          rightRev: live.rightRev,
-          leftPath: opts?.leftPath ?? null,
+          leftRev: live.leftRev ?? live.left.toUpperCase(),
+          rightRev: live.rightRev ?? live.right.toUpperCase(),
+          leftPath: opts?.leftPath ?? live.leftPath ?? null,
           ignoreWhitespace: live.ignoreWhitespace,
           includeTexts,
         });
