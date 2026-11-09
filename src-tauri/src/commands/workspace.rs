@@ -176,7 +176,6 @@ pub async fn status_probe(
 
     let jobs = Arc::clone(&state.jobs);
     let git = Arc::clone(&state.git);
-    let scheduler = Arc::clone(&state.scheduler);
     let job_id = job.info.id.clone();
     let job_title = job.info.title.clone();
     let cancel = job.cancel.clone();
@@ -204,11 +203,7 @@ pub async fn status_probe(
             },
         );
 
-        let result = scheduler
-            .with_permit(&repo_id.0, OpKind::Read, async {
-                runner.status_probe(&path, &cancel).await
-            })
-            .await;
+        let result = runner.status_probe(&path, &cancel).await;
 
         match result {
             Ok(out) => {
@@ -310,6 +305,10 @@ pub async fn init_run(
     {
         let git = state.git.read().await;
         let cancel = CancellationToken::new();
+        let _permits = state
+            .scheduler
+            .acquire_repo_writes(&git, &[], std::slice::from_ref(&path), &cancel)
+            .await?;
         git.init_repo(&path, req.initial_branch.as_deref(), &cancel)
             .await?;
     }

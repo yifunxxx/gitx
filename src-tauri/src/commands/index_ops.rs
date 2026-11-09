@@ -50,6 +50,10 @@ pub async fn stage_paths(
     emit_cmd(&app, format!("git add -A -- {} paths", req.paths.len())).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.stage_paths(&cwd, &req.paths, &cancel).await
 }
 
@@ -68,6 +72,10 @@ pub async fn unstage_paths(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.unstage_paths(&cwd, &req.paths, &cancel).await
 }
 
@@ -90,6 +98,10 @@ pub async fn add_paths(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.add_paths(&cwd, &req.paths, req.force, &cancel).await
 }
 
@@ -108,6 +120,10 @@ pub async fn stage_hunks(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.stage_hunks(&cwd, &req.file_path, &req.hunk_indexes, &cancel)
         .await
 }
@@ -130,6 +146,10 @@ pub async fn unstage_hunks(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.unstage_hunks(&cwd, &req.file_path, &req.hunk_indexes, &cancel)
         .await
 }
@@ -159,6 +179,10 @@ pub async fn stage_lines(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.stage_lines(&cwd, &req.file_path, &req.lines, &cancel)
         .await
 }
@@ -178,6 +202,10 @@ pub async fn unstage_lines(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.unstage_lines(&cwd, &req.file_path, &req.lines, &cancel)
         .await
 }
@@ -197,6 +225,10 @@ pub async fn revert_lines(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.revert_lines(&cwd, &req.file_path, &req.lines, &cancel)
         .await
 }

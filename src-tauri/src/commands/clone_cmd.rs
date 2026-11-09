@@ -62,9 +62,14 @@ pub async fn clone_run(
     let dir = PathBuf::from(&req.dir);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let permits = state
+        .scheduler
+        .acquire_repo_writes(&git, &[], std::slice::from_ref(&dir), &cancel)
+        .await?;
     let result = git
         .clone_run(&req.url, &dir, req.depth, req.branch.as_deref(), &cancel)
         .await?;
+    drop(permits);
     drop(git);
     if req.open_after {
         remember_recent_path(&state, &result.path).await;
@@ -78,6 +83,10 @@ pub async fn unshallow_run(state: State<'_, AppState>, req: UnshallowReq) -> Res
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.unshallow_run(&path, req.remote.as_deref(), &cancel)
         .await
 }

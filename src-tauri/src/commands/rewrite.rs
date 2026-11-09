@@ -85,6 +85,10 @@ pub async fn merge_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.merge_run(
         &path,
         &req.branches,
@@ -110,6 +114,10 @@ pub async fn merge_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.merge_abort(&path, &cancel).await
 }
 
@@ -122,6 +130,10 @@ pub async fn merge_commit(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.merge_commit(&path, req.message.as_deref(), &cancel)
         .await
 }
@@ -135,6 +147,10 @@ pub async fn rebase_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.rebase_run(
         &path,
         &req.upstream,
@@ -161,6 +177,10 @@ pub async fn rebase_continue(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.rebase_continue(&path, &cancel).await
 }
 
@@ -173,6 +193,10 @@ pub async fn rebase_skip(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.rebase_skip(&path, &cancel).await
 }
 
@@ -185,6 +209,10 @@ pub async fn rebase_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.rebase_abort(&path, &cancel).await
 }
 
@@ -201,6 +229,10 @@ pub async fn cherry_pick_run(
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
 
     let mut add_suffix = req.add_suffix.unwrap_or(false);
     if req.add_suffix.is_none() && suffix_setting {
@@ -237,6 +269,10 @@ pub async fn cherry_pick_continue(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.cherry_pick_continue(&path, &cancel).await
 }
 
@@ -249,6 +285,10 @@ pub async fn cherry_pick_skip(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.cherry_pick_skip(&path, &cancel).await
 }
 
@@ -261,6 +301,10 @@ pub async fn cherry_pick_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.cherry_pick_abort(&path, &cancel).await
 }
 
@@ -385,6 +429,10 @@ pub async fn rebase_interactive_start(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.rebase_interactive_start(&path, &req.plan, req.smart, &cancel)
         .await
 }
@@ -398,6 +446,10 @@ pub async fn reword_commit(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.reword_commit(&path, &req.sha, &req.message, &cancel)
         .await
 }
@@ -411,6 +463,10 @@ pub async fn squash_commits(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.squash_commits(&path, &req.shas, &req.message, &cancel)
         .await
 }
@@ -424,6 +480,10 @@ pub async fn drop_commits(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.drop_commits(&path, &req.shas, &cancel).await
 }
 
@@ -436,6 +496,10 @@ pub async fn fixup_into(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.fixup_into(
         &path,
         &req.target,
@@ -452,6 +516,10 @@ pub async fn uncommit(state: State<'_, AppState>, req: PathReq) -> Result<Rewrit
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.uncommit(&path, &cancel).await
 }
 
@@ -464,6 +532,10 @@ pub async fn revert_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.revert_run(&path, &req.shas, req.mainline, req.no_commit, &cancel)
         .await
 }
@@ -477,6 +549,10 @@ pub async fn revert_continue(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.revert_continue(&path, &cancel).await
 }
 
@@ -489,6 +565,10 @@ pub async fn revert_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.revert_abort(&path, &cancel).await
 }
 
@@ -513,6 +593,10 @@ pub async fn reset_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.reset_run(&path, &req.target, req.mode, &cancel).await
 }
 
@@ -525,6 +609,10 @@ pub async fn undo_rewrite(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.undo_rewrite(&path, &req.backup_ref, req.restore_worktree, &cancel)
         .await
 }
@@ -538,6 +626,10 @@ pub async fn extract_changes(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let msg = req.message.as_deref().unwrap_or("Extracted changes");
     git.extract_changes(&path, &req.commit, &req.paths, msg, &cancel)
         .await
@@ -552,6 +644,10 @@ pub async fn drop_changes(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.drop_changes(&path, &req.commit, &req.paths, &cancel)
         .await
 }

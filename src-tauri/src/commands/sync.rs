@@ -76,6 +76,10 @@ pub async fn fetch_run(
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.fetch_run(
         &path,
         req.remote.as_deref(),
@@ -92,6 +96,10 @@ pub async fn pull_run(state: State<'_, AppState>, req: PullRunReq) -> Result<Pul
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.pull_run(
         &path,
         &req.remote,
@@ -142,6 +150,10 @@ pub async fn update_project_run(
     };
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let info = git.update_project_run(&path, req.strategy, &cancel).await?;
     if !matches!(policy, SubmoduleUpdatePolicy::Never) {
         let changed: Vec<String> = info.updated_files.iter().map(|f| f.path.clone()).collect();
@@ -167,6 +179,10 @@ pub async fn sync_fork(
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.sync_fork(&path, &parent, strategy, req.push_origin, &cancel)
         .await
 }
@@ -184,6 +200,10 @@ pub async fn submodule_update(
     });
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.submodule_update(&path, policy, req.changed_paths.as_deref(), &cancel)
         .await
 }
@@ -210,6 +230,10 @@ pub async fn push_run(state: State<'_, AppState>, req: PushRunReq) -> Result<Pus
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.push_run(
         &path,
         &req.remote,

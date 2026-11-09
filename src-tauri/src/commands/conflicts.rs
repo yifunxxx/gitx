@@ -65,6 +65,10 @@ pub async fn conflict_accept_side(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.conflict_accept_side(&path, &req.paths, req.side, &cancel)
         .await
 }
@@ -102,6 +106,10 @@ pub async fn conflict_save_result(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.conflict_save_result(&path, &req.file_path, &req.content, &cancel)
         .await
 }
@@ -115,6 +123,10 @@ pub async fn conflict_mark_resolved(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.conflict_mark_resolved(&path, &req.paths, &cancel).await
 }
 
@@ -127,5 +139,9 @@ pub async fn conflict_resolve_simple(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.conflict_resolve_simple(&path, &cancel).await
 }

@@ -58,6 +58,10 @@ pub async fn ignore_add(
     emit_cmd(&app, format!("# ignore_add → {}", req.ignore_file)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let ignore_file = if PathBuf::from(&req.ignore_file).is_absolute() {
         PathBuf::from(&req.ignore_file)
     } else {
@@ -94,6 +98,10 @@ pub async fn exclude_open(
     let cwd = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let p = git.open_or_create_exclude(&cwd, &cancel).await?;
     Ok(p.display().to_string())
 }
@@ -116,6 +124,10 @@ pub async fn rm_cached(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.rm_cached(&cwd, &req.paths, &cancel).await?;
     if req.add_to_gitignore {
         let patterns: Vec<String> = req

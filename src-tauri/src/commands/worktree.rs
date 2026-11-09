@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use gitx_core::{AppError, WorktreeInfo, WorktreePrunePreview};
+use gitx_git::OpKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -127,6 +128,20 @@ pub async fn worktree_add(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let destination = if wt.is_absolute() {
+        wt.clone()
+    } else {
+        cwd.join(&wt)
+    };
+    let _permits = state
+        .scheduler
+        .acquire_repo_writes(
+            &git,
+            std::slice::from_ref(&req.path),
+            &[destination],
+            &cancel,
+        )
+        .await?;
     git.worktree_add(
         &cwd,
         &wt,
@@ -162,6 +177,20 @@ pub async fn worktree_remove(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let destination = if wt.is_absolute() {
+        wt.clone()
+    } else {
+        cwd.join(&wt)
+    };
+    let _permits = state
+        .scheduler
+        .acquire_repo_writes(
+            &git,
+            std::slice::from_ref(&req.path),
+            &[destination],
+            &cancel,
+        )
+        .await?;
     git.worktree_remove(&cwd, &wt, req.force, &cancel).await
 }
 
@@ -177,7 +206,15 @@ pub async fn worktree_lock(
     emit_cmd(&app, format!("git worktree lock {}", req.worktree_path)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.worktree_lock(&cwd, &wt, req.reason.as_deref(), &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.worktree_lock(&cwd, &wt, req.reason.as_deref(), &cancel),
+        )
         .await
 }
 
@@ -193,7 +230,16 @@ pub async fn worktree_unlock(
     emit_cmd(&app, format!("git worktree unlock {}", req.worktree_path)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.worktree_unlock(&cwd, &wt, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.worktree_unlock(&cwd, &wt, &cancel),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -219,7 +265,16 @@ pub async fn worktree_prune(
     emit_cmd(&app, "git worktree prune -v".into()).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.worktree_prune(&cwd, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.worktree_prune(&cwd, &cancel),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -241,6 +296,20 @@ pub async fn worktree_open_ref(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let destination = if wt.is_absolute() {
+        wt.clone()
+    } else {
+        cwd.join(&wt)
+    };
+    let _permits = state
+        .scheduler
+        .acquire_repo_writes(
+            &git,
+            std::slice::from_ref(&req.path),
+            &[destination],
+            &cancel,
+        )
+        .await?;
     git.worktree_open_ref(
         &cwd,
         &wt,

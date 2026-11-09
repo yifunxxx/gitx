@@ -158,6 +158,10 @@ pub async fn branch_create(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_create(
         &path,
         &req.name,
@@ -178,6 +182,10 @@ pub async fn branch_checkout(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_checkout(&path, &req.target, &req.mode, &cancel)
         .await
 }
@@ -191,6 +199,10 @@ pub async fn branch_rename(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_rename(
         &path,
         &req.old_name,
@@ -226,6 +238,10 @@ pub async fn branch_delete(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let sha = git
         .branch_delete(&path, &req.name, req.force, &cancel)
         .await?;
@@ -241,6 +257,10 @@ pub async fn branch_restore(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_restore(&path, &req.name, &req.sha, &cancel)
         .await
 }
@@ -254,6 +274,10 @@ pub async fn branch_update(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_update_ff(&path, &req.local, &req.remote_ref, &cancel)
         .await
 }
@@ -277,6 +301,10 @@ pub async fn tag_create(state: State<'_, AppState>, req: TagCreateReq) -> Result
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.tag_create(
         &path,
         &req.name,
@@ -309,6 +337,10 @@ pub async fn tag_delete(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     if let Some(remote) = req.remote.as_deref() {
         use gitx_git::{GitInvocation, OpKind};
         let inv = GitInvocation::new(
@@ -335,5 +367,9 @@ pub async fn tag_push(state: State<'_, AppState>, req: TagPushReq) -> Result<(),
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.tag_push(&path, &req.name, &req.remote, &cancel).await
 }

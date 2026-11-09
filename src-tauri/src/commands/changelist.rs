@@ -77,7 +77,13 @@ pub async fn changelist_create(
     state: State<'_, AppState>,
     req: ChangelistCreateReq,
 ) -> Result<ChangelistsState, AppError> {
-    let dir = git_dir(&state, &req.path).await?;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    let dir = git.git_dir(&PathBuf::from(&req.path), &cancel).await?;
     gitx_meta::create_changelist(&dir, &req.name, &req.comment, req.set_active)
 }
 
@@ -87,7 +93,13 @@ pub async fn changelist_rename(
     state: State<'_, AppState>,
     req: ChangelistRenameReq,
 ) -> Result<ChangelistsState, AppError> {
-    let dir = git_dir(&state, &req.path).await?;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    let dir = git.git_dir(&PathBuf::from(&req.path), &cancel).await?;
     gitx_meta::rename_changelist(&dir, &req.id, &req.name)
 }
 
@@ -97,7 +109,13 @@ pub async fn changelist_delete(
     state: State<'_, AppState>,
     req: ChangelistDeleteReq,
 ) -> Result<ChangelistsState, AppError> {
-    let dir = git_dir(&state, &req.path).await?;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    let dir = git.git_dir(&PathBuf::from(&req.path), &cancel).await?;
     gitx_meta::delete_changelist(&dir, &req.id, req.move_to.as_deref())
 }
 
@@ -107,7 +125,13 @@ pub async fn changelist_set_active(
     state: State<'_, AppState>,
     req: ChangelistIdReq,
 ) -> Result<ChangelistsState, AppError> {
-    let dir = git_dir(&state, &req.path).await?;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    let dir = git.git_dir(&PathBuf::from(&req.path), &cancel).await?;
     gitx_meta::set_active_changelist(&dir, &req.id)
 }
 
@@ -123,6 +147,12 @@ pub async fn changelist_move(
             "no paths to move",
         ));
     }
-    let dir = git_dir(&state, &req.path).await?;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    let dir = git.git_dir(&PathBuf::from(&req.path), &cancel).await?;
     gitx_meta::move_paths(&dir, &req.paths, &req.target_list_id)
 }

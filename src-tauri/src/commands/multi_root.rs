@@ -83,6 +83,10 @@ pub async fn multi_root_checkout(
     );
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_writes(&git, &req.roots, &[], &cancel)
+        .await?;
     git.multi_root_checkout(
         &req.roots,
         &req.target,
@@ -100,7 +104,16 @@ pub async fn multi_root_rollback(
     req: MultiRootRollbackReq,
 ) -> Result<MultiRootOpResult, AppError> {
     let git = state.git.read().await;
+    let roots = req
+        .steps
+        .iter()
+        .map(|step| step.path.clone())
+        .collect::<Vec<_>>();
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_writes(&git, &roots, &[], &cancel)
+        .await?;
     git.multi_root_rollback(&req.steps, &cancel).await
 }
 
