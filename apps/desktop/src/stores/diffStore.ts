@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { DiffFileResult, DiffSide, IgnoreWhitespace } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -25,12 +25,8 @@ export type DiffTab = {
 };
 
 function resultContentKey(result: DiffFileResult): string {
-  const hunkSig = result.hunks
-    .map((h) => `${h.header}:${h.lines.length}`)
-    .join("|");
-  const lt = result.leftText?.length ?? -1;
-  const rt = result.rightText?.length ?? -1;
-  return `${result.path}:${result.binary}:${result.tooLarge}:${lt}:${rt}:${hunkSig}`;
+  // Equal lengths and hunk headers do not imply equal content.
+  return JSON.stringify(result);
 }
 
 export const useDiffStore = defineStore("diff", () => {
@@ -44,6 +40,18 @@ export const useDiffStore = defineStore("diff", () => {
   const paintEpoch = ref(0);
   /** Per-tab load generation — stale responses are dropped. */
   const loadGen = new Map<string, number>();
+  let nextGeneration = 0;
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      loadGen.clear();
+      tabs.value = [];
+      activeId.value = null;
+      lastPerf.value = null;
+    },
+    { flush: "sync" },
+  );
   /** Optional perf marks for __gitxDiffPerf. */
   const lastPerf = ref<{
     id: string;
@@ -53,7 +61,7 @@ export const useDiffStore = defineStore("diff", () => {
   } | null>(null);
 
   function bumpGen(id: string): number {
-    const g = (loadGen.get(id) ?? 0) + 1;
+    const g = ++nextGeneration;
     loadGen.set(id, g);
     return g;
   }
@@ -180,9 +188,12 @@ export const useDiffStore = defineStore("diff", () => {
     }
     // Collapsed default: skip full texts on the wire until Expand asks for them.
     const includeTexts =
-      opts?.includeTexts ?? (!tab.collapseUnchanged || tab.unified);
-    const t0 =
-      typeof performance !== "undefined" ? performance.now() : Date.now();
+      opts?.includeTexts ??
+      (!tab.collapseUnchanged ||
+        tab.unified ||
+        tab.result?.leftText != null ||
+        tab.result?.rightText != null);
+    const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
       const backend = getBackend();
       let result: DiffFileResult;
@@ -211,27 +222,14 @@ export const useDiffStore = defineStore("diff", () => {
         });
       }
       if (!isCurrent(id, gen)) return;
-      // Preserve previously loaded texts when a hunks-only refresh returns none.
       const prev = liveTab(id)?.result;
-      if (
-        !includeTexts &&
-        prev &&
-        (result.leftText == null || result.rightText == null)
-      ) {
-        result = {
-          ...result,
-          leftText: result.leftText ?? prev.leftText,
-          rightText: result.rightText ?? prev.rightText,
-        };
-      }
       const key = resultContentKey(result);
       if (opts?.soft && liveTab(id)?.contentKey === key && prev) {
         // Unchanged content — keep paint, skip assign thrash.
         return;
       }
       patchTab(id, { result, contentKey: key });
-      const t1 =
-        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
       lastPerf.value = {
         id,
         invokeMs: Math.round(t1 - t0),
