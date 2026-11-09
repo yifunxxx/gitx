@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
-import { mount } from "@vue/test-utils";
-import { defineComponent, nextTick, onUnmounted, ref } from "vue";
+import { flushPromises, mount } from "@vue/test-utils";
+import { defineAsyncComponent, defineComponent, nextTick, onUnmounted, ref, type Component } from "vue";
 import DialogHost from "./DialogHost.vue";
 import { openDialog, closeDialog } from "@/composables/useDialog";
 
@@ -128,4 +128,46 @@ it("wraps Shift+Tab in the active dialog and ignores composing Escape", async ()
   expect(document.getElementById("first-field")).not.toBeNull();
   host.unmount();
   expect(await result).toBeNull();
+});
+
+it("focuses a lazily loaded confirmation so Escape works on its first open", async () => {
+  const opener = document.createElement("button");
+  document.body.append(opener);
+  opener.focus();
+  const host = mount(DialogHost, { attachTo: document.body });
+  let resolve!: (component: Component) => void;
+  const Lazy = defineAsyncComponent(() => new Promise<Component>(r => { resolve = r; }));
+  const result = openDialog(Lazy);
+  await nextTick();
+  await nextTick();
+  expect(document.activeElement).toBe(opener);
+  resolve(defineComponent({ template: '<div role="dialog"><button id="lazy-cancel">Cancel</button></div>' }));
+  await flushPromises();
+  expect(document.activeElement?.id).toBe("lazy-cancel");
+  document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  expect(await result).toBeNull();
+  await nextTick();
+  await nextTick();
+  expect(document.activeElement).toBe(opener);
+  host.unmount();
+});
+
+it("does not steal focus when a hidden async parent finishes loading", async () => {
+  const host = mount(DialogHost, { attachTo: document.body });
+  let resolve!: (component: Component) => void;
+  const parent = openDialog(defineAsyncComponent(() => new Promise<Component>(r => { resolve = r; })));
+  await nextTick();
+  const child = openDialog(defineComponent({ template: '<button id="active-child">Cancel</button>' }));
+  await nextTick();
+  await nextTick();
+  resolve(defineComponent({ template: '<input id="late-parent" />' }));
+  await flushPromises();
+  expect(document.activeElement?.id).toBe("active-child");
+  closeDialog(null);
+  await child;
+  await nextTick();
+  await nextTick();
+  expect(document.activeElement?.id).toBe("late-parent");
+  host.unmount();
+  await parent;
 });
