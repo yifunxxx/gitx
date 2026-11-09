@@ -537,26 +537,6 @@ impl GitRunner {
         })
     }
 
-    /// Write constructed content back to worktree (line rollback / revert).
-    pub async fn write_worktree_text(
-        &self,
-        cwd: &Path,
-        path: &str,
-        content: &str,
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let _ = cancel;
-        let full = cwd.join(path);
-        if let Some(parent) = full.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("create parent dirs: {e}"))
-            })?;
-        }
-        std::fs::write(&full, content)
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("write worktree: {e}")))?;
-        Ok(())
-    }
-
     pub async fn log_page(
         &self,
         cwd: &Path,

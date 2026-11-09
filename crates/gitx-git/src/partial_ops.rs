@@ -82,6 +82,107 @@ fn partial_error(message: &str) -> AppError {
 }
 
 impl GitRunner {
+    pub async fn revert_lines(
+        &self,
+        cwd: &Path,
+        path: &str,
+        lines: &[u32],
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        if lines.is_empty() {
+            return Ok(());
+        }
+        validate_partial_path(path)?;
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
+        }
+        let full = cwd.join(path);
+        // Do not follow a replaced directory/symlink while overwriting a file.
+        let mut current = cwd.to_path_buf();
+        for component in Path::new(path).components() {
+            current.push(component);
+            let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
+                AppError::new(ErrorCode::FsError, format!("read path metadata: {error}"))
+            })?;
+            if metadata.file_type().is_symlink() {
+                return Err(partial_error("symlinks require whole-file operations"));
+            }
+        }
+        let metadata = std::fs::symlink_metadata(&full).map_err(|error| {
+            AppError::new(ErrorCode::FsError, format!("read file metadata: {error}"))
+        })?;
+        if !metadata.is_file() || metadata.permissions().readonly() {
+            return Err(partial_error(
+                "partial rollback requires a writable regular file",
+            ));
+        }
+        let work_bytes = std::fs::read(&full).map_err(|error| {
+            AppError::new(ErrorCode::FsError, format!("read worktree file: {error}"))
+        })?;
+        let work_text = decode_partial_text(work_bytes.clone())?;
+        let base = match self.partial_index_blob(cwd, path, cancel).await? {
+            Some(blob) => Some(blob),
+            None => self.partial_head_blob(cwd, path, cancel).await?,
+        };
+        let base_text = base.as_ref().map_or("", |blob| blob.text.as_str());
+        let hunks = gitx_diff::compute_hunks(
+            Some(base_text),
+            Some(&work_text),
+            &gitx_diff::DiffComputeOptions::default(),
+        );
+        PartialSelection::Lines(lines).validate(&hunks)?;
+        let content = gitx_diff::revert_selected_lines_to_base(base_text, &work_text, lines);
+        if content == work_text {
+            return Err(AppError::new(
+                ErrorCode::NothingToCommit,
+                "no selected changes to roll back",
+            ));
+        }
+        // Prepare complete content beside the destination. A failed write or
+        // rename must leave the original file intact, and cleanup is automatic.
+        use std::io::Write;
+        let mut temporary = tempfile::NamedTempFile::new_in(
+            full.parent().expect("relative file parent"),
+        )
+        .map_err(|error| AppError::new(ErrorCode::FsError, format!("prepare rollback: {error}")))?;
+        temporary
+            .write_all(content.as_bytes())
+            .and_then(|_| temporary.as_file().set_permissions(metadata.permissions()))
+            .and_then(|_| temporary.as_file().sync_all())
+            .map_err(|error| {
+                AppError::new(ErrorCode::FsError, format!("write rollback: {error}"))
+            })?;
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
+        }
+        let current_metadata = std::fs::symlink_metadata(&full).map_err(|error| {
+            AppError::new(
+                ErrorCode::FsError,
+                format!("recheck rollback target: {error}"),
+            )
+        })?;
+        if !current_metadata.file_type().is_file()
+            || current_metadata.permissions().readonly()
+            || std::fs::read(&full).map_err(|error| {
+                AppError::new(
+                    ErrorCode::FsError,
+                    format!("recheck rollback content: {error}"),
+                )
+            })? != work_bytes
+        {
+            return Err(partial_error(
+                "file changed while preparing rollback; refresh and retry",
+            ));
+        }
+        temporary.persist(&full).map_err(|error| {
+            AppError::new(
+                ErrorCode::FsError,
+                format!("replace rollback target: {error}"),
+            )
+        })?;
+        Ok(())
+    }
+
     pub async fn stage_hunks(
         &self,
         cwd: &Path,

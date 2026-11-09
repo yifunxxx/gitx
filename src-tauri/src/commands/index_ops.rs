@@ -1,6 +1,5 @@
 use crate::state::AppState;
-use gitx_core::{AppError, DiffSide};
-use gitx_diff::{decode_lossy, revert_selected_lines_to_base};
+use gitx_core::AppError;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -198,23 +197,6 @@ pub async fn revert_lines(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let index_or_head = git
-        .read_blob_side(&cwd, &req.file_path, DiffSide::Index, &cancel)
-        .await?;
-    let base_side = if index_or_head.is_some() {
-        DiffSide::Index
-    } else {
-        DiffSide::Head
-    };
-    let base_bytes = git
-        .read_blob_side(&cwd, &req.file_path, base_side, &cancel)
-        .await?;
-    let work_bytes = git
-        .read_blob_side(&cwd, &req.file_path, DiffSide::Worktree, &cancel)
-        .await?;
-    let base_text = decode_lossy(base_bytes.as_deref()).unwrap_or_default();
-    let work_text = decode_lossy(work_bytes.as_deref()).unwrap_or_default();
-    let new_text = revert_selected_lines_to_base(&base_text, &work_text, &req.lines);
-    git.write_worktree_text(&cwd, &req.file_path, &new_text, &cancel)
+    git.revert_lines(&cwd, &req.file_path, &req.lines, &cancel)
         .await
 }
