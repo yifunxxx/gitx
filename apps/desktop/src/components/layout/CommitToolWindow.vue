@@ -144,23 +144,11 @@ async function stopTrackingSelected() {
 }
 
 async function stashSelected() {
-  if (!workspace.repoPath) return;
-  const message = await promptDialog({
-    title: t("stash.create"),
-    defaultValue: "WIP",
-    placeholder: t("stash.messagePrompt"),
-  });
-  if (message == null) return;
-  const paths = changes.selectedPaths.length ? changes.selectedPaths : undefined;
-  await getBackend().stashCreate({
-    path: workspace.repoPath,
-    message: message || "WIP",
+  const ok = await stashShelf.promptStash({
+    paths: changes.selectedPaths.length ? [...changes.selectedPaths] : undefined,
     includeUntracked: changes.selectedSection === "unversioned",
-    paths: paths ?? null,
   });
-  toast({ title: t("stash.create") });
-  await changes.refresh();
-  await stashShelf.refresh();
+  if (!ok) return;
   layout.bottomOpen = true;
   layout.activeBottomTab = stashShelf.combineTab ? "stashesShelves" : "stash";
 }
@@ -486,12 +474,7 @@ async function runCtx(action: string) {
         {{ t("actions.addToVcs") }}
       </button>
       <template
-        v-if="
-          ctxMenu &&
-          !changes.stagingMode &&
-          !ctxIsUnversioned &&
-          ctxMenu.section !== 'ignored'
-        "
+        v-if="ctxMenu && !changes.stagingMode && !ctxIsUnversioned && ctxMenu.section !== 'ignored'"
       >
         <button
           type="button"

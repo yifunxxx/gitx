@@ -1,11 +1,20 @@
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { ShelfEntry, StashEntry } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { toast } from "@/composables/useToast";
-import { formatErrorMessage } from "@/lib/errors";
+import { formatErrorMessage, invokeErrorCode } from "@/lib/errors";
+import { useChangesStore } from "./changesStore";
+import { useConflictsStore } from "./conflictsStore";
+import { useRewriteStore } from "./rewriteStore";
+import { openDialog } from "@/composables/useDialog";
+import { confirmDialog } from "@/composables/useConfirm";
+import { i18n } from "@/i18n";
+
+const StashDialog = defineAsyncComponent(() => import("@/features/stash/CreateStashDialog.vue"));
+const t = (key: string, args = {}) => i18n.global.t(key, args);
 
 export const useStashShelfStore = defineStore("stashShelf", () => {
   const stashes = ref<StashEntry[]>([]);
@@ -13,20 +22,24 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
   const deletedShelves = ref<ShelfEntry[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
-  const selectedStashRef = ref<string | null>(null);
+  const selectedStashSha = ref<string | null>(null);
   const selectedShelfId = ref<string | null>(null);
   const showDeleted = ref(false);
-
   let refreshGeneration = 0;
+  let repositoryGeneration = 0;
+  const pendingPaths = ref(new Set<string>());
   const workspace = useWorkspaceStore();
+  const busy = computed(() => pendingPaths.value.has(workspace.repoPath ?? ""));
+  const selectedStash = computed(() => stashes.value.find((s) => s.sha === selectedStashSha.value));
   watch(
     () => workspace.repoPath,
     () => {
       ++refreshGeneration;
+      ++repositoryGeneration;
       stashes.value = [];
       shelves.value = [];
       deletedShelves.value = [];
-      selectedStashRef.value = null;
+      selectedStashSha.value = null;
       selectedShelfId.value = null;
       loading.value = false;
       error.value = null;
@@ -66,6 +79,8 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
       stashes.value = s;
       shelves.value = sh;
       deletedShelves.value = deleted;
+      if (!s.some((entry) => entry.sha === selectedStashSha.value)) selectedStashSha.value = null;
+      if (!sh.some((entry) => entry.id === selectedShelfId.value)) selectedShelfId.value = null;
     } catch (e) {
       if (current()) error.value = formatErrorMessage(e);
     } finally {
@@ -77,52 +92,135 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     return `stash@{${entry.index}}`;
   }
 
-  async function createStash(message: string, includeUntracked = false) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    await getBackend().stashCreate({
-      path: workspace.repoPath,
-      message,
-      includeUntracked,
-    });
-    toast({ title: "Stash created" });
-    await refresh();
+  async function mutate(
+    operation: (path: string, current: () => boolean) => Promise<unknown>,
+    successKey?: string,
+    emptyKey = "stash.noChanges",
+  ) {
+    const path = workspace.repoPath;
+    if (!path || !workspace.isRepo || pendingPaths.value.has(path)) return false;
+    const generation = repositoryGeneration;
+    const navigation = workspace.navigationToken();
+    const current = () =>
+      generation === repositoryGeneration &&
+      path === workspace.repoPath &&
+      navigation === workspace.navigationToken();
+    pendingPaths.value.add(path);
+    error.value = null;
+    try {
+      if ((await operation(path, current)) === false) return false;
+      if (!current()) return false;
+      await refreshRelated();
+      if (current() && successKey) toast({ title: t(successKey) });
+      return current();
+    } catch (e) {
+      if (current()) {
+        const message =
+          invokeErrorCode(e) === "nothingToCommit" ? t(emptyKey) : formatErrorMessage(e);
+        // Failed apply may still have produced conflicts or partial changes.
+        await refreshRelated();
+        if (current()) {
+          error.value = message;
+          toast({ title: message });
+        }
+      }
+      return false;
+    } finally {
+      pendingPaths.value.delete(path);
+    }
+  }
+
+  async function refreshRelated() {
+    await Promise.allSettled([
+      refresh(),
+      useChangesStore().refresh(),
+      useConflictsStore().refresh(),
+      useRewriteStore().refreshOpState(),
+    ]);
+  }
+
+  async function promptStash(options: { paths?: string[]; includeUntracked?: boolean } = {}) {
+    const paths = options.paths ? [...options.paths] : undefined;
+    const includeUntracked = options.includeUntracked ?? false;
+    return mutate(async (path, current) => {
+      const result = await openDialog<{
+        message: string;
+        includeUntracked: boolean;
+        keepIndex: boolean;
+      } | null>(StashDialog, { includeUntracked });
+      if (!result || !current()) return false;
+      await getBackend().stashCreate({ path, ...result, paths });
+    }, "stash.created");
+  }
+
+  async function createStash(
+    message: string,
+    includeUntracked = false,
+    keepIndex = false,
+    paths?: string[],
+  ) {
+    const selectedPaths = paths ? [...paths] : undefined;
+    return mutate(
+      (path) =>
+        getBackend().stashCreate({
+          path,
+          message,
+          includeUntracked,
+          keepIndex,
+          paths: selectedPaths,
+        }),
+      "stash.created",
+    );
   }
 
   async function applyStash(stashRef: string, reinstateIndex = false) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    await getBackend().stashApply({
-      path: workspace.repoPath,
-      stashRef,
-      reinstateIndex,
-    });
-    toast({ title: "Stash applied", description: stashRef });
-    await refresh();
+    return mutate(
+      (path) => getBackend().stashApply({ path, stashRef, reinstateIndex }),
+      "stash.applied",
+    );
   }
 
-  async function popStash(stashRef: string) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    await getBackend().stashPop({ path: workspace.repoPath, stashRef });
-    toast({ title: "Stash popped", description: stashRef });
-    await refresh();
+  async function popStash(stashRef: string, reinstateIndex = false) {
+    return mutate(
+      (path) => getBackend().stashPop({ path, stashRef, reinstateIndex }),
+      "stash.popped",
+    );
   }
 
   async function dropStash(stashRef: string) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    await getBackend().stashDrop({ path: workspace.repoPath, stashRef });
-    toast({ title: "Stash dropped", description: stashRef });
-    await refresh();
+    return mutate(async (path, current) => {
+      if (
+        !(await confirmDialog({
+          title: t("stash.drop"),
+          message: t("stash.dropConfirm"),
+          destructive: true,
+        })) ||
+        !current()
+      )
+        return false;
+      await getBackend().stashDrop({ path, stashRef });
+    }, "stash.dropped");
   }
 
   async function clearStashes() {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    await getBackend().stashClear({ path: workspace.repoPath });
-    toast({ title: "Stashes cleared" });
-    await refresh();
+    const snapshot = stashes.value.map((entry) => entry.sha);
+    if (!snapshot.length) return false;
+    return mutate(async (path, current) => {
+      if (
+        !(await confirmDialog({
+          title: t("stash.clear"),
+          message: t("stash.clearConfirm", { count: snapshot.length }),
+          destructive: true,
+        })) ||
+        !current()
+      )
+        return false;
+      const latest = await getBackend().stashList({ path });
+      if (!current()) return false;
+      if (latest.length !== snapshot.length || latest.some((entry, i) => entry.sha !== snapshot[i]))
+        throw new Error(t("stash.listChanged"));
+      await getBackend().stashClear({ path });
+    }, "stash.cleared");
   }
 
   async function unshelve(id: string, removeApplied = true) {
@@ -161,12 +259,16 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     deletedShelves,
     loading,
     error,
-    selectedStashRef,
+    selectedStashSha,
+    selectedStash,
+    busy,
+    repositoryToken: () => repositoryGeneration,
     selectedShelfId,
     showDeleted,
     combineTab,
     refresh,
     stashRefOf,
+    promptStash,
     createStash,
     applyStash,
     popStash,

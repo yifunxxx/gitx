@@ -20,24 +20,9 @@ export function registerM6Actions() {
     description: "Stash local changes",
     icon: Archive,
     scope: "global",
-    enabled: () => hasRepo(),
+    enabled: () => hasRepo() && !useStashShelfStore().busy,
     async run() {
-      const ws = useWorkspaceStore();
-      if (!ws.repoPath) return;
-      const message = await promptDialog({
-        title: "Stash Changes…",
-        defaultValue: "WIP",
-        placeholder: "Stash message",
-      });
-      if (message == null) return;
-      await getBackend().stashCreate({
-        path: ws.repoPath,
-        message: message || "WIP",
-        includeUntracked: true,
-      });
-      toast({ title: "Stashed" });
-      await useChangesStore().refresh();
-      await useStashShelfStore().refresh();
+      await useStashShelfStore().promptStash();
     },
   });
 

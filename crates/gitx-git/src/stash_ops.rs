@@ -11,14 +11,17 @@ impl GitRunner {
         cwd: &Path,
         cancel: &CancellationToken,
     ) -> Result<Vec<StashEntry>, AppError> {
-        // %gd = stash@{n}, %H = sha, %gs = message, %ct = committer time
+        // Four NUL-delimited fields per record, including Git's -z terminator.
         let inv = GitInvocation::new(
             cwd,
             [
                 "stash",
                 "list",
                 "-z",
-                "--format=%gd%x00%H%x00%gs%x00%ct%x00%gd",
+                "--no-patch",
+                "--no-show-signature",
+                "--no-notes",
+                "--format=%gd%x00%H%x00%gs%x00%ct",
             ],
         )
         .kind(OpKind::Read)
@@ -26,22 +29,8 @@ impl GitRunner {
         let out = self.run(inv, cancel).await?;
         let text = String::from_utf8_lossy(&out.stdout);
         let mut entries = Vec::new();
-        for record in text.split('\0').filter(|s| !s.is_empty()) {
-            // When using -z with format containing %x00, git still NUL-separates records.
-            // Fallback: also support newline-separated if -z ignored.
-            let _ = record;
-        }
-        // Prefer non -z parse for portability: stash list --format
-        let inv = GitInvocation::new(cwd, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%ct"])
-            .kind(OpKind::Read)
-            .git_bin(self.git_bin.clone());
-        let out = self.run(inv, cancel).await?;
-        let text = String::from_utf8_lossy(&out.stdout);
-        for line in text.lines() {
-            let parts: Vec<&str> = line.split('\0').collect();
-            if parts.len() < 4 {
-                continue;
-            }
+        let fields: Vec<_> = text.split_terminator('\0').collect();
+        for parts in fields.chunks_exact(4) {
             let gd = parts[0]; // stash@{n}
             let sha = parts[1].to_string();
             let message = parts[2].to_string();
@@ -76,6 +65,27 @@ impl GitRunner {
         paths: Option<&[String]>,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
+        if let Some(paths) = paths {
+            if paths.is_empty() {
+                return Err(AppError::new(
+                    ErrorCode::NothingToCommit,
+                    "no files selected to stash",
+                ));
+            }
+            for path in paths {
+                if path.is_empty()
+                    || path.contains('\0')
+                    || Path::new(path)
+                        .components()
+                        .any(|p| !matches!(p, std::path::Component::Normal(_)))
+                {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidArgument,
+                        "stash requires repository-relative file paths",
+                    ));
+                }
+            }
+        }
         let mut args = vec![
             "stash".into(),
             "push".into(),
@@ -88,17 +98,32 @@ impl GitRunner {
         if include_untracked {
             args.push("--include-untracked".into());
         }
-        if let Some(paths) = paths {
-            if !paths.is_empty() {
-                args.push("--".into());
-                args.extend(paths.iter().cloned());
-            }
+        if paths.is_some() {
+            args.extend([
+                "--pathspec-from-file=-".into(),
+                "--pathspec-file-nul".into(),
+            ]);
         }
-        let inv = GitInvocation::new(cwd, args)
+        let mut inv = GitInvocation::new(cwd, args)
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
+        if let Some(paths) = paths {
+            // Scope literal matching to user paths. A global literal-pathspecs
+            // flag also changes stash's internal :/ pathspec for --keep-index.
+            let literal_paths: Vec<_> =
+                paths.iter().map(|p| format!(":(top,literal){p}")).collect();
+            inv = inv.stdin(crate::ops::pathspec_nul(&literal_paths));
+        }
         match self.run(inv, cancel).await {
-            Ok(_) => Ok(()),
+            Ok(out) => {
+                if String::from_utf8_lossy(&out.stdout).trim() == "No local changes to save" {
+                    return Err(AppError::new(
+                        ErrorCode::NothingToCommit,
+                        "no local changes to stash",
+                    ));
+                }
+                Ok(())
+            }
             Err(e) => {
                 let m = e.message.to_lowercase();
                 if m.contains("no local changes") || m.contains("no changes") {
@@ -113,22 +138,32 @@ impl GitRunner {
         }
     }
 
-    /// Resolve stash@{n} or sha to a current stash refspec.
-    async fn resolve_stash_ref(
+    /// Resolve a currently existing stash, rejecting stale or ambiguous inputs.
+    async fn resolve_stash(
         &self,
         cwd: &Path,
         stash_ref: &str,
         cancel: &CancellationToken,
-    ) -> Result<String, AppError> {
-        if stash_ref.starts_with("stash@{") {
-            return Ok(stash_ref.to_string());
-        }
-        // Match by sha prefix against stash list.
+    ) -> Result<StashEntry, AppError> {
         let list = self.stash_list(cwd, cancel).await?;
-        if let Some(e) = list.iter().find(|e| e.sha.starts_with(stash_ref)) {
-            return Ok(format!("stash@{{{}}}", e.index));
+        let is_sha = stash_ref.len() >= 4 && stash_ref.bytes().all(|b| b.is_ascii_hexdigit());
+        let mut matches = list.into_iter().filter(|e| {
+            format!("stash@{{{}}}", e.index) == stash_ref
+                || (is_sha && e.sha.starts_with(&stash_ref.to_ascii_lowercase()))
+        });
+        if let Some(entry) = matches.next() {
+            if matches.any(|other| other.sha != entry.sha) {
+                return Err(AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "ambiguous stash SHA",
+                ));
+            }
+            return Ok(entry);
         }
-        Ok(stash_ref.to_string())
+        Err(AppError::new(
+            ErrorCode::InvalidArgument,
+            "stash no longer exists",
+        ))
     }
 
     pub async fn stash_apply(
@@ -138,28 +173,18 @@ impl GitRunner {
         reinstate_index: bool,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        let r = self.resolve_stash_ref(cwd, stash_ref, cancel).await?;
+        let entry = self.resolve_stash(cwd, stash_ref, cancel).await?;
         let mut args = vec!["stash".into(), "apply".into()];
         if reinstate_index {
             args.push("--index".into());
         }
-        args.push(r);
+        args.push(entry.sha);
         let inv = GitInvocation::new(cwd, args)
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
-        match self.run(inv, cancel).await {
-            Ok(_) => Ok(()),
-            Err(_e) if reinstate_index => {
-                // Fall back without --index.
-                let r = self.resolve_stash_ref(cwd, stash_ref, cancel).await?;
-                let inv = GitInvocation::new(cwd, ["stash", "apply", &r])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                self.run(inv, cancel).await?;
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+        // A failed apply may have changed the index/worktree. Never retry it.
+        self.run(inv, cancel).await?;
+        Ok(())
     }
 
     pub async fn stash_pop(
@@ -169,17 +194,12 @@ impl GitRunner {
         reinstate_index: bool,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        let r = self.resolve_stash_ref(cwd, stash_ref, cancel).await?;
-        let mut args = vec!["stash".into(), "pop".into()];
-        if reinstate_index {
-            args.push("--index".into());
-        }
-        args.push(r);
-        let inv = GitInvocation::new(cwd, args)
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone());
-        self.run(inv, cancel).await?;
-        Ok(())
+        let entry = self.resolve_stash(cwd, stash_ref, cancel).await?;
+        // Fail before changing local files if the recovery ref cannot be saved.
+        self.backup_stash(cwd, &entry, cancel).await?;
+        self.stash_apply(cwd, &entry.sha, reinstate_index, cancel)
+            .await?;
+        self.stash_drop(cwd, &entry.sha, cancel).await
     }
 
     pub async fn stash_drop(
@@ -188,15 +208,12 @@ impl GitRunner {
         stash_ref: &str,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        let list = self.stash_list(cwd, cancel).await?;
-        let r = self.resolve_stash_ref(cwd, stash_ref, cancel).await?;
-        if let Some(e) = list.iter().find(|e| format!("stash@{{{}}}", e.index) == r) {
-            let backup = format!("refs/gitx/backup/stash-{}", &e.sha[..7.min(e.sha.len())]);
-            let inv = GitInvocation::new(cwd, ["update-ref", &backup, &e.sha])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            let _ = self.run(inv, cancel).await;
-        }
+        let entry = self.resolve_stash(cwd, stash_ref, cancel).await?;
+        self.backup_stash(cwd, &entry, cancel).await?;
+        // Backing up takes another Git process; resolve again in case an
+        // external client inserted a stash in the meantime.
+        let entry = self.resolve_stash(cwd, &entry.sha, cancel).await?;
+        let r = format!("stash@{{{}}}", entry.index);
         let inv = GitInvocation::new(cwd, ["stash", "drop", &r])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
@@ -210,14 +227,15 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
         let list = self.stash_list(cwd, cancel).await?;
+        let Some(top) = list.first() else {
+            return Ok(());
+        };
         for e in &list {
-            let backup = format!("refs/gitx/backup/stash-{}", &e.sha[..7.min(e.sha.len())]);
-            let inv = GitInvocation::new(cwd, ["update-ref", &backup, &e.sha])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            let _ = self.run(inv, cancel).await;
+            self.backup_stash(cwd, e, cancel).await?;
         }
-        let inv = GitInvocation::new(cwd, ["stash", "clear"])
+        // Delete only the tip that was backed up. An external push must not
+        // silently clear a new, unbacked stash.
+        let inv = GitInvocation::new(cwd, ["update-ref", "-d", "refs/stash", &top.sha])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
@@ -231,8 +249,32 @@ impl GitRunner {
         stash_ref: &str,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        let r = self.resolve_stash_ref(cwd, stash_ref, cancel).await?;
-        let inv = GitInvocation::new(cwd, ["stash", "branch", branch, &r])
+        let entry = self.resolve_stash(cwd, stash_ref, cancel).await?;
+        if branch.is_empty() || branch.starts_with('-') || branch.contains('\0') {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "invalid stash branch name",
+            ));
+        }
+        let check = GitInvocation::new(cwd, ["check-ref-format", "--branch", branch])
+            .git_bin(self.git_bin.clone());
+        self.run(check, cancel).await?;
+        self.backup_stash(cwd, &entry, cancel).await?;
+        let inv = GitInvocation::new(cwd, ["stash", "branch", branch, &entry.sha])
+            .kind(OpKind::Write)
+            .git_bin(self.git_bin.clone());
+        self.run(inv, cancel).await?;
+        self.stash_drop(cwd, &entry.sha, cancel).await
+    }
+
+    async fn backup_stash(
+        &self,
+        cwd: &Path,
+        entry: &StashEntry,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let backup = format!("refs/gitx/backup/stash-{}", entry.sha);
+        let inv = GitInvocation::new(cwd, ["update-ref", &backup, &entry.sha])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
@@ -246,6 +288,12 @@ impl GitRunner {
         message: &str,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
+        if !matches!(sha.len(), 40 | 64) || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "a full stash object ID is required",
+            ));
+        }
         let inv = GitInvocation::new(cwd, ["stash", "store", "-m", message, sha])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());

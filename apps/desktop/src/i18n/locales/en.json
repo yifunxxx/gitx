@@ -372,7 +372,19 @@
     "drop": "Drop",
     "clear": "Clear All",
     "empty": "No stashes",
-    "messagePrompt": "Stash message"
+    "messagePrompt": "Stash message",
+    "includeUntracked": "Include untracked files",
+    "keepIndex": "Keep staged changes",
+    "reinstateIndex": "Restore staged state",
+    "noChanges": "No changes to stash",
+    "listChanged": "The stash list changed. Review it before clearing all stashes.",
+    "created": "Stash created",
+    "applied": "Stash applied",
+    "popped": "Stash popped",
+    "dropped": "Stash deleted",
+    "cleared": "Stashes cleared",
+    "dropConfirm": "Delete the selected stash without applying it?",
+    "clearConfirm": "Clear all {count} stashes without applying them?"
   },
   "shelf": {
     "section": "Shelves",

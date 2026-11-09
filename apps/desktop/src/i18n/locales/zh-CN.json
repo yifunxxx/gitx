@@ -365,6 +365,7 @@
     "namePlaceholder": "变更列表名称"
   },
   "stash": {
+    "listChanged": "Stash 列表已变化，请检查列表后再清空。",
     "section": "Stash 列表",
     "create": "Stash…",
     "apply": "应用",
@@ -372,7 +373,18 @@
     "drop": "删除",
     "clear": "全部清除",
     "empty": "没有 stash",
-    "messagePrompt": "Stash 说明"
+    "messagePrompt": "Stash 说明",
+    "includeUntracked": "包含未跟踪文件",
+    "keepIndex": "保留暂存区中的修改",
+    "reinstateIndex": "恢复暂存状态",
+    "noChanges": "没有可保存到 Stash 的修改",
+    "created": "已创建 Stash",
+    "applied": "已应用 Stash",
+    "popped": "已弹出 Stash",
+    "dropped": "已删除 Stash",
+    "cleared": "已清除 Stash",
+    "dropConfirm": "删除所选 Stash？本地修改不会被应用。",
+    "clearConfirm": "清除全部 {count} 条 Stash？本地修改不会被应用。"
   },
   "shelf": {
     "section": "Shelf 列表",
