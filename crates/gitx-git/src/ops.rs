@@ -709,36 +709,6 @@ impl GitRunner {
             .await
     }
 
-    /// Unstage selected new-side lines (index → HEAD) (#57).
-    pub async fn unstage_lines(
-        &self,
-        cwd: &Path,
-        path: &str,
-        selected_new_lines: &[u32],
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let head_bytes = self
-            .read_blob_side(cwd, path, DiffSide::Head, cancel)
-            .await?;
-        let index_bytes = self
-            .read_blob_side(cwd, path, DiffSide::Index, cancel)
-            .await?;
-        let head_text = gitx_diff::decode_lossy(head_bytes.as_deref()).unwrap_or_default();
-        let index_text = gitx_diff::decode_lossy(index_bytes.as_deref()).unwrap_or_default();
-        // Revert selected lines on index toward head.
-        let new_index =
-            gitx_diff::revert_selected_lines_to_base(&head_text, &index_text, selected_new_lines);
-        if new_index.is_empty() && head_bytes.is_none() {
-            return self.unstage_paths(cwd, &[path.to_string()], cancel).await;
-        }
-        let mode = self
-            .file_mode_in_index(cwd, path, cancel)
-            .await
-            .unwrap_or_else(|_| "100644".into());
-        self.stage_hunk_text(cwd, path, &new_index, &mode, cancel)
-            .await
-    }
-
     /// Write constructed content back to worktree (line rollback / revert).
     pub async fn write_worktree_text(
         &self,
