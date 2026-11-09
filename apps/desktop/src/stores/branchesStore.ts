@@ -27,10 +27,14 @@ export const useBranchesStore = defineStore("branches", () => {
   const workspace = () => useWorkspaceStore();
   const settings = () => useSettingsStore();
   let refreshGeneration = 0;
+  let repositoryGeneration = 0;
+  let favoriteWrites = 0;
   watch(
     () => workspace().repoPath,
     () => {
       ++refreshGeneration;
+      ++repositoryGeneration;
+      favoriteWrites = 0;
       refs.value = null;
       remotes.value = [];
       selectedFullName.value = null;
@@ -47,6 +51,7 @@ export const useBranchesStore = defineStore("branches", () => {
   const filteredTags = computed(() => filterRefs(refs.value?.tags ?? [], search.value));
 
   async function refresh() {
+    if (favoriteWrites) return;
     const generation = ++refreshGeneration;
     const ws = workspace();
     const path = ws.repoPath;
@@ -84,14 +89,42 @@ export const useBranchesStore = defineStore("branches", () => {
 
   async function toggleFavorite(entry: RefEntry) {
     const ws = workspace();
-    if (!ws.gitDir || !refs.value) return;
-    const full = entry.fullName;
-    const current = [...refs.value.local, ...refs.value.remote, ...refs.value.tags]
-      .filter((r) => r.isFavorite)
-      .map((r) => r.fullName);
-    const next = current.includes(full) ? current.filter((f) => f !== full) : [...current, full];
-    await getBackend().favoritesSet({ gitDir: ws.gitDir, favorites: next });
-    await refresh();
+    if (!ws.repoPath || !refs.value) return;
+    const path = ws.repoPath;
+    const generation = repositoryGeneration;
+    const navigation = ws.navigationToken();
+    const isCurrent = () =>
+      generation === repositoryGeneration &&
+      ws.repoPath === path &&
+      ws.navigationToken() === navigation;
+    const fullName = entry.fullName;
+    const current = [...refs.value.local, ...refs.value.remote, ...refs.value.tags].find(
+      (ref) => ref.fullName === fullName,
+    );
+    if (!current) return;
+    // Give immediate feedback, but let the backend toggle the persisted value
+    // so overlapping clicks never replace the entire list with a stale copy.
+    current.isFavorite = !current.isFavorite;
+    ++favoriteWrites;
+    ++refreshGeneration;
+    loading.value = false;
+    try {
+      await getBackend().favoritesToggle({ path, fullName });
+    } catch (error) {
+      if (isCurrent()) {
+        current.isFavorite = !current.isFavorite;
+        toast({
+          title: i18n.global.t("branches.favoriteFailed"),
+          description: formatErrorMessage(error),
+          persistent: true,
+        });
+      }
+    } finally {
+      if (generation === repositoryGeneration) {
+        --favoriteWrites;
+        if (!favoriteWrites && isCurrent()) await refresh();
+      }
+    }
   }
 
   async function checkout(entry: RefEntry): Promise<boolean> {

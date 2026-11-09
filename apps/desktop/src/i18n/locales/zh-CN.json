@@ -455,6 +455,7 @@
     "newBranchFrom": "从 '{name}' 新建分支…",
     "push": "推送…",
     "checkedOut": "已检出 {name}",
+    "favoriteFailed": "保存分支收藏失败",
     "checkoutFailed": "检出失败",
     "created": "已创建 {name}",
     "createFailed": "创建分支失败",

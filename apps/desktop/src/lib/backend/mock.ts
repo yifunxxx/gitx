@@ -1148,8 +1148,10 @@ export const mockBackend: Backend = {
       detached: false,
     };
   },
-  async favoritesSet(req) {
-    mockFavorites = [...req.favorites];
+  async favoritesToggle(req) {
+    mockFavorites = mockFavorites.includes(req.fullName)
+      ? mockFavorites.filter((name) => name !== req.fullName)
+      : [...mockFavorites, req.fullName];
     return null;
   },
   async branchCreate(req) {

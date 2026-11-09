@@ -32,7 +32,7 @@ import type {
   DiffFileResult,
   DiffRefsReq,
   DiffRefsResult,
-  FavoritesSetReq,
+  FavoritesToggleReq,
   FetchRunReq,
   FetchSummary,
   FileHistoryReq,
@@ -213,7 +213,7 @@ export type Backend = {
   logIndexRebuild(req: IndexRebuildReq): Promise<IndexStatus>;
   // M2
   refsList(req: RefsListReq): Promise<RefsList>;
-  favoritesSet(req: FavoritesSetReq): Promise<null>;
+  favoritesToggle(req: FavoritesToggleReq): Promise<null>;
   branchCreate(req: BranchCreateReq): Promise<null>;
   branchCheckout(req: BranchCheckoutReq): Promise<null>;
   branchRename(req: BranchRenameReq): Promise<null>;
@@ -367,7 +367,7 @@ export const tauriBackend: Backend = {
   logIndexStatus: (req) => commands.logIndexStatus(req),
   logIndexRebuild: (req) => commands.logIndexRebuild(req),
   refsList: (req) => commands.refsList(req),
-  favoritesSet: (req) => commands.favoritesSet(req),
+  favoritesToggle: (req) => commands.favoritesToggle(req),
   branchCreate: (req) => commands.branchCreate(req),
   branchCheckout: (req) => commands.branchCheckout(req),
   branchRename: (req) => commands.branchRename(req),

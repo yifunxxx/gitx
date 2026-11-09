@@ -36,7 +36,7 @@ use commands::multi_root::{
 use commands::patch::{patch_apply, patch_apply_clipboard, patch_create};
 use commands::refs::{
     branch_checkout, branch_create, branch_delete, branch_rename, branch_restore, branch_update,
-    compare_branches, favorites_set, refs_list, tag_create, tag_delete, tag_push,
+    compare_branches, favorites_toggle, refs_list, tag_create, tag_delete, tag_push,
 };
 use commands::remotes::{
     remote_add, remote_delete_branch, remote_edit, remote_list, remote_remove,
@@ -122,7 +122,7 @@ pub fn run() {
             log_index_rebuild,
             // M2
             refs_list,
-            favorites_set,
+            favorites_toggle,
             branch_create,
             branch_checkout,
             branch_rename,

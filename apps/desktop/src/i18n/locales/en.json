@@ -455,6 +455,7 @@
     "newBranchFrom": "New Branch from '{name}'…",
     "push": "Push…",
     "checkedOut": "Checked out {name}",
+    "favoriteFailed": "Could not save branch favorite",
     "checkoutFailed": "Checkout failed",
     "created": "Created {name}",
     "createFailed": "Create branch failed",

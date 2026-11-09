@@ -537,7 +537,7 @@ export type CompareRange = {
   rightOnly: string[]
 }
 export type RefsListReq = { repoId: string; path: string; gitDir?: string | null }
-export type FavoritesSetReq = { gitDir: string; favorites: string[] }
+export type FavoritesToggleReq = { path: string; fullName: string }
 export type BranchCreateReq = {
   path: string
   name: string
@@ -1038,8 +1038,8 @@ export const commands = {
   async refsList(req: RefsListReq): Promise<RefsList> {
     return invoke("refs_list", { req })
   },
-  async favoritesSet(req: FavoritesSetReq): Promise<null> {
-    return invoke("favorites_set", { req })
+  async favoritesToggle(req: FavoritesToggleReq): Promise<null> {
+    return invoke("favorites_toggle", { req })
   },
   async branchCreate(req: BranchCreateReq): Promise<null> {
     return invoke("branch_create", { req })
