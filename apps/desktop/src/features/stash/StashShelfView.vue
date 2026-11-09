@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useI18n } from "vue-i18n";
-import { promptDialog } from "@/composables/useConfirm";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import { markContextHandled } from "@/lib/contextMenu";
 
@@ -161,15 +160,7 @@ async function newStash() {
 
 async function renameSelectedShelf() {
   if (!store.selectedShelfId) return;
-  const current = store.shelves.find((s) => s.id === store.selectedShelfId);
-  const message = await promptDialog({
-    title: t("shelf.rename"),
-    defaultValue: current?.message ?? "",
-    placeholder: t("shelf.renamePrompt"),
-    allowEmpty: false,
-  });
-  if (message == null || !message.trim()) return;
-  await store.renameShelf(store.selectedShelfId, message.trim());
+  await store.promptRenameShelf(store.selectedShelfId);
 }
 </script>
 

@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     stashPop: vi.fn(),
     stashClear: vi.fn(),
     shelfUnshelve: vi.fn(),
+    shelfDelete: vi.fn(),
+    shelfRename: vi.fn(),
   },
   refresh: vi.fn(),
   conflicts: vi.fn(),
@@ -267,4 +269,120 @@ it("does not announce success if an older backend returns failed paths", async (
   expect(await store.unshelve("shelf-id")).toBe(false);
   expect(store.error).toBe("shelf.applyFailed");
   expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.applyFailed" });
+});
+
+it("captures Shelf paths and blocks all overlapping dialogs until creation completes", async () => {
+  const dialog = deferred();
+  mocks.dialog.mockReturnValue(dialog.promise);
+  const store = useStashShelfStore();
+  const paths = ["first.txt"];
+  const pending = store.promptShelf(paths);
+  paths[0] = "later.txt";
+  expect(store.busy).toBe(true);
+  expect(await store.promptShelf(paths)).toBe(false);
+  expect(await store.deleteShelf("saved")).toBe(false);
+  expect(await store.promptStash()).toBe(false);
+  expect(mocks.dialog).toHaveBeenCalledOnce();
+  expect(mocks.confirm).not.toHaveBeenCalled();
+  dialog.resolve({ message: " selected ", keepChanges: true });
+  expect(await pending).toBe(true);
+  expect(mocks.backend.shelfCreate).toHaveBeenCalledExactlyOnceWith({
+    path: "A",
+    message: "selected",
+    keepChanges: true,
+    paths: ["first.txt"],
+    sourceChangelist: null,
+  });
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.created" });
+});
+
+it("invalidates Shelf creation when navigation begins, including A to B to A", async () => {
+  for (const switchPath of [false, true]) {
+    let navigation = 0;
+    mocks.workspace.navigationToken = () => navigation;
+    const dialog = deferred();
+    mocks.dialog.mockReturnValue(dialog.promise);
+    const pending = useStashShelfStore().promptShelf(["first.txt"]);
+    if (switchPath) {
+      mocks.workspace.repoPath = "B";
+      mocks.workspace.repoPath = "A";
+    } else navigation++;
+    dialog.resolve({ message: "old", keepChanges: false });
+    expect(await pending).toBe(false);
+  }
+  expect(mocks.backend.shelfCreate).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalled();
+});
+
+it("refreshes a saved Shelf after cleanup fails and presents empty creation separately", async () => {
+  mocks.dialog.mockResolvedValue({ message: "new", keepChanges: false });
+  mocks.backend.shelfCreate.mockRejectedValue(new Error("Shelf saved but cleanup failed"));
+  const store = useStashShelfStore();
+  expect(await store.promptShelf(["first.txt"])).toBe(false);
+  expect(store.error).toBe("Shelf saved but cleanup failed");
+  expect(mocks.backend.shelfList).toHaveBeenCalledOnce();
+  expect(mocks.refresh).toHaveBeenCalledOnce();
+  mocks.backend.shelfCreate.mockRejectedValue({ code: "nothingToCommit" });
+  expect(await store.promptShelf(["first.txt"])).toBe(false);
+  expect(store.error).toBe("shelf.noChangesToSave");
+  expect(store.busy).toBe(false);
+});
+
+it("cancels creation without writes and releases the dialog guard", async () => {
+  mocks.dialog.mockResolvedValue(null);
+  const store = useStashShelfStore();
+  expect(await store.promptShelf([])).toBe(false);
+  expect(mocks.dialog).not.toHaveBeenCalled();
+  expect(await store.promptShelf(["first.txt"])).toBe(false);
+  expect(mocks.backend.shelfCreate).not.toHaveBeenCalled();
+  expect(store.busy).toBe(false);
+});
+
+it("holds the Shelf deletion guard through confirmation and rejects stale navigation", async () => {
+  const store = useStashShelfStore();
+  const confirmation = deferred();
+  mocks.confirm.mockReturnValue(confirmation.promise);
+  const pending = store.deleteShelf("original");
+  expect(await store.deleteShelf("other")).toBe(false);
+  expect(mocks.confirm).toHaveBeenCalledOnce();
+  let navigation = 0;
+  mocks.workspace.navigationToken = () => navigation;
+  navigation++;
+  confirmation.resolve(true);
+  expect(await pending).toBe(false);
+  expect(mocks.backend.shelfDelete).not.toHaveBeenCalled();
+  mocks.confirm.mockResolvedValue(false);
+  expect(await store.deleteShelf("original")).toBe(false);
+  mocks.confirm.mockResolvedValue(true);
+  expect(await store.deleteShelf("original")).toBe(true);
+  expect(mocks.backend.shelfDelete).toHaveBeenCalledExactlyOnceWith({ path: "A", id: "original" });
+});
+
+it("renames the captured Shelf despite selection changes and rejects stale prompts", async () => {
+  const store = useStashShelfStore();
+  store.shelves = [
+    { id: "original", message: "old" },
+    { id: "other", message: "other" },
+  ] as any;
+  const prompt = deferred();
+  mocks.prompt.mockReturnValue(prompt.promise);
+  const pending = store.promptRenameShelf("original");
+  store.selectedShelfId = "other";
+  expect(await store.promptRenameShelf("other")).toBe(false);
+  expect(mocks.prompt).toHaveBeenCalledOnce();
+  prompt.resolve("  renamed  ");
+  expect(await pending).toBe(true);
+  expect(mocks.backend.shelfRename).toHaveBeenCalledExactlyOnceWith({
+    path: "A",
+    id: "original",
+    message: "renamed",
+  });
+  store.shelves = [{ id: "original", message: "old" }] as any;
+  const stale = deferred();
+  mocks.prompt.mockReturnValue(stale.promise);
+  const next = store.promptRenameShelf("original");
+  mocks.workspace.repoPath = "B";
+  stale.resolve("stale");
+  expect(await next).toBe(false);
+  expect(mocks.backend.shelfRename).toHaveBeenCalledOnce();
 });

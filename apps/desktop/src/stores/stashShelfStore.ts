@@ -10,10 +10,11 @@ import { useChangesStore } from "./changesStore";
 import { useConflictsStore } from "./conflictsStore";
 import { useRewriteStore } from "./rewriteStore";
 import { openDialog } from "@/composables/useDialog";
-import { confirmDialog } from "@/composables/useConfirm";
+import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { i18n } from "@/i18n";
 
 const StashDialog = defineAsyncComponent(() => import("@/features/stash/CreateStashDialog.vue"));
+const ShelfDialog = defineAsyncComponent(() => import("@/features/stash/CreateShelfDialog.vue"));
 const t = (key: string, args = {}) => i18n.global.t(key, args);
 
 export const useStashShelfStore = defineStore("stashShelf", () => {
@@ -235,19 +236,63 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     );
   }
 
+  async function promptShelf(paths: string[]) {
+    const selectedPaths = [...paths];
+    if (!selectedPaths.length) return false;
+    return mutate(
+      async (path, current) => {
+        const result = await openDialog<{ message: string; keepChanges: boolean } | null>(
+          ShelfDialog,
+          { count: selectedPaths.length },
+        );
+        if (!result || !current()) return false;
+        await getBackend().shelfCreate({
+          path,
+          message: result.message.trim() || t("shelf.defaultMessage"),
+          keepChanges: result.keepChanges,
+          paths: selectedPaths,
+          sourceChangelist: null,
+        });
+      },
+      "shelf.created",
+      "shelf.noChangesToSave",
+    );
+  }
+
   async function deleteShelf(id: string) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    await getBackend().shelfDelete({ path: workspace.repoPath, id });
-    toast({ title: "Shelf deleted" });
-    await refresh();
+    return mutate(async (path, current) => {
+      if (
+        !(await confirmDialog({
+          title: t("shelf.delete"),
+          message: t("shelf.deleteConfirm"),
+          destructive: true,
+        })) ||
+        !current()
+      )
+        return false;
+      await getBackend().shelfDelete({ path, id });
+    }, "shelf.deleted");
+  }
+
+  async function promptRenameShelf(id: string) {
+    const shelf = shelves.value.find((entry) => entry.id === id);
+    if (!shelf) return false;
+    const message = shelf.message;
+    return mutate(async (path, current) => {
+      const result = await promptDialog({
+        title: t("shelf.rename"),
+        defaultValue: message,
+        placeholder: t("shelf.renamePrompt"),
+        allowEmpty: false,
+      });
+      if (!result?.trim() || !current() || !shelves.value.some((entry) => entry.id === id))
+        return false;
+      await getBackend().shelfRename({ path, id, message: result.trim() });
+    });
   }
 
   async function renameShelf(id: string, message: string) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    await getBackend().shelfRename({ path: workspace.repoPath, id, message });
-    await refresh();
+    return mutate((path) => getBackend().shelfRename({ path, id, message }));
   }
 
   return {
@@ -272,6 +317,8 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     dropStash,
     clearStashes,
     unshelve,
+    promptShelf,
+    promptRenameShelf,
     deleteShelf,
     renameShelf,
   };

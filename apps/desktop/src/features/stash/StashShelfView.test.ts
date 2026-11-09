@@ -34,6 +34,7 @@ beforeEach(() => {
     dropStash: vi.fn(),
     clearStashes: vi.fn(),
     promptStash: vi.fn(),
+    promptRenameShelf: vi.fn(),
   });
 });
 afterEach(() => {
@@ -146,4 +147,15 @@ it("keeps applied shelves by default and makes removal an explicit option", asyn
   mocks.store.busy = true;
   await flushPromises();
   expect(wrapper.get("fieldset").attributes("disabled")).toBeDefined();
+});
+
+it("passes the selected Shelf identity to the guarded rename dialog", async () => {
+  mocks.store.shelves = [{ id: "saved", message: "saved shelf", paths: ["a.txt"] }];
+  mocks.store.selectedShelfId = "saved";
+  const wrapper = mount(StashShelfView, { props: { mode: "shelf" } });
+  await wrapper
+    .findAll("button")
+    .find((b) => b.text() === "shelf.rename")!
+    .trigger("click");
+  expect(mocks.store.promptRenameShelf).toHaveBeenCalledExactlyOnceWith("saved");
 });

@@ -160,21 +160,7 @@ async function shelveSelected() {
     toast({ title: t("shelf.selectFiles") });
     return;
   }
-  const message = await promptDialog({
-    title: t("shelf.create"),
-    defaultValue: t("shelf.defaultMessage"),
-    placeholder: t("shelf.renamePrompt"),
-  });
-  if (message == null) return;
-  await getBackend().shelfCreate({
-    path: workspace.repoPath,
-    message: message || t("shelf.defaultMessage"),
-    paths,
-    keepChanges: false,
-  });
-  toast({ title: t("shelf.create"), description: `${paths.length}` });
-  await changes.refresh();
-  await stashShelf.refresh();
+  if (!(await stashShelf.promptShelf(paths))) return;
   layout.bottomOpen = true;
   layout.activeBottomTab = stashShelf.combineTab ? "stashesShelves" : "shelf";
 }
@@ -495,6 +481,7 @@ async function runCtx(action: string) {
       <button
         v-if="!ctxIsUnversioned"
         type="button"
+        :disabled="stashShelf.busy"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('shelve')"
       >

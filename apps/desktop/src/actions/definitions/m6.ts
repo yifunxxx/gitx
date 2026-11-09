@@ -94,24 +94,10 @@ export function registerM6Actions() {
     description: "Shelve selected paths",
     icon: Package,
     scope: "changes",
-    enabled: () => hasRepo() && useChangesStore().selectedPaths.length > 0,
+    enabled: () =>
+      hasRepo() && useChangesStore().selectedPaths.length > 0 && !useStashShelfStore().busy,
     async run() {
-      const ws = useWorkspaceStore();
-      const changes = useChangesStore();
-      if (!ws.repoPath) return;
-      const message = await promptDialog({
-        title: "Shelve Changes…",
-        defaultValue: "Shelved changes",
-      });
-      if (message == null) return;
-      await getBackend().shelfCreate({
-        path: ws.repoPath,
-        message: message || "Shelved changes",
-        paths: [...changes.selectedPaths],
-      });
-      toast({ title: "Shelved" });
-      await changes.refresh();
-      await useStashShelfStore().refresh();
+      await useStashShelfStore().promptShelf(useChangesStore().selectedPaths);
     },
   });
 

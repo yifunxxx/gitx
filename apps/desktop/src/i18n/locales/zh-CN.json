@@ -387,6 +387,13 @@
     "clearConfirm": "清除全部 {count} 条 Stash？本地修改不会被应用。"
   },
   "shelf": {
+    "created": "Shelf 已保存",
+    "deleted": "Shelf 已删除",
+    "deleteConfirm": "删除这个 Shelf？删除后仍可从已删除的 Shelf 中恢复。",
+    "noChangesToSave": "没有可搁置的已跟踪文件修改",
+    "selectedCount": "已选择 {count} 个路径",
+    "keepChanges": "保留本地修改",
+    "keepChangesHint": "将工作区内容保存到 Shelf，同时保留本地文件和暂存状态。",
     "removeApplied": "成功应用后移除 Shelf",
     "unshelved": "Shelf 已应用",
     "noChanges": "Shelf 中没有可应用的修改",

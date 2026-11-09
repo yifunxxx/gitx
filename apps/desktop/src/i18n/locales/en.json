@@ -387,6 +387,13 @@
     "clearConfirm": "Clear all {count} stashes without applying them?"
   },
   "shelf": {
+    "created": "Shelf saved",
+    "deleted": "Shelf deleted",
+    "deleteConfirm": "Delete this shelf? It will remain available in deleted shelves.",
+    "noChangesToSave": "No tracked changes to shelve",
+    "selectedCount": "{count} selected paths",
+    "keepChanges": "Keep local changes",
+    "keepChangesHint": "Save the working files in the shelf and keep local files and staging unchanged.",
     "removeApplied": "Remove shelf after successful apply",
     "unshelved": "Shelf applied",
     "noChanges": "No changes in the shelf",
