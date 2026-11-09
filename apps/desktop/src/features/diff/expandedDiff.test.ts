@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { expandUnifiedHunks } from "./expandedDiff";
+import { expandUnifiedHunks, unifiedLineMap } from "./expandedDiff";
 import type { DiffHunk } from "@/lib/backend";
 
 it("fills gaps across multiple hunks without duplicating context", () => {
@@ -27,4 +27,12 @@ it("handles a large expanded hunk without a spread-argument overflow", () => {
   const body = Array.from({ length: 150_000 }, () => "+x");
   const hunks = [{ index: 0, header: "", oldStart: 0, oldLines: 0, newStart: 1, newLines: body.length, lines: body }];
   expect(expandUnifiedHunks(hunks, "", "x\n".repeat(body.length))[0]!.lines).toEqual(body);
+});
+
+it("maps displayed unified rows to actual new-side file lines across gaps", () => {
+  const hunks = [
+    { index: 0, header: "", oldStart: 3, oldLines: 2, newStart: 3, newLines: 2, lines: [" keep", "-old", "+new", "\\ No newline at end of file"] },
+    { index: 1, header: "", oldStart: 15, oldLines: 1, newStart: 15, newLines: 2, lines: ["+add", " end"] },
+  ];
+  expect(unifiedLineMap(hunks)).toEqual([0, 3, 0, 4, 0, 0, 15, 16]);
 });

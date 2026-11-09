@@ -22,7 +22,7 @@ import {
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 import { normalizeEolForDisplay } from "./diffPaint";
-import { expandUnifiedHunks } from "./expandedDiff";
+import { expandUnifiedHunks, unifiedLineMap } from "./expandedDiff";
 
 const props = defineProps<{ tabId: string }>();
 const { t } = useI18n();
@@ -287,6 +287,7 @@ async function stageSelectedLines() {
           unified
           :text="''"
           :hunks="unifiedHunks"
+          :line-map="unifiedLineMap(unifiedHunks)"
           :paint-key="paintKey"
           :enable-inline="enableInline"
         />

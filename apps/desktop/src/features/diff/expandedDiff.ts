@@ -9,6 +9,19 @@ function lines(text: string): string[] {
   return result;
 }
 
+/** Unified rows use new-side file numbers; headers/deletions have no new line. */
+export function unifiedLineMap(hunks: DiffHunk[]): number[] {
+  const map: number[] = [];
+  for (const hunk of hunks) {
+    map.push(0);
+    let next = hunk.newStart;
+    for (const line of hunk.lines) {
+      map.push(line.startsWith(" ") || line.startsWith("+") ? next++ : 0);
+    }
+  }
+  return map;
+}
+
 /** Fill the omitted context with right-side text, retaining the original edits. */
 export function expandUnifiedHunks(hunks: DiffHunk[], left: string, right: string): DiffHunk[] {
   const before = lines(left);

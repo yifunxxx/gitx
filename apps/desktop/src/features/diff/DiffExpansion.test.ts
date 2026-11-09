@@ -100,4 +100,5 @@ it("expands unchanged prefix and suffix in unified mode around a change", async 
   await click("diff.unified");
   await click("diff.expandUnchanged");
   expect(wrapper.getComponent(CodeMirrorDiff).props("hunks")[0].lines).toEqual([" prefix", "-old", "+new", " suffix"]);
+  expect(wrapper.getComponent(CodeMirrorDiff).props("lineMap")).toEqual([0, 1, 0, 2, 3]);
 });
