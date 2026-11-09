@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use gitx_core::{AppError, CompareRange, ErrorCode, RefsList};
+use gitx_core::{AppError, CompareRange, RefsList};
 use gitx_meta::{load_favorites, save_favorites};
 use serde::{Deserialize, Serialize};
 use specta::Type;

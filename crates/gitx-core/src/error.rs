@@ -44,6 +44,7 @@ pub enum ErrorCode {
     CommitNotOnBranch,
     MergeCommitNotAllowed,
     AlreadyPushed,
+    StaleUndo,
     // M6
     InvalidArgument,
     NotFound,

@@ -253,6 +253,31 @@ impl GitRunner {
         mode: &str,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
+        self.branch_checkout_inner(cwd, target, mode, false, cancel)
+            .await
+    }
+
+    /// Multi-root operations visit and record each worktree independently.
+    /// Recursive checkout would move another root before its snapshot exists.
+    pub(crate) async fn branch_checkout_single_root(
+        &self,
+        cwd: &Path,
+        target: &str,
+        mode: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        self.branch_checkout_inner(cwd, target, mode, true, cancel)
+            .await
+    }
+
+    async fn branch_checkout_inner(
+        &self,
+        cwd: &Path,
+        target: &str,
+        mode: &str,
+        no_recurse: bool,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
         if cancel.is_cancelled() {
             return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
         }
@@ -266,7 +291,7 @@ impl GitRunner {
             ));
         }
         self.ensure_not_busy(cwd, cancel).await?;
-        let inv = match mode {
+        let mut inv = match mode {
             "revision" => {
                 let revision = self
                     .rev_parse_public(cwd, &format!("{target}^{{commit}}"), cancel)
@@ -354,6 +379,9 @@ impl GitRunner {
                 GitInvocation::new(cwd, ["checkout", "--no-guess", branch, "--"])
             }
         };
+        if no_recurse {
+            inv.args.insert(1, "--no-recurse-submodules".into());
+        }
         self.run(inv.kind(OpKind::Write), cancel)
             .await
             .map_err(|e| {

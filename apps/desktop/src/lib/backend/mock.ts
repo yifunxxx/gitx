@@ -641,7 +641,6 @@ function mockLog(): LogCommit[] {
   ];
 }
 
-
 let mockBranch = "main";
 let mockBranches = [
   "main",
@@ -655,14 +654,14 @@ let mockRemotes: { name: string; fetchUrl: string; pushUrl: string | null }[] = 
   { name: "origin", fetchUrl: "https://example.com/gitx.git", pushUrl: null },
 ];
 let mockFavorites: string[] = ["refs/heads/main"];
-let mockTags: { name: string; sha: string }[] = [{ name: "v0.1", sha: "bbbbbbbccccccccccccccccccccccccccccccc" }];
+let mockTags: { name: string; sha: string }[] = [
+  { name: "v0.1", sha: "bbbbbbbccccccccccccccccccccccccccccccc" },
+];
 let mockAhead = 1;
 let hasFetched = false;
 let mockBehind = 0;
 let mockChangelists: ChangelistsState = {
-  lists: [
-    { id: "default", name: "Changes", comment: "", active: true },
-  ],
+  lists: [{ id: "default", name: "Changes", comment: "", active: true }],
   assignments: [],
 };
 let mockStashes: StashEntry[] = [
@@ -868,7 +867,10 @@ export const mockBackend: Backend = {
     }
     const sha = `${nextSha.toString(16).padStart(40, "a")}`;
     nextSha += 1;
-    emitConsole("cmd", `git commit ${req.amend ? "--amend " : ""}${req.noVerify ? "--no-verify " : ""}-F <msg>`);
+    emitConsole(
+      "cmd",
+      `git commit ${req.amend ? "--amend " : ""}${req.noVerify ? "--no-verify " : ""}-F <msg>`,
+    );
     emitConsole("stdout", `[main ${sha.slice(0, 7)}] ${req.message.trim().split("\n")[0]}`);
     if (req.amend) amendMessage = req.message;
     // Clear staged mock files
@@ -1263,7 +1265,9 @@ export const mockBackend: Backend = {
   async pushPreview() {
     return {
       remote: mockRemotes[0]?.name ?? "origin",
-      refs: [{ local: mockBranch, remote: mockRemotes[0]?.name ?? "origin", remoteBranch: mockBranch }],
+      refs: [
+        { local: mockBranch, remote: mockRemotes[0]?.name ?? "origin", remoteBranch: mockBranch },
+      ],
       commits: mockAhead ? ["aaaaaaa Local commit"] : [],
       setUpstream: false,
       hasRemote: mockRemotes.length > 0,
@@ -1271,7 +1275,10 @@ export const mockBackend: Backend = {
   },
   async pushRun(req) {
     if (req.forceWithLease && ["main", "master"].includes(req.branch)) {
-      throw { code: "protectedBranch", message: `force push to protected branch '${req.branch}' is not allowed` };
+      throw {
+        code: "protectedBranch",
+        message: `force push to protected branch '${req.branch}' is not allowed`,
+      };
     }
     mockAhead = 0;
     emitConsole("cmd", `git push ${req.remote} ${req.branch}`);
@@ -1936,6 +1943,17 @@ export const mockBackend: Backend = {
         ok: true,
         previousRef: "main",
         error: null,
+        skipped: false,
+        previousHead: { oid: "mock-main", symbolicRef: "refs/heads/main" },
+        checkoutHead: {
+          oid: `mock-${req.target}`,
+          symbolicRef:
+            req.mode === "revision"
+              ? null
+              : `refs/heads/${req.target.replace(/^refs\/heads\//, "")}`,
+        },
+        rolledBack: false,
+        rollbackError: null,
       })),
     };
   },
@@ -1943,7 +1961,11 @@ export const mockBackend: Backend = {
     return {
       ok: true,
       rolledBack: true,
-      steps: req.steps.map((s) => ({ ...s, ok: true, error: null })),
+      steps: req.steps.map((s) => ({
+        ...s,
+        rolledBack: !s.skipped,
+        rollbackError: null,
+      })),
     };
   },
   async uiSyncBroadcast(payload) {

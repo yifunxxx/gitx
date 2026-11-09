@@ -5,13 +5,16 @@
 mod clone_ops;
 mod conflict_ops;
 mod detect;
+mod head_state;
 mod history_rewrite_ops;
 mod ignore_ops;
 mod jobs;
+mod multi_root_checkout;
 mod multi_root_ops;
 mod ops;
 mod partial_ops;
 mod patch_ops;
+mod paths;
 mod process_win;
 mod progress;
 mod refs_ops;
@@ -37,3 +40,5 @@ pub use runner::{helper_bin, GitInvocation, GitOutput, GitRunner, OpKind};
 pub use scheduler::RepoScheduler;
 pub use status::parse_status_porcelain_v2;
 pub use stderr::StderrClassifier;
+
+pub use paths::resolve_git_path;

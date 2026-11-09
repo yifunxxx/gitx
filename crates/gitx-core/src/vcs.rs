@@ -827,12 +827,30 @@ pub struct RepoRoot {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+pub struct RewriteHead {
+    pub oid: String,
+    /// Full symbolic reference, or None for a detached HEAD.
+    pub symbolic_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct MultiRootOpStep {
     pub repo_id: String,
     pub path: String,
     pub ok: bool,
     pub previous_ref: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub skipped: bool,
+    #[serde(default)]
+    pub previous_head: Option<RewriteHead>,
+    #[serde(default)]
+    pub checkout_head: Option<RewriteHead>,
+    #[serde(default)]
+    pub rolled_back: bool,
+    #[serde(default)]
+    pub rollback_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

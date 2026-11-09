@@ -2,11 +2,13 @@
 
 mod error;
 mod ids;
+mod paths;
 mod settings;
 mod vcs;
 
 pub use error::{AppError, ErrorCode, RecoverAction};
 pub use ids::{JobHandle, JobId, JobInfo, JobKind, RepoId};
+pub use paths::{host_path_key, parse_wsl_unc_path};
 pub use settings::{
     AppSettings, AppearanceSettings, FetchTagsPolicy, GitSettings, IncomingCheckPolicy,
     UpdateMethod, SETTINGS_SCHEMA_VERSION,

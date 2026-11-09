@@ -86,13 +86,25 @@ export type RepoRoot = {
   color: string
   isSubmodule: boolean
 }
+export type RewriteHead = {
+  oid: string;
+  /**
+   * Full symbolic reference, or None for a detached HEAD.
+   */
+  symbolicRef: string | null;
+};
 export type MultiRootOpStep = {
-  repoId: string
-  path: string
-  ok: boolean
-  previousRef: string | null
-  error: string | null
-}
+  repoId: string;
+  path: string;
+  ok: boolean;
+  previousRef: string | null;
+  error: string | null;
+  skipped?: boolean;
+  previousHead?: RewriteHead | null;
+  checkoutHead?: RewriteHead | null;
+  rolledBack?: boolean;
+  rollbackError?: string | null;
+};
 export type MultiRootOpResult = {
   ok: boolean
   steps: MultiRootOpStep[]
