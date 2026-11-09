@@ -952,6 +952,12 @@ export const commands = {
   async workspaceOpen(req: WorkspaceOpenReq): Promise<WorkspaceOpenRes> {
     return invoke("workspace_open", { req })
   },
+  async workspaceWatch(roots: RepoRoot[], generation: number): Promise<null> {
+    return invoke("workspace_watch", { roots, generation })
+  },
+  async workspaceUnwatch(generation: number): Promise<null> {
+    return invoke("workspace_unwatch", { generation })
+  },
   async workspaceRecent(): Promise<WorkspaceRecentRes> {
     return invoke("workspace_recent")
   },

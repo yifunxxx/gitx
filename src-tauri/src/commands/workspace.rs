@@ -102,11 +102,6 @@ pub async fn workspace_open(
                 }
                 _ => (git_dir_raw, common_raw, None),
             };
-            if let Some(tl) = &toplevel {
-                state
-                    .watcher
-                    .watch(&RepoId::new(tl.clone()), PathBuf::from(tl).as_path());
-            }
             let roots = if inside {
                 git.discover_repo_roots(
                     PathBuf::from(toplevel.as_deref().unwrap_or(&req.path)).as_path(),

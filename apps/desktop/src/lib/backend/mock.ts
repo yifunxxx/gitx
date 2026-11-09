@@ -769,6 +769,12 @@ export const mockBackend: Backend = {
       ],
     };
   },
+  async workspaceWatch() {
+    return null;
+  },
+  async workspaceUnwatch() {
+    return null;
+  },
   async workspaceRecent() {
     return { paths: [...settings.recentWorkspaces] };
   },

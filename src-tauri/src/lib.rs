@@ -62,6 +62,7 @@ use commands::sync::{
     fetch_run, ls_remote_check, pull_run, push_preview, push_run, submodule_update, sync_fork,
     update_project_run,
 };
+use commands::watch::{workspace_unwatch, workspace_watch};
 use commands::workspace::{init_run, status_probe, vcs_enable, workspace_open, workspace_recent};
 use commands::worktree::{
     worktree_add, worktree_default_path, worktree_list, worktree_lock, worktree_open_ref,
@@ -92,6 +93,8 @@ pub fn run() {
             job_list,
             job_cancel,
             workspace_open,
+            workspace_watch,
+            workspace_unwatch,
             workspace_recent,
             status_probe,
             init_run,
@@ -253,6 +256,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(specta_builder.invoke_handler())
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) && window.label() == "main" {
+                // The event callback owns an AppHandle. Drop it before the app
+                // manager shuts down, and reject late watch registrations.
+                window.state::<AppState>().watcher.shutdown();
+            }
+        })
         .setup(move |app| {
             specta_builder.mount_events(app);
 

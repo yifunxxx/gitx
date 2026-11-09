@@ -1,12 +1,7 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
-import type {
-  ConflictEntry,
-  ConflictsList,
-  ConflictSide,
-  Merge3Result,
-} from "@/lib/backend";
+import type { ConflictEntry, ConflictsList, ConflictSide, Merge3Result } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { useLayoutStore } from "./layoutStore";
@@ -29,23 +24,47 @@ export const useConflictsStore = defineStore("conflicts", () => {
   const mergeTabs = ref<MergeTab[]>([]);
   const activeMergeId = ref<string | null>(null);
 
+  let refreshGeneration = 0;
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      ++refreshGeneration;
+      list.value = null;
+      selected.value = [];
+      loading.value = false;
+      mergeTabs.value = [];
+      activeMergeId.value = null;
+    },
+    { flush: "sync" },
+  );
+
   const entries = computed(() => list.value?.entries ?? []);
   const hasConflicts = computed(() => entries.value.length > 0);
 
   async function refresh() {
     const ws = useWorkspaceStore();
+    const generation = ++refreshGeneration;
+    const path = ws.repoPath;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      generation === refreshGeneration &&
+      path === ws.repoPath &&
+      navigation === ws.navigationToken();
     if (!ws.repoPath) {
       list.value = null;
       return;
     }
     loading.value = true;
     try {
-      list.value = await getBackend().conflictsList({ path: ws.repoPath });
-      selected.value = selected.value.filter((p) =>
-        list.value!.entries.some((e) => e.path === p),
-      );
+      const result = await getBackend().conflictsList({ path: ws.repoPath });
+      if (!current()) return;
+      list.value = result;
+      selected.value = selected.value.filter((p) => list.value!.entries.some((e) => e.path === p));
+    } catch (error) {
+      if (current()) throw error;
     } finally {
-      loading.value = false;
+      if (generation === refreshGeneration) loading.value = false;
     }
   }
 
@@ -152,7 +171,12 @@ export const useConflictsStore = defineStore("conflicts", () => {
         return { ...b, kind: "onlyOurs" as const, resultLines: [...b.oursLines], isSimple: true };
       }
       if (side === "theirs") {
-        return { ...b, kind: "onlyTheirs" as const, resultLines: [...b.theirsLines], isSimple: true };
+        return {
+          ...b,
+          kind: "onlyTheirs" as const,
+          resultLines: [...b.theirsLines],
+          isSimple: true,
+        };
       }
       return b;
     });

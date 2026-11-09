@@ -185,6 +185,8 @@ export type Backend = {
   jobList(): Promise<JobInfo[]>;
   jobCancel(jobId: string): Promise<boolean>;
   workspaceOpen(req: WorkspaceOpenReq): Promise<WorkspaceOpenRes>;
+  workspaceWatch(roots: RepoRoot[], generation: number): Promise<null>;
+  workspaceUnwatch(generation: number): Promise<null>;
   workspaceRecent(): Promise<WorkspaceRecentRes>;
   statusProbe(req: StatusProbeReq): Promise<JobHandle>;
   initRun(req: InitRunReq): Promise<WorkspaceOpenRes>;
@@ -342,6 +344,8 @@ export const tauriBackend: Backend = {
   jobList: () => commands.jobList(),
   jobCancel: (jobId) => commands.jobCancel({ jobId }),
   workspaceOpen: (req) => commands.workspaceOpen(req),
+  workspaceWatch: (roots, generation) => commands.workspaceWatch(roots, generation),
+  workspaceUnwatch: (generation) => commands.workspaceUnwatch(generation),
   workspaceRecent: () => commands.workspaceRecent(),
   statusProbe: (req) => commands.statusProbe(req),
   initRun: (req) => commands.initRun(req),

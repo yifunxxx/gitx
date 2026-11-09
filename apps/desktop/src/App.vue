@@ -19,22 +19,24 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useConsoleStore } from "@/stores/consoleStore";
-import { useJobsStore } from "@/stores/jobsStore";
 import { findActionIdByEvent, runAction, setKeymapOverridesProvider } from "@/actions";
-import { isTauri } from "@/lib/utils";
 import { formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 
+import { useAppEvents } from "@/composables/useAppEvents";
+import { useRepositoryRefresh } from "@/composables/useRepositoryRefresh";
+
+useRepositoryRefresh();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const consoleStore = useConsoleStore();
-const jobs = useJobsStore();
+useAppEvents();
 
 setKeymapOverridesProvider(() => settings.settings?.keymapOverrides);
 
-const unlisteners: Array<() => void> = [];
+let disposed = false;
 
 function onKeydown(e: KeyboardEvent) {
   // Don't steal keys while typing in inputs / dialogs (except Find Action).
@@ -65,22 +67,19 @@ function onKeydown(e: KeyboardEvent) {
   });
 }
 
-function onConsoleLine(payload: { stream: string; line: string }) {
-  const stream = payload.stream as "cmd" | "stdout" | "stderr";
-  consoleStore.append(stream, payload.line);
-}
-
-let stuckTimer: number | undefined;
-
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
   await settings.load();
+  if (disposed) return;
   await workspace.loadRecent();
+  if (disposed) return;
   try {
     await workspace.detectGit();
+    if (disposed) return;
     consoleStore.append("cmd", `# git detected: ${workspace.gitPath}`);
     consoleStore.append("stdout", workspace.gitVersion ?? "");
   } catch (err) {
+    if (disposed) return;
     const msg = formatGitDetectError(err, i18n.global.t("git.detectHint"));
     consoleStore.append("stderr", msg);
     toast({
@@ -100,31 +99,11 @@ onMounted(async () => {
       },
     });
   }
-
-  stuckTimer = window.setInterval(() => jobs.pruneStuck(), 30_000);
-
-  if (isTauri()) {
-    const { listen } = await import("@tauri-apps/api/event");
-    unlisteners.push(
-      await listen<{ stream: string; line: string }>("console://line", (e) =>
-        onConsoleLine(e.payload),
-      ),
-      await listen<{ id: string; title?: string }>("job://started", (e) => {
-        jobs.started({ id: e.payload.id, title: e.payload.title ?? "job" });
-      }),
-      await listen<{ id: string }>("job://finished", (e) => jobs.finished(e.payload.id)),
-    );
-  } else {
-    const handler = (e: Event) => onConsoleLine((e as CustomEvent).detail);
-    window.addEventListener("console://line", handler);
-    unlisteners.push(() => window.removeEventListener("console://line", handler));
-  }
 });
 
 onUnmounted(() => {
+  disposed = true;
   window.removeEventListener("keydown", onKeydown);
-  if (stuckTimer != null) window.clearInterval(stuckTimer);
-  unlisteners.splice(0).forEach((u) => u());
 });
 </script>
 

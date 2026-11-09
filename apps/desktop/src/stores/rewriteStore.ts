@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { RebasePlan, RepoOpState, ResetMode, RewriteResult } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -18,12 +18,27 @@ export const useRewriteStore = defineStore("rewrite", () => {
   const busy = ref(false);
   const lastBackupRef = ref<string | null>(null);
 
+  let refreshGeneration = 0;
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      ++refreshGeneration;
+      opState.value = null;
+    },
+    { flush: "sync" },
+  );
+
   async function afterRewrite() {
     await refreshOpState();
     await useChangesStore().refresh();
     await useLogStore().load(true);
     await useBranchesStore().refresh();
-    if (opState.value && opState.value.kind !== "normal" && (opState.value.conflictCount ?? 0) > 0) {
+    if (
+      opState.value &&
+      opState.value.kind !== "normal" &&
+      (opState.value.conflictCount ?? 0) > 0
+    ) {
       await useConflictsStore().refresh();
       void openDialog(ConflictsDialog, {});
     }
@@ -31,12 +46,26 @@ export const useRewriteStore = defineStore("rewrite", () => {
 
   async function refreshOpState() {
     const ws = useWorkspaceStore();
+    const generation = ++refreshGeneration;
+    const path = ws.repoPath;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      generation === refreshGeneration &&
+      path === ws.repoPath &&
+      navigation === ws.navigationToken();
     if (!ws.repoPath) {
       opState.value = null;
       return null;
     }
-    opState.value = await getBackend().repoOpStateGet({ path: ws.repoPath });
-    return opState.value;
+    try {
+      const result = await getBackend().repoOpStateGet({ path: ws.repoPath });
+      if (!current()) return null;
+      opState.value = result;
+      return result;
+    } catch (error) {
+      if (current()) throw error;
+      return null;
+    }
   }
 
   async function handleResult(result: RewriteResult, label: string) {
@@ -91,7 +120,11 @@ export const useRewriteStore = defineStore("rewrite", () => {
     try {
       return await run(false);
     } catch (e: unknown) {
-      const err = e as { code?: string; message?: string; args?: { files?: string[]; operation?: string } };
+      const err = e as {
+        code?: string;
+        message?: string;
+        args?: { files?: string[]; operation?: string };
+      };
       if (
         err?.code === "dirtyWorktreeWouldBeOverwritten" ||
         err?.code === "untrackedWouldBeOverwritten"

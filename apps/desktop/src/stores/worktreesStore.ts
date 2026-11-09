@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { WorktreeInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -17,12 +17,32 @@ export const useWorktreesStore = defineStore("worktrees", () => {
   /** Once user opens Worktrees tab, keep it visible even for single-worktree repos. */
   const userOpened = ref(false);
 
+  let refreshGeneration = 0;
+  watch(
+    () => workspace().repoPath,
+    () => {
+      ++refreshGeneration;
+      items.value = [];
+      selectedPath.value = null;
+      loading.value = false;
+      error.value = null;
+    },
+    { flush: "sync" },
+  );
+
   function workspace() {
     return useWorkspaceStore();
   }
 
   async function refresh() {
     const ws = workspace();
+    const generation = ++refreshGeneration;
+    const path = ws.repoPath;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      generation === refreshGeneration &&
+      path === ws.repoPath &&
+      navigation === ws.navigationToken();
     if (!ws.repoPath || !ws.isRepo) {
       items.value = [];
       return;
@@ -30,11 +50,12 @@ export const useWorktreesStore = defineStore("worktrees", () => {
     loading.value = true;
     error.value = null;
     try {
-      items.value = await getBackend().worktreeList({ path: ws.repoPath });
+      const result = await getBackend().worktreeList({ path: ws.repoPath });
+      if (current()) items.value = result;
     } catch (e) {
-      error.value = formatErrorMessage(e);
+      if (current()) error.value = formatErrorMessage(e);
     } finally {
-      loading.value = false;
+      if (generation === refreshGeneration) loading.value = false;
     }
   }
 

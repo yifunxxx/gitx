@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { ShelfEntry, StashEntry } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -17,13 +17,37 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
   const selectedShelfId = ref<string | null>(null);
   const showDeleted = ref(false);
 
+  let refreshGeneration = 0;
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      ++refreshGeneration;
+      stashes.value = [];
+      shelves.value = [];
+      deletedShelves.value = [];
+      selectedStashRef.value = null;
+      selectedShelfId.value = null;
+      loading.value = false;
+      error.value = null;
+    },
+    { flush: "sync" },
+  );
+
   const combineTab = computed(
     () => useSettingsStore().settings?.git?.combineStashesAndShelves !== false,
   );
 
   async function refresh() {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath || !workspace.isRepo) {
+    const ws = useWorkspaceStore();
+    const generation = ++refreshGeneration;
+    const path = ws.repoPath;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      generation === refreshGeneration &&
+      path === ws.repoPath &&
+      navigation === ws.navigationToken();
+    if (!ws.repoPath || !ws.isRepo) {
       stashes.value = [];
       shelves.value = [];
       deletedShelves.value = [];
@@ -33,22 +57,19 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     error.value = null;
     try {
       const backend = getBackend();
-      const path = workspace.repoPath;
-      const [s, sh] = await Promise.all([
-        backend.stashList({ path }),
-        backend.shelfList({ path }),
+      const [s, sh, deleted] = await Promise.all([
+        backend.stashList({ path: path! }),
+        backend.shelfList({ path: path! }),
+        showDeleted.value ? backend.shelfListDeleted({ path: path! }) : Promise.resolve([]),
       ]);
+      if (!current()) return;
       stashes.value = s;
       shelves.value = sh;
-      if (showDeleted.value) {
-        deletedShelves.value = await backend.shelfListDeleted({ path });
-      } else {
-        deletedShelves.value = [];
-      }
+      deletedShelves.value = deleted;
     } catch (e) {
-      error.value = formatErrorMessage(e);
+      if (current()) error.value = formatErrorMessage(e);
     } finally {
-      loading.value = false;
+      if (generation === refreshGeneration) loading.value = false;
     }
   }
 
