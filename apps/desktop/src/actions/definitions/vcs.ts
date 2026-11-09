@@ -14,7 +14,7 @@ import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useCommitStore } from "@/stores/commitStore";
-import { useDiffStore } from "@/stores/diffStore";
+import { openChangeDiff } from "@/features/commit/openChangeDiff";
 import { useLogStore } from "@/stores/logStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useCompareStore } from "@/stores/compareStore";
@@ -199,12 +199,7 @@ export function registerVcsActions() {
         toast({ title: "Select a file first" });
         return;
       }
-      const diffs = useDiffStore();
-      if (changes.selectedSection === "staged") {
-        await diffs.openFileDiff(path, "head", "index");
-      } else {
-        await diffs.openFileDiff(path, "index", "worktree");
-      }
+      await openChangeDiff(path, changes.selectedSection);
     },
   });
 

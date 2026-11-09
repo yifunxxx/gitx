@@ -13,7 +13,7 @@ import CommitMessageEditor from "@/features/commit/CommitMessageEditor.vue";
 import RepoStateBanner from "@/features/merge/RepoStateBanner.vue";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
-import { useDiffStore } from "@/stores/diffStore";
+import { openChangeDiff } from "@/features/commit/openChangeDiff";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
@@ -27,7 +27,6 @@ import { runAction } from "@/actions";
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
-const diffs = useDiffStore();
 const layout = useLayoutStore();
 const rewrite = useRewriteStore();
 const stashShelf = useStashShelfStore();
@@ -77,11 +76,7 @@ async function enableVcs() {
 }
 
 function openDiff(path: string, section: ChangesSection) {
-  if (section === "staged") {
-    void diffs.openFileDiff(path, "head", "index");
-  } else {
-    void diffs.openFileDiff(path, "index", "worktree");
-  }
+  void openChangeDiff(path, section);
 }
 
 function openFile(path: string) {
