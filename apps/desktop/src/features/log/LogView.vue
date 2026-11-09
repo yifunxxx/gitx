@@ -33,6 +33,7 @@ import PathTreeList from "@/components/files/PathTreeList.vue";
 import type { ChangedFile } from "@/lib/backend";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
+import { layoutCommitGraph } from "./graphLayout";
 
 const { t } = useI18n();
 const log = useLogStore();
@@ -88,67 +89,19 @@ function mapStatus(s: string): FileChangeKind {
   }
 }
 
-function tidyRef(name: string) {
-  return name
-    .replace(/^HEAD -> /, "")
-    .replace(/^tag: /, "")
-    .replace(/^refs\/heads\//, "")
-    .replace(/^refs\/remotes\//, "")
-    .replace(/^refs\/tags\//, "");
-}
-
-/** Precompute edge colors, lane labels, and column width while walking newest→oldest. */
-const graphLayout = computed(() => {
-  const laneColors = new Map<number, number>();
-  const pendingIncoming = new Set<number>();
-  const laneLabels: Record<number, string> = {};
-  let maxLane = 0;
-  const edgeColors: number[][] = [];
-  const incoming: boolean[] = [];
-  const nodeLabels: string[] = [];
-
-  for (const c of log.commits) {
-    maxLane = Math.max(maxLane, c.graph.lane);
-    incoming.push(pendingIncoming.has(c.graph.lane));
-    pendingIncoming.delete(c.graph.lane);
-
-    const refs = visibleRefs(c.refs).map(tidyRef).filter(Boolean);
-    const nodeLabel = refs.length ? refs.join(", ") : c.shortSha;
-    nodeLabels.push(nodeLabel);
-    // Prefer first-seen (newer tip) label for a lane; keep until replaced by a tip with refs.
-    if (refs.length && !laneLabels[c.graph.lane]) {
-      laneLabels[c.graph.lane] = refs.join(", ");
-    } else if (!laneLabels[c.graph.lane]) {
-      laneLabels[c.graph.lane] = c.shortSha;
-    }
-
-    const colors: number[] = [];
-    for (const e of c.graph.edges) {
-      maxLane = Math.max(maxLane, e.fromLane, e.toLane);
-      const color = laneColors.get(e.fromLane) ?? c.graph.color;
-      colors.push(color);
-      pendingIncoming.add(e.toLane);
-      if (laneLabels[e.fromLane] && !laneLabels[e.toLane]) {
-        laneLabels[e.toLane] = laneLabels[e.fromLane]!;
-      }
-    }
-    edgeColors.push(colors);
-    laneColors.set(c.graph.lane, c.graph.color);
-    c.graph.edges.forEach((e, i) => {
-      const color = colors[i] ?? c.graph.color;
-      laneColors.set(e.fromLane, color);
-      laneColors.set(e.toLane, color);
-    });
-  }
-
-  // Fill missing lanes with i18n fallback.
-  for (let i = 0; i <= maxLane; i++) {
-    if (!laneLabels[i]) laneLabels[i] = t("log.laneUntitled", { lane: i });
-  }
-
-  const colPx = Math.max(56, (maxLane + 1) * 16 + 12);
-  return { edgeColors, incoming, maxLane, colPx, laneLabels, nodeLabels };
-});
+const graphLayout = computed(() =>
+  layoutCommitGraph(log.commits, {
+    filtered: !!(
+      log.filters.text ||
+      log.filters.authors?.length ||
+      log.filters.paths?.length ||
+      log.filters.since ||
+      log.filters.until ||
+      log.filters.noMerges
+    ),
+    firstParent: !!log.filters.firstParent,
+  }),
+);
 
 const indexLabel = computed(() => {
   const st = log.indexStatus;
@@ -560,12 +513,14 @@ async function ctxExtract() {
                     >
                       <span class="flex h-full items-center justify-start">
                         <CommitGraphCell
-                          :graph="c.graph"
-                          :edge-colors="graphLayout.edgeColors[idx] ?? []"
-                          :incoming="graphLayout.incoming[idx] ?? false"
+                          :graph="graphLayout.rows[idx]!.graph"
+                          :edge-colors="graphLayout.rows[idx]!.edgeColors"
+                          :incoming="graphLayout.rows[idx]!.incoming"
+                          :hidden-parents="graphLayout.rows[idx]!.hiddenParents"
                           :max-lane="graphLayout.maxLane"
-                          :lane-labels="graphLayout.laneLabels"
-                          :node-label="graphLayout.nodeLabels[idx]"
+                          :lane-labels="graphLayout.rows[idx]!.laneLabels"
+                          :node-label="graphLayout.rows[idx]!.nodeLabel"
+                          :lane-width="14"
                         />
                       </span>
                       <span class="flex min-w-0 items-center gap-1 truncate">

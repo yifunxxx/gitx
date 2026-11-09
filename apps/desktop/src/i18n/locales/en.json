@@ -111,6 +111,7 @@
     "chipPaths": "Paths: {value}",
     "chipBranch": "Branch: {value}",
     "laneUntitled": "Lane {lane}",
+    "hiddenParents": "Parents outside the current results: {parents}",
     "applyTip": "Apply filters",
     "clearTip": "Clear all filters"
   },

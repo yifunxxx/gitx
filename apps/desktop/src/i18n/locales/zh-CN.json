@@ -111,6 +111,7 @@
     "chipPaths": "路径：{value}",
     "chipBranch": "分支：{value}",
     "laneUntitled": "泳道 {lane}",
+    "hiddenParents": "父提交未显示在当前结果中：{parents}",
     "applyTip": "应用筛选",
     "clearTip": "清除全部筛选"
   },
