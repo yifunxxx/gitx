@@ -187,6 +187,15 @@ async function renameSelectedShelf() {
         {{ t("stash.create") }}
       </Button>
       <Button
+        v-if="showShelves"
+        size="xs"
+        variant="ghost"
+        :disabled="!workspace.isRepo || store.busy"
+        @click="store.promptImportShelf()"
+      >
+        {{ t("shelf.importPatch") }}
+      </Button>
+      <Button
         size="xs"
         variant="ghost"
         :disabled="store.busy || store.loading"

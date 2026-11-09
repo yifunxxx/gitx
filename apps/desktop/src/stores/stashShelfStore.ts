@@ -12,6 +12,7 @@ import { useRewriteStore } from "./rewriteStore";
 import { openDialog } from "@/composables/useDialog";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { i18n } from "@/i18n";
+import { isTauri } from "@/lib/utils";
 
 const StashDialog = defineAsyncComponent(() => import("@/features/stash/CreateStashDialog.vue"));
 const ShelfDialog = defineAsyncComponent(() => import("@/features/stash/CreateShelfDialog.vue"));
@@ -274,6 +275,42 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     }, "shelf.deleted");
   }
 
+  async function promptImportShelf() {
+    return mutate(
+      async (path, current) => {
+        let patchFile: string | null;
+        if (isTauri()) {
+          const { open } = await import("@tauri-apps/plugin-dialog");
+          if (!current()) return false;
+          const selected = await open({
+            title: t("shelf.importPatch"),
+            directory: false,
+            multiple: false,
+            filters: [{ name: t("shelf.patchFiles"), extensions: ["patch", "diff"] }],
+          });
+          patchFile = typeof selected === "string" ? selected : null;
+        } else {
+          patchFile = await promptDialog({
+            title: t("shelf.importPatch"),
+            placeholder: t("shelf.patchPath"),
+            allowEmpty: false,
+          });
+        }
+        if (!patchFile || !current()) return false;
+        const name = patchFile.split(/[\\/]/).pop()?.replace(/\.(patch|diff)$/i, "");
+        const entry = await getBackend().shelfImport({
+          path,
+          patchFile,
+          message: name || t("shelf.defaultMessage"),
+        });
+        if (!current()) return false;
+        selectedShelfId.value = entry.id;
+      },
+      "shelf.imported",
+      "shelf.noPatchChanges",
+    );
+  }
+
   async function promptRenameShelf(id: string) {
     const shelf = shelves.value.find((entry) => entry.id === id);
     if (!shelf) return false;
@@ -318,6 +355,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     clearStashes,
     unshelve,
     promptShelf,
+    promptImportShelf,
     promptRenameShelf,
     deleteShelf,
     renameShelf,

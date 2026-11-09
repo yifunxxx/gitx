@@ -102,6 +102,23 @@ export function registerM6Actions() {
   });
 
   registerAction({
+    id: "Git.Shelf.ImportPatch",
+    title: "Import Patch…",
+    description: "Save a patch in Shelf",
+    icon: FilePlus2,
+    scope: "global",
+    enabled: () => hasRepo() && !useStashShelfStore().busy,
+    async run() {
+      const shelf = useStashShelfStore();
+      if (await shelf.promptImportShelf()) {
+        const layout = useLayoutStore();
+        layout.bottomOpen = true;
+        layout.activeBottomTab = shelf.combineTab ? "stashesShelves" : "shelf";
+      }
+    },
+  });
+
+  registerAction({
     id: "Create Patch",
     title: "Create Patch…",
     description: "Create a patch from local changes",

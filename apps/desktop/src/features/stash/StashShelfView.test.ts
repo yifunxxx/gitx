@@ -35,6 +35,7 @@ beforeEach(() => {
     clearStashes: vi.fn(),
     promptStash: vi.fn(),
     promptRenameShelf: vi.fn(),
+    promptImportShelf: vi.fn(),
   });
 });
 afterEach(() => {
@@ -158,4 +159,22 @@ it("passes the selected Shelf identity to the guarded rename dialog", async () =
     .find((b) => b.text() === "shelf.rename")!
     .trigger("click");
   expect(mocks.store.promptRenameShelf).toHaveBeenCalledExactlyOnceWith("saved");
+});
+
+it("exposes import in Shelf views and disables it while busy or outside a repository", async () => {
+  const wrapper = mount(StashShelfView, { props: { mode: "shelf" } });
+  const button = () => wrapper.findAll("button").find((b) => b.text() === "shelf.importPatch");
+  await button()!.trigger("click");
+  expect(mocks.store.promptImportShelf).toHaveBeenCalledOnce();
+  mocks.store.busy = true;
+  await flushPromises();
+  expect(button()!.attributes("disabled")).toBeDefined();
+  mocks.store.busy = false;
+  mocks.workspace.isRepo = false;
+  await flushPromises();
+  expect(button()!.attributes("disabled")).toBeDefined();
+  await wrapper.setProps({ mode: "stash" });
+  expect(button()).toBeUndefined();
+  await wrapper.setProps({ mode: "combined" });
+  expect(button()).toBeDefined();
 });

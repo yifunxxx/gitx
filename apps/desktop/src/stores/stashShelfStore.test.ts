@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
+import { flushPromises } from "@vue/test-utils";
 import { useStashShelfStore } from "./stashShelfStore";
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     shelfUnshelve: vi.fn(),
     shelfDelete: vi.fn(),
     shelfRename: vi.fn(),
+    shelfImport: vi.fn(),
   },
   refresh: vi.fn(),
   conflicts: vi.fn(),
@@ -25,7 +27,11 @@ const mocks = vi.hoisted(() => ({
   dialog: vi.fn(),
   confirm: vi.fn(),
   prompt: vi.fn(),
+  isTauri: vi.fn(),
+  fileOpen: vi.fn(),
 }));
+vi.mock("@/lib/utils", () => ({ isTauri: mocks.isTauri }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.fileOpen }));
 vi.mock("./workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("./settingsStore", () => ({ useSettingsStore: () => ({}) }));
 vi.mock("./changesStore", () => ({ useChangesStore: () => ({ refresh: mocks.refresh }) }));
@@ -385,4 +391,83 @@ it("renames the captured Shelf despite selection changes and rejects stale promp
   stale.resolve("stale");
   expect(await next).toBe(false);
   expect(mocks.backend.shelfRename).toHaveBeenCalledOnce();
+});
+
+it("holds the import guard across the file picker and selects the imported Shelf", async () => {
+  mocks.isTauri.mockReturnValue(true);
+  const picker = deferred();
+  mocks.fileOpen.mockReturnValue(picker.promise);
+  mocks.backend.shelfImport.mockResolvedValue({ id: "imported" });
+  mocks.backend.shelfList.mockResolvedValue([{ id: "imported", paths: ["a.txt"] }]);
+  const store = useStashShelfStore();
+  const pending = store.promptImportShelf();
+  expect(store.busy).toBe(true);
+  expect(await store.promptImportShelf()).toBe(false);
+  expect(await store.promptStash()).toBe(false);
+  await flushPromises();
+  expect(mocks.fileOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    directory: false, multiple: false,
+    filters: [{ name: "shelf.patchFiles", extensions: ["patch", "diff"] }],
+  }));
+  picker.resolve("C:\\补丁 文件\\feature.PATCH");
+  expect(await pending).toBe(true);
+  expect(mocks.backend.shelfImport).toHaveBeenCalledExactlyOnceWith({
+    path: "A", patchFile: "C:\\补丁 文件\\feature.PATCH", message: "feature",
+  });
+  expect(store.selectedShelfId).toBe("imported");
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.imported" });
+  expect(store.busy).toBe(false);
+});
+
+it("abandons native import after navigation or A to B to A while the picker is open", async () => {
+  mocks.isTauri.mockReturnValue(true);
+  for (const switchPath of [false, true]) {
+    let navigation = 0;
+    mocks.workspace.navigationToken = () => navigation;
+    const picker = deferred();
+    mocks.fileOpen.mockReturnValue(picker.promise);
+    const pending = useStashShelfStore().promptImportShelf();
+    await flushPromises();
+    if (switchPath) {
+      mocks.workspace.repoPath = "B";
+      mocks.workspace.repoPath = "A";
+    } else navigation++;
+    picker.resolve("/tmp/old.patch");
+    expect(await pending).toBe(false);
+  }
+  expect(mocks.backend.shelfImport).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalled();
+});
+
+it("handles picker cancellation and failures without leaving a pending write", async () => {
+  mocks.isTauri.mockReturnValue(true);
+  const store = useStashShelfStore();
+  mocks.fileOpen.mockResolvedValue(null);
+  expect(await store.promptImportShelf()).toBe(false);
+  expect(mocks.backend.shelfImport).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalled();
+  mocks.fileOpen.mockRejectedValue(new Error("picker unavailable"));
+  expect(await store.promptImportShelf()).toBe(false);
+  expect(store.error).toBe("picker unavailable");
+  expect(store.busy).toBe(false);
+});
+
+it("keeps import errors visible and does not select a late result in another repository", async () => {
+  mocks.prompt.mockResolvedValue("/tmp/feature.diff");
+  mocks.backend.shelfImport.mockRejectedValue({ code: "nothingToCommit" });
+  const store = useStashShelfStore();
+  expect(await store.promptImportShelf()).toBe(false);
+  expect(store.error).toBe("shelf.noPatchChanges");
+  expect(store.selectedShelfId).toBeNull();
+  const write = deferred();
+  mocks.backend.shelfImport.mockReturnValue(write.promise);
+  const pending = store.promptImportShelf();
+  await flushPromises();
+  mocks.workspace.repoPath = "B";
+  const notifications = mocks.toast.mock.calls.length;
+  write.resolve({ id: "old-result" });
+  expect(await pending).toBe(false);
+  expect(store.selectedShelfId).toBeNull();
+  expect(mocks.toast).toHaveBeenCalledTimes(notifications);
+  expect(store.busy).toBe(false);
 });

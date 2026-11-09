@@ -387,6 +387,11 @@
     "clearConfirm": "Clear all {count} stashes without applying them?"
   },
   "shelf": {
+    "importPatch": "Import Patch…",
+    "patchFiles": "Patch files",
+    "patchPath": "Patch file path",
+    "imported": "Patch imported to Shelf",
+    "noPatchChanges": "The patch contains no file changes",
     "created": "Shelf saved",
     "deleted": "Shelf deleted",
     "deleteConfirm": "Delete this shelf? It will remain available in deleted shelves.",
