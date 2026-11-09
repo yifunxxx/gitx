@@ -401,64 +401,7 @@ pub fn apply_selected_hunks_to_base(
     worktree: &str,
     selected_hunk_indexes: &[u32],
 ) -> String {
-    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
-    if selected_hunk_indexes.is_empty() {
-        return base.to_string();
-    }
-    let selected: std::collections::HashSet<u32> = selected_hunk_indexes.iter().copied().collect();
-
-    // Rebuild by walking all hunks: for selected, take new side; for unselected, keep old side.
-    // Approach: start from base lines, apply selected hunks in reverse order.
-    let mut result_lines: Vec<String> = if base.is_empty() {
-        Vec::new()
-    } else {
-        base.split_inclusive('\n')
-            .map(|l| l.trim_end_matches('\n').to_string())
-            .collect()
-    };
-    // If base ended with newline, split_inclusive keeps structure; normalize without empties from trailing.
-    if base.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
-        result_lines.pop();
-    }
-
-    let mut selected_hunks: Vec<&DiffHunk> = hunks
-        .iter()
-        .filter(|h| selected.contains(&h.index))
-        .collect();
-    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.old_start));
-
-    for hunk in selected_hunks {
-        let start = if hunk.old_start == 0 {
-            0
-        } else {
-            (hunk.old_start as usize).saturating_sub(1)
-        };
-        let end = start + hunk.old_lines as usize;
-        let mut replacement: Vec<String> = Vec::new();
-        for line in &hunk.lines {
-            if let Some(rest) = line.strip_prefix('+') {
-                replacement.push(rest.to_string());
-            } else if let Some(rest) = line.strip_prefix(' ') {
-                replacement.push(rest.to_string());
-            }
-            // '-' lines omitted
-        }
-        if end > result_lines.len() {
-            // Fallback: append replacement.
-            result_lines.extend(replacement);
-        } else {
-            result_lines.splice(start..end, replacement);
-        }
-    }
-
-    if result_lines.is_empty() {
-        return String::new();
-    }
-    let mut out = result_lines.join("\n");
-    if worktree.ends_with('\n') || base.ends_with('\n') {
-        out.push('\n');
-    }
-    out
+    select_hunks(base, worktree, selected_hunk_indexes, false)
 }
 
 /// Unstage selected hunks: remove those changes from index toward HEAD text.
@@ -467,60 +410,58 @@ pub fn apply_unstage_hunks_to_index(
     index: &str,
     selected_hunk_indexes: &[u32],
 ) -> String {
-    // Hunks of head→index; unstaging selected means revert those hunks on index back toward head.
-    let hunks = compute_hunks(Some(head), Some(index), &DiffComputeOptions::default());
-    let selected: std::collections::HashSet<u32> = selected_hunk_indexes.iter().copied().collect();
+    select_hunks(head, index, selected_hunk_indexes, true)
+}
 
-    let mut result_lines: Vec<String> = if index.is_empty() {
-        Vec::new()
-    } else {
-        index
-            .split_inclusive('\n')
-            .map(|l| l.trim_end_matches('\n').to_string())
-            .collect()
-    };
-    if index.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
-        result_lines.pop();
+fn select_hunks(base: &str, worktree: &str, selected: &[u32], revert: bool) -> String {
+    let original = if revert { worktree } else { base };
+    if selected.is_empty() {
+        return original.to_string();
     }
-
-    // Map: for each selected hunk in head→index, the new side is in index.
-    // Revert = replace new-side region with old-side lines.
-    let mut selected_hunks: Vec<&DiffHunk> = hunks
-        .iter()
-        .filter(|h| selected.contains(&h.index))
-        .collect();
-    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.new_start));
-
-    for hunk in selected_hunks {
-        let start = if hunk.new_start == 0 {
-            0
-        } else {
-            (hunk.new_start as usize).saturating_sub(1)
-        };
-        let end = start + hunk.new_lines as usize;
-        let mut replacement: Vec<String> = Vec::new();
+    let selected: std::collections::HashSet<u32> = selected.iter().copied().collect();
+    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
+    let old_lines = exact_lines(base);
+    let new_lines = exact_lines(worktree);
+    let original_lines = if revert { &new_lines } else { &old_lines };
+    let mut cursor = 0;
+    let mut fragments = Vec::new();
+    for hunk in hunks.iter().filter(|hunk| selected.contains(&hunk.index)) {
+        let mut old = hunk.old_start.saturating_sub(1) as usize;
+        let mut new = hunk.new_start.saturating_sub(1) as usize;
+        let start = if revert { new } else { old };
+        fragments.extend_from_slice(&original_lines[cursor..start]);
+        // Hunk display strings have normalized line endings. Use only their
+        // tags and positions, copying exact bytes from the corresponding side.
         for line in &hunk.lines {
-            if let Some(rest) = line.strip_prefix('-') {
-                replacement.push(rest.to_string());
-            } else if let Some(rest) = line.strip_prefix(' ') {
-                replacement.push(rest.to_string());
+            match line.as_bytes()[0] {
+                b' ' => {
+                    fragments.push(if revert {
+                        new_lines[new]
+                    } else {
+                        old_lines[old]
+                    });
+                    old += 1;
+                    new += 1;
+                }
+                b'-' => {
+                    if revert {
+                        fragments.push(old_lines[old]);
+                    }
+                    old += 1;
+                }
+                b'+' => {
+                    if !revert {
+                        fragments.push(new_lines[new]);
+                    }
+                    new += 1;
+                }
+                _ => unreachable!("computed hunk line tag"),
             }
         }
-        if end > result_lines.len() {
-            result_lines = replacement;
-        } else {
-            result_lines.splice(start..end, replacement);
-        }
+        cursor = if revert { new } else { old };
     }
-
-    if result_lines.is_empty() {
-        return String::new();
-    }
-    let mut out = result_lines.join("\n");
-    if head.ends_with('\n') || index.ends_with('\n') {
-        out.push('\n');
-    }
-    out
+    fragments.extend_from_slice(&original_lines[cursor..]);
+    fragments.concat()
 }
 
 /// Apply selected new-side file lines without moving later edits or changing

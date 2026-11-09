@@ -12,4 +12,4 @@
 - 集成 `gitx-diff` + `gitx-git` all-targets 共 25 组 / 212 项通过，2 ignored 为子进程 fixture；`partial-lines-rust-all.log`。该全量针对本项算法，早于后续逐行写入边界修复的构建。
 - 生产库与新增内容测试严格 Clippy 通过。独立基线的全 targets 严格检查被两个既有 manual_contains 测试告警阻止；`partial-lines-clippy-targeted.log`、`partial-lines-clippy.log`。
 
-桌面多块组合需要使用重新构建的后端继续复验；前一次单行桌面通过不作为本项新后端证据。
+新后端（12:24启动的调试PID30524）桌面多块复验已完成：统一视图显示新侧第1、26、28行，输入1,26后仅暂存开头插入与第26行替换，第28行仍未暂存。独立Git核对暂存内容、HEAD、refs、全部工作区文件哈希、其他index条目5项全部通过；证据 `partial-lines-multiple-gui.txt`、`partial-lines-multiple-gui-verified.json`。正常关闭后主进程及窗口已退出；本次未在关闭前重新采样完整后代树，不增加新的整树退出结论。
