@@ -2,6 +2,7 @@
 
 use crate::runner::{GitInvocation, GitRunner, OpKind};
 use gitx_core::{AppError, ErrorCode, ShelfEntry};
+use std::collections::BTreeSet;
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
@@ -96,6 +97,7 @@ impl GitRunner {
         &self,
         cwd: &Path,
         patch: &[u8],
+        reverse: bool,
         cancel: &CancellationToken,
     ) -> Result<Vec<String>, AppError> {
         if patch.is_empty() {
@@ -103,11 +105,13 @@ impl GitRunner {
         }
         // Derive metadata from the exact saved patch rather than a second diff
         // that may observe different working files. -z preserves unusual names.
+        let mut args = vec!["apply", "--numstat", "-z"];
+        if reverse {
+            args.push("--reverse");
+        }
+        args.push("-");
         let out = self
-            .run(
-                GitInvocation::new(cwd, ["apply", "--numstat", "-z", "-"]).stdin(patch.to_vec()),
-                cancel,
-            )
+            .run(GitInvocation::new(cwd, args).stdin(patch.to_vec()), cancel)
             .await?;
         let text = std::str::from_utf8(&out.stdout).map_err(|_| {
             AppError::new(
@@ -186,7 +190,9 @@ impl GitRunner {
             .shelf_diff(cwd, Some(&base_sha), true, paths, cancel)
             .await?;
         if !keep_changes && !index_patch.is_empty() {
-            let staged = self.shelf_patch_paths(cwd, &index_patch, cancel).await?;
+            let staged = self
+                .shelf_patch_paths(cwd, &index_patch, false, cancel)
+                .await?;
             let unstaged = self.shelf_diff(cwd, None, false, &staged, cancel).await?;
             if !unstaged.is_empty() {
                 return Err(AppError::new(ErrorCode::ShelfFailed,
@@ -202,7 +208,7 @@ impl GitRunner {
                 "no tracked changes to shelve",
             ));
         }
-        let changed_paths = self.shelf_patch_paths(cwd, &patch, cancel).await?;
+        let changed_paths = self.shelf_patch_paths(cwd, &patch, false, cancel).await?;
         if changed_paths.is_empty() {
             return Err(AppError::new(
                 ErrorCode::ShelfFailed,
@@ -220,7 +226,8 @@ impl GitRunner {
         // must not allow working files or staged content to be removed.
         let keepalive = format!("refs/gitx/shelf-base-{base_sha}");
         self.run(
-            GitInvocation::new(cwd, ["update-ref", &keepalive, &base_sha]).kind(OpKind::Write),
+            GitInvocation::new(cwd, ["update-ref", "--no-deref", &keepalive, &base_sha])
+                .kind(OpKind::Write),
             cancel,
         )
         .await?;
@@ -237,7 +244,7 @@ impl GitRunner {
 
         // Keepalive ref per shelf id.
         let shelf_ref = format!("refs/gitx/shelf/{}", entry.id);
-        let inv = GitInvocation::new(cwd, ["update-ref", &shelf_ref, &base_sha])
+        let inv = GitInvocation::new(cwd, ["update-ref", "--no-deref", &shelf_ref, &base_sha])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
@@ -355,7 +362,7 @@ impl GitRunner {
         let common = self.git_common_dir(cwd, cancel).await?;
         gitx_meta::soft_delete_shelf(&common, id)?;
         let shelf_ref = format!("refs/gitx/shelf/{id}");
-        let inv = GitInvocation::new(cwd, ["update-ref", "-d", &shelf_ref])
+        let inv = GitInvocation::new(cwd, ["update-ref", "--no-deref", "-d", &shelf_ref])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         let _ = self.run(inv, cancel).await;
@@ -393,37 +400,168 @@ impl GitRunner {
         let common = self.git_common_dir(cwd, cancel).await?;
         let patch = std::fs::read(patch_file)
             .map_err(|e| AppError::new(ErrorCode::FsError, format!("read patch: {e}")))?;
-        let base_sha = match self
-            .run(
-                GitInvocation::new(cwd, ["rev-parse", "HEAD"])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone()),
-                cancel,
-            )
-            .await
-        {
-            Ok(out) => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-            Err(_) => "4b825dc642cb6eb9a060e54bf8d69257bf5ff90".into(),
-        };
-        // Best-effort path extraction from patch headers.
-        let text = String::from_utf8_lossy(&patch);
-        let mut paths = Vec::new();
-        for line in text.lines() {
-            if let Some(rest) = line.strip_prefix("+++ b/") {
-                paths.push(rest.to_string());
-            }
+        if patch.is_empty() {
+            return Err(AppError::new(ErrorCode::NothingToCommit, "patch is empty"));
         }
+        // Git parses binary/mode-only changes, deletions and quoted filenames.
+        // Parse both directions: numstat reports only the destination of a
+        // rename/copy, so its source needs validation and metadata too.
+        let mut paths = self.shelf_patch_paths(cwd, &patch, false, cancel).await?;
+        paths.extend(self.shelf_patch_paths(cwd, &patch, true, cancel).await?);
         paths.sort();
         paths.dedup();
-        gitx_meta::create_shelf_entry(
-            &common,
-            message,
-            &base_sha,
-            &paths,
-            &patch,
-            None,
-            text.contains("GIT binary patch"),
-            false,
+        if paths.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::NothingToCommit,
+                "patch contains no file changes",
+            ));
+        }
+        for path in &paths {
+            validate_import_path(path)?;
+        }
+        // A normal `git diff` binary notice contains no bytes to restore.
+        // Reject it even when other files in this patch have valid payloads.
+        if patch.split(|&b| b == b'\n').any(|line| {
+            let line = line.strip_suffix(b"\r").unwrap_or(line);
+            line.starts_with(b"Binary files ") && line.ends_with(b" differ")
+        }) {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "binary patch data is missing; export the patch with git diff --binary",
+            ));
+        }
+        let binary = patch
+            .split(|&b| b == b'\n')
+            .any(|line| line.strip_suffix(b"\r").unwrap_or(line) == b"GIT binary patch");
+        let base_sha = self.shelf_base(cwd, cancel).await?;
+        // Import validates syntax, not applicability to today's working files.
+        // Keep both the current base and available patch preimages. The latter
+        // may be unreachable blobs from a different revision. Publish their
+        // refs together before metadata; deleted Shelves remain restorable.
+        let preimages = self.shelf_import_preimages(cwd, &patch, cancel).await?;
+        let mut refs = format!("update refs/gitx/shelf-base-{base_sha} {base_sha}\n");
+        if let Some(tree) = preimages {
+            refs.push_str(&format!("update refs/gitx/shelf-base-{tree} {tree}\n"));
+        }
+        self.run(
+            GitInvocation::new(cwd, ["update-ref", "--no-deref", "--stdin"])
+                .stdin(refs.into_bytes())
+                .kind(OpKind::Write),
+            cancel,
         )
+        .await?;
+        let entry = gitx_meta::create_shelf_entry(
+            &common, message, &base_sha, &paths, &patch, None, binary, false,
+        )?;
+        let shelf_ref = format!("refs/gitx/shelf/{}", entry.id);
+        self.run(
+            GitInvocation::new(cwd, ["update-ref", "--no-deref", &shelf_ref, &base_sha])
+                .kind(OpKind::Write),
+            cancel,
+        )
+        .await?;
+        Ok(entry)
     }
+
+    /// Retain locally available old blobs without applying the patch or
+    /// touching the index. Missing external objects are allowed: plain apply
+    /// may still work, but three-way merging then needs the external base.
+    async fn shelf_import_preimages(
+        &self,
+        cwd: &Path,
+        patch: &[u8],
+        cancel: &CancellationToken,
+    ) -> Result<Option<String>, AppError> {
+        let mut ids = BTreeSet::new();
+        let mut header = false;
+        for line in patch.split(|&byte| byte == b'\n') {
+            if line.starts_with(b"diff --git ") {
+                header = true;
+            } else if line.starts_with(b"@@") || line.starts_with(b"GIT binary patch") {
+                header = false;
+            } else if header {
+                let Some(index) = line.strip_prefix(b"index ") else {
+                    continue;
+                };
+                let Some(end) = index.windows(2).position(|bytes| bytes == b"..") else {
+                    continue;
+                };
+                let old = &index[..end];
+                if (4..=64).contains(&old.len())
+                    && old.iter().all(u8::is_ascii_hexdigit)
+                    && old.iter().any(|&byte| byte != b'0')
+                {
+                    ids.insert(std::str::from_utf8(old).expect("hex object ID"));
+                }
+            }
+        }
+        if ids.is_empty() {
+            return Ok(None);
+        }
+        let input = ids
+            .into_iter()
+            .map(|id| format!("{id}\n"))
+            .collect::<String>();
+        let out = self
+            .run(
+                GitInvocation::new(
+                    cwd,
+                    ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
+                )
+                .env("GIT_NO_LAZY_FETCH", "1")
+                .stdin(input.into_bytes()),
+                cancel,
+            )
+            .await?;
+        let mut blobs = BTreeSet::new();
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            if let Some(id) = line.strip_suffix(" blob") {
+                blobs.insert(id.to_owned());
+            }
+        }
+        if blobs.is_empty() {
+            return Ok(None);
+        }
+        // Synthetic names make reachability independent of source paths,
+        // renames, file modes and duplicate preimages in the imported patch.
+        let tree = blobs
+            .into_iter()
+            .enumerate()
+            .map(|(n, id)| format!("100644 blob {id}\tpreimage-{n}\0"))
+            .collect::<String>();
+        let out = self
+            .run(
+                GitInvocation::new(cwd, ["mktree", "-z"])
+                    .stdin(tree.into_bytes())
+                    .kind(OpKind::Write),
+                cancel,
+            )
+            .await?;
+        Ok(Some(String::from_utf8_lossy(&out.stdout).trim().to_owned()))
+    }
+}
+
+fn validate_import_path(path: &str) -> Result<(), AppError> {
+    if path.is_empty()
+        || path.contains('\0')
+        || path.starts_with(['/', '\\'])
+        || path.split(['/', '\\']).any(|part| {
+            part.is_empty()
+                || part == "."
+                || part == ".."
+                || part
+                    .trim_end_matches(['.', ' '])
+                    .eq_ignore_ascii_case(".git")
+                || (cfg!(windows) && part.contains(':'))
+        })
+        || Path::new(path)
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(AppError::new(
+            ErrorCode::InvalidArgument,
+            "imported patch requires repository-relative paths outside .git",
+        ));
+    }
+    Ok(())
 }
