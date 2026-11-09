@@ -360,6 +360,67 @@ impl GitRunner {
                             format!("local branch '{local}' already exists and does not track '{target}'; select it explicitly or create a branch with another name")));
                     }
                     GitInvocation::new(cwd, ["checkout", "--no-guess", local, "--"])
+                let remote_name = target.strip_prefix("refs/remotes/").unwrap_or(target);
+                let remote_ref = format!("refs/remotes/{remote_name}");
+                if !self.checkout_ref_exists(cwd, &remote_ref, cancel).await? {
+                    return Err(AppError::new(
+                        ErrorCode::NotFound,
+                        format!("remote branch does not exist: {target}"),
+                    ));
+                }
+                // Remote names can contain '/'. Match the longest configured
+                // prefix, preserving every directory in the branch name.
+                let remotes = self
+                    .run(GitInvocation::new(cwd, ["remote"]), cancel)
+                    .await?;
+                let remotes = String::from_utf8_lossy(&remotes.stdout);
+                let remote = remotes
+                    .lines()
+                    .filter(|name| {
+                        remote_name
+                            .strip_prefix(name)
+                            .is_some_and(|rest| rest.starts_with('/'))
+                    })
+                    .max_by_key(|name| name.len())
+                    .ok_or_else(|| {
+                        AppError::new(
+                            ErrorCode::RemoteNotFound,
+                            format!("no configured remote matches {target}"),
+                        )
+                    })?;
+                let local = &remote_name[remote.len() + 1..];
+                if local.is_empty() || local.starts_with('-') {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidRefName,
+                        "invalid local tracking branch name",
+                    ));
+                }
+                let local_ref = format!("refs/heads/{local}");
+                if self.checkout_ref_exists(cwd, &local_ref, cancel).await? {
+                    let upstreams = self
+                        .run(
+                            GitInvocation::new(
+                                cwd,
+                                [
+                                    "for-each-ref",
+                                    "--format=%(refname)%1e%(upstream)",
+                                    &local_ref,
+                                ],
+                            ),
+                            cancel,
+                        )
+                        .await?;
+                    let upstreams = String::from_utf8_lossy(&upstreams.stdout);
+                    let upstream = upstreams
+                        .lines()
+                        .filter_map(|line| line.split_once('\u{001e}'))
+                        .find(|(name, _)| *name == local_ref)
+                        .map(|(_, upstream)| upstream);
+                    if upstream != Some(remote_ref.as_str()) {
+                        return Err(AppError::new(ErrorCode::RefAlreadyExists,
+                            format!("local branch '{local}' already exists and does not track '{target}'; select it explicitly or create a branch with another name")));
+                    }
+                    GitInvocation::new(cwd, ["checkout", "--no-guess", local, "--"])
                 } else {
                     GitInvocation::new(cwd, ["checkout", "-b", local, "--track", &remote_ref, "--"])
                 }
@@ -396,6 +457,30 @@ impl GitRunner {
                 }
             })?;
         Ok(())
+    }
+
+    async fn checkout_ref_exists(
+        &self,
+        cwd: &Path,
+        reference: &str,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AppError> {
+        match self
+            .run(
+                GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", reference]),
+                cancel,
+            )
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(error)
+                if error.exit_code == Some(1)
+                    && error.git_stderr.as_deref().unwrap_or("").trim().is_empty() =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     async fn checkout_ref_exists(

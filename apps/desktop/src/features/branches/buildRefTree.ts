@@ -25,6 +25,7 @@ export function flattenRefTree(nodes: RefTreeNode[]): RefTreeRow[] {
 
 /** Group `feature/a` under folder `feature` when enabled. */
 export function buildRefTree(names: string[], groupByDirectory: boolean): RefTreeNode[] {
+export function buildRefTree(names: string[], groupByDirectory: boolean): RefTreeNode[] {
   if (!groupByDirectory) {
     return names.map((name) => ({
       id: name,
@@ -56,6 +57,7 @@ export function buildRefTree(names: string[], groupByDirectory: boolean): RefTre
 
   function toNodes(folder: Folder, prefix: string): RefTreeNode[] {
     const nodes: RefTreeNode[] = [];
+    const folders = [...folder.children.entries()].sort(([a], [b]) => a.localeCompare(b));
     const folders = [...folder.children.entries()].sort(([a], [b]) => a.localeCompare(b));
     for (const [label, child] of folders) {
       const id = prefix ? `${prefix}/${label}` : label;

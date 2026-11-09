@@ -80,6 +80,9 @@
   --selection: 59 130 246 / 0.45;
   --selection-foreground: 215 215 219;
   --hover-surface: 255 255 255 / 0.12;
+  --success: 74 222 128;
+  --warning: 251 191 36;
+  --info: 147 197 253;
 }
 
 html[data-corner-style="large"] {

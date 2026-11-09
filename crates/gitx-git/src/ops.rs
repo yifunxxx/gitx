@@ -206,6 +206,7 @@ impl GitRunner {
         let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
         let cacheinfo = format!("{mode},{sha},{path}");
         let inv = GitInvocation::new(cwd, ["update-index", "--add", "--cacheinfo", &cacheinfo])
+        let inv = GitInvocation::new(cwd, ["update-index", "--add", "--cacheinfo", &cacheinfo])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
