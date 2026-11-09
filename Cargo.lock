@@ -1324,6 +1324,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tauri-specta",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",

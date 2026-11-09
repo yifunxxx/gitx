@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
- * M0 stub for bindings-check CI.
- * Full flow: `cargo build -p gitx` regenerates bindings.ts under debug_assertions,
- * then this script fails if the working tree has an unexpected diff.
- * Until specta export is wired in release CI, we only assert the file exists.
+ * Presence check only; this does not prove that signatures match Rust.
+ * For explicit generation, run a debug executable with GITX_EXPORT_BINDINGS
+ * naming the output .ts file. Normal builds and app startup do not export.
  */
 import { access } from "node:fs/promises";
 import path from "node:path";
@@ -16,6 +15,6 @@ try {
   await access(bindings);
   console.log("bindings.ts present:", bindings);
 } catch {
-  console.error("missing bindings.ts — run `cargo build -p gitx` in debug once");
+  console.error("missing bindings.ts — build the debug app, then run it with GITX_EXPORT_BINDINGS naming the output .ts file (see README)");
   process.exit(1);
 }

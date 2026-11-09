@@ -33,6 +33,26 @@ cargo test -p gitx-git -p gitx-testkit
 cargo build -p gitx-helper
 ```
 
+### Export IPC bindings
+
+Normal builds and app startup leave checked-in TypeScript bindings unchanged.
+To export them explicitly, build a debug executable, then run it with
+`GITX_EXPORT_BINDINGS` set to an output file. Export exits without opening a window
+and replaces the destination only after generation succeeds. The parent directory
+must exist. Review the generated signatures before replacing the checked-in file;
+`pnpm bindings:check` checks presence only.
+
+```powershell
+cargo build -p gitx
+$env:GITX_EXPORT_BINDINGS = Join-Path $env:TEMP 'gitx-bindings.ts'
+try {
+  .\target\debug\gitx.exe
+  if ($LASTEXITCODE -ne 0) { throw 'Binding export failed' }
+} finally {
+  Remove-Item Env:GITX_EXPORT_BINDINGS
+}
+```
+
 ### Theme & language
 
 - Toolbar sun/moon toggles light ↔ dark (persisted in app settings).
