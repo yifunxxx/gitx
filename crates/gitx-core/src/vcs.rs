@@ -285,6 +285,15 @@ pub struct LogPage {
     pub next_offset: u32,
 }
 
+/// Position in the same filtered, ordered history used by `log_query`.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogLocation {
+    pub sha: String,
+    /// None means the commit exists but is outside the displayed history.
+    pub offset: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitDetails {

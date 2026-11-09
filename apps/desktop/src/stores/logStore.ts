@@ -28,10 +28,21 @@ const emptyFilters = (): LogFilters => ({
   order: "date",
 });
 
+const copyFilters = (value: LogFilters): LogFilters => ({
+  ...value,
+  authors: [...(value.authors ?? [])],
+  revisions: [...(value.revisions ?? [])],
+  paths: [...(value.paths ?? [])],
+});
+
 export const useLogStore = defineStore("log", () => {
   const commits = ref<LogCommit[]>([]);
   const loading = ref(false);
   const loadingMore = ref(false);
+  const loadingPrevious = ref(false);
+  const locating = ref(false);
+  const startOffset = ref(0);
+  const navigationMiss = ref<string | null>(null);
   const error = ref<string | null>(null);
   const truncated = ref(false);
   const nextOffset = ref(0);
@@ -48,8 +59,9 @@ export const useLogStore = defineStore("log", () => {
 
   /** Monotonic generation — supersedes in-flight loads (dedupe / cancel). */
   let loadGen = 0;
-  let selectGen = 0;
   let indexGen = 0;
+  let selectGen = 0;
+  let selectionAnchor: string | null = null;
   const workspace = useWorkspaceStore();
 
   function currentRepository() {
@@ -69,24 +81,20 @@ export const useLogStore = defineStore("log", () => {
       changedFiles.value = [];
       selectedSha.value = null;
       selectedShas.value = [];
+      selectionAnchor = null;
       nextOffset.value = 0;
+      startOffset.value = 0;
+      navigationMiss.value = null;
       truncated.value = false;
       loading.value = false;
       loadingMore.value = false;
+      loadingPrevious.value = false;
+      locating.value = false;
       error.value = null;
       indexStatus.value = null;
       filters.value = emptyFilters();
     },
     { flush: "sync" },
-  );
-  watch(
-    filters,
-    () => {
-      ++loadGen;
-      loading.value = false;
-      loadingMore.value = false;
-    },
-    { flush: "sync", deep: true },
   );
 
   const activeFilterChips = computed(() => {
@@ -125,7 +133,20 @@ export const useLogStore = defineStore("log", () => {
     return chips;
   });
 
-  async function load(reset = true) {
+  watch(
+    filters,
+    () => {
+      ++loadGen;
+      locating.value = false;
+      loading.value = false;
+      loadingMore.value = false;
+      loadingPrevious.value = false;
+      navigationMiss.value = null;
+    },
+    { flush: "sync", deep: true },
+  );
+
+  async function load(reset = true, background = false) {
     const isCurrentRepository = currentRepository();
     if (!workspace.repoPath || !workspace.repoId || !workspace.isRepo) {
       ++loadGen;
@@ -135,19 +156,42 @@ export const useLogStore = defineStore("log", () => {
       selectedShas.value = [];
       details.value = null;
       changedFiles.value = [];
-      nextOffset.value = 0;
       truncated.value = false;
       loading.value = false;
       loadingMore.value = false;
+      loadingPrevious.value = false;
+      locating.value = false;
+      startOffset.value = 0;
+      nextOffset.value = 0;
+      navigationMiss.value = null;
+      selectionAnchor = null;
       return;
     }
 
-    if (!reset && (loading.value || loadingMore.value || !truncated.value)) return;
+    if (
+      background &&
+      (loading.value || locating.value || loadingPrevious.value || loadingMore.value)
+    )
+      return;
+    if (
+      !reset &&
+      (loading.value ||
+        loadingMore.value ||
+        loadingPrevious.value ||
+        locating.value ||
+        !truncated.value)
+    )
+      return;
 
     const gen = ++loadGen;
+    locating.value = false;
+    loadingPrevious.value = false;
+    navigationMiss.value = null;
+    const path = workspace.repoPath;
+    const previousSha = selectedSha.value;
     if (reset) {
-      ++selectGen;
-      loading.value = true;
+      if (!background) ++selectGen;
+      loading.value = !background;
       loadingMore.value = false;
       error.value = null;
     } else {
@@ -156,25 +200,76 @@ export const useLogStore = defineStore("log", () => {
 
     try {
       const backend = getBackend();
-      const offset = reset ? 0 : nextOffset.value;
+      let offset = reset ? 0 : nextOffset.value;
+      let requestedCount = background ? Math.max(100, commits.value.length) : 100;
+      const requestFilters = copyFilters(filters.value);
+      let appendedStart = startOffset.value;
+      if (reset && background && commits.value[0]) {
+        const anchor = await backend.logLocate({
+          path,
+          revision: commits.value[0].sha,
+          filters: requestFilters,
+        });
+        if (gen !== loadGen || !isCurrentRepository()) return;
+        if (anchor.offset !== null) {
+          // Include a small number of new rows without dropping the old bottom.
+          // A large incoming history keeps the existing bounded window instead.
+          if (startOffset.value === 0 && anchor.offset <= 1000) requestedCount += anchor.offset;
+          else offset = anchor.offset;
+        }
+      } else if (!reset && commits.value.at(-1)) {
+        const anchor = await backend.logLocate({
+          path,
+          revision: commits.value.at(-1)!.sha,
+          filters: requestFilters,
+        });
+        if (gen !== loadGen || !isCurrentRepository()) return;
+        if (anchor.offset === null) throw new Error(String(i18n.global.t("log.historyChanged")));
+        offset = anchor.offset + 1;
+        appendedStart = Math.max(0, startOffset.value + offset - nextOffset.value);
+      }
       const page = await backend.logQuery({
         repoId: workspace.repoId,
-        path: workspace.repoPath,
+        path,
         offset,
-        limit: 100,
-        filters: filters.value,
+        limit: Math.min(1000, requestedCount),
+        filters: requestFilters,
       });
       if (gen !== loadGen || !isCurrentRepository()) return;
+      // The backend caps each page at 1000. Preserve an already scrolled
+      // history during refresh instead of silently dropping its later pages.
+      while (reset && background && page.truncated && page.commits.length < requestedCount) {
+        const next = await backend.logQuery({
+          repoId: workspace.repoId!,
+          path,
+          offset: page.nextOffset,
+          limit: Math.min(1000, requestedCount - page.commits.length),
+          filters: requestFilters,
+        });
+        if (gen !== loadGen || !isCurrentRepository()) return;
+        if (!next.commits.length || next.nextOffset <= page.nextOffset)
+          throw new Error(String(i18n.global.t("log.historyChanged")));
+        page.commits.push(...next.commits);
+        page.nextOffset = next.nextOffset;
+        page.truncated = next.truncated;
+      }
 
       if (reset) {
-        commits.value = page.commits;
+        startOffset.value = offset;
+        if (JSON.stringify(commits.value) !== JSON.stringify(page.commits))
+          commits.value = page.commits;
         truncated.value = page.truncated;
         nextOffset.value = page.nextOffset;
-        ++selectGen;
-        details.value = null;
-        changedFiles.value = [];
-        selectedSha.value = null;
-        selectedShas.value = [];
+        if (!background || !page.commits.some((c) => c.sha === selectedSha.value)) {
+          ++selectGen;
+          selectedSha.value = null;
+          selectedShas.value = [];
+          details.value = null;
+          changedFiles.value = [];
+        } else {
+          const known = new Set(page.commits.map((c) => c.sha));
+          selectedShas.value = selectedShas.value.filter((sha) => known.has(sha));
+        }
       } else {
         const seen = new Set(commits.value.map((c) => c.sha));
         const added = page.commits.filter((c) => !seen.has(c.sha));
@@ -183,6 +278,7 @@ export const useLogStore = defineStore("log", () => {
           truncated.value = false;
         } else {
           commits.value = [...commits.value, ...added];
+          startOffset.value = appendedStart;
           truncated.value = page.truncated;
           nextOffset.value = page.nextOffset;
         }
@@ -192,13 +288,12 @@ export const useLogStore = defineStore("log", () => {
     } catch (e) {
       if (gen !== loadGen || !isCurrentRepository()) return;
       const msg = formatErrorMessage(e);
-      if (reset) {
+      if (reset && (!background || !commits.value.length)) {
         error.value = msg;
       } else {
         // Keep existing rows; never leave load-more spinning forever.
-        truncated.value = true;
         toast({
-          title: String(i18n.global.t("log.loadMoreFailed")),
+          title: String(i18n.global.t(background ? "log.refreshFailed" : "log.loadMoreFailed")),
           description: msg,
         });
       }
@@ -217,7 +312,8 @@ export const useLogStore = defineStore("log", () => {
       !selectedSha.value &&
       commits.value[0]
     ) {
-      void select(commits.value[0].sha).catch((e) => {
+      const target = commits.value.find((c) => c.sha === previousSha) ?? commits.value[0];
+      void select(target.sha).catch((e) => {
         toast({
           title: String(i18n.global.t("log.failed")),
           description: formatErrorMessage(e),
@@ -226,21 +322,31 @@ export const useLogStore = defineStore("log", () => {
     }
   }
 
-  async function select(sha: string, multi = false) {
-    const gen = ++selectGen;
+  async function select(sha: string, multi = false, range = false) {
     const isCurrentRepository = currentRepository();
-    if (multi) {
+    const gen = ++selectGen;
+    if (range && selectionAnchor) {
+      const start = commits.value.findIndex((c) => c.sha === selectionAnchor);
+      const end = commits.value.findIndex((c) => c.sha === sha);
+      selectedShas.value =
+        start >= 0 && end >= 0
+          ? commits.value.slice(Math.min(start, end), Math.max(start, end) + 1).map((c) => c.sha)
+          : [sha];
+      selectedSha.value = sha;
+    } else if (multi) {
       if (selectedShas.value.includes(sha)) {
         selectedShas.value = selectedShas.value.filter((s) => s !== sha);
       } else {
-        selectedShas.value = [...selectedShas.value, sha].slice(-2);
+        selectedShas.value = [...selectedShas.value, sha];
       }
       selectedSha.value = selectedShas.value.includes(sha)
         ? sha
         : (selectedShas.value.at(-1) ?? null);
+      selectionAnchor = selectedSha.value;
     } else {
       selectedSha.value = sha;
       selectedShas.value = [sha];
+      selectionAnchor = sha;
     }
     const path = workspace.repoPath;
     const target = selectedSha.value;
@@ -267,6 +373,58 @@ export const useLogStore = defineStore("log", () => {
   async function loadMore() {
     if (!truncated.value || loading.value || loadingMore.value) return;
     await load(false);
+  }
+
+  async function loadPrevious() {
+    const isCurrentRepository = currentRepository();
+    const path = workspace.repoPath;
+    if (
+      !path ||
+      !workspace.repoId ||
+      !startOffset.value ||
+      loading.value ||
+      loadingMore.value ||
+      loadingPrevious.value ||
+      locating.value
+    )
+      return;
+    const gen = ++loadGen;
+    loadingPrevious.value = true;
+    try {
+      const backend = getBackend();
+      const requestFilters = copyFilters(filters.value);
+      const anchor = await backend.logLocate({
+        path,
+        revision: commits.value[0]!.sha,
+        filters: requestFilters,
+      });
+      if (gen !== loadGen || !isCurrentRepository()) return;
+      if (anchor.offset === null) throw new Error(String(i18n.global.t("log.historyChanged")));
+      const offset = Math.max(0, anchor.offset - 100);
+      const page =
+        anchor.offset === 0
+          ? { commits: [] }
+          : await backend.logQuery({
+              repoId: workspace.repoId,
+              path,
+              offset,
+              limit: anchor.offset - offset,
+              filters: requestFilters,
+            });
+      if (gen !== loadGen || !isCurrentRepository()) return;
+      const known = new Set(commits.value.map((c) => c.sha));
+      commits.value = [...page.commits.filter((c) => !known.has(c.sha)), ...commits.value];
+      nextOffset.value += anchor.offset - startOffset.value;
+      startOffset.value = offset;
+    } catch (e) {
+      if (gen === loadGen && isCurrentRepository())
+        toast({
+          title: String(i18n.global.t("log.loadMoreFailed")),
+          description: formatErrorMessage(e),
+        });
+    } finally {
+      if (gen === loadGen) loadingPrevious.value = false;
+    }
   }
 
   function setTextFilter(text: string) {
@@ -351,16 +509,69 @@ export const useLogStore = defineStore("log", () => {
     await load(true);
   }
 
-  async function goToHashOrRef() {
-    const q = goToInput.value.trim();
-    if (!q) return;
-    const hit = commits.value.find((c) => c.sha.startsWith(q) || c.refs.some((r) => r.includes(q)));
-    if (hit) {
-      await select(hit.sha);
-      return;
+  async function goToHashOrRef(revision = goToInput.value.trim()) {
+    const isCurrentRepository = currentRepository();
+    const path = workspace.repoPath;
+    if (!revision || !path || !workspace.repoId) return;
+    const gen = ++loadGen;
+    locating.value = true;
+    loading.value = false;
+    loadingMore.value = false;
+    loadingPrevious.value = false;
+    navigationMiss.value = null;
+    const selectionAtStart = selectGen;
+    const requestFilters = copyFilters(filters.value);
+    let applyingSelection = false;
+    try {
+      const backend = getBackend();
+      const location = await backend.logLocate({ path, revision, filters: requestFilters });
+      if (gen !== loadGen || !isCurrentRepository() || selectionAtStart !== selectGen) return;
+      if (location.offset === null) {
+        navigationMiss.value = location.sha;
+        return;
+      }
+      if (!commits.value.some((c) => c.sha === location.sha)) {
+        // Open a bounded window around the target. Loading every preceding page
+        // would make a jump near the root of a large repository unresponsive.
+        const offset = Math.max(0, location.offset - 50);
+        const page = await backend.logQuery({
+          repoId: workspace.repoId!,
+          path,
+          offset,
+          limit: 150,
+          filters: requestFilters,
+        });
+        if (gen !== loadGen || !isCurrentRepository() || selectionAtStart !== selectGen) return;
+        if (!page.commits.some((c) => c.sha === location.sha)) {
+          throw new Error(String(i18n.global.t("log.historyChanged")));
+        }
+        commits.value = page.commits;
+        startOffset.value = offset;
+        nextOffset.value = page.nextOffset;
+        truncated.value = page.truncated;
+      }
+      error.value = null;
+      applyingSelection = true;
+      await select(location.sha);
+      if (gen === loadGen && isCurrentRepository() && selectedSha.value === location.sha)
+        return location.sha;
+    } catch (e) {
+      if (
+        gen === loadGen &&
+        isCurrentRepository() &&
+        (applyingSelection || selectionAtStart === selectGen)
+      )
+        throw e;
+    } finally {
+      if (gen === loadGen) locating.value = false;
     }
-    filters.value = { ...filters.value, text: q };
-    await load(true);
+  }
+
+  async function revealNavigationTarget() {
+    const sha = navigationMiss.value;
+    if (!sha) return;
+    clearAllFilters();
+    return await goToHashOrRef(sha);
   }
 
   async function refreshIndexStatus() {
@@ -407,6 +618,10 @@ export const useLogStore = defineStore("log", () => {
     commits,
     loading,
     loadingMore,
+    loadingPrevious,
+    locating,
+    startOffset,
+    navigationMiss,
     error,
     truncated,
     selectedSha,
@@ -423,6 +638,7 @@ export const useLogStore = defineStore("log", () => {
     load,
     select,
     loadMore,
+    loadPrevious,
     setTextFilter,
     setAuthorFilter,
     setDatePreset,
@@ -435,6 +651,7 @@ export const useLogStore = defineStore("log", () => {
     clearAllFilters,
     applyFilters,
     goToHashOrRef,
+    revealNavigationTarget,
     refreshIndexStatus,
     rebuildIndex,
     copySelectedSha,

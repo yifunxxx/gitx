@@ -4,8 +4,8 @@ use crate::runner::{GitInvocation, GitRunner, OpKind};
 use crate::status::parse_status_porcelain_v2;
 use gitx_core::{
     AppError, BlameLine, BlameResult, BlobContent, BranchInfo, ChangedFile, CommitDetails,
-    CommitResult, DiffSide, ErrorCode, HistoryCommit, HistoryPage, LogFilters, LogOrder,
-    StatusSnapshot, TreeEntry,
+    CommitResult, DiffSide, ErrorCode, HistoryCommit, HistoryPage, LogFilters, LogLocation,
+    LogOrder, StatusSnapshot, TreeEntry,
 };
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
@@ -537,6 +537,43 @@ impl GitRunner {
         })
     }
 
+    /// Locate using one hash-only walk, without loading every page's metadata or graph.
+    pub async fn log_locate(
+        &self,
+        cwd: &Path,
+        revision: &str,
+        filters: &LogFilters,
+        cancel: &CancellationToken,
+    ) -> Result<LogLocation, AppError> {
+        let revision = format!("{}^{{commit}}", revision.trim());
+        let resolved = self
+            .run(
+                GitInvocation::new(
+                    cwd,
+                    ["rev-parse", "--verify", "--end-of-options", &revision],
+                ),
+                cancel,
+            )
+            .await?;
+        let sha = String::from_utf8_lossy(&resolved.stdout).trim().to_string();
+        let mut args = vec!["rev-list".to_string()];
+        append_log_filters(&mut args, filters);
+        let out = self
+            .run(
+                GitInvocation::new(cwd, args).timeout(Some(std::time::Duration::from_secs(60))),
+                cancel,
+            )
+            .await?;
+        let offset = out
+            .stdout
+            .split(|b| *b == b'\n')
+            .position(|line| line == sha.as_bytes());
+        Ok(LogLocation {
+            sha,
+            offset: offset.and_then(|n| u32::try_from(n).ok()),
+        })
+    }
+
     pub async fn log_page(
         &self,
         cwd: &Path,
@@ -552,60 +589,13 @@ impl GitRunner {
             format!("--skip={skip}"),
             format!("--max-count={max}"),
             "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%D%x1e".into(),
+            "--decorate-refs-exclude=refs/gitx/*".into(),
+            "--decorate=short".into(),
+            "--no-show-signature".into(),
+            "--no-patch".into(),
+            "--no-notes".into(),
         ];
-        match filters.order {
-            LogOrder::Date => args.push("--date-order".into()),
-            LogOrder::Topo => args.push("--topo-order".into()),
-        }
-        if filters.first_parent {
-            args.push("--first-parent".into());
-        }
-        if filters.no_merges {
-            args.push("--no-merges".into());
-        }
-        if let Some(since) = &filters.since {
-            if !since.is_empty() {
-                args.push(format!("--since={since}"));
-            }
-        }
-        if let Some(until) = &filters.until {
-            if !until.is_empty() {
-                args.push(format!("--until={until}"));
-            }
-        }
-        for author in &filters.authors {
-            if !author.is_empty() {
-                args.push(format!("--author={author}"));
-            }
-        }
-        if let Some(text) = &filters.text {
-            if !text.is_empty() {
-                if filters.regex {
-                    args.push(format!("--grep={text}"));
-                    args.push("-E".into());
-                } else {
-                    args.push(format!("--grep={text}"));
-                    args.push("-F".into());
-                }
-                if !filters.match_case {
-                    args.push("-i".into());
-                }
-                // Also match sha prefix via `--all-match` off; include fixed string on hash via OR:
-                // git log can't OR grep with sha easily — when text looks like a sha, add as revision tip.
-                if looks_like_sha(text) {
-                    args.push(text.clone());
-                }
-            }
-        }
-        for rev in &filters.revisions {
-            if !rev.is_empty() {
-                args.push(rev.clone());
-            }
-        }
-        if !filters.paths.is_empty() {
-            args.push("--".into());
-            args.extend(filters.paths.iter().cloned());
-        }
+        append_log_filters(&mut args, filters);
 
         let inv = GitInvocation::new(cwd, args)
             .kind(OpKind::Read)
@@ -614,8 +604,12 @@ impl GitRunner {
 
         let out = match self.run(inv, cancel).await {
             Ok(o) => o,
-            Err(err) if err.exit_code == Some(128) => {
-                // unborn / no commits / bad revision
+            Err(err)
+                if err.exit_code == Some(128)
+                    && (err.message.contains("does not have any commits yet")
+                        || err.message.contains("bad default revision")) =>
+            {
+                // Only an unborn repository is an empty result. Invalid filters remain errors.
                 return Ok((Vec::new(), false));
             }
             Err(err) => return Err(err),
@@ -1028,6 +1022,10 @@ impl GitRunner {
                 "show",
                 "-s",
                 "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%s%x00%b%x00%D",
+                "--decorate-refs-exclude=refs/gitx/*",
+                "--decorate=short",
+                "--no-show-signature",
+                "--end-of-options",
                 sha,
             ],
         )
@@ -1273,4 +1271,61 @@ fn parse_name_status_z(stdout: &[u8]) -> Vec<ChangedFile> {
         }
     }
     out
+}
+
+/// Keep pagination and navigation in exactly the same history and order.
+fn append_log_filters(args: &mut Vec<String>, filters: &LogFilters) {
+    match filters.order {
+        LogOrder::Date => args.push("--date-order".into()),
+        LogOrder::Topo => args.push("--topo-order".into()),
+    }
+    if filters.first_parent {
+        args.push("--first-parent".into());
+    }
+    if filters.no_merges {
+        args.push("--no-merges".into());
+    }
+    if let Some(since) = &filters.since {
+        if !since.is_empty() {
+            args.push(format!("--since={since}"));
+        }
+    }
+    if let Some(until) = &filters.until {
+        if !until.is_empty() {
+            args.push(format!("--until={until}"));
+        }
+    }
+    for author in &filters.authors {
+        if !author.is_empty() {
+            args.push(format!("--author={author}"));
+        }
+    }
+    if let Some(text) = &filters.text {
+        if !text.is_empty() {
+            if filters.regex {
+                args.push(format!("--grep={text}"));
+                args.push("-E".into());
+            } else {
+                args.push(format!("--grep={text}"));
+                args.push("-F".into());
+            }
+            if !filters.match_case {
+                args.push("-i".into());
+            }
+        }
+    }
+    if filters.revisions.is_empty() {
+        args.push("--exclude=refs/gitx/*".into());
+        args.push("--all".into());
+    }
+    args.push("--end-of-options".into());
+    for rev in &filters.revisions {
+        if !rev.is_empty() {
+            args.push(rev.clone());
+        }
+    }
+    if !filters.paths.is_empty() {
+        args.push("--".into());
+        args.extend(filters.paths.iter().cloned());
+    }
 }

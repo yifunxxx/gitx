@@ -911,6 +911,22 @@ export const mockBackend: Backend = {
       nextOffset: offset + slice.length,
     };
   },
+  async logLocate(req) {
+    const hits = mockLog().filter(
+      (c) =>
+        c.sha.startsWith(req.revision) ||
+        c.refs.some((r) => r.replace(/^(HEAD -> |tag: )/, "") === req.revision),
+    );
+    if (hits.length !== 1) throw new Error("Unknown or ambiguous revision");
+    const page = await this.logQuery({
+      repoId: req.path,
+      path: req.path,
+      filters: req.filters,
+      limit: mockLog().length,
+    });
+    const offset = page.commits.findIndex((c) => c.sha === hits[0]!.sha);
+    return { sha: hits[0]!.sha, offset: offset < 0 ? null : offset };
+  },
   async logCommitDetails(req): Promise<CommitDetails> {
     const c = mockLog().find((x) => x.sha === req.sha) ?? mockLog()[0]!;
     return {

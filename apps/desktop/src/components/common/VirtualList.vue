@@ -1,11 +1,12 @@
 <script setup lang="ts" generic="T">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const props = withDefaults(
   defineProps<{
     items: T[];
     itemHeight: number;
     overscan?: number;
+    preserveScrollAnchor?: boolean;
     getKey: (item: T, index: number) => string | number;
   }>(),
   { overscan: 10 },
@@ -48,6 +49,7 @@ const offsetY = computed(() => start.value * props.itemHeight);
 let ro: ResizeObserver | null = null;
 let raf = 0;
 let pendingScroll: Event | null = null;
+let scrollGeneration = 0;
 
 function flushScroll() {
   raf = 0;
@@ -61,6 +63,7 @@ function flushScroll() {
 }
 
 function onScroll(e: Event) {
+  ++scrollGeneration;
   pendingScroll = e;
   if (raf) return;
   raf = requestAnimationFrame(flushScroll);
@@ -76,8 +79,8 @@ function onPointerUp() {
   // Emit a trailing scroll after thumb release so parents (e.g. Log load-more)
   // can react without fighting the drag.
   if (wasDown && root.value) {
-    pendingScroll = new Event("scroll");
-    if (!raf) raf = requestAnimationFrame(flushScroll);
+    // Dispatch from the scrollport so event.target remains usable by consumers.
+    root.value.dispatchEvent(new Event("scroll"));
   }
 }
 
@@ -93,6 +96,7 @@ onMounted(() => {
   // when the pointer leaves the list (Windows native scrollbar).
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("pointercancel", onPointerUp);
+  window.addEventListener("blur", onPointerUp);
 });
 
 onUnmounted(() => {
@@ -101,29 +105,53 @@ onUnmounted(() => {
   if (raf) cancelAnimationFrame(raf);
   window.removeEventListener("pointerup", onPointerUp);
   window.removeEventListener("pointercancel", onPointerUp);
+  window.removeEventListener("blur", onPointerUp);
+  pendingScroll = null;
 });
 
-watch(
-  () => props.items.length,
-  () => {
-    // Keep scrollTop valid when the list shrinks (e.g. filter reset).
-    // Skip while the user is dragging the scrollbar — clamping mid-drag
-    // fights the native thumb and feels like a "stick"/jam.
-    if (pointerDown.value) return;
-    const max = Math.max(0, totalH.value - viewportH.value);
-    if (scrollTop.value > max && root.value) {
-      root.value.scrollTop = max;
-      scrollTop.value = max;
-    }
-  },
-);
+watch([() => props.items, () => props.items.length], async ([items], [previous]) => {
+  // Keep scrollTop valid when the list shrinks (e.g. filter reset).
+  // Skip while the user is dragging the scrollbar — clamping mid-drag
+  // fights the native thumb and feels like a "stick"/jam.
+  if (pointerDown.value) return;
+  const previousTop = root.value?.scrollTop ?? scrollTop.value;
+  const generation = scrollGeneration;
+  const oldIndex = Math.floor(previousTop / props.itemHeight);
+  const oldItem = previous[oldIndex];
+  const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
+  const newIndex =
+    props.preserveScrollAnchor && key !== null
+      ? items.findIndex((item, index) => props.getKey(item, index) === key)
+      : -1;
+  await nextTick();
+  if (pointerDown.value || props.items !== items || !root.value || generation !== scrollGeneration)
+    return;
+  if (newIndex >= 0 && newIndex !== oldIndex) {
+    root.value.scrollTop = previousTop + (newIndex - oldIndex) * props.itemHeight;
+    scrollTop.value = root.value.scrollTop;
+  }
+  const max = Math.max(0, totalH.value - viewportH.value);
+  if (scrollTop.value > max && root.value) {
+    root.value.scrollTop = max;
+    scrollTop.value = max;
+  }
+});
 
 defineExpose({
   el: root,
   pointerDown,
-  scrollToIndex(index: number) {
+  scrollToIndex(index: number, align: "nearest" | "center" = "nearest") {
     if (!root.value) return;
-    root.value.scrollTop = Math.max(0, index * props.itemHeight);
+    ++scrollGeneration;
+    const top = Math.max(0, index * props.itemHeight);
+    const bottom = top + props.itemHeight;
+    if (align === "center")
+      root.value.scrollTop = Math.max(0, top - (root.value.clientHeight - props.itemHeight) / 2);
+    else if (top < root.value.scrollTop) root.value.scrollTop = top;
+    else if (bottom > root.value.scrollTop + root.value.clientHeight) {
+      root.value.scrollTop = bottom - root.value.clientHeight;
+    }
+    scrollTop.value = root.value.scrollTop;
   },
 });
 </script>
@@ -132,7 +160,7 @@ defineExpose({
   <div class="flex min-h-0 flex-1 flex-col">
     <div
       ref="root"
-      class="min-h-0 flex-1 overflow-auto"
+      class="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
       @scroll.passive="onScroll"
       @pointerdown="onPointerDown"
     >

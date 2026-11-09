@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
 import { Eye, Filter, Search } from "@lucide/vue";
@@ -34,6 +34,7 @@ import type { ChangedFile } from "@/lib/backend";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
 import { layoutCommitGraph } from "./graphLayout";
+import { formatErrorMessage } from "@/lib/errors";
 
 const { t } = useI18n();
 const log = useLogStore();
@@ -50,6 +51,10 @@ const textDraft = ref("");
 const authorDraft = ref("");
 const revDraft = ref("");
 const pathDraft = ref("");
+const datePreset = computed(() =>
+  log.filters.since === "24.hours" ? "24h" : log.filters.since === "7.days" ? "7d" : "all",
+);
+const selectedSet = computed(() => new Set(log.selectedShas));
 const ctx = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
 
 onMounted(() => {
@@ -150,15 +155,104 @@ function visibleRefs(refs: string[]) {
   return log.compactRefs ? list.slice(0, 2) : list;
 }
 
+watch(
+  () => log.filters,
+  (filters) => {
+    textDraft.value = filters.text ?? "";
+    authorDraft.value = (filters.authors ?? []).join(", ");
+    revDraft.value = (filters.revisions ?? []).join(" ");
+    pathDraft.value = (filters.paths ?? []).join(" ");
+  },
+  { deep: true, immediate: true },
+);
+
+async function selectCommit(sha: string, multi = false, range = false) {
+  try {
+    await log.select(sha, multi, range);
+  } catch (error) {
+    toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+  }
+}
+
+async function onCommitKeydown(sha: string, event: KeyboardEvent) {
+  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+  const index = log.commits.findIndex((commit) => commit.sha === sha);
+  let target = index;
+  if (event.key === "ArrowDown") target++;
+  else if (event.key === "ArrowUp") target--;
+  else if (event.key === "Home") target = 0;
+  else if (event.key === "End") target = log.commits.length - 1;
+  else if (event.key === "ArrowLeft") {
+    const parent = log.commits[index]?.parents[0];
+    if (!parent) return;
+    event.preventDefault();
+    target = log.commits.findIndex((commit) => commit.sha === parent);
+    if (target < 0) {
+      log.goToInput = parent;
+      try {
+        const selected = await log.goToHashOrRef();
+        if (selected !== parent) return;
+      } catch (error) {
+        toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+        return;
+      }
+      target = log.commits.findIndex((commit) => commit.sha === parent);
+    }
+    if (target < 0) return;
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    target = log.commits.findIndex((commit) => commit.parents.includes(sha));
+    if (target < 0) return;
+  } else return;
+  event.preventDefault();
+  const commit = log.commits[Math.max(0, Math.min(log.commits.length - 1, target))];
+  if (!commit) return;
+  void selectCommit(commit.sha, false, event.shiftKey);
+  commitListRef.value?.scrollToIndex?.(Math.max(0, target));
+  await nextTick();
+  commitListRef.value?.el
+    ?.querySelector<HTMLElement>('[role="option"][tabindex="0"]')
+    ?.focus({ preventScroll: true });
+}
+
 async function applySearch() {
   log.setTextFilter(textDraft.value);
   log.setAuthorFilter(authorDraft.value);
   log.setRevisions(revDraft.value.trim() ? [revDraft.value.trim()] : []);
   log.setPathsFilter(pathDraft.value.trim() ? [pathDraft.value.trim()] : []);
-  await log.applyFilters();
+  await reloadFilters();
 }
 
-const commitListRef = ref<{ pointerDown?: boolean } | null>(null);
+async function reloadFilters() {
+  await log.applyFilters();
+  await nextTick();
+  commitListRef.value?.scrollToIndex?.(0);
+}
+
+async function clearSearch() {
+  log.clearAllFilters();
+  // Reload the cleared store directly. The draft watcher runs on the next
+  // Vue tick, so applying drafts here would restore the previous filters.
+  await reloadFilters();
+}
+
+async function goToCommit(reveal = false) {
+  try {
+    const selected = reveal ? await log.revealNavigationTarget() : await log.goToHashOrRef();
+    if (!selected) return;
+    await nextTick();
+    const index = log.commits.findIndex((commit) => commit.sha === selected);
+    if (index >= 0) commitListRef.value?.scrollToIndex?.(index, "center");
+  } catch (error) {
+    toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+  }
+}
+
+const commitListRef = ref<{
+  el?: HTMLElement;
+  pointerDown?: boolean;
+  scrollToIndex: (index: number, align?: "nearest" | "center") => void;
+} | null>(null);
 
 function onListScroll(e: Event) {
   const el = e.target as HTMLElement;
@@ -172,12 +266,12 @@ function onListScroll(e: Event) {
 }
 
 function onCommitClick(sha: string, e: MouseEvent) {
-  void log.select(sha, e.metaKey || e.ctrlKey);
+  void selectCommit(sha, e.metaKey || e.ctrlKey, e.shiftKey);
 }
 
 function onCommitContext(sha: string, e: MouseEvent) {
   markContextHandled(e);
-  if (!log.selectedShas.includes(sha)) void log.select(sha, false);
+  if (!log.selectedShas.includes(sha)) void selectCommit(sha);
   // Placement (flip / clamp / scroll) handled by ContextMenuSurface.
   ctx.value = { open: true, x: e.clientX, y: e.clientY };
 }
@@ -365,7 +459,7 @@ async function ctxExtract() {
           @keydown.enter="applySearch"
         />
         <Select
-          model-value="all"
+          :model-value="datePreset"
           @update:model-value="
             (v) => {
               log.setDatePreset(String(v ?? 'all') as '24h' | '7d' | 'all');
@@ -388,14 +482,7 @@ async function ctxExtract() {
           }}</Button>
         </Tip>
         <Tip :text="t('log.clearTip')">
-          <Button
-            size="xs"
-            variant="ghost"
-            @click="
-              log.clearAllFilters();
-              applySearch();
-            "
-          >
+          <Button size="xs" variant="ghost" @click="clearSearch">
             {{ t("log.clear") }}
           </Button>
         </Tip>
@@ -417,9 +504,13 @@ async function ctxExtract() {
             v-model="log.goToInput"
             class="h-6 min-w-[8rem] flex-1 rounded border bg-background px-1.5"
             :placeholder="t('log.goToPlaceholder')"
-            @keydown.enter="log.goToHashOrRef()"
+            :disabled="log.locating"
+            @keydown.enter="!$event.isComposing && goToCommit()"
           />
         </div>
+        <span v-if="log.locating" role="status" class="text-muted-foreground">{{
+          t("log.locating")
+        }}</span>
         <span v-if="indexLabel" class="truncate text-muted-foreground" :title="indexLabel">
           {{ indexLabel }}
         </span>
@@ -494,10 +585,26 @@ async function ctxExtract() {
           class="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] hover:bg-accent"
           @click="
             log.clearFilter(chip.key);
-            applySearch();
+            reloadFilters();
           "
         >
           {{ chip.label }} ×
+        </button>
+      </div>
+
+      <div
+        v-if="log.navigationMiss"
+        role="status"
+        class="flex shrink-0 flex-wrap items-center gap-2 border-b px-2 py-1 text-xs"
+      >
+        <span>{{ t("log.commitOutsideHistory", { sha: log.navigationMiss.slice(0, 7) }) }}</span>
+        <button
+          v-if="log.activeFilterChips.length"
+          type="button"
+          class="text-primary hover:underline"
+          @click="goToCommit(true)"
+        >
+          {{ t("log.clearAndGo") }}
         </button>
       </div>
 
@@ -542,23 +649,51 @@ async function ctxExtract() {
                     <span>{{ t("log.colDate") }}</span>
                   </div>
                 </div>
+                <div
+                  v-if="log.startOffset > 0"
+                  class="flex shrink-0 items-center justify-center gap-3 border-b py-1 text-xs text-muted-foreground"
+                >
+                  <button
+                    type="button"
+                    class="hover:text-foreground disabled:opacity-50"
+                    :disabled="
+                      log.loading || log.loadingPrevious || log.loadingMore || log.locating
+                    "
+                    @click="log.loadPrevious()"
+                  >
+                    {{ log.loadingPrevious ? t("log.loadingMore") : t("log.loadNewer") }}
+                  </button>
+                  <button type="button" class="hover:text-foreground" @click="reloadFilters">
+                    {{ t("log.backToLatest") }}
+                  </button>
+                </div>
                 <VirtualList
                   ref="commitListRef"
                   :items="log.commits"
                   :item-height="ROW_H"
                   :get-key="(c) => c.sha"
+                  preserve-scroll-anchor
+                  role="listbox"
+                  aria-multiselectable="true"
+                  :aria-label="t('toolWindows.log')"
                   @scroll="onListScroll"
                 >
                   <template #default="{ item: c, index: idx }">
                     <button
                       type="button"
-                      class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
+                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                      role="option"
+                      :aria-selected="selectedSet.has(c.sha)"
+                      :tabindex="
+                        log.selectedSha === c.sha || (!log.selectedSha && idx === 0) ? 0 : -1
+                      "
+                      @keydown="onCommitKeydown(c.sha, $event)"
                       :style="{
                         gridTemplateColumns: gridColumns,
                         minWidth: `${graphColumnWidth + 372}px`,
                       }"
                       :class="
-                        log.selectedShas.includes(c.sha)
+                        selectedSet.has(c.sha)
                           ? 'bg-selection text-selection-foreground'
                           : 'hover:bg-hover-surface'
                       "

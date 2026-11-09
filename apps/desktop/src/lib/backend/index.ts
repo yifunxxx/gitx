@@ -51,6 +51,8 @@ import type {
   LogChangedFilesReq,
   LogCommitDetailsReq,
   LogPage,
+  LogLocation,
+  LogLocateReq,
   LogQueryReq,
   PathsReq,
   AddPathsReq,
@@ -200,6 +202,7 @@ export type Backend = {
   commitCreate(req: CommitCreateReq): Promise<CommitResult>;
   commitHeadMessage(req: HeadMessageReq): Promise<string>;
   logQuery(req: LogQueryReq): Promise<LogPage>;
+  logLocate(req: LogLocateReq): Promise<LogLocation>;
   logCommitDetails(req: LogCommitDetailsReq): Promise<CommitDetails>;
   logChangedFiles(req: LogChangedFilesReq): Promise<ChangedFile[]>;
   // M3
@@ -356,6 +359,7 @@ export const tauriBackend: Backend = {
   commitCreate: (req) => commands.commitCreate(req),
   commitHeadMessage: (req) => commands.commitHeadMessage(req),
   logQuery: (req) => commands.logQuery(req),
+  logLocate: (req) => commands.logLocate(req),
   logCommitDetails: (req) => commands.logCommitDetails(req),
   logChangedFiles: (req) => commands.logChangedFiles(req),
   fileHistory: (req) => commands.fileHistory(req),

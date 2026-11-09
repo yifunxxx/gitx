@@ -22,7 +22,7 @@ use commands::credential::{credential_session_clear, credential_session_set};
 use commands::diff::diff_file;
 use commands::history::{
     blame_file, blob_read, checkout_path_from_rev, file_history, list_refs, log_changed_files,
-    log_commit_details, log_index_rebuild, log_index_status, log_query, tree_list,
+    log_commit_details, log_index_rebuild, log_index_status, log_locate, log_query, tree_list,
 };
 use commands::ignore::{exclude_open, ignore_add, ignore_suggest_patterns, rm_cached};
 use commands::index_ops::{
@@ -109,6 +109,7 @@ pub fn run() {
             commit_create,
             commit_head_message,
             log_query,
+            log_locate,
             log_commit_details,
             log_changed_files,
             // M3

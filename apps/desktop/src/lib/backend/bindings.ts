@@ -436,6 +436,10 @@ export type LogCommit = {
   refs: string[]
   graph: GraphRow
 }
+export type LogLocateReq = { path: string; revision: string; filters?: LogFilters }
+
+export type LogLocation = { sha: string; offset: number | null }
+
 export type LogPage = { commits: LogCommit[]; truncated: boolean; nextOffset: number }
 export type LogCommitDetailsReq = { path: string; sha: string }
 export type CommitDetails = {
@@ -989,6 +993,9 @@ export const commands = {
   },
   async logQuery(req: LogQueryReq): Promise<LogPage> {
     return invoke("log_query", { req })
+  },
+  async logLocate(req: LogLocateReq): Promise<LogLocation> {
+    return invoke("log_locate", { req })
   },
   async logCommitDetails(req: LogCommitDetailsReq): Promise<CommitDetails> {
     return invoke("log_commit_details", { req })
