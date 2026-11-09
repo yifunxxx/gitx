@@ -307,7 +307,6 @@ function onListScroll(e: Event) {
   const el = (e.currentTarget ?? e.target) as HTMLElement;
   if (!el) return;
   scrollLeft.value = el.scrollLeft;
-  scrollLeft.value = el.scrollLeft;
   // Defer load-more while the scrollbar thumb is being dragged — appending
   // rows mid-drag changes scrollHeight and makes the thumb jam (GIT-40).
   if (commitListRef.value?.pointerDown) return;

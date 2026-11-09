@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { buildRefTree, flattenRefTree } from "./buildRefTree";
-import { buildRefTree, flattenRefTree } from "./buildRefTree";
 
 describe("buildRefTree", () => {
   it("returns flat list when grouping off", () => {

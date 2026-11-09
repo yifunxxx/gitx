@@ -1,6 +1,5 @@
 use crate::state::AppState;
 use gitx_core::AppError;
-use gitx_core::AppError;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
