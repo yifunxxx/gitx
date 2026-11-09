@@ -55,6 +55,10 @@ pub async fn patch_create(
     let cwd = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let output = if let Some(o) = req.output {
         PathBuf::from(o)
     } else {
@@ -76,6 +80,10 @@ pub async fn patch_apply(
     emit_cmd(&app, format!("git apply {}", req.patch_file)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.patch_apply(
         &cwd,
         PathBuf::from(&req.patch_file).as_path(),
@@ -102,6 +110,10 @@ pub async fn patch_apply_clipboard(
     emit_cmd(&app, "git apply <clipboard>".into()).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.patch_apply_clipboard(&cwd, &req.patch_text, req.three_way, &cancel)
         .await
 }

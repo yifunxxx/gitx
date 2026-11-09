@@ -1,4 +1,5 @@
-use gitx_core::{AppError, ErrorCode, WslPathInfo};
+pub use gitx_core::parse_wsl_unc_path;
+use gitx_core::{AppError, ErrorCode};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -15,30 +16,6 @@ pub struct GitDetectResult {
     pub minor: u32,
     pub patch: u32,
     pub supported: bool,
-}
-
-/// Detect `\\wsl$\Distro\…` / `\\wsl.localhost\Distro\…` paths (#9 WSL).
-pub fn parse_wsl_unc_path(path: &str) -> Option<WslPathInfo> {
-    let normalized = path.replace('/', "\\");
-    let rest = normalized
-        .strip_prefix("\\\\wsl$\\")
-        .or_else(|| normalized.strip_prefix("\\\\wsl.localhost\\"))?;
-    let mut parts = rest.splitn(2, '\\');
-    let distro = parts.next()?.to_string();
-    if distro.is_empty() {
-        return None;
-    }
-    let win_tail = parts.next().unwrap_or("");
-    let linux_path = if win_tail.is_empty() {
-        "/".to_string()
-    } else {
-        format!("/{}", win_tail.replace('\\', "/"))
-    };
-    Some(WslPathInfo {
-        suggested_git: format!("wsl.exe -d {distro} git"),
-        distro,
-        linux_path,
-    })
 }
 
 /// Convert a Windows WSL UNC path using `wslpath` when available.

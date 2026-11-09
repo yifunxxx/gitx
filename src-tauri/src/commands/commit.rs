@@ -51,6 +51,10 @@ pub async fn commit_create(
     );
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let result = git
         .commit_create_ex(
             &cwd,

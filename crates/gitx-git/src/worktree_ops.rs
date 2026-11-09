@@ -15,9 +15,11 @@ impl GitRunner {
         let inv = GitInvocation::new(cwd, ["worktree", "list", "--porcelain", "-z"])
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone());
-        let out = self.run(inv, cancel).await?;
-        let text = String::from_utf8_lossy(&out.stdout);
-        let mut entries = parse_worktree_porcelain(&text);
+        let mut entries = match self.run(inv, cancel).await {
+            Ok(out) => parse_worktree_porcelain(&String::from_utf8_lossy(&out.stdout)),
+            Err(error) if error.exit_code == Some(129) => Vec::new(),
+            Err(error) => return Err(error),
+        };
         if entries.is_empty() {
             // Fallback without -z for older parsers / quirks.
             let inv = GitInvocation::new(cwd, ["worktree", "list", "--porcelain"])
@@ -26,6 +28,11 @@ impl GitRunner {
             let out = self.run(inv, cancel).await?;
             let text = String::from_utf8_lossy(&out.stdout);
             entries = parse_worktree_porcelain_lf(&text);
+        }
+        for entry in &mut entries {
+            entry.path = crate::resolve_git_path(cwd, &entry.path)
+                .to_string_lossy()
+                .into_owned();
         }
         if let Some(first) = entries.first_mut() {
             first.is_main = true;
@@ -89,10 +96,8 @@ impl GitRunner {
             Ok(_) => Ok(()),
             Err(e) => {
                 let msg = e.message.to_lowercase();
-                // Best-effort cleanup if git left a partial directory.
-                if path.exists() {
-                    let _ = std::fs::remove_dir_all(path);
-                }
+                // Git owns its rollback. The destination can have been created
+                // by another process after our check, so never delete it here.
                 if msg.contains("already checked out")
                     || msg.contains("is already used by worktree")
                 {
@@ -134,30 +139,20 @@ impl GitRunner {
         force: bool,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        // Safety snapshot before force-remove of dirty trees.
+        // A stash-create snapshot omits untracked/ignored files and submodule
+        // worktrees. Do not expose a force-delete until every file is protected.
         if force {
-            let inv = GitInvocation::new(path, ["stash", "create"])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            if let Ok(out) = self.run(inv, cancel).await {
-                let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !sha.is_empty() {
-                    let backup = format!(
-                        "refs/gitx/backup/worktree-remove-{}",
-                        &sha[..7.min(sha.len())]
-                    );
-                    let inv = GitInvocation::new(path, ["update-ref", &backup, &sha])
-                        .kind(OpKind::Write)
-                        .git_bin(self.git_bin.clone());
-                    let _ = self.run(inv, cancel).await;
-                }
-            }
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "Save local changes and use normal worktree removal; forced removal is unavailable",
+            ));
         }
-        let mut args = vec!["worktree".into(), "remove".into()];
-        if force {
-            args.push("--force".into());
-        }
-        args.push(path.to_string_lossy().into_owned());
+        let args = vec![
+            "worktree".into(),
+            "remove".into(),
+            "--".into(),
+            path.to_string_lossy().into_owned(),
+        ];
         let inv = GitInvocation::new(cwd, args)
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
@@ -282,11 +277,11 @@ fn parse_worktree_porcelain(text: &str) -> Vec<WorktreeInfo> {
     // -z: attributes NUL-terminated; records separated by double NUL.
     let mut out = Vec::new();
     for record in text.split("\0\0") {
-        let record = record.trim_matches('\0').trim();
+        let record = record.trim_matches('\0');
         if record.is_empty() {
             continue;
         }
-        if let Some(info) = parse_worktree_record(record.split('\0')) {
+        if let Some(info) = parse_worktree_record(record.split('\0'), false) {
             out.push(info);
         }
     }
@@ -294,20 +289,21 @@ fn parse_worktree_porcelain(text: &str) -> Vec<WorktreeInfo> {
 }
 
 fn parse_worktree_porcelain_lf(text: &str) -> Vec<WorktreeInfo> {
+    let text = text.replace("\r\n", "\n");
     let mut out = Vec::new();
     for record in text.split("\n\n") {
-        let record = record.trim();
+        let record = record.trim_matches('\n');
         if record.is_empty() {
             continue;
         }
-        if let Some(info) = parse_worktree_record(record.lines()) {
+        if let Some(info) = parse_worktree_record(record.lines(), true) {
             out.push(info);
         }
     }
     out
 }
 
-fn parse_worktree_record<'a, I>(lines: I) -> Option<WorktreeInfo>
+fn parse_worktree_record<'a, I>(lines: I, quoted: bool) -> Option<WorktreeInfo>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -322,12 +318,11 @@ where
     let mut prune_reason = None;
 
     for line in lines {
-        let line = line.trim();
         if line.is_empty() {
             continue;
         }
         if let Some(rest) = line.strip_prefix("worktree ") {
-            path = Some(rest.to_string());
+            path = Some(decode_porcelain_value(rest, quoted));
         } else if let Some(rest) = line.strip_prefix("HEAD ") {
             head = rest.to_string();
         } else if let Some(rest) = line.strip_prefix("branch ") {
@@ -340,12 +335,12 @@ where
             locked = true;
         } else if let Some(rest) = line.strip_prefix("locked ") {
             locked = true;
-            lock_reason = Some(rest.to_string());
+            lock_reason = Some(decode_porcelain_value(rest, quoted));
         } else if line == "prunable" {
             prunable = true;
         } else if let Some(rest) = line.strip_prefix("prunable ") {
             prunable = true;
-            prune_reason = Some(rest.to_string());
+            prune_reason = Some(decode_porcelain_value(rest, quoted));
         }
     }
 
@@ -365,6 +360,44 @@ where
     })
 }
 
+/// LF porcelain C-quotes special characters and (by default) non-ASCII bytes.
+/// NUL porcelain values are literal, including surrounding quotes/whitespace.
+fn decode_porcelain_value(value: &str, quoted: bool) -> String {
+    if !quoted || !value.starts_with('"') || !value.ends_with('"') || value.len() < 2 {
+        return value.to_owned();
+    }
+    let mut input = value.as_bytes()[1..value.len() - 1].iter().copied();
+    let mut output = Vec::new();
+    while let Some(byte) = input.next() {
+        if byte != b'\\' {
+            output.push(byte);
+            continue;
+        }
+        let escaped = match input.next() {
+            Some(b'a') => 7,
+            Some(b'b') => 8,
+            Some(b't') => b'\t',
+            Some(b'n') => b'\n',
+            Some(b'v') => 11,
+            Some(b'f') => 12,
+            Some(b'r') => b'\r',
+            Some(b'"') => b'"',
+            Some(b'\\') => b'\\',
+            Some(first @ b'0'..=b'3') => {
+                let (Some(second @ b'0'..=b'7'), Some(third @ b'0'..=b'7')) =
+                    (input.next(), input.next())
+                else {
+                    return value.to_owned();
+                };
+                (first - b'0') * 64 + (second - b'0') * 8 + (third - b'0')
+            }
+            _ => return value.to_owned(),
+        };
+        output.push(escaped);
+    }
+    String::from_utf8_lossy(&output).into_owned()
+}
+
 fn canonicalize_lossy(path: &Path) -> String {
     path.canonicalize()
         .unwrap_or_else(|_| path.to_path_buf())
@@ -373,9 +406,11 @@ fn canonicalize_lossy(path: &Path) -> String {
 }
 
 fn paths_equal(a: &str, b: &str) -> bool {
-    let a = a.trim_end_matches(['/', '\\']);
-    let b = b.trim_end_matches(['/', '\\']);
-    a == b
+    // Git emits forward slashes; Windows canonicalize returns a verbatim path.
+    // Canonicalize both sides, including symlinks, before comparing them.
+    let a = canonicalize_lossy(Path::new(a));
+    let b = canonicalize_lossy(Path::new(b));
+    gitx_core::host_path_key(&a) == gitx_core::host_path_key(&b)
 }
 
 #[cfg(test)]
@@ -412,5 +447,46 @@ prunable gitdir file points to non-existent location
     fn default_path_sanitizes_branch() {
         let p = GitRunner::worktree_default_path(Path::new("/repos/demo"), "feature/x");
         assert_eq!(p, PathBuf::from("/repos/demo-feature-x"));
+    }
+
+    #[test]
+    fn lf_decodes_git_quoted_paths_and_reasons() {
+        let text = concat!(
+            "worktree \"/tmp/\\344\\270\\255\\346\\226\\207\\tpath\"\n",
+            "HEAD abc\n",
+            "detached\n",
+            "locked \"keep\\n\\\"quotes\\\"\\tand\\\\slashes  \"\n\n",
+            "worktree /tmp/gone\n",
+            "HEAD def\n",
+            "prunable \"missing\\npath\"\n"
+        );
+        let list = parse_worktree_porcelain_lf(text);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].path, "/tmp/中文\tpath");
+        assert_eq!(
+            list[0].lock_reason.as_deref(),
+            Some("keep\n\"quotes\"\tand\\slashes  ")
+        );
+        assert_eq!(list[1].prune_reason.as_deref(), Some("missing\npath"));
+    }
+
+    #[test]
+    fn nul_preserves_literal_quotes_control_characters_and_trailing_spaces() {
+        let text =
+            "worktree /tmp/quoted \"dir\"\n  \0HEAD abc\0detached\0locked \"literal\\n\"  \0\0";
+        let list = parse_worktree_porcelain(text);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].path, "/tmp/quoted \"dir\"\n  ");
+        assert_eq!(list[0].lock_reason.as_deref(), Some("\"literal\\n\"  "));
+    }
+
+    #[test]
+    fn lf_supports_crlf_records_and_bare_repositories() {
+        let list = parse_worktree_porcelain_lf(
+            "worktree /tmp/repo.git\r\nbare\r\n\r\nworktree /tmp/linked\r\nHEAD abc\r\nbranch refs/heads/main\r\n\r\n",
+        );
+        assert_eq!(list.len(), 2);
+        assert!(list[0].bare);
+        assert_eq!(list[1].branch.as_deref(), Some("main"));
     }
 }

@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+import { unresolvedConflictCount } from "./mergeResult";
 import { Button } from "@/components/ui/button";
 import { useConflictsStore } from "@/stores/conflictsStore";
 
 const conflicts = useConflictsStore();
+const { t } = useI18n();
 
 const tab = computed(() =>
   conflicts.activeMergeId
-    ? conflicts.mergeTabs.find((t) => t.id === conflicts.activeMergeId) ?? null
+    ? (conflicts.mergeTabs.find((t) => t.id === conflicts.activeMergeId) ?? null)
     : null,
 );
 
@@ -20,61 +23,73 @@ function acceptAll(side: "ours" | "theirs") {
   });
 }
 
-function applyNonConflicting() {
-  if (!tab.value?.merge3) return;
-  // result already prefers non-conflict resultLines; rebuild text
-  const blocks = tab.value.merge3.blocks;
-  tab.value.resultText =
-    blocks
-      .map((b) =>
-        b.kind === "conflict"
-          ? ["<<<<<<< Yours", ...b.oursLines, "=======", ...b.theirsLines, ">>>>>>> Theirs"].join(
-              "\n",
-            )
-          : b.resultLines.join("\n"),
-      )
-      .filter(Boolean)
-      .join("\n") + "\n";
-}
+const remaining = computed(() => unresolvedConflictCount(tab.value?.resultText ?? ""));
 </script>
 
 <template>
   <div v-if="tab" class="flex h-full min-h-0 flex-col">
-    <div class="flex h-8 items-center gap-1 border-b bg-dbx-chrome px-2 text-xs">
+    <div class="flex min-h-8 flex-wrap items-center gap-2 py-1 border-b bg-dbx-chrome px-2 text-xs">
       <span class="truncate font-medium">{{ tab.title }}</span>
       <span class="text-muted-foreground">
-        {{ tab.merge3?.conflictCount ?? 0 }} conflict(s)
+        {{ t("merge.remaining", { count: remaining }) }}
       </span>
-      <div class="ml-auto flex gap-1">
-        <Button size="xs" variant="outline" @click="applyNonConflicting">Apply Non-Conflicting</Button>
-        <Button size="xs" variant="outline" @click="acceptAll('ours')">Accept Left</Button>
-        <Button size="xs" variant="outline" @click="acceptAll('theirs')">Accept Right</Button>
-        <Button size="xs" @click="conflicts.applyMergeResult(tab.id)">Apply</Button>
+      <div class="ml-auto flex flex-wrap gap-1">
+        <span class="self-center text-[11px] text-muted-foreground">{{
+          t("merge.autoMerged")
+        }}</span>
+        <Button
+          size="xs"
+          variant="outline"
+          :disabled="tab.saving || !remaining"
+          @click="acceptAll('ours')"
+          >{{ t("merge.acceptLeft") }}</Button
+        >
+        <Button
+          size="xs"
+          variant="outline"
+          :disabled="tab.saving || !remaining"
+          @click="acceptAll('theirs')"
+          >{{ t("merge.acceptRight") }}</Button
+        >
+        <Button
+          size="xs"
+          :disabled="tab.saving || remaining > 0"
+          @click="conflicts.applyMergeResult(tab.id)"
+          >{{ tab.saving ? t("merge.saving") : t("merge.saveResolved") }}</Button
+        >
       </div>
     </div>
+    <p v-if="tab.error" role="alert" class="border-b px-2 py-1 text-xs text-destructive">
+      {{ tab.error }}
+    </p>
     <div class="grid min-h-0 flex-1 grid-cols-3 gap-px bg-border">
-      <div class="flex min-h-0 flex-col bg-background">
+      <div class="flex min-h-0 min-w-0 flex-col bg-background">
         <div class="border-b px-2 py-1 text-[11px] font-medium text-muted-foreground">
-          Changes from {{ tab.yoursLabel }}
+          {{ t("merge.changesFrom", { branch: tab.yoursLabel }) }}
         </div>
         <pre class="min-h-0 flex-1 overflow-auto p-2 font-mono text-[11px] leading-5">{{
-          tab.merge3?.blocks.flatMap((b) => b.oursLines).join("\n")
+          tab.merge3?.blocks.flatMap((b) => b.oursLines).join("")
         }}</pre>
       </div>
-      <div class="flex min-h-0 flex-col bg-background">
-        <div class="border-b px-2 py-1 text-[11px] font-medium">Result (editable)</div>
+      <div class="flex min-h-0 min-w-0 flex-col bg-background">
+        <div class="border-b px-2 py-1 text-[11px] font-medium">
+          {{ t("merge.editableResult") }}
+        </div>
         <textarea
           v-model="tab.resultText"
-          class="min-h-0 flex-1 resize-none bg-transparent p-2 font-mono text-[11px] leading-5 outline-none"
+          :aria-label="t('merge.editableResult')"
+          :disabled="tab.saving"
+          @input="tab.error = null"
+          class="min-h-0 flex-1 resize-none bg-transparent p-2 font-mono text-[11px] leading-5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
           spellcheck="false"
         />
       </div>
-      <div class="flex min-h-0 flex-col bg-background">
+      <div class="flex min-h-0 min-w-0 flex-col bg-background">
         <div class="border-b px-2 py-1 text-[11px] font-medium text-muted-foreground">
-          Changes from {{ tab.theirsLabel }}
+          {{ t("merge.changesFrom", { branch: tab.theirsLabel }) }}
         </div>
         <pre class="min-h-0 flex-1 overflow-auto p-2 font-mono text-[11px] leading-5">{{
-          tab.merge3?.blocks.flatMap((b) => b.theirsLines).join("\n")
+          tab.merge3?.blocks.flatMap((b) => b.theirsLines).join("")
         }}</pre>
       </div>
     </div>
@@ -85,18 +100,32 @@ function applyNonConflicting() {
         class="flex items-center gap-2 border-b px-2 py-1"
         :class="b.kind === 'conflict' ? 'bg-[var(--diff-conflict-bg)]' : ''"
       >
-        <span class="w-20 font-medium">{{ b.kind }}</span>
+        <span class="w-20 font-medium">{{ t(`merge.blocks.${b.kind}`) }}</span>
         <span class="flex-1 truncate font-mono text-muted-foreground">
           {{ (b.oursLines[0] || b.theirsLines[0] || b.baseLines[0] || "").slice(0, 80) }}
         </span>
         <template v-if="b.kind === 'conflict'">
-          <Button size="xs" variant="ghost" @click="conflicts.acceptBlock(tab.id, i, 'ours')">≪</Button>
-          <Button size="xs" variant="ghost" @click="conflicts.acceptBlock(tab.id, i, 'theirs')">≫</Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            :disabled="tab.saving"
+            :aria-label="t('merge.acceptBlockLeft', { index: i + 1 })"
+            @click="conflicts.acceptBlock(tab.id, i, 'ours')"
+            >≪</Button
+          >
+          <Button
+            size="xs"
+            variant="ghost"
+            :disabled="tab.saving"
+            :aria-label="t('merge.acceptBlockRight', { index: i + 1 })"
+            @click="conflicts.acceptBlock(tab.id, i, 'theirs')"
+            >≫</Button
+          >
         </template>
       </div>
     </div>
   </div>
   <div v-else class="flex h-full items-center justify-center text-sm text-muted-foreground">
-    No merge editor open
+    {{ t("merge.noEditor") }}
   </div>
 </template>

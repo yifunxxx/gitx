@@ -1,4 +1,5 @@
 import { GitBranch, GitFork, Layers, PanelBottom } from "@lucide/vue";
+import { ref } from "vue";
 import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorktreesStore } from "@/stores/worktreesStore";
@@ -7,6 +8,10 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { getBackend } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { confirmDialog } from "@/composables/useConfirm";
+import { i18n } from "@/i18n";
+import { formatErrorMessage } from "@/lib/errors";
+import { submoduleFeedback } from "@/lib/submoduleFeedback";
+import { useChangesStore } from "@/stores/changesStore";
 
 function hasRepo() {
   const ws = useWorkspaceStore();
@@ -14,6 +19,8 @@ function hasRepo() {
 }
 
 export function registerM7Actions() {
+  const syncingForks = ref(new Set<string>());
+  const updatingSubmodules = ref(new Set<string>());
   registerAction({
     id: "Git.Show.WorkingTrees",
     title: "Show Worktrees",
@@ -72,22 +79,41 @@ export function registerM7Actions() {
     description: "Fetch upstream and update the default branch (host-agnostic)",
     icon: GitFork,
     scope: "global",
-    enabled: () => hasRepo(),
+    enabled: () => hasRepo() && !syncingForks.value.has(useWorkspaceStore().repoPath ?? ""),
     async run() {
       const ws = useWorkspaceStore();
-      if (!ws.repoPath) return;
+      const path = ws.repoPath;
+      if (!path || syncingForks.value.has(path)) return;
+      const navigation = ws.navigationToken();
+      const current = () => path === ws.repoPath && navigation === ws.navigationToken();
       const settings = useSettingsStore();
       const parent = settings.settings?.git?.forkParentRemote ?? "upstream";
-      const push = await confirmDialog({
-        title: "Sync Fork",
-        message: `Sync with '${parent}' and push to origin?`,
-      });
-      const res = await getBackend().syncFork({
-        path: ws.repoPath,
-        parentRemote: parent,
-        pushOrigin: push,
-      });
-      toast({ title: "Sync Fork", description: res.message });
+      syncingForks.value.add(path);
+      try {
+        const confirmed = await confirmDialog({
+          title: i18n.global.t("actions.syncFork"),
+          message: i18n.global.t("actions.syncForkConfirm", { remote: parent }),
+          confirmLabel: i18n.global.t("actions.syncForkConfirmAction"),
+        });
+        if (!confirmed || !current()) return;
+        const res = await getBackend().syncFork({
+          path,
+          parentRemote: parent,
+          strategy: null,
+          pushOrigin: true,
+        });
+        if (current())
+          toast({ title: i18n.global.t("actions.syncFork"), description: res.message });
+      } catch (error) {
+        if (current())
+          toast({
+            title: i18n.global.t("actions.syncForkFailed"),
+            description: formatErrorMessage(error),
+            persistent: true,
+          });
+      } finally {
+        syncingForks.value.delete(path);
+      }
     },
   });
 
@@ -97,15 +123,33 @@ export function registerM7Actions() {
     description: "Run git submodule update for changed modules",
     icon: GitBranch,
     scope: "global",
-    enabled: () => hasRepo(),
+    enabled: () => hasRepo() && !updatingSubmodules.value.has(useWorkspaceStore().repoPath ?? ""),
     async run() {
       const ws = useWorkspaceStore();
-      if (!ws.repoPath) return;
-      const res = await getBackend().submoduleUpdate({
-        path: ws.repoPath,
-        policy: "always",
-      });
-      toast({ title: "Submodules", description: res.message });
+      const path = ws.repoPath;
+      if (!path || updatingSubmodules.value.has(path)) return;
+      const navigation = ws.navigationToken();
+      const current = () => ws.repoPath === path && ws.navigationToken() === navigation;
+      updatingSubmodules.value.add(path);
+      try {
+        const res = await getBackend().submoduleUpdate({
+          path,
+          policy: "always",
+          changedPaths: null,
+        });
+        if (!current()) return;
+        toast(submoduleFeedback(res));
+        await useChangesStore().refresh();
+      } catch (error) {
+        if (current())
+          toast({
+            title: i18n.global.t("syncUi.submodulesFailed"),
+            description: formatErrorMessage(error),
+            persistent: true,
+          });
+      } finally {
+        updatingSubmodules.value.delete(path);
+      }
     },
   });
 

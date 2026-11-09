@@ -1,13 +1,13 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { onScopeDispose, ref } from "vue";
 import type { AppSettings } from "@/lib/backend";
 import { getBackend } from "@/lib/backend";
 import { i18n } from "@/i18n";
 import { cloneJson } from "@/lib/clone";
 
-let mediaQueryUnsub: (() => void) | null = null;
-
 export const useSettingsStore = defineStore("settings", () => {
+  let mediaQueryUnsub: (() => void) | null = null;
+  onScopeDispose(() => mediaQueryUnsub?.());
   const settings = ref<AppSettings | null>(null);
 
   function emptySettings(): AppSettings {
@@ -72,7 +72,7 @@ export const useSettingsStore = defineStore("settings", () => {
     applyLocale(next.locale);
   }
 
-  function applyLocale(locale: string) {
+  function applyLocale(locale: string | undefined) {
     const resolved = locale === "en" || locale === "zh-CN" ? locale : "zh-CN";
     i18n.global.locale.value = resolved as "zh-CN" | "en";
     document.documentElement.lang = resolved;
@@ -113,8 +113,7 @@ export const useSettingsStore = defineStore("settings", () => {
   async function toggleTheme() {
     const current = settings.value?.appearance.theme ?? "system";
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const effectivelyDark =
-      current === "dark" || (current === "system" && prefersDark);
+    const effectivelyDark = current === "dark" || (current === "system" && prefersDark);
     await setTheme(effectivelyDark ? "light" : "dark");
   }
 

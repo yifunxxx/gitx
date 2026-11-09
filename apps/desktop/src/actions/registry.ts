@@ -50,7 +50,11 @@ export async function runAction(id: string, ctx: ActionContext): Promise<void> {
   await def.run(safeCtx);
 }
 
-export function searchActions(query: string, ctx: ActionContext): ActionDef[] {
+export function searchActions(
+  query: string,
+  ctx: ActionContext,
+  displayedTitle?: (action: ActionDef) => string,
+): ActionDef[] {
   const q = query.trim().toLowerCase();
   return listActions().filter((a) => {
     if (!isVisible(a, ctx)) return false;
@@ -58,6 +62,7 @@ export function searchActions(query: string, ctx: ActionContext): ActionDef[] {
     return (
       a.id.toLowerCase().includes(q) ||
       a.title.toLowerCase().includes(q) ||
+      (displayedTitle?.(a).toLowerCase().includes(q) ?? false) ||
       (a.description?.toLowerCase().includes(q) ?? false)
     );
   });

@@ -6,6 +6,80 @@ use gitx_testkit::FixtureBuilder;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
+async fn save_resolved_merge_preserves_content_and_rejects_markers_or_stale_editors() {
+    let repo = FixtureBuilder::new()
+        .build("merge-conflict")
+        .expect("fixture");
+    let runner = GitRunner::new("git");
+    let cancel = CancellationToken::new();
+    let cwd = repo.path();
+    let result = runner
+        .merge_run(
+            cwd,
+            &["feature".into()],
+            false,
+            false,
+            false,
+            None,
+            false,
+            false,
+            false,
+            false,
+            &cancel,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.outcome, RewriteOutcome::Conflicts);
+    let path = runner.conflicts_list(cwd, &cancel).await.unwrap().entries[0]
+        .path
+        .clone();
+    let before = std::fs::read(cwd.join(&path)).unwrap();
+    let err = runner
+        .conflict_save_result(
+            cwd,
+            &path,
+            "<<<<<<< Yours\nours\n=======\ntheirs\n>>>>>>> Theirs\n",
+            &cancel,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, gitx_core::ErrorCode::MergeConflict);
+    assert_eq!(std::fs::read(cwd.join(&path)).unwrap(), before);
+    assert_eq!(
+        runner
+            .conflicts_list(cwd, &cancel)
+            .await
+            .unwrap()
+            .entries
+            .len(),
+        1
+    );
+    let content = "resolved\r\n\r\nlast line without newline";
+    runner
+        .conflict_save_result(cwd, &path, content, &cancel)
+        .await
+        .unwrap();
+    assert!(runner
+        .conflicts_list(cwd, &cancel)
+        .await
+        .unwrap()
+        .entries
+        .is_empty());
+    assert_eq!(std::fs::read_to_string(cwd.join(&path)).unwrap(), content);
+    assert!(runner
+        .conflict_save_result(cwd, &path, "stale", &cancel)
+        .await
+        .is_err());
+    assert_eq!(std::fs::read_to_string(cwd.join(&path)).unwrap(), content);
+    let result = runner.merge_commit(cwd, None, &cancel).await.unwrap();
+    assert_eq!(result.outcome, RewriteOutcome::Success);
+    assert_eq!(
+        runner.repo_op_state(cwd, &cancel).await.unwrap().kind,
+        RepoOpKind::Normal
+    );
+}
+
+#[tokio::test]
 async fn merge_conflict_accept_ours_and_abort() {
     let repo = FixtureBuilder::new()
         .build("merge-conflict")

@@ -1,7 +1,10 @@
 //! Merge / rebase / cherry-pick IPC (M4) + rewrite history (M5).
 
 use crate::state::AppState;
-use gitx_core::{AppError, RebasePlan, RepoOpState, ResetMode, ResetPreview, RewriteResult};
+use gitx_core::{
+    AppError, RebasePlan, RepoOpState, ResetMode, ResetPreview, RewriteHead, RewriteResult,
+};
+use gitx_git::OpKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -85,20 +88,31 @@ pub async fn merge_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.merge_run(
-        &path,
-        &req.branches,
-        req.no_ff,
-        req.ff_only,
-        req.squash,
-        req.message.as_deref(),
-        req.no_commit,
-        req.no_verify,
-        req.allow_unrelated,
-        req.smart,
-        &cancel,
-    )
-    .await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.merge_run(
+                    &path,
+                    &req.branches,
+                    req.no_ff,
+                    req.ff_only,
+                    req.squash,
+                    req.message.as_deref(),
+                    req.no_commit,
+                    req.no_verify,
+                    req.allow_unrelated,
+                    req.smart,
+                    &cancel,
+                )
+                .await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -110,7 +124,18 @@ pub async fn merge_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.merge_abort(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.merge_abort(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -122,7 +147,18 @@ pub async fn merge_commit(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.merge_commit(&path, req.message.as_deref(), &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.merge_commit(&path, req.message.as_deref(), &cancel)
+                    .await
+            }),
+        )
         .await
 }
 
@@ -135,21 +171,32 @@ pub async fn rebase_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.rebase_run(
-        &path,
-        &req.upstream,
-        req.onto.as_deref(),
-        req.branch.as_deref(),
-        req.rebase_merges,
-        req.keep_empty,
-        req.root,
-        req.update_refs,
-        req.autosquash,
-        req.interactive,
-        req.smart,
-        &cancel,
-    )
-    .await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.rebase_run(
+                    &path,
+                    &req.upstream,
+                    req.onto.as_deref(),
+                    req.branch.as_deref(),
+                    req.rebase_merges,
+                    req.keep_empty,
+                    req.root,
+                    req.update_refs,
+                    req.autosquash,
+                    req.interactive,
+                    req.smart,
+                    &cancel,
+                )
+                .await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -161,7 +208,18 @@ pub async fn rebase_continue(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.rebase_continue(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.rebase_continue(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -173,7 +231,18 @@ pub async fn rebase_skip(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.rebase_skip(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.rebase_skip(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -185,7 +254,18 @@ pub async fn rebase_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.rebase_abort(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.rebase_abort(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -201,31 +281,41 @@ pub async fn cherry_pick_run(
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                let mut add_suffix = req.add_suffix.unwrap_or(false);
+                if req.add_suffix.is_none() && suffix_setting {
+                    for sha in &req.shas {
+                        if git
+                            .cherry_pick_needs_suffix(&path, sha, &protected, &cancel)
+                            .await
+                            .unwrap_or(false)
+                        {
+                            add_suffix = true;
+                            break;
+                        }
+                    }
+                }
 
-    let mut add_suffix = req.add_suffix.unwrap_or(false);
-    if req.add_suffix.is_none() && suffix_setting {
-        for sha in &req.shas {
-            if git
-                .cherry_pick_needs_suffix(&path, sha, &protected, &cancel)
+                git.cherry_pick_run(
+                    &path,
+                    &req.shas,
+                    req.mainline,
+                    add_suffix,
+                    req.allow_empty,
+                    req.smart,
+                    &cancel,
+                )
                 .await
-                .unwrap_or(false)
-            {
-                add_suffix = true;
-                break;
-            }
-        }
-    }
-
-    git.cherry_pick_run(
-        &path,
-        &req.shas,
-        req.mainline,
-        add_suffix,
-        req.allow_empty,
-        req.smart,
-        &cancel,
-    )
-    .await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -237,7 +327,18 @@ pub async fn cherry_pick_continue(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.cherry_pick_continue(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.cherry_pick_continue(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -249,7 +350,18 @@ pub async fn cherry_pick_skip(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.cherry_pick_skip(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.cherry_pick_skip(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -261,7 +373,18 @@ pub async fn cherry_pick_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.cherry_pick_abort(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.cherry_pick_abort(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 // --- M5 ---
@@ -347,6 +470,7 @@ pub struct UndoRewriteReq {
     pub path: String,
     pub backup_ref: String,
     pub restore_worktree: bool,
+    pub expected_head: RewriteHead,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -385,7 +509,18 @@ pub async fn rebase_interactive_start(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.rebase_interactive_start(&path, &req.plan, req.smart, &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.rebase_interactive_start(&path, &req.plan, req.smart, &cancel)
+                    .await
+            }),
+        )
         .await
 }
 
@@ -398,7 +533,18 @@ pub async fn reword_commit(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.reword_commit(&path, &req.sha, &req.message, &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.reword_commit(&path, &req.sha, &req.message, &cancel)
+                    .await
+            }),
+        )
         .await
 }
 
@@ -411,7 +557,18 @@ pub async fn squash_commits(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.squash_commits(&path, &req.shas, &req.message, &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.squash_commits(&path, &req.shas, &req.message, &cancel)
+                    .await
+            }),
+        )
         .await
 }
 
@@ -424,7 +581,18 @@ pub async fn drop_commits(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.drop_commits(&path, &req.shas, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.drop_commits(&path, &req.shas, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -436,14 +604,25 @@ pub async fn fixup_into(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.fixup_into(
-        &path,
-        &req.target,
-        req.squash,
-        req.message.as_deref(),
-        &cancel,
-    )
-    .await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.fixup_into(
+                    &path,
+                    &req.target,
+                    req.squash,
+                    req.message.as_deref(),
+                    &cancel,
+                )
+                .await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -452,7 +631,16 @@ pub async fn uncommit(state: State<'_, AppState>, req: PathReq) -> Result<Rewrit
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.uncommit(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async { git.uncommit(&path, &cancel).await }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -464,7 +652,18 @@ pub async fn revert_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.revert_run(&path, &req.shas, req.mainline, req.no_commit, &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.revert_run(&path, &req.shas, req.mainline, req.no_commit, &cancel)
+                    .await
+            }),
+        )
         .await
 }
 
@@ -477,7 +676,18 @@ pub async fn revert_continue(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.revert_continue(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.revert_continue(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -489,7 +699,18 @@ pub async fn revert_abort(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.revert_abort(&path, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.revert_abort(&path, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -513,7 +734,18 @@ pub async fn reset_run(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.reset_run(&path, &req.target, req.mode, &cancel).await
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.reset_run(&path, &req.target, req.mode, &cancel).await
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -525,7 +757,24 @@ pub async fn undo_rewrite(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.undo_rewrite(&path, &req.backup_ref, req.restore_worktree, &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.undo_rewrite(
+                    &path,
+                    &req.backup_ref,
+                    req.restore_worktree,
+                    &req.expected_head,
+                    &cancel,
+                )
+                .await
+            }),
+        )
         .await
 }
 
@@ -538,8 +787,19 @@ pub async fn extract_changes(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let msg = req.message.as_deref().unwrap_or("Extracted changes");
-    git.extract_changes(&path, &req.commit, &req.paths, msg, &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                let msg = req.message.as_deref().unwrap_or("Extracted changes");
+                git.extract_changes(&path, &req.commit, &req.paths, msg, &cancel)
+                    .await
+            }),
+        )
         .await
 }
 
@@ -552,6 +812,17 @@ pub async fn drop_changes(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.drop_changes(&path, &req.commit, &req.paths, &cancel)
+    state
+        .scheduler
+        .with_repo_permit(
+            &git,
+            &req.path,
+            OpKind::Write,
+            &cancel,
+            git.with_rewrite_undo(&path, &cancel, async {
+                git.drop_changes(&path, &req.commit, &req.paths, &cancel)
+                    .await
+            }),
+        )
         .await
 }

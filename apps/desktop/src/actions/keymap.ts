@@ -3,12 +3,12 @@ import { listActions } from "./registry";
 
 export type Platform = "mac" | "win" | "linux";
 
-let overridesProvider: (() => Record<string, string[]> | undefined) | null = null;
+export type KeymapOverrides = Partial<Record<string, string[]>>;
+
+let overridesProvider: (() => KeymapOverrides | undefined) | null = null;
 
 /** Wire settings keymap overrides (called from settings bootstrap / store). */
-export function setKeymapOverridesProvider(
-  provider: () => Record<string, string[]> | undefined,
-) {
+export function setKeymapOverridesProvider(provider: () => KeymapOverrides | undefined) {
   overridesProvider = provider;
 }
 
@@ -57,10 +57,7 @@ export function findActionIdByEvent(event: KeyboardEvent): string | undefined {
 }
 
 /** Detect conflicts for a proposed chord against current bindings. */
-export function findShortcutConflicts(
-  actionId: string,
-  chord: string,
-): string[] {
+export function findShortcutConflicts(actionId: string, chord: string): string[] {
   const conflicts: string[] = [];
   const target = chord.toLowerCase();
   for (const action of listActions()) {

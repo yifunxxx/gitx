@@ -57,9 +57,9 @@ function toggleFolder(node: PathTreeNode<T>) {
   expanded.value = next;
 }
 
-function onRowClick(node: PathTreeNode<T>) {
+function onRowClick(node: PathTreeNode<T>, event: MouseEvent) {
   if (node.kind === "folder" && node.children?.length) {
-    toggleFolder(node);
+    if (event.detail < 2) toggleFolder(node);
     return;
   }
   if (node.file) emit("select", node.file);
@@ -67,12 +67,24 @@ function onRowClick(node: PathTreeNode<T>) {
 
 function onRowDblClick(node: PathTreeNode<T>) {
   if (node.file) emit("open", node.file);
-  else if (node.kind === "folder") toggleFolder(node);
+}
+
+function onRowKeydown(node: PathTreeNode<T>, event: KeyboardEvent) {
+  // The disclosure button already handles Enter/Space through its native click.
+  if (event.target !== event.currentTarget) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  if (node.kind === "folder" && node.children?.length) toggleFolder(node);
+  else if (node.file) {
+    if (event.key === "Enter") emit("open", node.file);
+    else emit("select", node.file);
+  }
 }
 
 function onContext(node: PathTreeNode<T>, e: MouseEvent) {
   if (!node.file) return;
   markContextHandled(e);
+  emit("select", node.file);
   emit("context", { file: node.file, x: e.clientX, y: e.clientY });
 }
 
@@ -98,10 +110,12 @@ function labelFor(node: PathTreeNode<T>) {
   >
     <template #default="{ item: row }">
       <div
-        class="flex h-[22px] cursor-pointer items-center gap-0.5 pr-2 hover:bg-accent/50"
+        class="flex h-[22px] cursor-pointer select-none items-center gap-0.5 pr-2 hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
         :class="selectedPath && row.node.file?.path === selectedPath ? 'bg-accent' : ''"
         :style="{ paddingLeft: `${8 + row.node.depth * 12}px` }"
-        @click="onRowClick(row.node)"
+        tabindex="0"
+        @keydown="onRowKeydown(row.node, $event)"
+        @click="onRowClick(row.node, $event)"
         @dblclick="onRowDblClick(row.node)"
         @contextmenu="onContext(row.node, $event)"
       >
@@ -109,17 +123,18 @@ function labelFor(node: PathTreeNode<T>) {
           v-if="row.node.kind === 'folder' && row.node.children?.length"
           type="button"
           class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center text-muted-foreground"
-          @click.stop="toggleFolder(row.node)"
+          :aria-label="
+            t(row.expanded ? 'pathTree.collapse' : 'pathTree.expand', { name: row.node.name })
+          "
+          :aria-expanded="row.expanded"
+          @click.stop="onRowClick(row.node, $event)"
+          @dblclick.stop
         >
           <ChevronDown v-if="row.expanded" class="h-3 w-3" />
           <ChevronRight v-else class="h-3 w-3" />
         </button>
         <span v-else class="inline-block h-4 w-4 shrink-0" />
-        <FileTypeIcon
-          :name="row.node.name"
-          :kind="row.node.kind"
-          :expanded="row.expanded"
-        />
+        <FileTypeIcon :name="row.node.name" :kind="row.node.kind" :expanded="row.expanded" />
         <span
           class="min-w-0 truncate"
           :class="row.node.file ? statusClass(row.node.file) : 'text-foreground'"

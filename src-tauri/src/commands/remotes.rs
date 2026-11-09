@@ -70,6 +70,10 @@ pub async fn remote_add(state: State<'_, AppState>, req: RemoteAddReq) -> Result
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.remote_add(&path, &req.name, &req.url, &cancel).await?;
     if req.fetch_after {
         let settings = state.settings.read().await;
@@ -88,6 +92,10 @@ pub async fn remote_edit(state: State<'_, AppState>, req: RemoteEditReq) -> Resu
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.remote_edit(
         &path,
         &req.name,
@@ -121,6 +129,10 @@ pub async fn remote_remove(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.remote_remove(&path, &req.name, &cancel).await
 }
 
@@ -136,6 +148,10 @@ pub async fn remote_delete_branch(
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.remote_delete_branch(&path, &req.remote, &req.branch, &protected, &cancel)
         .await
 }

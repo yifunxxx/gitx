@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -12,13 +12,44 @@ import { closeDialog } from "@/composables/useDialog";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useSyncStore } from "@/stores/syncStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { formatErrorMessage } from "@/lib/errors";
+import { useI18n } from "vue-i18n";
 
 const branches = useBranchesStore();
 const sync = useSyncStore();
 const workspace = useWorkspaceStore();
+const { t } = useI18n();
 
-const remote = ref("origin");
-const branch = ref("main");
+const path = workspace.repoPath;
+const upstream = workspace.branch?.upstream;
+const upstreamSplit = upstream?.indexOf("/") ?? -1;
+const remote = ref(upstreamSplit > 0 ? upstream!.slice(0, upstreamSplit) : "origin");
+const branch = ref(
+  upstreamSplit > 0 ? upstream!.slice(upstreamSplit + 1) : (workspace.branch?.head ?? ""),
+);
+const loading = ref(true);
+const error = ref<string | null>(null);
+const repositoryChanged = ref(false);
+let alive = true;
+watch(
+  () => workspace.repoPath,
+  () => {
+    repositoryChanged.value = true;
+  },
+  { flush: "sync" },
+);
+onUnmounted(() => {
+  alive = false;
+});
+const canPull = computed(
+  () =>
+    !loading.value &&
+    !sync.pulling &&
+    !repositoryChanged.value &&
+    !error.value &&
+    !!remote.value.trim() &&
+    !!branch.value.trim(),
+);
 const rebase = ref(false);
 const ffOnly = ref(false);
 const noFf = ref(false);
@@ -39,19 +70,21 @@ const preview = computed(() => {
 });
 
 onMounted(async () => {
-  await branches.refresh();
-  remote.value = branches.remotes[0]?.name ?? "origin";
-  const up = workspace.branch?.upstream;
-  if (up?.includes("/")) {
-    const [r, ...rest] = up.split("/");
-    remote.value = r ?? remote.value;
-    branch.value = rest.join("/") || branch.value;
-  } else {
-    branch.value = workspace.branch?.head ?? "main";
+  try {
+    await branches.refresh();
+    if (!alive || repositoryChanged.value || workspace.repoPath !== path) return;
+    if (branches.error) throw new Error(branches.error);
+    if (!branches.remotes.some((r) => r.name === remote.value))
+      remote.value = branches.remotes[0]?.name ?? "";
+  } catch (e) {
+    if (alive) error.value = formatErrorMessage(e);
+  } finally {
+    if (alive) loading.value = false;
   }
 });
 
 async function ok() {
+  if (!canPull.value) return;
   try {
     await sync.pull({
       remote: remote.value,
@@ -63,7 +96,7 @@ async function ok() {
       noCommit: noCommit.value,
       noVerify: noVerify.value,
     });
-    closeDialog(true);
+    if (alive) closeDialog(true);
   } catch {
     // Error toast from syncStore; keep dialog open.
   }
@@ -72,11 +105,27 @@ async function ok() {
 
 <template>
   <div class="fixed inset-0 z-[50] flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg">
-      <h2 class="text-sm font-semibold">Pull</h2>
+    <div
+      role="dialog"
+      aria-labelledby="pull-title"
+      class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg"
+    >
+      <h2 id="pull-title" class="text-sm font-semibold">Pull</h2>
+      <p v-if="loading" role="status" class="mt-2 text-xs text-muted-foreground">
+        {{ t("common.loading") }}
+      </p>
+      <p v-if="error" role="alert" class="mt-2 text-xs text-destructive">{{ error }}</p>
+      <p v-if="repositoryChanged" role="alert" class="mt-2 text-xs text-destructive">
+        {{ t("syncUi.repositoryChanged") }}
+      </p>
       <div class="mt-3 grid grid-cols-2 gap-2">
-        <label class="text-[11px] text-muted-foreground">Remote
-          <Select v-model="remote" class="mt-1">
+        <label class="text-[11px] text-muted-foreground"
+          >{{ t("syncUi.remote") }}
+          <Select
+            v-model="remote"
+            class="mt-1"
+            :disabled="loading || sync.pulling || repositoryChanged"
+          >
             <SelectTrigger class="mt-1">
               <SelectValue />
             </SelectTrigger>
@@ -87,23 +136,44 @@ async function ok() {
             </SelectContent>
           </Select>
         </label>
-        <label class="text-[11px] text-muted-foreground">Branch
-          <input v-model="branch" class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm" />
+        <label class="text-[11px] text-muted-foreground"
+          >{{ t("syncUi.branch") }}
+          <input
+            v-model="branch"
+            :disabled="loading || sync.pulling || repositoryChanged"
+            class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm"
+          />
         </label>
       </div>
-      <div class="mt-3 text-[11px] font-medium text-muted-foreground">Modify options</div>
+      <div class="mt-3 text-[11px] font-medium text-muted-foreground">
+        {{ t("syncUi.options") }}
+      </div>
       <div class="mt-1 grid grid-cols-2 gap-1 text-xs">
-        <label class="flex items-center gap-2"><input v-model="rebase" type="checkbox" :disabled="ffOnly || squash" /> --rebase</label>
-        <label class="flex items-center gap-2"><input v-model="ffOnly" type="checkbox" :disabled="rebase || noFf" /> --ff-only</label>
-        <label class="flex items-center gap-2"><input v-model="noFf" type="checkbox" :disabled="ffOnly" /> --no-ff</label>
-        <label class="flex items-center gap-2"><input v-model="squash" type="checkbox" :disabled="rebase" /> --squash</label>
-        <label class="flex items-center gap-2"><input v-model="noCommit" type="checkbox" /> --no-commit</label>
-        <label class="flex items-center gap-2"><input v-model="noVerify" type="checkbox" /> --no-verify</label>
+        <label class="flex items-center gap-2"
+          ><input v-model="rebase" type="checkbox" :disabled="ffOnly || squash" /> --rebase</label
+        >
+        <label class="flex items-center gap-2"
+          ><input v-model="ffOnly" type="checkbox" :disabled="rebase || noFf" /> --ff-only</label
+        >
+        <label class="flex items-center gap-2"
+          ><input v-model="noFf" type="checkbox" :disabled="ffOnly || squash" /> --no-ff</label
+        >
+        <label class="flex items-center gap-2"
+          ><input v-model="squash" type="checkbox" :disabled="rebase || noFf" /> --squash</label
+        >
+        <label class="flex items-center gap-2"
+          ><input v-model="noCommit" type="checkbox" /> --no-commit</label
+        >
+        <label class="flex items-center gap-2"
+          ><input v-model="noVerify" type="checkbox" /> --no-verify</label
+        >
       </div>
       <div class="mt-3 rounded bg-muted px-2 py-1 font-mono text-[11px]">{{ preview }}</div>
       <div class="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" @click="closeDialog(false)">Cancel</Button>
-        <Button size="sm" @click="ok">Pull</Button>
+        <Button variant="ghost" size="sm" @click="closeDialog(false)">{{
+          t("common.cancel")
+        }}</Button>
+        <Button size="sm" :disabled="!canPull" @click="ok">Pull</Button>
       </div>
     </div>
   </div>

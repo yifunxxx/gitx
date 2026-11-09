@@ -53,11 +53,8 @@ pub async fn repo_discover(
     req: DiscoverRootsReq,
 ) -> Result<Vec<RepoRoot>, AppError> {
     let path = PathBuf::from(&req.path);
-    // Auto-enable WSL git when opening a WSL UNC path.
-    if let Some(info) = gitx_git::parse_wsl_unc_path(&req.path) {
-        let mut git = state.git.write().await;
-        *git = gitx_git::GitRunner::new("git").with_wsl(info.distro);
-    }
+    // GitRunner routes each invocation from its path, so discovery must not
+    // change the runner used by other repositories or discard its callbacks.
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
     git.discover_repo_roots(&path, &cancel).await
@@ -83,6 +80,10 @@ pub async fn multi_root_checkout(
     );
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_writes(&git, &req.roots, &[], &cancel)
+        .await?;
     git.multi_root_checkout(
         &req.roots,
         &req.target,
@@ -100,7 +101,16 @@ pub async fn multi_root_rollback(
     req: MultiRootRollbackReq,
 ) -> Result<MultiRootOpResult, AppError> {
     let git = state.git.read().await;
+    let roots = req
+        .steps
+        .iter()
+        .map(|step| step.path.clone())
+        .collect::<Vec<_>>();
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_writes(&git, &roots, &[], &cancel)
+        .await?;
     git.multi_root_rollback(&req.steps, &cancel).await
 }
 

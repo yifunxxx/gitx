@@ -117,7 +117,13 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
     data-tauri-drag-region
   >
     <Tip :text="t('toolbar.menu')">
-      <Button variant="ghost" size="icon" class="shrink-0" @click="layout.vcsPopupOpen = true">
+      <Button
+        variant="ghost"
+        size="icon"
+        class="shrink-0"
+        :aria-label="t('toolbar.menu')"
+        @click="layout.vcsPopupOpen = true"
+      >
         <Menu class="h-4 w-4" />
       </Button>
     </Tip>
@@ -155,18 +161,30 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
           variant="ghost"
           size="sm"
           :disabled="!workspace.isRepo || sync.updating"
+          :aria-label="t('toolbar.updateProject')"
           @click="run('Vcs.UpdateProject')"
         >
           <RotateCcw class="h-3.5 w-3.5" :class="{ 'animate-spin': sync.updating }" />
         </Button>
       </Tip>
       <Tip :text="t('toolbar.commit')">
-        <Button variant="ghost" size="sm" @click="run('CheckinProject')">
+        <Button
+          variant="ghost"
+          size="sm"
+          :aria-label="t('toolbar.commit')"
+          @click="run('CheckinProject')"
+        >
           <Check class="h-3.5 w-3.5" />
         </Button>
       </Tip>
       <Tip :text="t('toolbar.push')">
-        <Button variant="ghost" size="sm" :disabled="!workspace.isRepo" @click="run('Git.Push')">
+        <Button
+          variant="ghost"
+          size="sm"
+          :disabled="!workspace.isRepo"
+          :aria-label="t('toolbar.push')"
+          @click="run('Git.Push')"
+        >
           <Upload class="h-3.5 w-3.5" />
         </Button>
       </Tip>
@@ -174,6 +192,7 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
         <Button
           variant="ghost"
           size="sm"
+          :aria-label="t('toolbar.showLog')"
           @click="
             layout.bottomOpen = true;
             layout.activeBottomTab = 'log';
@@ -183,18 +202,33 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
         </Button>
       </Tip>
       <Tip :text="isDark ? t('toolbar.themeLight') : t('toolbar.themeDark')">
-        <Button variant="ghost" size="icon" @click="settings.toggleTheme()">
+        <Button
+          variant="ghost"
+          size="icon"
+          :aria-label="isDark ? t('toolbar.themeLight') : t('toolbar.themeDark')"
+          @click="settings.toggleTheme()"
+        >
           <Sun v-if="isDark" class="h-3.5 w-3.5" />
           <Moon v-else class="h-3.5 w-3.5" />
         </Button>
       </Tip>
       <Tip :text="t('toolbar.findAction')">
-        <Button variant="ghost" size="icon" @click="layout.findActionOpen = true">
+        <Button
+          variant="ghost"
+          size="icon"
+          :aria-label="t('toolbar.findAction')"
+          @click="layout.findActionOpen = true"
+        >
           <Search class="h-3.5 w-3.5" />
         </Button>
       </Tip>
       <Tip :text="t('toolbar.settings')">
-        <Button variant="ghost" size="icon" @click="run('Settings')">
+        <Button
+          variant="ghost"
+          size="icon"
+          :aria-label="t('toolbar.settings')"
+          @click="run('Settings')"
+        >
           <Settings class="h-3.5 w-3.5" />
         </Button>
       </Tip>

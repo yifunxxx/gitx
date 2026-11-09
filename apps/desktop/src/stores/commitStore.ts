@@ -3,6 +3,8 @@ import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
+import { useBranchesStore } from "./branchesStore";
+import { useLogStore } from "./logStore";
 import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
 
@@ -14,10 +16,17 @@ export const useCommitStore = defineStore("commit", () => {
   const draftBeforeAmend = ref("");
 
   const workspace = useWorkspaceStore();
+  let generation = 0;
+  let amendGeneration = 0;
 
   watch(
     () => workspace.repoPath,
     (path) => {
+      ++generation;
+      ++amendGeneration;
+      amend.value = false;
+      draftBeforeAmend.value = "";
+      committing.value = false;
       if (!path) {
         message.value = "";
         amend.value = false;
@@ -26,27 +35,33 @@ export const useCommitStore = defineStore("commit", () => {
       const key = `gitx.commitDraft.${path}`;
       message.value = localStorage.getItem(key) ?? "";
     },
-    { immediate: true },
+    { immediate: true, flush: "sync" },
   );
 
-  watch(message, (v) => {
-    if (!workspace.repoPath) return;
-    localStorage.setItem(`gitx.commitDraft.${workspace.repoPath}`, v);
-  });
+  watch(
+    message,
+    (v) => {
+      if (!workspace.repoPath) return;
+      localStorage.setItem(`gitx.commitDraft.${workspace.repoPath}`, v);
+    },
+    { flush: "sync" },
+  );
 
   async function setAmend(value: boolean) {
     if (value === amend.value) return;
+    const request = ++amendGeneration;
+    amend.value = value;
     const backend = getBackend();
     if (value) {
       draftBeforeAmend.value = message.value;
       if (workspace.repoPath) {
         try {
-          message.value = await backend.commitHeadMessage({ path: workspace.repoPath });
+          const result = await backend.commitHeadMessage({ path: workspace.repoPath });
+          if (request === amendGeneration) message.value = result;
         } catch {
           /* keep draft */
         }
       }
-      amend.value = true;
     } else {
       message.value = draftBeforeAmend.value;
       amend.value = false;
@@ -54,6 +69,7 @@ export const useCommitStore = defineStore("commit", () => {
   }
 
   async function commit() {
+    if (committing.value) return;
     if (!workspace.repoPath || !workspace.repoId) {
       toast({ title: "No repository", description: "Open a git repository first" });
       return;
@@ -62,17 +78,18 @@ export const useCommitStore = defineStore("commit", () => {
       toast({ title: "Empty message", description: "Enter a commit message" });
       return;
     }
+    const request = generation;
+    const path = workspace.repoPath;
+    const originalMessage = message.value;
     committing.value = true;
     try {
       const backend = getBackend();
       const changes = useChangesStore();
       const paths =
-        !changes.stagingMode && changes.checkedPaths.length
-          ? [...changes.checkedPaths]
-          : null;
+        !changes.stagingMode && changes.checkedPaths.length ? [...changes.checkedPaths] : null;
       const result = await backend.commitCreate({
         repoId: workspace.repoId,
-        path: workspace.repoPath,
+        path,
         message: message.value,
         amend: amend.value,
         noVerify: !runHooks.value,
@@ -82,11 +99,19 @@ export const useCommitStore = defineStore("commit", () => {
         title: result.amended ? "Amended" : "Committed",
         description: `${result.sha.slice(0, 7)} ${result.subject}`,
       });
-      message.value = "";
+      if (request !== generation) return result;
+      if (message.value === originalMessage) {
+        message.value = "";
+        localStorage.removeItem(`gitx.commitDraft.${path}`);
+      }
       amend.value = false;
-      localStorage.removeItem(`gitx.commitDraft.${workspace.repoPath}`);
+      ++amendGeneration;
       changes.setChecked([]);
-      await changes.refresh();
+      await Promise.allSettled([
+        changes.refresh(),
+        useBranchesStore().refresh(),
+        useLogStore().load(true, true),
+      ]);
       return result;
     } catch (e) {
       const err = e as { code?: string; message?: string; gitStderr?: string };
@@ -105,7 +130,7 @@ export const useCommitStore = defineStore("commit", () => {
       }
       throw e;
     } finally {
-      committing.value = false;
+      if (request === generation) committing.value = false;
     }
   }
 

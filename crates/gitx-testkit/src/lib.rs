@@ -25,14 +25,9 @@ impl FixtureRepo {
     }
 }
 
+#[derive(Default)]
 pub struct FixtureBuilder {
     keep: bool,
-}
-
-impl Default for FixtureBuilder {
-    fn default() -> Self {
-        Self { keep: false }
-    }
 }
 
 impl FixtureBuilder {

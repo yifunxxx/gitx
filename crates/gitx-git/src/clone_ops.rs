@@ -61,7 +61,6 @@ impl GitRunner {
             })?;
         }
 
-        let created_by_us = !dir.exists();
         let mut args = vec!["clone".to_string(), "--progress".into()];
         if let Some(d) = depth {
             // Local (file) clones skip shallow unless --no-local is set.
@@ -91,12 +90,9 @@ impl GitRunner {
                 path: dir.display().to_string(),
                 shallow: depth.is_some(),
             }),
-            Err(e) => {
-                if cancel.is_cancelled() && created_by_us {
-                    let _ = std::fs::remove_dir_all(dir);
-                }
-                Err(e)
-            }
+            // A concurrent process may have created files in the destination.
+            // Leave Git's own rollback in charge; never recursively delete it.
+            Err(e) => Err(e),
         }
     }
 

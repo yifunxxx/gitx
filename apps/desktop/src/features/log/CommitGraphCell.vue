@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { GraphRow } from "@/lib/backend";
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 
 const props = defineProps<{
   graph: GraphRow;
@@ -15,6 +17,7 @@ const props = defineProps<{
   laneLabels?: Record<number, string>;
   /** Label for this commit's node (refs on the commit). */
   nodeLabel?: string;
+  hiddenParents?: string[];
 }>();
 
 const H = computed(() => props.rowHeight ?? 22);
@@ -144,6 +147,24 @@ function curvePath(from: number, to: number) {
       </line>
     </g>
     <g>
+      <line
+        v-if="hiddenParents?.length"
+        :x1="cx(graph.lane)"
+        :x2="cx(graph.lane)"
+        :y1="cy() + 4"
+        :y2="height - 3"
+        :stroke="laneColor(graph.color)"
+        stroke-width="2"
+        stroke-dasharray="2 2"
+      >
+        <title>
+          {{
+            t("log.hiddenParents", {
+              parents: hiddenParents.map((sha) => sha.slice(0, 7)).join(", "),
+            })
+          }}
+        </title>
+      </line>
       <circle
         :cx="cx(graph.lane)"
         :cy="cy()"

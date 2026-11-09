@@ -76,8 +76,8 @@ async function cloneRepo() {
 </script>
 
 <template>
-  <div class="welcome-root flex h-full items-center justify-center bg-dbx-content p-8">
-    <div class="welcome-panel w-full max-w-3xl">
+  <div class="welcome-root flex h-full min-w-0 flex-col overflow-auto bg-dbx-content p-6">
+    <div class="welcome-panel m-auto w-full min-w-0 max-w-3xl shrink-0">
       <div class="mb-8">
         <div class="welcome-brand text-3xl font-semibold tracking-tight">gitx</div>
         <p class="mt-2 max-w-xl text-sm text-muted-foreground">
@@ -85,8 +85,8 @@ async function cloneRepo() {
         </p>
       </div>
 
-      <div class="grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
-        <div class="space-y-2">
+      <div class="welcome-columns grid gap-6">
+        <div class="min-w-0 space-y-2">
           <div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {{ t("welcome.recent") }}
           </div>
@@ -100,7 +100,8 @@ async function cloneRepo() {
             v-for="path in workspace.recent"
             :key="path"
             type="button"
-            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+            class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+            :title="path"
             @click="openRecent(path)"
           >
             <FolderGit2 class="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -108,8 +109,12 @@ async function cloneRepo() {
           </button>
         </div>
 
-        <div class="flex flex-col gap-2">
-          <Button class="justify-start gap-2 transition-transform active:scale-[0.98]" size="lg" @click="openFolder">
+        <div class="flex min-w-0 flex-col gap-2">
+          <Button
+            class="justify-start gap-2 transition-transform active:scale-[0.98]"
+            size="lg"
+            @click="openFolder"
+          >
             <FolderOpen class="h-4 w-4" />
             {{ t("welcome.open") }}
           </Button>
@@ -139,10 +144,21 @@ async function cloneRepo() {
 
 <style scoped>
 .welcome-root {
+  container-type: inline-size;
   background:
     radial-gradient(1200px 480px at 12% -10%, rgb(var(--accent) / 0.55), transparent 55%),
     radial-gradient(900px 420px at 95% 0%, rgb(var(--info) / 0.08), transparent 50%),
     rgb(var(--dbx-content));
+}
+
+.welcome-columns {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+}
+
+@container (max-width: 580px) {
+  .welcome-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .welcome-panel {

@@ -19,6 +19,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const gitError = ref<string | null>(null);
   const recent = ref<string[]>([]);
   const branch = ref<BranchInfo | null>(null);
+  let openGeneration = 0;
+  let rootsGeneration = 0;
+  let recentGeneration = 0;
 
   const activeRoot = computed(
     () => roots.value.find((r) => r.id === activeRepoId.value) ?? roots.value[0] ?? null,
@@ -39,6 +42,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     wsl?: WslPathInfo | null;
     roots?: RepoRoot[];
   }) {
+    branch.value = null;
     folderPath.value = res.path;
     isRepo.value = res.isRepo;
     gitDir.value = res.gitDir;
@@ -82,14 +86,17 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   async function loadRecent() {
+    const generation = ++recentGeneration;
     const backend = getBackend();
     const res = await backend.workspaceRecent();
-    recent.value = res.paths;
+    if (generation === recentGeneration) recent.value = res.paths;
   }
 
   async function openFolder(path: string) {
+    const generation = ++openGeneration;
     const backend = getBackend();
     const res = await backend.workspaceOpen({ path });
+    if (generation !== openGeneration) return res;
     applyOpenRes(res);
     await loadRecent();
     return res;
@@ -97,7 +104,12 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   async function refreshRoots() {
     if (!folderPath.value || !isRepo.value) return;
-    const discovered = await getBackend().repoDiscover({ path: folderPath.value });
+    const path = folderPath.value;
+    const open = openGeneration;
+    const generation = ++rootsGeneration;
+    const discovered = await getBackend().repoDiscover({ path });
+    if (path !== folderPath.value || open !== openGeneration || generation !== rootsGeneration)
+      return;
     roots.value = discovered;
     if (!roots.value.find((r) => r.id === activeRepoId.value)) {
       activeRepoId.value = roots.value[0]?.id ?? null;
@@ -106,6 +118,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   function setActiveRepo(id: string) {
     if (roots.value.some((r) => r.id === id)) {
+      if (activeRepoId.value !== id) {
+        ++openGeneration;
+        branch.value = null;
+      }
       activeRepoId.value = id;
       const root = roots.value.find((r) => r.id === id);
       if (root) {
@@ -118,8 +134,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   async function initRepo(path: string, initialBranch = "main") {
+    const generation = ++openGeneration;
     const backend = getBackend();
     const res = await backend.initRun({ path, initialBranch });
+    if (generation !== openGeneration) return res;
     applyOpenRes(res);
     await loadRecent();
     return res;
@@ -127,12 +145,14 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   async function enableVcs(initialBranch = "main") {
     if (!folderPath.value) throw new Error("No folder open");
+    const path = folderPath.value;
+    const generation = ++openGeneration;
     const backend = getBackend();
     const res = await backend.vcsEnable({
-      path: folderPath.value,
+      path,
       initialBranch,
     });
-    applyOpenRes({ ...res, path: folderPath.value });
+    if (generation === openGeneration) applyOpenRes({ ...res, path });
     return res;
   }
 
@@ -159,6 +179,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     branch,
     repoId,
     repoPath,
+    navigationToken: () => openGeneration,
     detectGit,
     loadRecent,
     openFolder,

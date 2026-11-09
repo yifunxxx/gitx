@@ -51,7 +51,10 @@ impl GitRunner {
             });
         }
 
-        if git_dir.join("CHERRY_PICK_HEAD").exists() || git_dir.join("sequencer").exists() {
+        if git_dir.join("CHERRY_PICK_HEAD").exists()
+            || git_dir.join("REVERT_HEAD").exists()
+            || git_dir.join("sequencer").exists()
+        {
             let (kind, label) = if git_dir.join("REVERT_HEAD").exists() {
                 (RepoOpKind::Revert, "Revert")
             } else {
@@ -109,12 +112,19 @@ impl GitRunner {
             let onto = read_first_line(&dir.join("onto"))
                 .and_then(|s| short_sha(&s))
                 .or_else(|| read_first_line(&dir.join("onto")));
-            let stopped_for_edit = dir.join("stop-for-edit").exists()
-                || read_first_line(&dir.join("done"))
-                    .map(|d| d.contains("edit "))
-                    .unwrap_or(false)
-                    && conflict_count == 0
-                    && dir.join("amend").exists();
+            let last_command_is_edit = std::fs::read_to_string(dir.join("done"))
+                .ok()
+                .and_then(|done| {
+                    done.lines()
+                        .rev()
+                        .map(str::trim)
+                        .find(|line| !line.is_empty() && !line.starts_with('#'))
+                        .map(|line| matches!(line.split_whitespace().next(), Some("edit" | "e")))
+                })
+                .unwrap_or(false);
+            let stopped_for_edit = conflict_count == 0
+                && (dir.join("stop-for-edit").exists()
+                    || (last_command_is_edit && dir.join("amend").exists()));
             let phase = if stopped_for_edit {
                 RepoOpPhase::StoppedForEdit
             } else if conflict_count > 0 {
@@ -178,11 +188,22 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<RewriteResult, AppError> {
         self.ensure_not_busy(cwd, cancel).await?;
-        let old = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "merge", &old, cancel).await.ok();
+        let (old, backup) = self.backup_current_head(cwd, "merge", cancel).await?;
+        let old_index = if squash || no_commit {
+            Some(self.index_tree(cwd, cancel).await?)
+        } else {
+            None
+        };
+        // A merge commit also has the old HEAD as an ancestor. A fast-forward
+        // must land on a tip that already existed before this operation.
+        let mut target_tips = Vec::new();
+        if branches.is_empty() {
+            target_tips.push(self.rev_parse_public(cwd, "@{upstream}", cancel).await?);
+        } else {
+            for branch in branches {
+                target_tips.push(self.rev_parse_public(cwd, branch, cancel).await?);
+            }
+        }
 
         let run_merge = |allow_unrelated: bool| {
             let mut args = vec!["merge".to_string()];
@@ -242,22 +263,39 @@ impl GitRunner {
                             message: format!("Conflicts in {} file(s)", files.len()),
                             conflict_files: files,
                             backup_ref: backup,
-                        });
-                    }
-                    if squash || no_commit {
-                        return Ok(RewriteResult {
-                            old_head: old,
-                            new_head: new,
-                            outcome: RewriteOutcome::NothingToCommit,
-                            message: "Merge staged — commit to finish".into(),
-                            conflict_files: vec![],
-                            backup_ref: backup,
+                            undo_head: None,
                         });
                     }
                 }
+                // Squash does not write MERGE_HEAD. Compare the index against
+                // its original tree, so existing staged work alone is not
+                // mistaken for a newly applied merge.
+                let index_changed = if old == new {
+                    if let Some(before) = &old_index {
+                        self.index_tree(cwd, cancel).await? != *before
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if old == new && (state.kind == RepoOpKind::Merge || index_changed) {
+                    return Ok(RewriteResult {
+                        old_head: old,
+                        new_head: new,
+                        outcome: RewriteOutcome::NothingToCommit,
+                        message: "Merge staged — commit to finish".into(),
+                        conflict_files: vec![],
+                        backup_ref: backup,
+                        undo_head: None,
+                    });
+                }
                 let outcome = if old == new {
                     RewriteOutcome::AlreadyUpToDate
-                } else if !no_ff && is_ancestor(self, cwd, &old, &new, cancel).await {
+                } else if !no_ff
+                    && target_tips.contains(&new)
+                    && is_ancestor(self, cwd, &old, &new, cancel).await
+                {
                     RewriteOutcome::FastForward
                 } else {
                     RewriteOutcome::Success
@@ -281,6 +319,7 @@ impl GitRunner {
                     message,
                     conflict_files: vec![],
                     backup_ref: backup,
+                    undo_head: None,
                 })
             }
             Err(e) => {
@@ -307,6 +346,7 @@ impl GitRunner {
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
+        self.finish_smart_stash(cwd, "merge", cancel).await?;
         let new = self
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
@@ -318,6 +358,7 @@ impl GitRunner {
             message: "Merge aborted".into(),
             conflict_files: vec![],
             backup_ref: backup,
+            undo_head: None,
         })
     }
 
@@ -350,9 +391,13 @@ impl GitRunner {
             old_head: old,
             new_head: new,
             outcome: RewriteOutcome::Success,
-            message: "Merge committed".into(),
+            message: {
+                self.finish_smart_stash(cwd, "merge", cancel).await?;
+                "Merge committed".into()
+            },
             conflict_files: vec![],
             backup_ref: None,
+            undo_head: None,
         })
     }
 
@@ -373,22 +418,30 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<RewriteResult, AppError> {
         if interactive {
-            // Prefer loading a plan from HEAD~N is not enough — callers should use
-            // rebase_interactive_plan + rebase_interactive_start. Keep a safe default:
-            // treat as "rebase -i" with all picks from upstream..HEAD.
-            let plan = self
-                .rebase_interactive_plan_from_upstream(cwd, upstream, cancel)
-                .await?;
+            if branch.is_some() || keep_empty || update_refs {
+                return Err(AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "branch, keep-empty and update-refs require ordinary rebase",
+                ));
+            }
+            let mut plan = if root {
+                self.rebase_interactive_plan(cwd, "", cancel).await?
+            } else {
+                self.rebase_interactive_plan_from_upstream(cwd, upstream, cancel)
+                    .await?
+            };
+            plan.onto = onto.map(str::to_string);
+            plan.rebase_merges = rebase_merges;
+            plan.autosquash = autosquash;
             return self
                 .rebase_interactive_start(cwd, &plan, smart, cancel)
                 .await;
         }
         self.ensure_not_busy(cwd, cancel).await?;
-        let old = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "rebase", &old, cancel).await.ok();
+        // `git rebase <upstream> <branch>` checks out and rewrites <branch>.
+        // Undo must restore that branch's tip, not the caller's initial HEAD.
+        let old = self.rebase_target_head(cwd, branch, cancel).await?;
+        let backup = Some(self.safety_backup(cwd, "rebase", &old, cancel).await?);
 
         let mut args = vec!["rebase".to_string()];
         if rebase_merges {
@@ -410,6 +463,7 @@ impl GitRunner {
             args.push("--onto".into());
             args.push(onto.to_string());
         }
+        args.push("--".into());
         if !root {
             args.push(upstream.to_string());
         }
@@ -440,6 +494,7 @@ impl GitRunner {
                         },
                         conflict_files: files,
                         backup_ref: backup,
+                        undo_head: None,
                     });
                 }
                 let outcome = if old == new {
@@ -458,6 +513,7 @@ impl GitRunner {
                     },
                     conflict_files: vec![],
                     backup_ref: backup,
+                    undo_head: None,
                 })
             }
             Err(e) => {
@@ -511,14 +567,7 @@ impl GitRunner {
                 "no commits to cherry-pick",
             ));
         }
-        let old = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
-        let backup = self
-            .safety_backup(cwd, "cherry-pick", &old, cancel)
-            .await
-            .ok();
+        let (old, backup) = self.backup_current_head(cwd, "cherry-pick", cancel).await?;
 
         let mut args = vec!["cherry-pick".to_string()];
         if add_suffix {
@@ -552,6 +601,7 @@ impl GitRunner {
                         message: format!("Conflicts in {} file(s)", files.len().max(1)),
                         conflict_files: files,
                         backup_ref: backup,
+                        undo_head: None,
                     });
                 }
                 Ok(RewriteResult {
@@ -561,6 +611,7 @@ impl GitRunner {
                     message: format!("Cherry-picked {} commit(s)", shas.len()),
                     conflict_files: vec![],
                     backup_ref: backup,
+                    undo_head: None,
                 })
             }
             Err(e) => {
@@ -646,11 +697,24 @@ impl GitRunner {
         // `--continue` commits with the prepared sequencer message. Without a
         // non-interactive editor, dumb-terminal / non-TTY environments (CI,
         // GUI hosts) fail with "Terminal is dumb, but EDITOR unset".
-        let inv = if flag == "--continue" {
+        let inv = if flag == "--continue" || (cmd == "rebase" && flag == "--skip") {
+            // The marker lives inside this active rebase, so completed/aborted
+            // plans cannot affect a subsequent rebase started outside gitx.
+            let editor = if cmd == "rebase"
+                && self
+                    .git_dir(cwd, cancel)
+                    .await?
+                    .join("rebase-merge/gitx-plan.json")
+                    .is_file()
+            {
+                crate::history_rewrite_ops::helper_command("editor")
+            } else {
+                "true".to_string()
+            };
             GitInvocation::new(cwd, ["-c", "core.editor=true", cmd, flag])
                 .kind(OpKind::Write)
                 .git_bin(self.git_bin.clone())
-                .env("GIT_EDITOR", "true")
+                .env("GIT_EDITOR", editor)
                 .env("EDITOR", "true")
         } else {
             GitInvocation::new(cwd, [cmd, flag])
@@ -678,21 +742,29 @@ impl GitRunner {
                         new_head: new,
                         outcome: RewriteOutcome::Conflicts,
                         message: if files.is_empty() {
-                            format!("{cmd} {flag} — still in progress")
+                            format!(
+                                "{cmd} {flag} — still in progress{}",
+                                self.smart_stash_note(cwd, cancel).await?
+                            )
                         } else {
                             format!("Conflicts in {} file(s)", files.len())
                         },
                         conflict_files: files,
                         backup_ref: backup,
+                        undo_head: None,
                     });
                 }
                 Ok(RewriteResult {
                     old_head: old,
                     new_head: new,
                     outcome: RewriteOutcome::Success,
-                    message: format!("{cmd} {flag}"),
+                    message: {
+                        self.finish_smart_stash(cwd, cmd, cancel).await?;
+                        format!("{cmd} {flag}")
+                    },
                     conflict_files: vec![],
                     backup_ref: backup,
+                    undo_head: None,
                 })
             }
             Err(e) => {
@@ -711,74 +783,13 @@ impl GitRunner {
         smart: bool,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
+        let inv = GitInvocation::new(cwd, args)
+            .kind(kind)
+            .git_bin(self.git_bin.clone());
         if smart {
-            return self.with_clean_tree(cwd, op_name, args, kind, cancel).await;
+            return self.with_clean_tree_inv(cwd, op_name, inv, cancel).await;
         }
-        let inv = GitInvocation::new(cwd, args)
-            .kind(kind)
-            .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await.map(|_| ())
-    }
-
-    /// Stash → run op → stash pop (Smart Merge / #83 / #114 stash path).
-    async fn with_clean_tree(
-        &self,
-        cwd: &Path,
-        op_name: &str,
-        args: Vec<String>,
-        kind: OpKind,
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let msg = format!("gitx: {op_name}");
-        let stash_inv = GitInvocation::new(
-            cwd,
-            [
-                "stash".into(),
-                "push".into(),
-                "--include-untracked".into(),
-                "-m".into(),
-                msg,
-            ],
-        )
-        .kind(OpKind::Write)
-        .git_bin(self.git_bin.clone());
-        let stashed = match self.run(stash_inv, cancel).await {
-            Ok(_) => true,
-            Err(e) => {
-                let m = e.message.to_lowercase();
-                if m.contains("no local changes") || m.contains("no changes") {
-                    false
-                } else {
-                    return Err(e);
-                }
-            }
-        };
-
-        let inv = GitInvocation::new(cwd, args)
-            .kind(kind)
-            .git_bin(self.git_bin.clone());
-        let op_result = self.run(inv, cancel).await;
-
-        if stashed {
-            let pop = GitInvocation::new(cwd, ["stash", "pop", "--index"])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            if let Err(pop_err) = self.run(pop, cancel).await {
-                // Keep stash; surface restore conflict separately if op succeeded.
-                if op_result.is_ok() {
-                    return Err(AppError::new(
-                        ErrorCode::MergeConflict,
-                        format!(
-                            "Conflicts while restoring local changes (stash kept): {}",
-                            pop_err.message
-                        ),
-                    )
-                    .with_stderr(pop_err.git_stderr.unwrap_or_default()));
-                }
-            }
-        }
-
-        op_result.map(|_| ())
     }
 
     pub(crate) async fn map_rewrite_err(
@@ -793,11 +804,27 @@ impl GitRunner {
         let stderr = e.git_stderr.clone().unwrap_or_else(|| e.message.clone());
         let lower = stderr.to_lowercase();
 
+        // Rebase also refuses unrelated staged/unstaged edits, without the
+        // "would be overwritten" wording used by merge and cherry-pick.
+        let rebase_needs_clean_tree = op == "rebase"
+            && lower.contains("cannot rebase:")
+            && (lower.contains("unstaged changes")
+                || lower.contains("index contains uncommitted changes"));
         if lower.contains("would be overwritten")
             || lower.contains("your local changes to the following files")
             || lower.contains("untracked working tree files would be overwritten")
+            || rebase_needs_clean_tree
         {
-            let files = extract_overwritten_files(&stderr);
+            let files = if rebase_needs_clean_tree {
+                self.status_get(cwd, "", 0, cancel)
+                    .await?
+                    .files
+                    .into_iter()
+                    .map(|file| file.path)
+                    .collect()
+            } else {
+                extract_overwritten_files(&stderr)
+            };
             return Err(AppError::new(
                 if lower.contains("untracked") {
                     ErrorCode::UntrackedWouldBeOverwritten
@@ -832,9 +859,14 @@ impl GitRunner {
                 old_head: old.to_string(),
                 new_head: new,
                 outcome: RewriteOutcome::Conflicts,
-                message: format!("Conflicts in {} file(s)", files.len().max(1)),
+                message: format!(
+                    "Conflicts in {} file(s){}",
+                    files.len().max(1),
+                    self.smart_stash_note(cwd, cancel).await?
+                ),
                 conflict_files: files,
                 backup_ref: backup,
+                undo_head: None,
             });
         }
 
@@ -857,6 +889,49 @@ impl GitRunner {
         Ok(())
     }
 
+    // Merge and cherry-pick may create the first commit on an unborn branch.
+    // Only that case has no previous HEAD to back up; other failures propagate.
+    async fn backup_current_head(
+        &self,
+        cwd: &Path,
+        op: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(String, Option<String>), AppError> {
+        let invocation =
+            GitInvocation::new(cwd, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+                .git_bin(self.git_bin.clone());
+        let head = match self.run(invocation, cancel).await {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+            Err(error) if error.exit_code == Some(1) => {
+                let output = self
+                    .run(
+                        GitInvocation::new(cwd, ["symbolic-ref", "--quiet", "HEAD"])
+                            .git_bin(self.git_bin.clone()),
+                        cancel,
+                    )
+                    .await?;
+                let reference = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                match self
+                    .run(
+                        GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", &reference])
+                            .git_bin(self.git_bin.clone()),
+                        cancel,
+                    )
+                    .await
+                {
+                    Err(missing) if missing.exit_code == Some(1) => {
+                        return Ok((String::new(), None))
+                    }
+                    Err(other) => return Err(other),
+                    Ok(_) => return Err(error),
+                }
+            }
+            Err(error) => return Err(error),
+        };
+        let backup = self.safety_backup(cwd, op, &head, cancel).await?;
+        Ok((head, Some(backup)))
+    }
+
     pub(crate) async fn safety_backup(
         &self,
         cwd: &Path,
@@ -871,24 +946,27 @@ impl GitRunner {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        // Multiple operations in one second must never replace an earlier undo
+        // target. Keep the suffix free of hyphens for companion_wt_ref.
+        let ts = format!("{ts}_{}", uuid::Uuid::new_v4().simple());
         let backup = format!("refs/gitx/backup/{op}-{ts}");
-        let inv = GitInvocation::new(cwd, ["update-ref", &backup, sha])
+        let inv = GitInvocation::new(cwd, ["update-ref", &backup, sha, ""])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
-        // Also stash-create snapshot of worktree when dirty (best-effort).
+        // Retain the index and tracked worktree separately without changing
+        // either. A destructive caller must not proceed if this backup fails.
         let create = GitInvocation::new(cwd, ["stash", "create"])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
-        if let Ok(out) = self.run(create, cancel).await {
-            let stash_sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !stash_sha.is_empty() {
-                let snap = format!("refs/gitx/backup/{op}-wt-{ts}");
-                let inv = GitInvocation::new(cwd, ["update-ref", &snap, &stash_sha])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                let _ = self.run(inv, cancel).await;
-            }
+        let out = self.run(create, cancel).await?;
+        let stash_sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !stash_sha.is_empty() {
+            let snap = format!("refs/gitx/backup/{op}-wt-{ts}");
+            let inv = GitInvocation::new(cwd, ["update-ref", &snap, &stash_sha, ""])
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone());
+            self.run(inv, cancel).await?;
         }
         Ok(backup)
     }
@@ -903,12 +981,7 @@ impl GitRunner {
             .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
         let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        let path = PathBuf::from(&p);
-        if path.is_absolute() {
-            Ok(path)
-        } else {
-            Ok(cwd.join(path))
-        }
+        Ok(crate::resolve_git_path(cwd, &p))
     }
 
     pub(crate) async fn unmerged_paths(

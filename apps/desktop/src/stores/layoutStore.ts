@@ -8,6 +8,7 @@ const KEY = "gitx.layout.v1";
 export const useLayoutStore = defineStore("layout", () => {
   const leftOpen = ref(true);
   const bottomOpen = ref(true);
+  const bottomMaximized = ref(false);
   const leftSize = ref(28);
   const bottomSize = ref(32);
   const activeBottomTab = ref<
@@ -31,7 +32,11 @@ export const useLayoutStore = defineStore("layout", () => {
       if (typeof data.bottomOpen === "boolean") bottomOpen.value = data.bottomOpen;
       if (typeof data.leftSize === "number") leftSize.value = data.leftSize;
       if (typeof data.bottomSize === "number") bottomSize.value = data.bottomSize;
-      if (data.commitTwMode === "docked" || data.commitTwMode === "window" || data.commitTwMode === "float") {
+      if (
+        data.commitTwMode === "docked" ||
+        data.commitTwMode === "window" ||
+        data.commitTwMode === "float"
+      ) {
         commitTwMode.value = data.commitTwMode;
       }
       if (typeof data.commitControlsHidden === "boolean") {
@@ -63,10 +68,7 @@ export const useLayoutStore = defineStore("layout", () => {
   } else if (!leftOpen.value) {
     leftOpen.value = true;
   }
-  watch(
-    [leftOpen, bottomOpen, leftSize, bottomSize, commitTwMode, commitControlsHidden],
-    persist,
-  );
+  watch([leftOpen, bottomOpen, leftSize, bottomSize, commitTwMode, commitControlsHidden], persist);
 
   async function setCommitTwMode(mode: CommitTwMode) {
     const prev = commitTwMode.value;
@@ -100,6 +102,7 @@ export const useLayoutStore = defineStore("layout", () => {
   return {
     leftOpen,
     bottomOpen,
+    bottomMaximized,
     leftSize,
     bottomSize,
     activeBottomTab,

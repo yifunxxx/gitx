@@ -24,6 +24,10 @@ pnpm dev:web          # UI against mockBackend (no Rust window)
 pnpm tauri:dev        # full desktop shell
 ```
 
+Desktop development and packaging automatically build and stage the matching
+`gitx-helper` sidecar. To launch `target/debug/gitx.exe` directly after a source
+change, build **both** binaries with `cargo build -p gitx -p gitx-helper`.
+
 Useful checks:
 
 ```bash
@@ -32,6 +36,19 @@ pnpm test
 cargo test -p gitx-git -p gitx-testkit
 cargo build -p gitx-helper
 ```
+
+Starting the debug app does not rewrite frontend bindings. To explicitly export
+the current IPC types to a review file in PowerShell:
+
+```powershell
+cargo build -p gitx
+$env:GITX_EXPORT_BINDINGS = "$PWD/test-results/bindings.generated.ts"
+./target/debug/gitx.exe
+Remove-Item Env:GITX_EXPORT_BINDINGS
+```
+
+The export process exits without opening a window. Review the generated types
+before replacing the checked-in frontend adapter.
 
 ### Theme & language
 

@@ -1,7 +1,7 @@
 use crate::state::AppState;
 use gitx_core::{
     AppError, BlameResult, BlobContent, ChangedFile, CommitDetails, ErrorCode, HistoryPage,
-    IndexStatus, LogCommit, LogFilters, LogPage, TreeEntry,
+    IndexStatus, LogCommit, LogFilters, LogLocation, LogPage, TreeEntry,
 };
 use gitx_graph::layout_graph;
 use gitx_index::LogIndex;
@@ -26,6 +26,31 @@ pub struct LogQueryReq {
 
 fn default_limit() -> u32 {
     100
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogLocateReq {
+    pub path: String,
+    pub revision: String,
+    #[serde(default)]
+    pub filters: LogFilters,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn log_locate(
+    state: State<'_, AppState>,
+    req: LogLocateReq,
+) -> Result<LogLocation, AppError> {
+    let git = state.git.read().await;
+    git.log_locate(
+        &PathBuf::from(&req.path),
+        &req.revision,
+        &req.filters,
+        &CancellationToken::new(),
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -251,6 +276,10 @@ pub async fn checkout_path_from_rev(
     let cwd = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.checkout_path_from_rev(&cwd, &req.rev, &req.file_path, &cancel)
         .await
 }

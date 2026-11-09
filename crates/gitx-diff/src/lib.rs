@@ -401,64 +401,7 @@ pub fn apply_selected_hunks_to_base(
     worktree: &str,
     selected_hunk_indexes: &[u32],
 ) -> String {
-    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
-    if selected_hunk_indexes.is_empty() {
-        return base.to_string();
-    }
-    let selected: std::collections::HashSet<u32> = selected_hunk_indexes.iter().copied().collect();
-
-    // Rebuild by walking all hunks: for selected, take new side; for unselected, keep old side.
-    // Approach: start from base lines, apply selected hunks in reverse order.
-    let mut result_lines: Vec<String> = if base.is_empty() {
-        Vec::new()
-    } else {
-        base.split_inclusive('\n')
-            .map(|l| l.trim_end_matches('\n').to_string())
-            .collect()
-    };
-    // If base ended with newline, split_inclusive keeps structure; normalize without empties from trailing.
-    if base.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
-        result_lines.pop();
-    }
-
-    let mut selected_hunks: Vec<&DiffHunk> = hunks
-        .iter()
-        .filter(|h| selected.contains(&h.index))
-        .collect();
-    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.old_start));
-
-    for hunk in selected_hunks {
-        let start = if hunk.old_start == 0 {
-            0
-        } else {
-            (hunk.old_start as usize).saturating_sub(1)
-        };
-        let end = start + hunk.old_lines as usize;
-        let mut replacement: Vec<String> = Vec::new();
-        for line in &hunk.lines {
-            if let Some(rest) = line.strip_prefix('+') {
-                replacement.push(rest.to_string());
-            } else if let Some(rest) = line.strip_prefix(' ') {
-                replacement.push(rest.to_string());
-            }
-            // '-' lines omitted
-        }
-        if end > result_lines.len() {
-            // Fallback: append replacement.
-            result_lines.extend(replacement);
-        } else {
-            result_lines.splice(start..end, replacement);
-        }
-    }
-
-    if result_lines.is_empty() {
-        return String::new();
-    }
-    let mut out = result_lines.join("\n");
-    if worktree.ends_with('\n') || base.ends_with('\n') {
-        out.push('\n');
-    }
-    out
+    select_hunks(base, worktree, selected_hunk_indexes, false)
 }
 
 /// Unstage selected hunks: remove those changes from index toward HEAD text.
@@ -467,283 +410,179 @@ pub fn apply_unstage_hunks_to_index(
     index: &str,
     selected_hunk_indexes: &[u32],
 ) -> String {
-    // Hunks of head→index; unstaging selected means revert those hunks on index back toward head.
-    let hunks = compute_hunks(Some(head), Some(index), &DiffComputeOptions::default());
-    let selected: std::collections::HashSet<u32> = selected_hunk_indexes.iter().copied().collect();
-
-    let mut result_lines: Vec<String> = if index.is_empty() {
-        Vec::new()
-    } else {
-        index
-            .split_inclusive('\n')
-            .map(|l| l.trim_end_matches('\n').to_string())
-            .collect()
-    };
-    if index.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
-        result_lines.pop();
-    }
-
-    // Map: for each selected hunk in head→index, the new side is in index.
-    // Revert = replace new-side region with old-side lines.
-    let mut selected_hunks: Vec<&DiffHunk> = hunks
-        .iter()
-        .filter(|h| selected.contains(&h.index))
-        .collect();
-    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.new_start));
-
-    for hunk in selected_hunks {
-        let start = if hunk.new_start == 0 {
-            0
-        } else {
-            (hunk.new_start as usize).saturating_sub(1)
-        };
-        let end = start + hunk.new_lines as usize;
-        let mut replacement: Vec<String> = Vec::new();
-        for line in &hunk.lines {
-            if let Some(rest) = line.strip_prefix('-') {
-                replacement.push(rest.to_string());
-            } else if let Some(rest) = line.strip_prefix(' ') {
-                replacement.push(rest.to_string());
-            }
-        }
-        if end > result_lines.len() {
-            result_lines = replacement;
-        } else {
-            result_lines.splice(start..end, replacement);
-        }
-    }
-
-    if result_lines.is_empty() {
-        return String::new();
-    }
-    let mut out = result_lines.join("\n");
-    if head.ends_with('\n') || index.ends_with('\n') {
-        out.push('\n');
-    }
-    out
+    select_hunks(head, index, selected_hunk_indexes, true)
 }
 
-/// Apply selected *new-side* line numbers (1-based) from worktree onto base.
-///
-/// For each hunk between base→worktree, only the `+` lines whose new-side line
-/// number is in `selected_new_lines` are applied; other worktree changes stay out.
+fn select_hunks(base: &str, worktree: &str, selected: &[u32], revert: bool) -> String {
+    let original = if revert { worktree } else { base };
+    if selected.is_empty() {
+        return original.to_string();
+    }
+    let selected: std::collections::HashSet<u32> = selected.iter().copied().collect();
+    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
+    let old_lines = exact_lines(base);
+    let new_lines = exact_lines(worktree);
+    let original_lines = if revert { &new_lines } else { &old_lines };
+    let mut cursor = 0;
+    let mut fragments = Vec::new();
+    for hunk in hunks.iter().filter(|hunk| selected.contains(&hunk.index)) {
+        let mut old = hunk.old_start.saturating_sub(1) as usize;
+        let mut new = hunk.new_start.saturating_sub(1) as usize;
+        let start = if revert { new } else { old };
+        fragments.extend_from_slice(&original_lines[cursor..start]);
+        // Hunk display strings have normalized line endings. Use only their
+        // tags and positions, copying exact bytes from the corresponding side.
+        for line in &hunk.lines {
+            match line.as_bytes()[0] {
+                b' ' => {
+                    fragments.push(if revert {
+                        new_lines[new]
+                    } else {
+                        old_lines[old]
+                    });
+                    old += 1;
+                    new += 1;
+                }
+                b'-' => {
+                    if revert {
+                        fragments.push(old_lines[old]);
+                    }
+                    old += 1;
+                }
+                b'+' => {
+                    if !revert {
+                        fragments.push(new_lines[new]);
+                    }
+                    new += 1;
+                }
+                _ => unreachable!("computed hunk line tag"),
+            }
+        }
+        cursor = if revert { new } else { old };
+    }
+    fragments.extend_from_slice(&original_lines[cursor..]);
+    fragments.concat()
+}
+
+/// Apply selected new-side file lines without moving later edits or changing
+/// unselected bytes. Adjacent replacement lines are paired in source order;
+/// pure deletion blocks have no new-side line and require hunk/file staging.
 pub fn apply_selected_lines_to_base(
     base: &str,
     worktree: &str,
     selected_new_lines: &[u32],
 ) -> String {
-    if selected_new_lines.is_empty() {
-        return base.to_string();
-    }
-    let selected: std::collections::HashSet<u32> = selected_new_lines.iter().copied().collect();
-    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
-
-    // Collect hunk indexes that contain at least one selected new line.
-    let mut partial_by_hunk: Vec<(u32, Vec<u32>)> = Vec::new();
-    for h in &hunks {
-        let mut lines_in_hunk = Vec::new();
-        let mut new_line = h.new_start;
-        for line in &h.lines {
-            if line.starts_with('+') {
-                if selected.contains(&new_line) {
-                    lines_in_hunk.push(new_line);
-                }
-                new_line += 1;
-            } else if line.starts_with(' ') {
-                new_line += 1;
-            }
-            // '-' does not advance new_line
-        }
-        if !lines_in_hunk.is_empty() {
-            // If every + line in the hunk is selected, apply whole hunk.
-            let total_plus = h.lines.iter().filter(|l| l.starts_with('+')).count() as u32;
-            if lines_in_hunk.len() as u32 == total_plus && h.old_lines > 0 {
-                partial_by_hunk.push((h.index, Vec::new())); // empty = whole hunk
-            } else if lines_in_hunk.len() as u32 == total_plus && h.old_lines == 0 {
-                partial_by_hunk.push((h.index, Vec::new()));
-            } else {
-                partial_by_hunk.push((h.index, lines_in_hunk));
-            }
-        }
-    }
-
-    // Whole-hunk path for fully selected hunks.
-    let whole: Vec<u32> = partial_by_hunk
-        .iter()
-        .filter(|(_, lines)| lines.is_empty())
-        .map(|(idx, _)| *idx)
-        .collect();
-    let mut result = if whole.is_empty() {
-        base.to_string()
-    } else {
-        apply_selected_hunks_to_base(base, worktree, &whole)
-    };
-
-    // Partial hunks: surgically insert only selected + lines.
-    let mut partials: Vec<&DiffHunk> = hunks
-        .iter()
-        .filter(|h| {
-            partial_by_hunk
-                .iter()
-                .any(|(idx, lines)| *idx == h.index && !lines.is_empty())
-        })
-        .collect();
-    partials.sort_by_key(|h| std::cmp::Reverse(h.old_start));
-
-    for hunk in partials {
-        let sel_lines: Vec<u32> = partial_by_hunk
-            .iter()
-            .find(|(idx, _)| *idx == hunk.index)
-            .map(|(_, l)| l.clone())
-            .unwrap_or_default();
-        let sel_set: std::collections::HashSet<u32> = sel_lines.iter().copied().collect();
-
-        let mut result_lines: Vec<String> = if result.is_empty() {
-            Vec::new()
-        } else {
-            result
-                .split_inclusive('\n')
-                .map(|l| l.trim_end_matches('\n').to_string())
-                .collect()
-        };
-        if result.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
-            result_lines.pop();
-        }
-
-        // Build replacement for this hunk region: keep '-' (old) unless we have a
-        // selected '+' that replaces; for pure additions, insert selected + lines
-        // after the old_start position without deleting old lines that aren't paired.
-        let start = if hunk.old_start == 0 {
-            0
-        } else {
-            (hunk.old_start as usize).saturating_sub(1)
-        };
-        let end = start + hunk.old_lines as usize;
-
-        let mut replacement: Vec<String> = Vec::new();
-        let mut new_line = hunk.new_start;
-        for line in &hunk.lines {
-            if let Some(rest) = line.strip_prefix('+') {
-                if sel_set.contains(&new_line) {
-                    replacement.push(rest.to_string());
-                }
-                new_line += 1;
-            } else if let Some(rest) = line.strip_prefix(' ') {
-                replacement.push(rest.to_string());
-                new_line += 1;
-            } else if let Some(rest) = line.strip_prefix('-') {
-                // Keep deleted line in base unless every change in hunk is selected
-                // (handled by whole-hunk path). For partial, keep the old line.
-                replacement.push(rest.to_string());
-            }
-        }
-
-        if end > result_lines.len() {
-            result_lines.extend(replacement);
-        } else {
-            result_lines.splice(start..end, replacement);
-        }
-
-        if result_lines.is_empty() {
-            result = String::new();
-        } else {
-            let mut out = result_lines.join("\n");
-            if worktree.ends_with('\n') || base.ends_with('\n') {
-                out.push('\n');
-            }
-            result = out;
-        }
-    }
-
-    result
+    select_new_lines(base, worktree, selected_new_lines, false)
 }
 
-/// Build target worktree text by reverting selected new-side lines toward base.
+/// Revert selected new-side file lines, preserving unselected worktree bytes.
 pub fn revert_selected_lines_to_base(
     base: &str,
     worktree: &str,
     selected_new_lines: &[u32],
 ) -> String {
-    // Inverse of staging selected lines: keep worktree except selected changes → base.
-    if selected_new_lines.is_empty() {
-        return worktree.to_string();
-    }
-    let selected: std::collections::HashSet<u32> = selected_new_lines.iter().copied().collect();
-    let hunks = compute_hunks(Some(base), Some(worktree), &DiffComputeOptions::default());
-
-    let mut result_lines: Vec<String> = if worktree.is_empty() {
-        Vec::new()
-    } else {
-        worktree
-            .split_inclusive('\n')
-            .map(|l| l.trim_end_matches('\n').to_string())
-            .collect()
-    };
-    if worktree.ends_with('\n') && result_lines.last().is_some_and(|l| l.is_empty()) {
-        result_lines.pop();
-    }
-
-    let mut selected_hunks: Vec<&DiffHunk> = hunks
-        .iter()
-        .filter(|h| {
-            let mut new_line = h.new_start;
-            for line in &h.lines {
-                if line.starts_with('+') {
-                    if selected.contains(&new_line) {
-                        return true;
-                    }
-                    new_line += 1;
-                } else if line.starts_with(' ') {
-                    new_line += 1;
-                }
-            }
-            // Also: pure deletions (no +) — treat entire hunk as selected if any
-            // overlapping concept; for line-level we only handle + lines here.
-            false
-        })
-        .collect();
-    selected_hunks.sort_by_key(|h| std::cmp::Reverse(h.new_start));
-
-    for hunk in selected_hunks {
-        let start = if hunk.new_start == 0 {
-            0
-        } else {
-            (hunk.new_start as usize).saturating_sub(1)
-        };
-        let end = start + hunk.new_lines as usize;
-        let mut replacement: Vec<String> = Vec::new();
-        let mut new_line = hunk.new_start;
-        for line in &hunk.lines {
-            if let Some(rest) = line.strip_prefix('-') {
-                replacement.push(rest.to_string());
-            } else if let Some(rest) = line.strip_prefix(' ') {
-                replacement.push(rest.to_string());
-                new_line += 1;
-            } else if let Some(rest) = line.strip_prefix('+') {
-                if !selected.contains(&new_line) {
-                    replacement.push(rest.to_string());
-                }
-                new_line += 1;
-            }
-        }
-        if end > result_lines.len() {
-            result_lines = replacement;
-        } else {
-            result_lines.splice(start..end, replacement);
-        }
-    }
-
-    if result_lines.is_empty() {
-        return String::new();
-    }
-    let mut out = result_lines.join("\n");
-    if worktree.ends_with('\n') || base.ends_with('\n') {
-        out.push('\n');
-    }
-    out
+    select_new_lines(base, worktree, selected_new_lines, true)
 }
 
-/// Three-way merge (line-based). Non-overlapping edits auto-merge; overlaps → Conflict.
+/// Split display lines while retaining their original CRLF/LF/CR/EOF bytes.
+fn exact_lines(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut result = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\r' || bytes[i] == b'\n' {
+            if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
+                i += 1;
+            }
+            result.push(&text[start..=i]);
+            start = i + 1;
+        }
+        i += 1;
+    }
+    if start < text.len() {
+        result.push(&text[start..]);
+    }
+    result
+}
+
+fn select_new_lines(base: &str, worktree: &str, selected: &[u32], revert: bool) -> String {
+    if selected.is_empty() {
+        return if revert { worktree } else { base }.to_string();
+    }
+    let selected: std::collections::HashSet<u32> = selected.iter().copied().collect();
+    let old_lines = exact_lines(base);
+    let new_lines = exact_lines(worktree);
+    let normalized_old = normalize_newlines(base);
+    let normalized_new = normalize_newlines(worktree);
+    let diff = configure_diff(old_lines.len().max(new_lines.len()))
+        .diff_lines(normalized_old.as_ref(), normalized_new.as_ref());
+    let changes: Vec<_> = diff.iter_all_changes().collect();
+    let mut fragments = Vec::new();
+    let mut cursor = 0;
+    while cursor < changes.len() {
+        let change = &changes[cursor];
+        if change.tag() == ChangeTag::Equal {
+            fragments.push(if revert {
+                new_lines[change.new_index().expect("equal new line")]
+            } else {
+                old_lines[change.old_index().expect("equal old line")]
+            });
+            cursor += 1;
+            continue;
+        }
+        let mut removed = Vec::new();
+        let mut added = Vec::new();
+        while cursor < changes.len() && changes[cursor].tag() != ChangeTag::Equal {
+            let change = &changes[cursor];
+            if let Some(index) = change.old_index() {
+                removed.push(index);
+            }
+            if let Some(index) = change.new_index() {
+                added.push(index);
+            }
+            cursor += 1;
+        }
+        let all_selected = !added.is_empty()
+            && added
+                .iter()
+                .all(|index| selected.contains(&(*index as u32 + 1)));
+        for offset in 0..removed.len().max(added.len()) {
+            let old = removed.get(offset).map(|index| old_lines[*index]);
+            let new = added.get(offset).map(|index| new_lines[*index]);
+            let picked = added
+                .get(offset)
+                .is_some_and(|index| selected.contains(&(*index as u32 + 1)));
+            let fragment = match (old, new) {
+                (Some(old), Some(new)) => Some(if picked != revert { new } else { old }),
+                (None, Some(new)) => (picked != revert).then_some(new),
+                (Some(old), None) => (all_selected == revert).then_some(old),
+                (None, None) => None,
+            };
+            if let Some(fragment) = fragment {
+                fragments.push(fragment);
+            }
+        }
+    }
+    let eol_source = if revert { base } else { worktree };
+    let separator = if eol_source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let mut output = String::new();
+    for fragment in fragments {
+        // Appending after a selected insertion may require a new EOF separator.
+        if !output.is_empty() && !output.ends_with(['\r', '\n']) {
+            output.push_str(separator);
+        }
+        output.push_str(fragment);
+    }
+    output
+}
+
+/// Three-way merge over complete line tokens, including their original terminators.
+/// Each side can be reconstructed exactly by concatenating its block lines.
 pub fn merge3(
     base: Option<&str>,
     ours: Option<&str>,
@@ -751,199 +590,95 @@ pub fn merge3(
 ) -> gitx_core::Merge3Result {
     use gitx_core::{Merge3Block, Merge3BlockKind, Merge3Result};
 
-    let strip = |s: &str| s.trim_end_matches('\n').to_string();
-    let base: Vec<String> = split_lines(base.unwrap_or(""))
-        .into_iter()
-        .map(strip)
-        .collect();
-    let ours: Vec<String> = split_lines(ours.unwrap_or(""))
-        .into_iter()
-        .map(strip)
-        .collect();
-    let theirs: Vec<String> = split_lines(theirs.unwrap_or(""))
-        .into_iter()
-        .map(strip)
-        .collect();
-
-    if ours == theirs {
-        return Merge3Result {
-            blocks: vec![Merge3Block {
-                kind: if ours == base {
-                    Merge3BlockKind::Equal
-                } else {
-                    Merge3BlockKind::BothSame
-                },
-                base_lines: base,
-                ours_lines: ours.clone(),
-                theirs_lines: theirs,
-                result_lines: ours,
-                is_simple: true,
-            }],
-            conflict_count: 0,
-        };
-    }
-    if ours == base {
-        return Merge3Result {
-            blocks: vec![Merge3Block {
-                kind: Merge3BlockKind::OnlyTheirs,
-                base_lines: base,
-                ours_lines: ours,
-                theirs_lines: theirs.clone(),
-                result_lines: theirs,
-                is_simple: true,
-            }],
-            conflict_count: 0,
-        };
-    }
-    if theirs == base {
-        return Merge3Result {
-            blocks: vec![Merge3Block {
-                kind: Merge3BlockKind::OnlyOurs,
-                base_lines: base,
-                ours_lines: ours.clone(),
-                theirs_lines: theirs,
-                result_lines: ours,
-                is_simple: true,
-            }],
-            conflict_count: 0,
-        };
-    }
-
+    let tokens = |text: &str| {
+        split_lines(text)
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let base = tokens(base.unwrap_or(""));
+    let ours = tokens(ours.unwrap_or(""));
+    let theirs = tokens(theirs.unwrap_or(""));
     let o_hunks = change_hunks(&base, &ours);
     let t_hunks = change_hunks(&base, &theirs);
-
-    // Cleaner second pass: walk with original hunk lists.
     let mut blocks = Vec::new();
-    let mut bi = 0usize;
-    let mut oh = 0usize;
-    let mut th = 0usize;
-    // Reconstruct side indices via applying hunks in order is hard; emit from hunks + equal gaps.
-    // Build result by reconstructing ours/theirs from hunks relative to base.
+    let (mut cursor, mut oh, mut th) = (0, 0, 0);
 
-    while bi <= base.len() {
-        let o_here = o_hunks.get(oh).filter(|h| h.base_start == bi);
-        let t_here = t_hunks.get(th).filter(|h| h.base_start == bi);
-
-        if o_here.is_none() && t_here.is_none() {
-            if bi == base.len() {
+    while oh < o_hunks.len() || th < t_hunks.len() {
+        let start = o_hunks
+            .get(oh)
+            .map(|h| h.base_start)
+            .unwrap_or(usize::MAX)
+            .min(t_hunks.get(th).map(|h| h.base_start).unwrap_or(usize::MAX));
+        if cursor < start {
+            let lines = base[cursor..start].to_vec();
+            blocks.push(Merge3Block {
+                kind: Merge3BlockKind::Equal,
+                base_lines: lines.clone(),
+                ours_lines: lines.clone(),
+                theirs_lines: lines.clone(),
+                result_lines: lines,
+                is_simple: true,
+            });
+        }
+        let (o_start, t_start) = (oh, th);
+        let mut end = start;
+        // Consume all touching-at-start or overlapping edits, including chains
+        // where one side's longer edit overlaps several edits on the other side.
+        // Every iteration consumes a hunk, even for two insertions at EOF.
+        loop {
+            let previous = (oh, th);
+            while let Some(h) = o_hunks.get(oh) {
+                if h.base_start != start && h.base_start >= end {
+                    break;
+                }
+                end = end.max(h.base_start + h.base_count);
+                oh += 1;
+            }
+            while let Some(h) = t_hunks.get(th) {
+                if h.base_start != start && h.base_start >= end {
+                    break;
+                }
+                end = end.max(h.base_start + h.base_count);
+                th += 1;
+            }
+            if previous == (oh, th) {
                 break;
             }
-            // Find next hunk.
-            let next = match (
-                o_hunks.get(oh).map(|h| h.base_start),
-                t_hunks.get(th).map(|h| h.base_start),
-            ) {
-                (Some(a), Some(b)) => a.min(b),
-                (Some(a), None) => a,
-                (None, Some(b)) => b,
-                (None, None) => base.len(),
-            };
-            if next > bi {
-                let slice = base[bi..next].to_vec();
-                blocks.push(Merge3Block {
-                    kind: Merge3BlockKind::Equal,
-                    base_lines: slice.clone(),
-                    ours_lines: slice.clone(),
-                    theirs_lines: slice.clone(),
-                    result_lines: slice,
-                    is_simple: true,
-                });
-                bi = next;
-                continue;
-            }
-            bi += 1;
-            continue;
         }
-
-        let o = o_here.cloned();
-        let t = t_here.cloned();
-        if o.is_some() {
-            oh += 1;
-        }
-        if t.is_some() {
-            th += 1;
-        }
-
-        match (o, t) {
-            (Some(ohk), None) => {
-                let end = (ohk.base_start + ohk.base_count).min(base.len());
-                let start = ohk.base_start.min(base.len());
-                let base_slice = base[start..end].to_vec();
-                blocks.push(Merge3Block {
-                    kind: Merge3BlockKind::OnlyOurs,
-                    base_lines: base_slice.clone(),
-                    ours_lines: ohk.inserted.clone(),
-                    theirs_lines: base_slice,
-                    result_lines: ohk.inserted,
-                    is_simple: true,
-                });
-                bi = end.max(bi + (ohk.base_count == 0) as usize);
-                if ohk.base_count == 0 {
-                    // insert-only: stay/advance past point
-                    bi = ohk.base_start;
-                    // prevent infinite loop: move past by treating as consumed at this index once
-                    // Advance bi only when no further hunks share this index.
-                    if o_hunks.get(oh).map(|h| h.base_start) != Some(ohk.base_start)
-                        && t_hunks.get(th).map(|h| h.base_start) != Some(ohk.base_start)
-                    {
-                        // keep bi; next loop looks for hunks at same bi or equals
-                    }
-                    // Force progress when only inserts remain at EOF
-                    if bi == base.len() && oh >= o_hunks.len() && th >= t_hunks.len() {
-                        break;
-                    }
-                    // For insert-only mid-file, do not advance bi; equal pass will not re-fire
-                    // because oh already advanced. Emit and continue with same bi.
-                }
-            }
-            (None, Some(thk)) => {
-                let end = (thk.base_start + thk.base_count).min(base.len());
-                let start = thk.base_start.min(base.len());
-                let base_slice = base[start..end].to_vec();
-                blocks.push(Merge3Block {
-                    kind: Merge3BlockKind::OnlyTheirs,
-                    base_lines: base_slice.clone(),
-                    ours_lines: base_slice,
-                    theirs_lines: thk.inserted.clone(),
-                    result_lines: thk.inserted,
-                    is_simple: true,
-                });
-                bi = if thk.base_count == 0 {
-                    thk.base_start
-                } else {
-                    end
-                };
-            }
-            (Some(ohk), Some(thk)) => {
-                let end = (ohk.base_start + ohk.base_count)
-                    .max(thk.base_start + thk.base_count)
-                    .min(base.len());
-                let base_slice = base[bi.min(base.len())..end].to_vec();
-                if ohk.inserted == thk.inserted && ohk.base_count == thk.base_count {
-                    blocks.push(Merge3Block {
-                        kind: Merge3BlockKind::BothSame,
-                        base_lines: base_slice,
-                        ours_lines: ohk.inserted.clone(),
-                        theirs_lines: thk.inserted.clone(),
-                        result_lines: ohk.inserted,
-                        is_simple: true,
-                    });
-                } else {
-                    blocks.push(Merge3Block {
-                        kind: Merge3BlockKind::Conflict,
-                        base_lines: base_slice,
-                        ours_lines: ohk.inserted,
-                        theirs_lines: thk.inserted,
-                        result_lines: Vec::new(),
-                        is_simple: false,
-                    });
-                }
-                bi = if end > bi { end } else { bi + 1 };
-            }
-            (None, None) => break,
-        }
+        let original = base[start..end].to_vec();
+        let left = merge_region(&base, start, end, &o_hunks[o_start..oh]);
+        let right = merge_region(&base, start, end, &t_hunks[t_start..th]);
+        let (kind, result) = if left == right {
+            (Merge3BlockKind::BothSame, left.clone())
+        } else if left == original {
+            (Merge3BlockKind::OnlyTheirs, right.clone())
+        } else if right == original {
+            (Merge3BlockKind::OnlyOurs, left.clone())
+        } else {
+            (Merge3BlockKind::Conflict, Vec::new())
+        };
+        blocks.push(Merge3Block {
+            kind,
+            base_lines: original,
+            ours_lines: left,
+            theirs_lines: right,
+            result_lines: result,
+            is_simple: kind != Merge3BlockKind::Conflict,
+        });
+        cursor = end;
     }
-
+    if cursor < base.len() {
+        let lines = base[cursor..].to_vec();
+        blocks.push(Merge3Block {
+            kind: Merge3BlockKind::Equal,
+            base_lines: lines.clone(),
+            ours_lines: lines.clone(),
+            theirs_lines: lines.clone(),
+            result_lines: lines,
+            is_simple: true,
+        });
+    }
     let conflict_count = blocks
         .iter()
         .filter(|b| b.kind == Merge3BlockKind::Conflict)
@@ -954,6 +689,18 @@ pub fn merge3(
     }
 }
 
+fn merge_region(base: &[String], start: usize, end: usize, hunks: &[ChangeHunk]) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut cursor = start;
+    for h in hunks {
+        lines.extend_from_slice(&base[cursor..h.base_start]);
+        lines.extend_from_slice(&h.inserted);
+        cursor = h.base_start + h.base_count;
+    }
+    lines.extend_from_slice(&base[cursor..end]);
+    lines
+}
+
 #[derive(Clone, Debug)]
 struct ChangeHunk {
     base_start: usize,
@@ -962,11 +709,9 @@ struct ChangeHunk {
 }
 
 fn change_hunks(base: &[String], side: &[String]) -> Vec<ChangeHunk> {
-    let left = base.join("\n");
-    let right = side.join("\n");
-    let diff = TextDiff::configure()
-        .algorithm(Algorithm::Myers)
-        .diff_lines(&left, &right);
+    let left = base.concat();
+    let right = side.concat();
+    let diff = configure_diff(base.len().max(side.len())).diff_lines(&left, &right);
     let mut hunks = Vec::new();
     let mut bi = 0usize;
     let mut pending_start = 0usize;
@@ -1007,8 +752,7 @@ fn change_hunks(base: &[String], side: &[String]) -> Vec<ChangeHunk> {
                     pending_start = bi;
                     in_hunk = true;
                 }
-                let line = change.to_string();
-                pending_ins.push(line.trim_end_matches('\n').to_string());
+                pending_ins.push(change.value().to_string());
             }
         }
     }
@@ -1022,6 +766,85 @@ fn change_hunks(base: &[String], side: &[String]) -> Vec<ChangeHunk> {
 mod tests {
     use super::*;
     use gitx_core::Merge3BlockKind;
+
+    #[test]
+    fn merge3_never_loses_source_lines() {
+        let variants = [
+            "",
+            "a\nb\nc\nd\n",
+            "a\nx\nd\n",
+            "a\nb\ny\n",
+            "a\nd\n",
+            "a\nb\nd\n",
+            "ours\na\nb\nc\nd\n",
+            "theirs\na\nb\nc\nd\n",
+            "a\nb\nc\nd\nlast",
+            "a\n\nb\nc\nd\n",
+            "a\nb\nc\nd",
+            "a\r\nb\r\nc\r\nd\r\n",
+            "\n",
+            "\n\n",
+        ];
+        let base = "a\nb\nc\nd\n";
+        for ours in variants {
+            for theirs in variants {
+                let merged = merge3(Some(base), Some(ours), Some(theirs));
+                let base_again: String = merged
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.base_lines.iter().cloned())
+                    .collect();
+                let ours_again: String = merged
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.ours_lines.iter().cloned())
+                    .collect();
+                let theirs_again: String = merged
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.theirs_lines.iter().cloned())
+                    .collect();
+                assert_eq!(base_again, base, "base lost with {ours:?} / {theirs:?}");
+                assert_eq!(ours_again, ours, "ours lost with {ours:?} / {theirs:?}");
+                assert_eq!(
+                    theirs_again, theirs,
+                    "theirs lost with {ours:?} / {theirs:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn merge3_detects_overlapping_changes_with_different_starts() {
+        let merged = merge3(
+            Some("a\nb\nc\nd\ne\n"),
+            Some("a\nours\nd\ne\n"),
+            Some("a\nb\ntheirs\ne\n"),
+        );
+        assert_eq!(merged.conflict_count, 1, "{merged:?}");
+        let conflict = merged
+            .blocks
+            .iter()
+            .find(|b| b.kind == Merge3BlockKind::Conflict)
+            .unwrap();
+        assert_eq!(conflict.base_lines.concat(), "b\nc\nd\n");
+        assert_eq!(conflict.ours_lines.concat(), "ours\nd\n");
+        assert_eq!(conflict.theirs_lines.concat(), "b\ntheirs\n");
+    }
+
+    #[test]
+    fn merge3_preserves_empty_lines_and_eof_when_auto_merging() {
+        let merged = merge3(Some("a\n\nc"), Some("A\n\nc"), Some("a\n\nC"));
+        assert_eq!(merged.conflict_count, 0);
+        assert_eq!(
+            merged
+                .blocks
+                .iter()
+                .flat_map(|b| b.result_lines.iter().cloned())
+                .collect::<String>(),
+            "A\n\nC"
+        );
+    }
 
     #[test]
     fn basic_hunk() {
@@ -1111,7 +934,7 @@ mod tests {
             .collect();
         // Pre-fix imports must be equal context, never delete+add of the whole block.
         assert!(
-            body.iter().any(|l| *l == " import a.A;"),
+            body.contains(&" import a.A;"),
             "identical import should be context: {body:?}"
         );
         assert!(
@@ -1127,7 +950,7 @@ mod tests {
             "identical lines must not be inserts: {body:?}"
         );
         assert!(
-            body.iter().any(|l| *l == "+import c.AnnotationApi;"),
+            body.contains(&"+import c.AnnotationApi;"),
             "real insert missing: {body:?}"
         );
         assert!(eol_mismatch(left, right));
@@ -1170,6 +993,6 @@ mod tests {
             .iter()
             .flat_map(|b| b.result_lines.clone())
             .collect();
-        assert_eq!(result, vec!["A", "b", "c", "D"]);
+        assert_eq!(result.concat(), "A\nb\nc\nD\n");
     }
 }

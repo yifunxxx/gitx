@@ -1,4 +1,4 @@
-use gitx_core::{JobId, JobInfo, JobKind};
+use gitx_core::{AppError, ErrorCode, JobId, JobInfo, JobKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -75,7 +75,20 @@ impl JobManager {
         cancellable: bool,
         background: bool,
     ) -> Arc<JobState> {
-        let id = JobId::new();
+        self.start_with_id(JobId::new(), kind, title, repo_ids, cancellable, background)
+            .await
+            .expect("new job UUID must be unique")
+    }
+
+    pub async fn start_with_id(
+        &self,
+        id: JobId,
+        kind: JobKind,
+        title: impl Into<String>,
+        repo_ids: Vec<gitx_core::RepoId>,
+        cancellable: bool,
+        background: bool,
+    ) -> Result<Arc<JobState>, AppError> {
         let info = JobInfo {
             id: id.clone(),
             kind,
@@ -89,12 +102,16 @@ impl JobManager {
             info: info.clone(),
             cancel: CancellationToken::new(),
         });
-        self.jobs
-            .write()
-            .await
-            .insert(id.0.clone(), Arc::clone(&state));
+        let mut jobs = self.jobs.write().await;
+        if jobs.contains_key(&id.0) {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "job ID is already running",
+            ));
+        }
+        jobs.insert(id.0.clone(), Arc::clone(&state));
         let _ = self.tx.send(JobEvent::Started(info));
-        state
+        Ok(state)
     }
 
     pub async fn emit_log(&self, id: &JobId, stream: &str, line: impl Into<String>) {
@@ -151,4 +168,53 @@ fn chrono_now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn exact_job_ids_isolate_cancellation_and_cannot_replace_a_running_job() {
+        let jobs = JobManager::new();
+        let first = jobs
+            .start_with_id(
+                JobId("first".into()),
+                JobKind::NetworkWrite,
+                "same title",
+                vec![],
+                true,
+                false,
+            )
+            .await
+            .unwrap();
+        let other = jobs
+            .start_with_id(
+                JobId("other".into()),
+                JobKind::NetworkWrite,
+                "same title",
+                vec![],
+                true,
+                false,
+            )
+            .await
+            .unwrap();
+        assert!(jobs
+            .start_with_id(
+                first.info.id.clone(),
+                JobKind::NetworkWrite,
+                "same title",
+                vec![],
+                true,
+                false
+            )
+            .await
+            .is_err());
+        assert!(jobs.cancel(&first.info.id).await);
+        assert!(first.cancel.is_cancelled());
+        assert!(!other.cancel.is_cancelled());
+        jobs.finish(&first.info.id, false, None, None).await;
+        assert!(!jobs.cancel(&first.info.id).await);
+        assert_eq!(jobs.list().await.len(), 1);
+    }
 }

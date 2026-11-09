@@ -43,6 +43,8 @@ pub struct UpdateProjectReq {
 pub struct PushPreviewReq {
     pub path: String,
     pub remote: Option<String>,
+    pub branch: Option<String>,
+    pub remote_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -51,6 +53,7 @@ pub struct PushRunReq {
     pub path: String,
     pub remote: String,
     pub branch: String,
+    pub remote_branch: Option<String>,
     pub set_upstream: bool,
     pub force_with_lease: bool,
     /// null | "all" | "current"
@@ -76,6 +79,10 @@ pub async fn fetch_run(
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.fetch_run(
         &path,
         req.remote.as_deref(),
@@ -92,6 +99,10 @@ pub async fn pull_run(state: State<'_, AppState>, req: PullRunReq) -> Result<Pul
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.pull_run(
         &path,
         &req.remote,
@@ -142,14 +153,12 @@ pub async fn update_project_run(
     };
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let info = git.update_project_run(&path, req.strategy, &cancel).await?;
-    if !matches!(policy, SubmoduleUpdatePolicy::Never) {
-        let changed: Vec<String> = info.updated_files.iter().map(|f| f.path.clone()).collect();
-        let _ = git
-            .submodule_update(&path, policy, Some(&changed), &cancel)
-            .await;
-    }
-    Ok(info)
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.update_project_with_submodules(&path, req.strategy, policy, &cancel)
+        .await
 }
 
 #[tauri::command]
@@ -167,6 +176,10 @@ pub async fn sync_fork(
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.sync_fork(&path, &parent, strategy, req.push_origin, &cancel)
         .await
 }
@@ -178,12 +191,14 @@ pub async fn submodule_update(
     req: SubmoduleUpdateReq,
 ) -> Result<SubmoduleUpdateResult, AppError> {
     let path = PathBuf::from(&req.path);
-    let policy = req.policy.unwrap_or_else(|| {
-        // callers that omit policy get Always for explicit action
-        SubmoduleUpdatePolicy::Always
-    });
+    // Callers that omit policy get Always for explicit action.
+    let policy = req.policy.unwrap_or(SubmoduleUpdatePolicy::Always);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.submodule_update(&path, policy, req.changed_paths.as_deref(), &cancel)
         .await
 }
@@ -197,8 +212,14 @@ pub async fn push_preview(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    git.push_preview(&path, req.remote.as_deref(), &cancel)
-        .await
+    git.push_preview(
+        &path,
+        req.remote.as_deref(),
+        req.branch.as_deref(),
+        req.remote_branch.as_deref(),
+        &cancel,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -210,10 +231,15 @@ pub async fn push_run(state: State<'_, AppState>, req: PushRunReq) -> Result<Pus
     drop(settings);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.push_run(
         &path,
         &req.remote,
         &req.branch,
+        req.remote_branch.as_deref(),
         req.set_upstream,
         req.force_with_lease,
         req.push_tags.as_deref(),

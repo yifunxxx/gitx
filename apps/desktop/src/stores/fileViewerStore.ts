@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { DiffHunk } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -19,6 +19,15 @@ export type FileViewerTab = {
 export const useFileViewerStore = defineStore("fileViewer", () => {
   const tabs = ref<FileViewerTab[]>([]);
   const activeId = ref<string | null>(null);
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      tabs.value = [];
+      activeId.value = null;
+    },
+    { flush: "sync" },
+  );
 
   async function open(filePath: string) {
     const workspace = useWorkspaceStore();
@@ -33,7 +42,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     }
 
     const id = `file:${filePath}`;
-    const tab: FileViewerTab = {
+    let tab: FileViewerTab = {
       id,
       path: filePath,
       title: filePath.split("/").pop() ?? filePath,
@@ -43,6 +52,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       editable: true,
     };
     tabs.value.push(tab);
+    tab = tabs.value.find((t) => t.id === id)!;
     activeId.value = id;
     layout.activeEditorKind = "file";
 

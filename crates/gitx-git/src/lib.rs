@@ -5,23 +5,30 @@
 mod clone_ops;
 mod conflict_ops;
 mod detect;
+mod head_state;
 mod history_rewrite_ops;
 mod ignore_ops;
 mod jobs;
+mod multi_root_checkout;
 mod multi_root_ops;
 mod ops;
+mod partial_ops;
 mod patch_ops;
+mod paths;
 mod process_win;
 mod progress;
 mod refs_ops;
 mod remote_ops;
 mod rewrite_ops;
+mod rewrite_undo;
 mod runner;
 mod scheduler;
 mod shelf_ops;
+mod smart_ops;
 mod stash_ops;
 mod status;
 mod stderr;
+mod submodule_ops;
 mod sync_ops;
 mod worktree_ops;
 
@@ -31,6 +38,7 @@ pub use detect::{
 };
 pub use jobs::{JobEvent, JobManager, JobProgress, JobState};
 pub use ops::RawLogCommit;
+pub use paths::resolve_git_path;
 pub use progress::ProgressParser;
 pub use runner::{helper_bin, GitInvocation, GitOutput, GitRunner, OpKind};
 pub use scheduler::RepoScheduler;

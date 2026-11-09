@@ -1,6 +1,6 @@
 use crate::state::AppState;
-use gitx_core::{AppError, CompareRange, ErrorCode, RefsList};
-use gitx_meta::{load_favorites, save_favorites};
+use gitx_core::{AppError, CompareRange, RefsList};
+use gitx_meta::{load_favorites, rename_favorite, toggle_favorite};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashSet;
@@ -78,9 +78,9 @@ pub struct BranchUpdateReq {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct FavoritesSetReq {
-    pub git_dir: String,
-    pub favorites: Vec<String>,
+pub struct FavoritesToggleReq {
+    pub path: String,
+    pub full_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -116,37 +116,32 @@ pub struct TagDeleteRes {
     pub sha: String,
 }
 
-fn resolve_git_dir(path: &str, git_dir: Option<&str>) -> PathBuf {
-    if let Some(gd) = git_dir {
-        let p = PathBuf::from(gd);
-        if p.is_absolute() {
-            return p;
-        }
-        return PathBuf::from(path).join(p);
-    }
-    PathBuf::from(path).join(".git")
-}
-
 #[tauri::command]
 #[specta::specta]
 pub async fn refs_list(state: State<'_, AppState>, req: RefsListReq) -> Result<RefsList, AppError> {
     let path = PathBuf::from(&req.path);
-    let git_dir = resolve_git_dir(&req.path, req.git_dir.as_deref());
-    let favs = load_favorites(&git_dir).unwrap_or_default();
-    let set: HashSet<String> = favs.into_iter().collect();
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let git_dir = git.git_dir(&path, &cancel).await?;
+    let favs = load_favorites(&git_dir)?;
+    let set: HashSet<String> = favs.into_iter().collect();
     git.refs_list(&path, &set, &cancel).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn favorites_set(
-    _state: State<'_, AppState>,
-    req: FavoritesSetReq,
+pub async fn favorites_toggle(
+    state: State<'_, AppState>,
+    req: FavoritesToggleReq,
 ) -> Result<(), AppError> {
-    let git_dir = PathBuf::from(&req.git_dir);
-    save_favorites(&git_dir, &req.favorites)
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    let git_dir = git.git_dir(&PathBuf::from(&req.path), &cancel).await?;
+    toggle_favorite(&git_dir, &req.full_name)
 }
 
 #[tauri::command]
@@ -158,6 +153,10 @@ pub async fn branch_create(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_create(
         &path,
         &req.name,
@@ -178,6 +177,10 @@ pub async fn branch_checkout(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_checkout(&path, &req.target, &req.mode, &cancel)
         .await
 }
@@ -191,6 +194,10 @@ pub async fn branch_rename(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_rename(
         &path,
         &req.old_name,
@@ -200,19 +207,11 @@ pub async fn branch_rename(
         &cancel,
     )
     .await?;
-    // Migrate favorites full names.
-    if let Some(gd) = req.git_dir.as_deref() {
-        let git_dir = resolve_git_dir(&req.path, Some(gd));
-        if let Ok(mut favs) = load_favorites(&git_dir) {
-            let old_full = format!("refs/heads/{}", req.old_name);
-            let new_full = format!("refs/heads/{}", req.new_name);
-            for f in &mut favs {
-                if f == &old_full || f == &req.old_name {
-                    *f = new_full.clone();
-                }
-            }
-            let _ = save_favorites(&git_dir, &favs);
-        }
+    // Keep the existing worktree-local favorites storage; derive its location
+    // from Git instead of trusting a possibly stale frontend gitDir.
+    let git_dir = git.git_dir(&path, &cancel).await?;
+    if let Err(error) = rename_favorite(&git_dir, &req.old_name, &req.new_name) {
+        tracing::warn!(%error, "branch renamed but favorites could not be migrated");
     }
     Ok(())
 }
@@ -226,6 +225,10 @@ pub async fn branch_delete(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let sha = git
         .branch_delete(&path, &req.name, req.force, &cancel)
         .await?;
@@ -241,6 +244,10 @@ pub async fn branch_restore(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_restore(&path, &req.name, &req.sha, &cancel)
         .await
 }
@@ -254,6 +261,10 @@ pub async fn branch_update(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.branch_update_ff(&path, &req.local, &req.remote_ref, &cancel)
         .await
 }
@@ -277,6 +288,10 @@ pub async fn tag_create(state: State<'_, AppState>, req: TagCreateReq) -> Result
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.tag_create(
         &path,
         &req.name,
@@ -309,6 +324,10 @@ pub async fn tag_delete(
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     if let Some(remote) = req.remote.as_deref() {
         use gitx_git::{GitInvocation, OpKind};
         let inv = GitInvocation::new(
@@ -335,5 +354,9 @@ pub async fn tag_push(state: State<'_, AppState>, req: TagPushReq) -> Result<(),
     let path = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     git.tag_push(&path, &req.name, &req.remote, &cancel).await
 }

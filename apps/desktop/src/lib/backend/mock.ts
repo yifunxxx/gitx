@@ -641,7 +641,6 @@ function mockLog(): LogCommit[] {
   ];
 }
 
-
 let mockBranch = "main";
 let mockBranches = [
   "main",
@@ -655,14 +654,14 @@ let mockRemotes: { name: string; fetchUrl: string; pushUrl: string | null }[] = 
   { name: "origin", fetchUrl: "https://example.com/gitx.git", pushUrl: null },
 ];
 let mockFavorites: string[] = ["refs/heads/main"];
-let mockTags: { name: string; sha: string }[] = [{ name: "v0.1", sha: "bbbbbbbccccccccccccccccccccccccccccccc" }];
+let mockTags: { name: string; sha: string }[] = [
+  { name: "v0.1", sha: "bbbbbbbccccccccccccccccccccccccccccccc" },
+];
 let mockAhead = 1;
 let hasFetched = false;
 let mockBehind = 0;
 let mockChangelists: ChangelistsState = {
-  lists: [
-    { id: "default", name: "Changes", comment: "", active: true },
-  ],
+  lists: [{ id: "default", name: "Changes", comment: "", active: true }],
   assignments: [],
 };
 let mockStashes: StashEntry[] = [
@@ -746,7 +745,7 @@ export const mockBackend: Backend = {
   async workspaceOpen(req) {
     settings.recentWorkspaces = [
       req.path,
-      ...settings.recentWorkspaces.filter((p) => p !== req.path),
+      ...(settings.recentWorkspaces ?? []).filter((p) => p !== req.path),
     ].slice(0, 20);
     return {
       path: req.path,
@@ -771,7 +770,10 @@ export const mockBackend: Backend = {
     };
   },
   async workspaceRecent() {
-    return { paths: [...settings.recentWorkspaces] };
+    return { paths: [...(settings.recentWorkspaces ?? [])] };
+  },
+  async workspaceWatch() {
+    return null;
   },
   async statusProbe(req): Promise<JobHandle> {
     const jobId = crypto.randomUUID();
@@ -868,7 +870,10 @@ export const mockBackend: Backend = {
     }
     const sha = `${nextSha.toString(16).padStart(40, "a")}`;
     nextSha += 1;
-    emitConsole("cmd", `git commit ${req.amend ? "--amend " : ""}${req.noVerify ? "--no-verify " : ""}-F <msg>`);
+    emitConsole(
+      "cmd",
+      `git commit ${req.amend ? "--amend " : ""}${req.noVerify ? "--no-verify " : ""}-F <msg>`,
+    );
     emitConsole("stdout", `[main ${sha.slice(0, 7)}] ${req.message.trim().split("\n")[0]}`);
     if (req.amend) amendMessage = req.message;
     // Clear staged mock files
@@ -908,6 +913,17 @@ export const mockBackend: Backend = {
       truncated: offset + limit < all.length,
       nextOffset: offset + slice.length,
     };
+  },
+  async logLocate(req) {
+    const hits = mockLog().filter(
+      (c) =>
+        c.sha.startsWith(req.revision) ||
+        c.refs.some((r) => r.replace(/^(HEAD -> |tag: )/, "") === req.revision),
+    );
+    if (hits.length !== 1) throw new Error("Unknown or ambiguous revision");
+    const page = await this.logQuery({ repoId: req.path, path: req.path, filters: req.filters });
+    const offset = page.commits.findIndex((c) => c.sha === hits[0]!.sha);
+    return { sha: hits[0]!.sha, offset: offset < 0 ? null : offset };
   },
   async logCommitDetails(req): Promise<CommitDetails> {
     const c = mockLog().find((x) => x.sha === req.sha) ?? mockLog()[0]!;
@@ -1146,8 +1162,10 @@ export const mockBackend: Backend = {
       detached: false,
     };
   },
-  async favoritesSet(req) {
-    mockFavorites = [...req.favorites];
+  async favoritesToggle(req) {
+    mockFavorites = mockFavorites.includes(req.fullName)
+      ? mockFavorites.filter((name) => name !== req.fullName)
+      : [...mockFavorites, req.fullName];
     return null;
   },
   async branchCreate(req) {
@@ -1246,6 +1264,8 @@ export const mockBackend: Backend = {
       newHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       strategy: "merge",
       updated: true,
+      updatedFiles: [{ path: "README.md", status: "M", origPath: null }],
+      commits: ["aaaaaaa Update README"],
       message: "Pulled successfully",
     };
   },
@@ -1258,20 +1278,28 @@ export const mockBackend: Backend = {
       updatedFiles: [{ path: "README.md", status: "M", origPath: null }],
       commits: ["aaaaaaa Update README"],
       message: "1 files updated in 1 commits",
+      submodules: null,
+      submoduleError: null,
     };
   },
-  async pushPreview() {
+  async pushPreview(req) {
+    const remote = req.remote ?? mockRemotes[0]?.name ?? "origin";
+    const branch = req.branch ?? mockBranch;
     return {
-      remote: mockRemotes[0]?.name ?? "origin",
-      refs: [{ local: mockBranch, remote: mockRemotes[0]?.name ?? "origin", remoteBranch: mockBranch }],
+      remote,
+      refs: [{ local: branch, remote, remoteBranch: req.remoteBranch ?? branch }],
       commits: mockAhead ? ["aaaaaaa Local commit"] : [],
+      commitsTruncated: false,
       setUpstream: false,
       hasRemote: mockRemotes.length > 0,
     };
   },
   async pushRun(req) {
     if (req.forceWithLease && ["main", "master"].includes(req.branch)) {
-      throw { code: "protectedBranch", message: `force push to protected branch '${req.branch}' is not allowed` };
+      throw {
+        code: "protectedBranch",
+        message: `force push to protected branch '${req.branch}' is not allowed`,
+      };
     }
     mockAhead = 0;
     emitConsole("cmd", `git push ${req.remote} ${req.branch}`);
@@ -1446,9 +1474,9 @@ export const mockBackend: Backend = {
       blocks: [
         {
           kind: "conflict" as const,
-          baseLines: ["base"],
-          oursLines: ["ours"],
-          theirsLines: ["theirs"],
+          baseLines: ["base\n"],
+          oursLines: ["ours\n"],
+          theirsLines: ["theirs\n"],
           resultLines: [],
           isSimple: false,
         },

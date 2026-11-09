@@ -73,7 +73,13 @@ async fn squash_two_commits_and_undo() {
 
     let backup = r.backup_ref.expect("backup");
     let undo = runner
-        .undo_rewrite(cwd, &backup, false, &cancel)
+        .undo_rewrite(
+            cwd,
+            &backup,
+            false,
+            &runner.rewrite_head(cwd, &cancel).await.unwrap(),
+            &cancel,
+        )
         .await
         .expect("undo");
     assert_eq!(undo.outcome, RewriteOutcome::Success);
@@ -201,6 +207,136 @@ async fn interactive_plan_and_start_reword_drop() {
 }
 
 #[tokio::test]
+async fn interactive_rebase_from_subdirectories_uses_the_actual_git_directory() {
+    for linked in [false, true] {
+        let repo = FixtureBuilder::new().build("linear-history").unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let worktree = parent.path().join("linked worktree");
+        let root = if linked {
+            git(
+                repo.path(),
+                &[
+                    "worktree",
+                    "add",
+                    "-b",
+                    "rewrite-linked",
+                    worktree.to_str().unwrap(),
+                ],
+            );
+            worktree.as_path()
+        } else {
+            repo.path()
+        };
+        let cwd = root.join("nested folder");
+        std::fs::create_dir(&cwd).unwrap();
+        let runner = GitRunner::new("git");
+        let cancel = CancellationToken::new();
+        let main_head = git_stdout(repo.path(), &["rev-parse", "HEAD"]);
+        let before = runner.worktree_fingerprint(root, &cancel).await.unwrap();
+        let mut plan = runner
+            .rebase_interactive_plan(&cwd, "HEAD~1", &cancel)
+            .await
+            .unwrap();
+        plan.items[1].action = RebaseTodoAction::Reword;
+        plan.items[1].message = Some("rewritten from a subdirectory".into());
+        let result = runner
+            .rebase_interactive_start(&cwd, &plan, false, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(result.outcome, RewriteOutcome::Success);
+        assert_eq!(
+            git_stdout(root, &["log", "-1", "--format=%s"]).trim(),
+            "rewritten from a subdirectory"
+        );
+        assert_eq!(
+            before,
+            runner.worktree_fingerprint(root, &cancel).await.unwrap(),
+            "worktree status changed: {}",
+            git_stdout(root, &["status", "--porcelain", "--untracked-files=all"])
+        );
+        assert!(
+            !cwd.join(".git").exists(),
+            "metadata must not create a nested repository"
+        );
+        let git_dir = git_stdout(root, &["rev-parse", "--absolute-git-dir"]);
+        assert!(std::path::Path::new(git_dir.trim())
+            .join("gitx/rebase-plan.json")
+            .is_file());
+        if linked {
+            assert_eq!(main_head, git_stdout(repo.path(), &["rev-parse", "HEAD"]));
+            assert!(root.join(".git").is_file());
+            assert!(!repo.path().join(".git/gitx/rebase-plan.json").exists());
+        }
+    }
+}
+
+#[tokio::test]
+async fn reword_without_override_preserves_the_full_message() {
+    let repo = FixtureBuilder::new().build("linear-history").unwrap();
+    let cwd = repo.path();
+    git(
+        cwd,
+        &[
+            "commit",
+            "--amend",
+            "-m",
+            "subject\n\nbody\n\nSigned-off-by: Example <example@invalid>",
+        ],
+    );
+    let before = git_stdout(cwd, &["log", "-1", "--format=%B"]);
+    let runner = GitRunner::new("git");
+    let cancel = CancellationToken::new();
+    let mut plan = runner
+        .rebase_interactive_plan(cwd, "HEAD", &cancel)
+        .await
+        .unwrap();
+    plan.items[0].action = RebaseTodoAction::Reword;
+    runner
+        .rebase_interactive_start(cwd, &plan, false, &cancel)
+        .await
+        .unwrap();
+    assert_eq!(git_stdout(cwd, &["log", "-1", "--format=%B"]), before);
+}
+
+#[tokio::test]
+async fn invalid_rebase_sequences_do_not_change_the_repository() {
+    let repo = FixtureBuilder::new().build("linear-history").unwrap();
+    let cwd = repo.path();
+    let runner = GitRunner::new("git");
+    let cancel = CancellationToken::new();
+    let before = git_stdout(cwd, &["rev-parse", "HEAD"]);
+    let plan = runner
+        .rebase_interactive_plan(cwd, "HEAD~1", &cancel)
+        .await
+        .unwrap();
+    for action in [RebaseTodoAction::Squash, RebaseTodoAction::Fixup] {
+        let mut invalid = plan.clone();
+        invalid.items[0].action = action;
+        let error = runner
+            .rebase_interactive_start(cwd, &invalid, false, &cancel)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, gitx_core::ErrorCode::InvalidArgument);
+    }
+    let mut reordered = plan.clone();
+    reordered.items.reverse();
+    reordered.rebase_merges = true;
+    assert_eq!(
+        runner
+            .rebase_interactive_start(cwd, &reordered, false, &cancel)
+            .await
+            .unwrap_err()
+            .code,
+        gitx_core::ErrorCode::InvalidArgument
+    );
+    assert_eq!(git_stdout(cwd, &["rev-parse", "HEAD"]), before);
+    assert!(git_stdout(cwd, &["status", "--porcelain"])
+        .trim()
+        .is_empty());
+    assert!(!cwd.join(".git/rebase-merge").exists());
+}
+
+#[tokio::test]
 async fn extract_selected_changes_keeps_final_tree() {
     let repo = FixtureBuilder::new()
         .build("linear-history")
@@ -241,6 +377,18 @@ async fn extract_selected_changes_keeps_final_tree() {
         .parse()
         .unwrap();
     assert_eq!(count, 4); // a, b, c-without-extra, extracted
+    assert_eq!(
+        git_stdout(
+            cwd,
+            &["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]
+        )
+        .trim(),
+        "extra.txt",
+        "the extracted commit must contain the selected file, not be empty"
+    );
+    assert!(!git_stdout(cwd, &["ls-tree", "--name-only", "HEAD~1"])
+        .lines()
+        .any(|path| path == "extra.txt"));
     let fp2 = runner.worktree_fingerprint(cwd, &cancel).await.unwrap();
     assert_eq!(fp, fp2);
 }

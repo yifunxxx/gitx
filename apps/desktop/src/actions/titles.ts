@@ -20,13 +20,21 @@ export const ACTION_TITLE_KEYS: Record<string, string> = {
   "Git.CherryPick": "actions.cherryPick",
   "Git.ResolveConflicts": "actions.resolveConflicts",
   "Git.Merge.Abort": "actions.abortMerge",
+  "Git.Merge.Commit": "merge.commitMerge",
   "Git.Rebase.Abort": "actions.abortRebase",
   "Git.Rebase.Continue": "actions.continueRebase",
+  "Git.Rebase.Skip": "actions.skipCommit",
+  "Git.CherryPick.Continue": "actions.continueCherryPick",
+  "Git.CherryPick.Abort": "actions.abortCherryPick",
   "Git.Interactive.Rebase": "actions.interactiveRebase",
   "Git.Reword.Commit": "actions.reword",
   "Git.Squash.Commits": "actions.squash",
+  "Git.Fixup.To.Commit": "actions.fixupInto",
+  "Git.Squash.Into.Commit": "actions.squashInto",
+  "Git.Revert.Abort": "actions.abortRevert",
   "Git.Drop.Commits": "actions.dropCommits",
   "Git.Uncommit": "actions.uncommit",
+  "Git.Undo.Rewrite": "actions.undoRewrite",
   "Git.Revert.In.Log": "actions.revert",
   "Git.Reset.In.Log": "actions.reset",
   Settings: "actions.settings",
@@ -55,16 +63,22 @@ export const ACTION_TITLE_KEYS: Record<string, string> = {
   "Start.Use.Vcs": "empty.enableVcs",
   "Vcs.Operations.Popup": "actions.vcsOperations",
   "Git.FindAction": "actions.findAction",
+  "Git.Show.WorkingTrees": "actions.showWorktrees",
+  "Git.CreateNewWorkingTree": "worktrees.new",
+  "Git.Worktrees.OpenRef": "worktrees.openRefTitle",
+  "Github.Sync.Fork": "actions.syncFork",
+  "Git.Submodule.Update": "actions.updateSubmodules",
+  "Git.Commit.Tw.Docked": "actions.commitDocked",
+  "Git.Commit.Tw.Window": "actions.commitWindow",
+  "Git.Commit.Tw.Float": "actions.commitFloat",
+  "Git.Commit.ToggleControls": "commitTw.toggleControls",
 };
 
 export function actionTitleKey(def: ActionDef): string | undefined {
   return def.titleKey ?? ACTION_TITLE_KEYS[def.id];
 }
 
-export function resolveActionTitle(
-  def: ActionDef,
-  t: (key: string) => string,
-): string {
+export function resolveActionTitle(def: ActionDef, t: (key: string) => string): string {
   const key = actionTitleKey(def);
   if (!key) return def.title;
   const translated = t(key);

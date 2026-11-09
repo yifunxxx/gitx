@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
-import { closeDialog } from "@/composables/useDialog";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useRewriteDialog } from "./useRewriteDialog";
 
 const branches = useBranchesStore();
 const rewrite = useRewriteStore();
 const workspace = useWorkspaceStore();
+const { t } = useI18n();
+const { busy, error, current, dismiss, showError, submit } = useRewriteDialog();
+const loading = ref(true);
+const loaded = ref(false);
 
 const selected = ref<string[]>([]);
 const noFf = ref(false);
@@ -37,75 +42,122 @@ const preview = computed(() => {
 });
 
 onMounted(async () => {
-  await branches.refresh();
-  const locals = branches.refs?.local.filter((b) => !b.isHead).map((b) => b.name) ?? [];
-  if (locals[0]) selected.value = [locals[0]];
-});
-
-function toggleBranch(name: string) {
-  if (selected.value.includes(name)) {
-    selected.value = selected.value.filter((n) => n !== name);
-  } else {
-    selected.value = [...selected.value, name];
+  try {
+    await branches.refresh();
+    if (!current()) return;
+    const locals = branches.refs?.local.filter((b) => !b.isHead).map((b) => b.name) ?? [];
+    if (locals[0]) selected.value = [locals[0]];
+    loaded.value = true;
+  } catch (reason) {
+    showError(reason);
+  } finally {
+    loading.value = false;
   }
-}
+});
+const valid = computed(
+  () =>
+    loaded.value && selected.value.length > 0 && (!customMessage.value || !!message.value.trim()),
+);
 
 async function ok() {
-  if (!selected.value.length) return;
-  await rewrite.merge({
-    branches: selected.value,
-    noFf: noFf.value,
-    ffOnly: ffOnly.value,
-    squash: squash.value,
-    message: customMessage.value ? message.value : null,
-    noCommit: noCommit.value,
-    noVerify: noVerify.value,
-    allowUnrelated: allowUnrelated.value,
-  });
-  closeDialog(true);
+  if (!valid.value || loading.value) return;
+  await submit(() =>
+    rewrite.merge({
+      branches: [...selected.value],
+      noFf: noFf.value,
+      ffOnly: ffOnly.value,
+      squash: squash.value,
+      message: customMessage.value ? message.value : null,
+      noCommit: noCommit.value,
+      noVerify: noVerify.value,
+      allowUnrelated: allowUnrelated.value,
+    }),
+  );
 }
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[50] flex items-center justify-center bg-black/40 p-4">
-    <div class="flex max-h-[85vh] w-full max-w-lg flex-col rounded-lg border bg-popover p-4 shadow-lg">
-      <h2 class="text-sm font-semibold">Merge</h2>
-      <p class="mt-1 text-xs text-muted-foreground">Merge into '{{ head }}'</p>
-      <div class="mt-3 min-h-0 flex-1 overflow-auto rounded border">
-        <button
-          v-for="b in branches.refs?.local.filter((x) => !x.isHead) ?? []"
-          :key="b.name"
-          type="button"
-          class="flex w-full items-center gap-2 border-b px-2 py-1.5 text-left text-xs last:border-b-0 hover:bg-accent"
-          @click="toggleBranch(b.name)"
-        >
-          <input type="checkbox" :checked="selected.includes(b.name)" readonly />
-          <span class="font-mono">{{ b.name }}</span>
-        </button>
-        <div v-if="!(branches.refs?.local.some((x) => !x.isHead))" class="p-3 text-xs text-muted-foreground">
-          No other local branches
+  <div
+    class="fixed inset-0 z-[50] flex items-center justify-center bg-black/40 p-4"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="t('merge.mergeTitle')"
+    :data-dialog-busy="busy"
+    @keydown.esc.stop.prevent="dismiss"
+  >
+    <div
+      class="max-h-full w-full max-w-lg overflow-auto rounded-lg border bg-popover p-4 shadow-lg"
+    >
+      <h2 class="text-sm font-semibold">{{ t("merge.mergeTitle") }}</h2>
+      <p class="mt-1 text-xs text-muted-foreground">{{ t("merge.mergeInto", { branch: head }) }}</p>
+      <p v-if="error" role="alert" class="mt-2 text-xs text-destructive">{{ error }}</p>
+      <p v-if="loading" class="mt-2 text-xs text-muted-foreground">{{ t("common.loading") }}</p>
+      <fieldset :disabled="busy || loading || !loaded">
+        <div class="mt-3 max-h-48 overflow-auto rounded border">
+          <label
+            v-for="b in branches.refs?.local.filter((x) => !x.isHead) ?? []"
+            :key="b.name"
+            class="flex w-full items-center gap-2 border-b px-2 py-1.5 text-left text-xs last:border-b-0 hover:bg-accent"
+          >
+            <input v-model="selected" type="checkbox" :value="b.name" />
+            <span class="font-mono">{{ b.name }}</span>
+          </label>
+          <div
+            v-if="loaded && !branches.refs?.local.some((x) => !x.isHead)"
+            class="p-3 text-xs text-muted-foreground"
+          >
+            {{ t("merge.noOtherBranches") }}
+          </div>
         </div>
-      </div>
-      <div class="mt-3 text-[11px] font-medium text-muted-foreground">Modify options</div>
-      <div class="mt-1 grid grid-cols-2 gap-1 text-xs">
-        <label class="flex items-center gap-2"><input v-model="noFf" type="checkbox" :disabled="ffOnly" /> --no-ff</label>
-        <label class="flex items-center gap-2"><input v-model="ffOnly" type="checkbox" :disabled="noFf || squash" /> --ff-only</label>
-        <label class="flex items-center gap-2"><input v-model="squash" type="checkbox" :disabled="ffOnly" /> --squash</label>
-        <label class="flex items-center gap-2"><input v-model="noCommit" type="checkbox" /> --no-commit</label>
-        <label class="flex items-center gap-2"><input v-model="noVerify" type="checkbox" /> --no-verify</label>
-        <label class="flex items-center gap-2"><input v-model="allowUnrelated" type="checkbox" /> --allow-unrelated-histories</label>
-        <label class="col-span-2 flex items-center gap-2"><input v-model="customMessage" type="checkbox" /> -m message</label>
-      </div>
-      <input
-        v-if="customMessage"
-        v-model="message"
-        class="mt-2 h-8 w-full rounded-md border bg-background px-2 text-sm"
-        placeholder="Merge message"
-      />
+        <div class="mt-3 text-[11px] font-medium text-muted-foreground">
+          {{ t("merge.options") }}
+        </div>
+        <div class="mt-1 grid grid-cols-2 gap-1 text-xs">
+          <label class="flex items-center gap-2"
+            ><input v-model="noFf" type="checkbox" :disabled="ffOnly || squash" />
+            {{ t("merge.noFastForward") }}</label
+          >
+          <label class="flex items-center gap-2"
+            ><input v-model="ffOnly" type="checkbox" :disabled="noFf || squash" />
+            {{ t("merge.fastForwardOnly") }}</label
+          >
+          <label class="flex items-center gap-2"
+            ><input v-model="squash" type="checkbox" :disabled="ffOnly || noFf" />
+            {{ t("merge.squashChanges") }}</label
+          >
+          <label class="flex items-center gap-2"
+            ><input v-model="noCommit" type="checkbox" /> {{ t("merge.noAutoCommit") }}</label
+          >
+          <label class="flex items-center gap-2"
+            ><input v-model="noVerify" type="checkbox" /> {{ t("merge.skipHooks") }}</label
+          >
+          <label class="flex items-center gap-2"
+            ><input v-model="allowUnrelated" type="checkbox" />
+            {{ t("merge.allowUnrelated") }}</label
+          >
+          <label class="col-span-2 flex items-center gap-2"
+            ><input v-model="customMessage" type="checkbox" /> {{ t("merge.customMessage") }}</label
+          >
+        </div>
+        <p v-if="noCommit && !noFf && !squash" class="mt-2 text-xs text-muted-foreground">
+          {{ t("merge.noCommitHint") }}
+        </p>
+        <input
+          v-if="customMessage"
+          v-model="message"
+          class="mt-2 h-8 w-full rounded-md border bg-background px-2 text-sm"
+          :placeholder="t('merge.commitMessage')"
+          :aria-label="t('merge.commitMessage')"
+        />
+      </fieldset>
       <div class="mt-3 rounded bg-muted px-2 py-1 font-mono text-[11px]">{{ preview }}</div>
       <div class="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" @click="closeDialog(false)">Cancel</Button>
-        <Button size="sm" :disabled="!selected.length" @click="ok">Merge</Button>
+        <Button variant="ghost" size="sm" :disabled="busy" @click="dismiss">{{
+          t("common.cancel")
+        }}</Button>
+        <Button size="sm" :disabled="!valid || loading || busy" @click="ok">{{
+          busy ? t("common.loading") : t("merge.mergeTitle")
+        }}</Button>
       </div>
     </div>
   </div>

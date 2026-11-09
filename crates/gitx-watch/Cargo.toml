@@ -4,9 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Filesystem watcher skeleton"
+description = "Debounced repository filesystem notifications"
 
 [dependencies]
 gitx-core = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
+notify = "8.2"
+
+[dev-dependencies]
+tempfile = "3"

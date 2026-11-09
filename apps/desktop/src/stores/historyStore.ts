@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { DiffFileResult, HistoryCommit } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -23,6 +23,18 @@ export type HistoryTab = {
 export const useHistoryStore = defineStore("history", () => {
   const tabs = ref<HistoryTab[]>([]);
   const activeId = ref<string | null>(null);
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      tabs.value = [];
+      activeId.value = null;
+    },
+    { flush: "sync" },
+  );
+  const loads = new WeakMap<HistoryTab, number>();
+  const selections = new WeakMap<HistoryTab, number>();
+  let generation = 0;
 
   async function openFileHistory(filePath: string, allBranches = false) {
     const workspace = useWorkspaceStore();
@@ -45,6 +57,7 @@ export const useHistoryStore = defineStore("history", () => {
       };
       tabs.value = [...tabs.value, tab];
     }
+    tab = tabs.value.find((t) => t.id === id)!;
     activeId.value = id;
     useLayoutStore().activeEditorKind = "history";
     await load(tab, true);
@@ -53,8 +66,17 @@ export const useHistoryStore = defineStore("history", () => {
   async function load(tab: HistoryTab, reset: boolean) {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath || !workspace.repoId) return;
+    if (!tabs.value.includes(tab)) return;
+    const request = ++generation;
+    loads.set(tab, request);
+    const current = () => tabs.value.includes(tab) && loads.get(tab) === request;
     tab.loading = true;
     tab.error = null;
+    if (reset) {
+      selections.set(tab, ++generation);
+      tab.selectedSha = null;
+      tab.diff = null;
+    }
     try {
       const page = await getBackend().fileHistory({
         repoId: workspace.repoId,
@@ -64,6 +86,7 @@ export const useHistoryStore = defineStore("history", () => {
         limit: 100,
         allBranches: tab.allBranches,
       });
+      if (!current()) return;
       tab.commits = reset ? page.commits : [...tab.commits, ...page.commits];
       tab.truncated = page.truncated;
       tab.nextOffset = page.nextOffset;
@@ -71,22 +94,27 @@ export const useHistoryStore = defineStore("history", () => {
         await select(tab, page.commits[0].sha);
       }
     } catch (e) {
-      tab.error = formatErrorMessage(e);
+      if (current()) tab.error = formatErrorMessage(e);
     } finally {
-      tab.loading = false;
+      if (current()) tab.loading = false;
     }
   }
 
   async function select(tab: HistoryTab, sha: string) {
+    if (!tabs.value.includes(tab)) return;
+    const request = ++generation;
+    selections.set(tab, request);
+    const current = () => tabs.value.includes(tab) && selections.get(tab) === request;
     tab.selectedSha = sha;
+    tab.diff = null;
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath || !workspace.repoId) return;
     const commit = tab.commits.find((c) => c.sha === sha);
-    const parent = commit?.parents[0] ?? `${sha}^`;
+    const parent = commit ? (commit.parents[0] ?? "EMPTY") : `${sha}^`;
     const pathAt = commit?.pathAtCommit ?? tab.filePath;
     const leftPath = commit?.origPath ?? pathAt;
     try {
-      tab.diff = await getBackend().diffFileAt({
+      const diff = await getBackend().diffFileAt({
         repoId: workspace.repoId,
         path: workspace.repoPath,
         filePath: pathAt,
@@ -94,8 +122,9 @@ export const useHistoryStore = defineStore("history", () => {
         rightRev: sha,
         leftPath: typeof leftPath === "string" ? leftPath : pathAt,
       });
+      if (current()) tab.diff = diff;
     } catch {
-      tab.diff = null;
+      if (current()) tab.diff = null;
     }
   }
 

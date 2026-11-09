@@ -157,8 +157,31 @@ pub async fn credential_session_set(
     // Escape nothing special — helper parses line prefixes; disallow newlines in values.
     let user = req.username.replace(['\n', '\r'], "");
     let pass = req.password.replace(['\n', '\r'], "");
-    let body = format!("username={user}\npassword={pass}\n");
-    write_secret_file(&file, body.as_bytes())?;
+    let target = req
+        .url
+        .clone()
+        .or_else(|| {
+            Some(format!(
+                "{}://{}",
+                req.protocol.as_ref()?,
+                req.host.as_ref()?
+            ))
+        })
+        .and_then(|target| gitx_core::CredentialSession::origin_for(&target))
+        .ok_or_else(|| {
+            AppError::new(
+                ErrorCode::Internal,
+                "A valid HTTP(S) credential target is required",
+            )
+        })?;
+    let session = gitx_core::CredentialSession {
+        origin: target,
+        username: user.clone(),
+        password: pass.clone(),
+    };
+    let body = serde_json::to_vec(&session)
+        .map_err(|e| AppError::new(ErrorCode::Internal, format!("credential session: {e}")))?;
+    write_secret_file(&file, &body)?;
 
     let askpass_path = file.to_string_lossy().into_owned();
     unsafe {
@@ -180,12 +203,14 @@ pub async fn credential_session_set(
             host = req.host.clone();
         }
         if let (Some(protocol), Some(host)) = (protocol, host) {
-            if let Some(repo) = req.path.as_deref() {
-                stored_helper =
-                    credential_approve(&state, Path::new(repo), &protocol, &host, &user, &pass)
-                        .await
-                        .is_ok();
-            }
+            let cwd = req
+                .path
+                .as_deref()
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            stored_helper = credential_approve(&state, &cwd, &protocol, &host, &user, &pass)
+                .await
+                .is_ok();
         }
     }
 

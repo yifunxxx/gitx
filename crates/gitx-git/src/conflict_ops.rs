@@ -195,6 +195,33 @@ impl GitRunner {
         content: &str,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
+        if content.lines().any(|line| {
+            line.starts_with("<<<<<<< ")
+                || line.starts_with(">>>>>>> ")
+                || line == "<<<<<<<"
+                || line == ">>>>>>>"
+        }) {
+            return Err(AppError::new(
+                ErrorCode::MergeConflict,
+                "Resolve conflict markers before saving the merge result",
+            ));
+        }
+        // A stale editor (e.g. after an external abort) must not overwrite a
+        // regular worktree file. Only an actual unresolved text entry is writable.
+        let list = self.conflicts_list(cwd, cancel).await?;
+        let entry = list
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::InvalidArgument, "File is no longer conflicted")
+            })?;
+        if matches!(entry.kind, ConflictKind::Binary | ConflictKind::Submodule) {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "Accept one side for non-text conflicts",
+            ));
+        }
         let full = cwd.join(path);
         if let Some(parent) = full.parent() {
             std::fs::create_dir_all(parent)
@@ -249,12 +276,7 @@ impl GitRunner {
                 .iter()
                 .flat_map(|b| b.result_lines.iter().cloned())
                 .collect::<Vec<_>>()
-                .join("\n");
-            let content = if content.is_empty() {
-                content
-            } else {
-                format!("{content}\n")
-            };
+                .concat();
             self.conflict_save_result(cwd, &entry.path, &content, cancel)
                 .await?;
             resolved += 1;

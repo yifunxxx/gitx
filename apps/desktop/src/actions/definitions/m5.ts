@@ -7,11 +7,15 @@ import InteractiveRebaseEditor from "@/features/merge/InteractiveRebaseEditor.vu
 import RewordDialog from "@/features/merge/RewordDialog.vue";
 import ResetDialog from "@/features/merge/ResetDialog.vue";
 import SquashDialog from "@/features/merge/SquashDialog.vue";
-import { toast } from "@/composables/useToast";
+import PartialChangesDialog from "@/features/merge/PartialChangesDialog.vue";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
+import { captureRewriteContext } from "@/features/merge/rewriteContext";
+import { i18n } from "@/i18n";
+
+const t = (key: string) => i18n.global.t(key);
 
 function hasRepo(ctx: { folderPath?: string | null }) {
-  return !!ctx.folderPath && !!useWorkspaceStore().isRepo;
+  return !!ctx.folderPath && !!useWorkspaceStore().isRepo && !useRewriteStore().busy;
 }
 
 function selectedShas(): string[] {
@@ -22,6 +26,16 @@ function selectedShas(): string[] {
 }
 
 export function registerM5Actions() {
+  registerAction({
+    id: "Git.Undo.Rewrite",
+    title: "Undo Last History Rewrite",
+    scope: "global",
+    enabled: (ctx) => hasRepo(ctx) && useRewriteStore().canUndo,
+    async run() {
+      await useRewriteStore().undoWithFeedback();
+    },
+  });
+
   registerAction({
     id: "Git.Interactive.Rebase",
     title: "Interactively Rebase from Here…",
@@ -69,12 +83,13 @@ export function registerM5Actions() {
     async run() {
       const shas = selectedShas();
       if (!shas.length) return;
+      const current = captureRewriteContext();
       const ok = await confirmDialog({
-        title: "Drop Commits",
-        message: `Drop ${shas.length} commit(s)? A backup ref will be created.`,
+        title: t("actions.dropCommits"),
+        message: i18n.global.t("log.dropConfirm", { count: shas.length }),
         destructive: true,
       });
-      if (!ok) return;
+      if (!ok || !current()) return;
       await useRewriteStore().drop(shas);
     },
   });
@@ -100,12 +115,13 @@ export function registerM5Actions() {
     async run() {
       const sha = selectedShas()[0];
       if (!sha) return;
+      const current = captureRewriteContext();
       const msg = await promptDialog({
-        title: "Squash Into…",
-        placeholder: "Combined commit message (optional)",
+        title: t("actions.squashInto"),
+        placeholder: t("rewrite.combinedMessage"),
       });
-      if (msg == null) return;
-      await useRewriteStore().fixupInto(sha, true, msg);
+      if (msg == null || !current()) return;
+      await useRewriteStore().fixupInto(sha, true, msg.trim() ? msg : undefined);
     },
   });
 
@@ -158,32 +174,12 @@ export function registerM5Actions() {
     id: "Git.InMemory.Extract.Selected.Changes",
     title: "Extract Selected Changes…",
     scope: "changes",
-    enabled: (ctx) => hasRepo(ctx) && !!useLogStore().selectedSha,
+    enabled: (ctx) => hasRepo(ctx) && selectedShas().length === 1,
     async run() {
       const log = useLogStore();
       const sha = log.selectedSha;
       if (!sha) return;
-      const paths = log.changedFiles?.map((f) => f.path) ?? [];
-      if (!paths.length) {
-        toast({ title: "No changed files in selection" });
-        return;
-      }
-      const picked = await promptDialog({
-        title: "Extract Selected Changes…",
-        message: "Paths to extract (comma-separated). Leave empty for all listed files.",
-        defaultValue: paths.join(", "),
-      });
-      if (picked == null) return;
-      const list = picked
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const msg =
-        (await promptDialog({
-          title: "Commit message",
-          defaultValue: "Extracted changes",
-        })) ?? "Extracted changes";
-      await useRewriteStore().extractChanges(sha, list.length ? list : paths, msg);
+      await openDialog(PartialChangesDialog, { commit: sha, mode: "extract" });
     },
   });
 
@@ -191,20 +187,12 @@ export function registerM5Actions() {
     id: "Git.Drop.Selected.Changes",
     title: "Drop Selected Changes",
     scope: "changes",
-    enabled: (ctx) => hasRepo(ctx) && !!useLogStore().selectedSha,
+    enabled: (ctx) => hasRepo(ctx) && selectedShas().length === 1,
     async run() {
       const log = useLogStore();
       const sha = log.selectedSha;
       if (!sha) return;
-      const paths = log.changedFiles?.map((f) => f.path) ?? [];
-      if (!paths.length) return;
-      const ok = await confirmDialog({
-        title: "Drop Selected Changes",
-        message: `Drop selected changes from ${sha.slice(0, 7)}?`,
-        destructive: true,
-      });
-      if (!ok) return;
-      await useRewriteStore().dropChanges(sha, paths);
+      await openDialog(PartialChangesDialog, { commit: sha, mode: "drop" });
     },
   });
 }

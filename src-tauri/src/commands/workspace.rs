@@ -56,11 +56,8 @@ pub async fn workspace_open(
     }
 
     let wsl = gitx_git::parse_wsl_unc_path(&req.path);
-    if let Some(info) = &wsl {
-        let mut git = state.git.write().await;
-        *git = gitx_git::GitRunner::new("git").with_wsl(info.distro.clone());
-    }
-
+    // Each invocation selects its runtime from its cwd. Opening a workspace
+    // must not change the runner used by other repositories or pending jobs.
     let git = state.git.read().await;
     let cancel = tokio_util::sync::CancellationToken::new();
     let inv = gitx_git::GitInvocation::new(
@@ -81,19 +78,18 @@ pub async fn workspace_open(
             let text = String::from_utf8_lossy(&out.stdout);
             let mut lines = text.lines();
             let inside = lines.next().unwrap_or("false").trim() == "true";
-            let toplevel = lines.next().map(|s| s.trim().to_string());
+            let toplevel = lines.next().map(|s| {
+                gitx_git::resolve_git_path(&path, s.trim())
+                    .to_string_lossy()
+                    .into_owned()
+            });
             let git_dir_raw = lines.next().map(|s| s.trim().to_string());
             let common_raw = lines.next().map(|s| s.trim().to_string());
             let (git_dir, common_dir, is_worktree) = match (&toplevel, &git_dir_raw, &common_raw) {
-                (Some(tl), Some(gd), Some(cd)) => {
-                    let tl_path = PathBuf::from(tl);
+                (Some(_), Some(gd), Some(cd)) => {
                     let abs = |raw: &str| {
-                        let p = PathBuf::from(raw);
-                        if p.is_absolute() {
-                            p
-                        } else {
-                            tl_path.join(p)
-                        }
+                        let absolute = gitx_git::resolve_git_path(&path, raw);
+                        absolute.canonicalize().unwrap_or(absolute)
                     };
                     let g = abs(gd).to_string_lossy().into_owned();
                     let c = abs(cd).to_string_lossy().into_owned();
@@ -102,11 +98,6 @@ pub async fn workspace_open(
                 }
                 _ => (git_dir_raw, common_raw, None),
             };
-            if let Some(tl) = &toplevel {
-                state
-                    .watcher
-                    .watch(&RepoId::new(tl.clone()), PathBuf::from(tl).as_path());
-            }
             let roots = if inside {
                 git.discover_repo_roots(
                     PathBuf::from(toplevel.as_deref().unwrap_or(&req.path)).as_path(),
@@ -205,7 +196,7 @@ pub async fn status_probe(
         );
 
         let result = scheduler
-            .with_permit(&repo_id.0, OpKind::Read, async {
+            .with_repo_permit(&runner, &repo_id.0, OpKind::Read, &cancel, async {
                 runner.status_probe(&path, &cancel).await
             })
             .await;
@@ -294,9 +285,8 @@ pub struct WorkspaceRecentRes {
 }
 
 fn push_recent(settings: &mut gitx_core::AppSettings, path: &str) {
-    settings.recent_workspaces.retain(|p| p != path);
     settings.recent_workspaces.insert(0, path.to_string());
-    settings.recent_workspaces.truncate(20);
+    gitx_meta::deduplicate_recent_workspaces(&mut settings.recent_workspaces);
 }
 
 /// Create a git repository at `path` (Git.Init / Enable VCS).
@@ -310,6 +300,10 @@ pub async fn init_run(
     {
         let git = state.git.read().await;
         let cancel = CancellationToken::new();
+        let _permits = state
+            .scheduler
+            .acquire_repo_writes(&git, &[], std::slice::from_ref(&path), &cancel)
+            .await?;
         git.init_repo(&path, req.initial_branch.as_deref(), &cancel)
             .await?;
     }

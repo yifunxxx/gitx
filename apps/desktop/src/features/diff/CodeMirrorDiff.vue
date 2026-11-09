@@ -10,11 +10,7 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import type { DiffHunk } from "@/lib/backend";
-import {
-  computeSideInlineRanges,
-  computeUnifiedInlineRanges,
-  type CharRange,
-} from "./inlineDiff";
+import { computeSideInlineRanges, computeUnifiedInlineRanges, type CharRange } from "./inlineDiff";
 import { countHunkLines } from "./collapsedDiff";
 import { contentFingerprint } from "./diffPaint";
 
@@ -60,8 +56,7 @@ class ChangeGutter extends GutterMarker {
   }
   toDOM() {
     const el = document.createElement("div");
-    el.className =
-      this.kind === "insert" ? "cm-diff-gutter-insert" : "cm-diff-gutter-delete";
+    el.className = this.kind === "insert" ? "cm-diff-gutter-insert" : "cm-diff-gutter-delete";
     return el;
   }
 }
@@ -216,9 +211,19 @@ function unifiedText(hunks: DiffHunk[]): string {
 
 function theme() {
   return EditorView.theme({
-    "&": { height: "100%", fontSize: "12px" },
+    "&": {
+      height: "100%",
+      fontSize: "12px",
+      backgroundColor: "rgb(var(--background))",
+      color: "rgb(var(--foreground))",
+    },
     ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
     ".cm-content": { caretColor: "transparent" },
+    ".cm-gutters": {
+      backgroundColor: "rgb(var(--dbx-chrome))",
+      color: "rgb(var(--muted-foreground))",
+      borderColor: "rgb(var(--border))",
+    },
     ".cm-diff-insert": {
       backgroundColor: "rgb(var(--diff-insert-bg) / 0.9)",
     },

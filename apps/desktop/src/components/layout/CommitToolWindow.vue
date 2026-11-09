@@ -13,7 +13,7 @@ import CommitMessageEditor from "@/features/commit/CommitMessageEditor.vue";
 import RepoStateBanner from "@/features/merge/RepoStateBanner.vue";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
-import { useDiffStore } from "@/stores/diffStore";
+import { openChangeDiff } from "@/features/commit/openChangeDiff";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
@@ -27,7 +27,6 @@ import { runAction } from "@/actions";
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
-const diffs = useDiffStore();
 const layout = useLayoutStore();
 const rewrite = useRewriteStore();
 const stashShelf = useStashShelfStore();
@@ -77,11 +76,7 @@ async function enableVcs() {
 }
 
 function openDiff(path: string, section: ChangesSection) {
-  if (section === "staged") {
-    void diffs.openFileDiff(path, "head", "index");
-  } else {
-    void diffs.openFileDiff(path, "index", "worktree");
-  }
+  void openChangeDiff(path, section);
 }
 
 function openFile(path: string) {
@@ -114,13 +109,15 @@ async function stageAll() {
 }
 
 async function newChangelist() {
+  const navigation = workspace.navigationToken();
   const name = await promptDialog({
     title: t("changelist.new"),
     placeholder: t("changelist.namePlaceholder"),
     allowEmpty: false,
   });
-  if (!name?.trim()) return;
-  await changes.createChangelist(name.trim(), true);
+  if (!name?.trim() || navigation !== workspace.navigationToken()) return;
+  const created = await changes.createChangelist(name.trim(), true);
+  if (!created || navigation !== workspace.navigationToken()) return;
   toast({ title: t("changelist.new"), description: name.trim() });
 }
 
@@ -150,22 +147,11 @@ async function stopTrackingSelected() {
 
 async function stashSelected() {
   if (!workspace.repoPath) return;
-  const message = await promptDialog({
-    title: t("stash.create"),
-    defaultValue: "WIP",
-    placeholder: t("stash.messagePrompt"),
-  });
-  if (message == null) return;
-  const paths = changes.selectedPaths.length ? changes.selectedPaths : undefined;
-  await getBackend().stashCreate({
-    path: workspace.repoPath,
-    message: message || "WIP",
+  const created = await stashShelf.promptStash({
+    paths: changes.selectedPaths.length ? [...changes.selectedPaths] : undefined,
     includeUntracked: changes.selectedSection === "unversioned",
-    paths: paths ?? null,
   });
-  toast({ title: t("stash.create") });
-  await changes.refresh();
-  await stashShelf.refresh();
+  if (!created) return;
   layout.bottomOpen = true;
   layout.activeBottomTab = stashShelf.combineTab ? "stashesShelves" : "stash";
 }
@@ -177,21 +163,7 @@ async function shelveSelected() {
     toast({ title: t("shelf.selectFiles") });
     return;
   }
-  const message = await promptDialog({
-    title: t("shelf.create"),
-    defaultValue: t("shelf.defaultMessage"),
-    placeholder: t("shelf.renamePrompt"),
-  });
-  if (message == null) return;
-  await getBackend().shelfCreate({
-    path: workspace.repoPath,
-    message: message || t("shelf.defaultMessage"),
-    paths,
-    keepChanges: false,
-  });
-  toast({ title: t("shelf.create"), description: `${paths.length}` });
-  await changes.refresh();
-  await stashShelf.refresh();
+  if (!(await stashShelf.promptShelf(paths))) return;
   layout.bottomOpen = true;
   layout.activeBottomTab = stashShelf.combineTab ? "stashesShelves" : "shelf";
 }
@@ -223,22 +195,25 @@ async function rollbackSelected() {
 }
 
 async function moveToChangelistSelected() {
-  const paths = changes.selectedPaths;
+  const paths = [...changes.selectedPaths];
   if (!paths.length) return;
+  const navigation = workspace.navigationToken();
   const name = await promptDialog({
     title: t("commitTw.moveToChangelistTitle"),
     placeholder: t("commitTw.moveToChangelistPrompt"),
     allowEmpty: false,
   });
-  if (!name?.trim()) return;
+  if (!name?.trim() || navigation !== workspace.navigationToken()) return;
   const target = name.trim();
   let list = changes.changelists?.lists.find((l) => l.name === target);
   if (!list) {
-    await changes.createChangelist(target, false);
-    list = changes.changelists?.lists.find((l) => l.name === target);
+    const created = await changes.createChangelist(target, false);
+    if (!created || navigation !== workspace.navigationToken()) return;
+    list = created.lists.find((l) => l.name === target);
   }
   if (!list) return;
-  await changes.moveToChangelist(paths, list.id);
+  const moved = await changes.moveToChangelist(paths, list.id);
+  if (!moved || navigation !== workspace.navigationToken()) return;
   toast({ title: t("commitTw.moveToChangelist"), description: target });
 }
 
@@ -491,12 +466,7 @@ async function runCtx(action: string) {
         {{ t("actions.addToVcs") }}
       </button>
       <template
-        v-if="
-          ctxMenu &&
-          !changes.stagingMode &&
-          !ctxIsUnversioned &&
-          ctxMenu.section !== 'ignored'
-        "
+        v-if="ctxMenu && !changes.stagingMode && !ctxIsUnversioned && ctxMenu.section !== 'ignored'"
       >
         <button
           type="button"

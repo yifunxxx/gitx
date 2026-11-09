@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { PushPreview, UpdateInfo, UpdateMethod } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -12,26 +12,44 @@ import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
 import { handleAuthFailure } from "@/composables/useCredentials";
 import { i18n } from "@/i18n";
+import { submoduleFeedback } from "@/lib/submoduleFeedback";
 
 export const useSyncStore = defineStore("sync", () => {
   const lastUpdate = ref<UpdateInfo | null>(null);
   const pushing = ref(false);
   const updating = ref(false);
   const pulling = ref(false);
+  const workspace = useWorkspaceStore();
+  let generation = 0;
+  watch(
+    () => workspace.repoPath,
+    () => {
+      ++generation;
+      lastUpdate.value = null;
+    },
+    { flush: "sync" },
+  );
 
-  async function afterSync() {
+  async function afterSync(request = generation) {
+    if (request !== generation) return;
     await useBranchesStore().refresh();
+    if (request !== generation) return;
     await useChangesStore().refresh();
-    await useLogStore().load(true);
+    if (request !== generation) return;
+    await useLogStore().load(true, true);
   }
 
   async function onAuthOrToast<T>(
     title: string,
     e: unknown,
     retry: () => Promise<T>,
+    url: string | null,
+    request: number,
   ): Promise<T> {
-    const retryOk = await handleAuthFailure(e, { title: i18n.global.t("auth.title") });
+    if (request !== generation) throw e;
+    const retryOk = await handleAuthFailure(e, { title: i18n.global.t("auth.title"), url });
     if (retryOk) {
+      if (request !== generation) throw e;
       return retry();
     }
     toast({
@@ -41,9 +59,12 @@ export const useSyncStore = defineStore("sync", () => {
       action: {
         label: String(i18n.global.t("auth.enterCredentials")),
         onClick: () => {
-          void handleAuthFailure(e, { title: i18n.global.t("auth.title") }).then((ok) => {
-            if (ok) void retry();
-          });
+          if (request !== generation) return;
+          void handleAuthFailure(e, { title: i18n.global.t("auth.title"), url })
+            .then(async (ok) => {
+              if (ok && request === generation) await retry();
+            })
+            .catch((error) => toast({ title, description: formatErrorMessage(error) }));
         },
       },
     });
@@ -61,10 +82,14 @@ export const useSyncStore = defineStore("sync", () => {
     noVerify?: boolean;
   }) {
     const ws = useWorkspaceStore();
+    if (pulling.value) return;
     if (!ws.repoPath) {
       toast({ title: "Pull failed", description: "No repository open" });
       return;
     }
+    const path = ws.repoPath;
+    const request = generation;
+    const url = useBranchesStore().remotes.find((r) => r.name === opts.remote)?.fetchUrl ?? null;
     const jobs = useJobsStore();
     const jobId = `pull-${Date.now()}`;
     pulling.value = true;
@@ -74,7 +99,7 @@ export const useSyncStore = defineStore("sync", () => {
     });
     const run = async () => {
       const result = await getBackend().pullRun({
-        path: ws.repoPath!,
+        path,
         remote: opts.remote,
         branch: opts.branch,
         rebase: !!opts.rebase,
@@ -84,26 +109,36 @@ export const useSyncStore = defineStore("sync", () => {
         noCommit: !!opts.noCommit,
         noVerify: !!opts.noVerify,
       });
+      if (request !== generation) return result;
+      const message = i18n.global.t(
+        !result.updated
+          ? "syncUi.upToDate"
+          : result.oldHead === result.newHead
+            ? "syncUi.commitRequired"
+            : "syncUi.pulled",
+      );
       if (result.updated) {
         lastUpdate.value = {
           oldHead: result.oldHead,
           newHead: result.newHead,
           strategy: result.strategy,
-          updatedFiles: [],
-          commits: [],
-          message: result.message,
+          updatedFiles: result.updatedFiles,
+          commits: result.commits,
+          message,
+          submodules: null,
+          submoduleError: null,
         };
         useLayoutStore().activeBottomTab = "update";
         useLayoutStore().bottomOpen = true;
       }
-      toast({ title: result.message });
-      await afterSync();
+      toast({ title: message });
+      await afterSync(request);
       return result;
     };
     try {
       return await run();
     } catch (e) {
-      return await onAuthOrToast("Pull failed", e, run);
+      return await onAuthOrToast("Pull failed", e, run, url, request);
     } finally {
       pulling.value = false;
       jobs.finished(jobId);
@@ -112,10 +147,14 @@ export const useSyncStore = defineStore("sync", () => {
 
   async function updateProject(strategy: UpdateMethod) {
     const ws = useWorkspaceStore();
+    if (updating.value) return;
     if (!ws.repoPath) {
       toast({ title: "Update Project failed", description: "No repository open" });
       return;
     }
+    const path = ws.repoPath;
+    const request = generation;
+    const url = useBranchesStore().remotes[0]?.fetchUrl ?? null;
     const jobs = useJobsStore();
     const jobId = `update-project-${Date.now()}`;
     updating.value = true;
@@ -127,48 +166,77 @@ export const useSyncStore = defineStore("sync", () => {
     const run = async () => {
       jobs.progress(jobId, { message: "Fetching & updating…" });
       const info = await getBackend().updateProjectRun({
-        path: ws.repoPath!,
+        path,
         strategy,
       });
+      if (request !== generation) return info;
       lastUpdate.value = info;
-      if (info.oldHead !== info.newHead) {
+      const moduleFeedback = info.submodules ? submoduleFeedback(info.submodules) : null;
+      const attention = !!info.submoduleError || !!moduleFeedback?.persistent;
+      const modulesChanged = info.submodules?.items.some(
+        (item) => item.updated && item.oldSha !== item.newSha,
+      );
+      if (info.oldHead !== info.newHead || attention || modulesChanged) {
         useLayoutStore().activeBottomTab = "update";
         useLayoutStore().bottomOpen = true;
-        toast({ title: info.message, persistent: true });
+        toast({
+          title: attention
+            ? i18n.global.t("syncUi.updateSubmodulesIncomplete")
+            : info.oldHead === info.newHead && modulesChanged
+              ? moduleFeedback!.title
+              : info.message,
+          description: info.submoduleError || moduleFeedback?.description,
+          persistent: true,
+        });
       } else {
         toast({ title: info.message || "All files are up-to-date" });
       }
-      await afterSync();
+      await afterSync(request);
       return info;
     };
     try {
       return await run();
     } catch (e) {
-      return await onAuthOrToast("Update Project failed", e, run);
+      return await onAuthOrToast("Update Project failed", e, run, url, request);
     } finally {
       updating.value = false;
       jobs.finished(jobId);
     }
   }
 
-  async function previewPush(remote?: string): Promise<PushPreview | null> {
+  async function previewPush(
+    remote?: string,
+    branch?: string,
+    remoteBranch?: string,
+  ): Promise<PushPreview | null> {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
-    return getBackend().pushPreview({ path: ws.repoPath, remote: remote ?? null });
+    return getBackend().pushPreview({
+      path: ws.repoPath,
+      remote: remote ?? null,
+      branch: branch ?? null,
+      remoteBranch: remoteBranch ?? null,
+    });
   }
 
   async function push(opts: {
     remote: string;
     branch: string;
+    remoteBranch?: string;
     setUpstream: boolean;
     forceWithLease: boolean;
     pushTags?: string | null;
   }) {
     const ws = useWorkspaceStore();
+    if (pushing.value) return;
     if (!ws.repoPath) {
       toast({ title: "Push failed", description: "No repository open" });
       return;
     }
+    const path = ws.repoPath;
+    const request = generation;
+    const remote = useBranchesStore().remotes.find((r) => r.name === opts.remote);
+    const url = remote?.pushUrl ?? remote?.fetchUrl ?? null;
     const jobs = useJobsStore();
     const jobId = `push-${Date.now()}`;
     pushing.value = true;
@@ -178,13 +246,15 @@ export const useSyncStore = defineStore("sync", () => {
     });
     const run = async () => {
       const result = await getBackend().pushRun({
-        path: ws.repoPath!,
+        path,
         remote: opts.remote,
         branch: opts.branch,
+        remoteBranch: opts.remoteBranch ?? null,
         setUpstream: opts.setUpstream,
         forceWithLease: opts.forceWithLease,
         pushTags: opts.pushTags ?? null,
       });
+      if (request !== generation) return result;
       if (result.rejected) {
         toast({
           title: "Push rejected",
@@ -194,13 +264,13 @@ export const useSyncStore = defineStore("sync", () => {
       } else {
         toast({ title: result.message });
       }
-      await afterSync();
+      await afterSync(request);
       return result;
     };
     try {
       return await run();
     } catch (e) {
-      return await onAuthOrToast("Push failed", e, run);
+      return await onAuthOrToast("Push failed", e, run, url, request);
     } finally {
       pushing.value = false;
       jobs.finished(jobId);

@@ -13,6 +13,7 @@
     "dev:web": "pnpm --filter @gitx/desktop dev:web",
     "build": "pnpm --filter @gitx/desktop build",
     "preview": "pnpm --filter @gitx/desktop preview",
+    "helper:build": "node apps/desktop/scripts/build-helper.mjs",
     "typecheck": "pnpm --filter @gitx/desktop typecheck",
     "test": "pnpm --filter @gitx/desktop test",
     "lint": "oxlint apps/desktop/src && cargo fmt --check && cargo clippy -p gitx -- -D warnings",

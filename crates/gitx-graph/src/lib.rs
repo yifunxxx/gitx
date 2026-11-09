@@ -49,54 +49,39 @@ pub fn layout_graph(commits: &[(String, Vec<String>)]) -> Vec<GraphRow> {
             }
         }
 
-        // First parent continues on same lane; additional parents fork / join.
-        for (pi, parent) in parents.iter().enumerate() {
-            let target_lane = if pi == 0 {
-                lane
-            } else if let Some(existing) = lanes.iter().position(|c| c.as_ref() == Some(parent)) {
-                existing
-            } else if let Some(free) = lanes.iter().position(|c| c.is_none()) {
-                free
-            } else {
-                lanes.push(None);
-                lanes.len() - 1
-            };
-            if target_lane >= lanes.len() {
-                lanes.resize(target_lane + 1, None);
-            }
-            edges.push(GraphEdge {
-                from_lane: lane as u32,
-                to_lane: target_lane as u32,
-            });
-            color_of.entry(parent.clone()).or_insert(if pi == 0 {
-                color
-            } else {
-                let c = next_color;
-                next_color = (next_color + 1) % 12;
-                c
-            });
-        }
-
-        // Clear current lane then place parents.
+        // Consume the current reservation before allocating parents. A parent
+        // already reserved on another lane must be joined, including first parents.
         lanes[lane] = None;
         for (pi, parent) in parents.iter().enumerate() {
-            let target = edges
-                .iter()
-                .filter(|e| e.from_lane == lane as u32)
-                .nth(pi)
-                .map(|e| e.to_lane as usize)
-                .unwrap_or(lane);
-            if target >= lanes.len() {
-                lanes.resize(target + 1, None);
+            if parents[..pi].contains(parent) {
+                continue;
             }
-            // Prefer keeping an existing reservation for the same parent.
-            if let Some(existing) = lanes.iter().position(|c| c.as_ref() == Some(parent)) {
-                if existing != target && pi > 0 {
-                    // Already reserved elsewhere; edge already points there.
-                    continue;
-                }
-            }
+            let target =
+                if let Some(existing) = lanes.iter().position(|c| c.as_ref() == Some(parent)) {
+                    existing
+                } else if pi == 0 {
+                    lane
+                } else if let Some(free) = lanes.iter().position(|c| c.is_none()) {
+                    free
+                } else {
+                    lanes.push(None);
+                    lanes.len() - 1
+                };
+            // Reserve immediately: later parents must see this lane as occupied.
             lanes[target] = Some(parent.clone());
+            edges.push(GraphEdge {
+                from_lane: lane as u32,
+                to_lane: target as u32,
+            });
+            color_of.entry(parent.clone()).or_insert_with(|| {
+                if pi == 0 {
+                    color
+                } else {
+                    let c = next_color;
+                    next_color = (next_color + 1) % 12;
+                    c
+                }
+            });
         }
 
         // Trim trailing empty lanes for denser columns.
@@ -160,6 +145,14 @@ mod tests {
             rows[0].edges
         );
         // Second parent tip `b` should appear on a non-zero lane (or be joined).
+        assert!(
+            rows[3].edges.is_empty(),
+            "joined root must not leave a phantom lane"
+        );
+        assert!(rows[2]
+            .edges
+            .iter()
+            .any(|e| e.from_lane == 1 && e.to_lane == 0));
         let b_row = &rows[2];
         assert!(
             b_row.lane > 0 || rows[1].edges.iter().any(|e| e.to_lane != e.from_lane),

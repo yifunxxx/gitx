@@ -25,16 +25,24 @@ import { isTauri } from "@/lib/utils";
 import { formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
+import { useRepositoryRefresh } from "@/composables/useRepositoryRefresh";
 
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const consoleStore = useConsoleStore();
 const jobs = useJobsStore();
+useRepositoryRefresh();
 
 setKeymapOverridesProvider(() => settings.settings?.keymapOverrides);
 
 const unlisteners: Array<() => void> = [];
+let disposed = false;
+
+function keepListener(unlisten: () => void) {
+  if (disposed) unlisten();
+  else unlisteners.push(unlisten);
+}
 
 function onKeydown(e: KeyboardEvent) {
   // Don't steal keys while typing in inputs / dialogs (except Find Action).
@@ -70,17 +78,41 @@ function onConsoleLine(payload: { stream: string; line: string }) {
   consoleStore.append(stream, payload.line);
 }
 
-let stuckTimer: number | undefined;
-
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
+  if (isTauri()) {
+    const { listen } = await import("@tauri-apps/api/event");
+    if (disposed) return;
+    // Register each cleanup as soon as it resolves: unmount may happen while
+    // another native subscription is still being established.
+    await Promise.all([
+      listen<{ stream: string; line: string }>("console://line", (e) => {
+        if (!disposed) onConsoleLine(e.payload);
+      }).then(keepListener),
+      listen<{ id: string; title?: string }>("job://started", (e) => {
+        if (!disposed) jobs.started({ id: e.payload.id, title: e.payload.title ?? "job" });
+      }).then(keepListener),
+      listen<{ id: string }>("job://finished", (e) => {
+        if (!disposed) jobs.finished(e.payload.id);
+      }).then(keepListener),
+    ]).catch((err) => consoleStore.append("stderr", String(err)));
+  } else {
+    const handler = (e: Event) => onConsoleLine((e as CustomEvent).detail);
+    window.addEventListener("console://line", handler);
+    keepListener(() => window.removeEventListener("console://line", handler));
+  }
+  if (disposed) return;
   await settings.load();
+  if (disposed) return;
   await workspace.loadRecent();
+  if (disposed) return;
   try {
     await workspace.detectGit();
+    if (disposed) return;
     consoleStore.append("cmd", `# git detected: ${workspace.gitPath}`);
     consoleStore.append("stdout", workspace.gitVersion ?? "");
   } catch (err) {
+    if (disposed) return;
     const msg = formatGitDetectError(err, i18n.global.t("git.detectHint"));
     consoleStore.append("stderr", msg);
     toast({
@@ -100,30 +132,11 @@ onMounted(async () => {
       },
     });
   }
-
-  stuckTimer = window.setInterval(() => jobs.pruneStuck(), 30_000);
-
-  if (isTauri()) {
-    const { listen } = await import("@tauri-apps/api/event");
-    unlisteners.push(
-      await listen<{ stream: string; line: string }>("console://line", (e) =>
-        onConsoleLine(e.payload),
-      ),
-      await listen<{ id: string; title?: string }>("job://started", (e) => {
-        jobs.started({ id: e.payload.id, title: e.payload.title ?? "job" });
-      }),
-      await listen<{ id: string }>("job://finished", (e) => jobs.finished(e.payload.id)),
-    );
-  } else {
-    const handler = (e: Event) => onConsoleLine((e as CustomEvent).detail);
-    window.addEventListener("console://line", handler);
-    unlisteners.push(() => window.removeEventListener("console://line", handler));
-  }
 });
 
 onUnmounted(() => {
+  disposed = true;
   window.removeEventListener("keydown", onKeydown);
-  if (stuckTimer != null) window.clearInterval(stuckTimer);
   unlisteners.splice(0).forEach((u) => u());
 });
 </script>
@@ -136,7 +149,11 @@ onUnmounted(() => {
         <ToolWindowStripe />
         <div class="min-h-0 min-w-0 flex-1">
           <Splitpanes class="default-theme h-full" horizontal>
-            <Pane :size="layout.bottomOpen ? 100 - layout.bottomSize : 100" min-size="30">
+            <Pane
+              v-if="!layout.bottomOpen || !layout.bottomMaximized"
+              :size="layout.bottomOpen ? 100 - layout.bottomSize : 100"
+              min-size="20"
+            >
               <Splitpanes class="h-full">
                 <Pane
                   v-if="layout.leftOpen && layout.commitTwMode !== 'float'"
@@ -156,7 +173,12 @@ onUnmounted(() => {
                 </Pane>
               </Splitpanes>
             </Pane>
-            <Pane v-if="layout.bottomOpen" :size="layout.bottomSize" min-size="15" max-size="60">
+            <Pane
+              v-if="layout.bottomOpen"
+              :size="layout.bottomMaximized ? 100 : layout.bottomSize"
+              min-size="15"
+              :max-size="layout.bottomMaximized ? 100 : 80"
+            >
               <GitToolWindow />
             </Pane>
           </Splitpanes>

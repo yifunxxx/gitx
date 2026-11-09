@@ -285,6 +285,15 @@ pub struct LogPage {
     pub next_offset: u32,
 }
 
+/// Position in the same filtered, ordered history used by `log_query`.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogLocation {
+    pub sha: String,
+    /// None means the commit exists but is outside the displayed history.
+    pub offset: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitDetails {
@@ -380,6 +389,8 @@ pub struct PullResult {
     pub new_head: String,
     pub strategy: String,
     pub updated: bool,
+    pub updated_files: Vec<ChangedFile>,
+    pub commits: Vec<String>,
     pub message: String,
 }
 
@@ -397,6 +408,7 @@ pub struct PushPreview {
     pub remote: String,
     pub refs: Vec<PushRefspec>,
     pub commits: Vec<String>,
+    pub commits_truncated: bool,
     pub set_upstream: bool,
     pub has_remote: bool,
 }
@@ -429,6 +441,11 @@ pub struct UpdateInfo {
     pub updated_files: Vec<ChangedFile>,
     pub commits: Vec<String>,
     pub message: String,
+    #[serde(default)]
+    pub submodules: Option<SubmoduleUpdateResult>,
+    /// The superproject may already be updated when module discovery fails.
+    #[serde(default)]
+    pub submodule_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -503,6 +520,14 @@ pub enum RewriteOutcome {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+pub struct RewriteHead {
+    pub oid: String,
+    /// Full symbolic reference, or None for a detached HEAD.
+    pub symbolic_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct RewriteResult {
     pub old_head: String,
     pub new_head: String,
@@ -510,6 +535,8 @@ pub struct RewriteResult {
     pub message: String,
     pub conflict_files: Vec<String>,
     pub backup_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo_head: Option<RewriteHead>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -581,6 +608,8 @@ pub enum Merge3BlockKind {
 #[serde(rename_all = "camelCase")]
 pub struct Merge3Block {
     pub kind: Merge3BlockKind,
+    /// Complete line tokens, retaining CR/LF and whether the last line has a terminator.
+    /// Concatenate these arrays without inserting separators to reconstruct each side.
     pub base_lines: Vec<String>,
     pub ours_lines: Vec<String>,
     pub theirs_lines: Vec<String>,
@@ -833,6 +862,16 @@ pub struct MultiRootOpStep {
     pub ok: bool,
     pub previous_ref: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub skipped: bool,
+    #[serde(default)]
+    pub previous_head: Option<RewriteHead>,
+    #[serde(default)]
+    pub checkout_head: Option<RewriteHead>,
+    #[serde(default)]
+    pub rolled_back: bool,
+    #[serde(default)]
+    pub rollback_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

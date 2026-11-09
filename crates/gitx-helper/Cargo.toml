@@ -11,5 +11,13 @@ name = "gitx-helper"
 path = "src/main.rs"
 
 [dependencies]
+gitx-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+gitx-git = { workspace = true }
+gitx-testkit = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }

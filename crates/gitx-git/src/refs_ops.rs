@@ -253,48 +253,173 @@ impl GitRunner {
         mode: &str,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        let inv = match mode {
-            "revision" => GitInvocation::new(cwd, ["checkout", "--detach", target])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone()),
+        self.branch_checkout_inner(cwd, target, mode, false, cancel)
+            .await
+    }
+
+    /// Multi-root operations visit and record each worktree independently.
+    /// Recursive checkout would move another root before its snapshot exists.
+    pub(crate) async fn branch_checkout_single_root(
+        &self,
+        cwd: &Path,
+        target: &str,
+        mode: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        self.branch_checkout_inner(cwd, target, mode, true, cancel)
+            .await
+    }
+
+    async fn branch_checkout_inner(
+        &self,
+        cwd: &Path,
+        target: &str,
+        mode: &str,
+        no_recurse: bool,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
+        }
+        if !matches!(mode, "local" | "remote" | "revision")
+            || target.is_empty()
+            || target.starts_with('-')
+        {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "invalid checkout target or mode",
+            ));
+        }
+        self.ensure_not_busy(cwd, cancel).await?;
+        let mut inv = match mode {
+            "revision" => {
+                let revision = self
+                    .rev_parse_public(cwd, &format!("{target}^{{commit}}"), cancel)
+                    .await?;
+                GitInvocation::new(cwd, ["checkout", "--detach", &revision, "--"])
+            }
             "remote" => {
-                // Create/reuse local tracking branch from remote ref like origin/feature.
-                let short = target.rsplit('/').next().unwrap_or(target);
-                let local_exists = GitInvocation::new(
-                    cwd,
-                    [
-                        "show-ref",
-                        "--verify",
-                        "--quiet",
-                        &format!("refs/heads/{short}"),
-                    ],
-                )
-                .kind(OpKind::Read)
-                .git_bin(self.git_bin.clone());
-                if self.run(local_exists, cancel).await.is_ok() {
-                    GitInvocation::new(cwd, ["checkout", short])
-                        .kind(OpKind::Write)
-                        .git_bin(self.git_bin.clone())
+                let remote_name = target.strip_prefix("refs/remotes/").unwrap_or(target);
+                let remote_ref = format!("refs/remotes/{remote_name}");
+                if !self.checkout_ref_exists(cwd, &remote_ref, cancel).await? {
+                    return Err(AppError::new(
+                        ErrorCode::NotFound,
+                        format!("remote branch does not exist: {target}"),
+                    ));
+                }
+                // Remote names can contain '/'. Match the longest configured
+                // prefix, preserving every directory in the branch name.
+                let remotes = self
+                    .run(GitInvocation::new(cwd, ["remote"]), cancel)
+                    .await?;
+                let remotes = String::from_utf8_lossy(&remotes.stdout);
+                let remote = remotes
+                    .lines()
+                    .filter(|name| {
+                        remote_name
+                            .strip_prefix(name)
+                            .is_some_and(|rest| rest.starts_with('/'))
+                    })
+                    .max_by_key(|name| name.len())
+                    .ok_or_else(|| {
+                        AppError::new(
+                            ErrorCode::RemoteNotFound,
+                            format!("no configured remote matches {target}"),
+                        )
+                    })?;
+                let local = &remote_name[remote.len() + 1..];
+                if local.is_empty() || local.starts_with('-') {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidRefName,
+                        "invalid local tracking branch name",
+                    ));
+                }
+                let local_ref = format!("refs/heads/{local}");
+                if self.checkout_ref_exists(cwd, &local_ref, cancel).await? {
+                    let upstreams = self
+                        .run(
+                            GitInvocation::new(
+                                cwd,
+                                [
+                                    "for-each-ref",
+                                    "--format=%(refname)%1e%(upstream)",
+                                    &local_ref,
+                                ],
+                            ),
+                            cancel,
+                        )
+                        .await?;
+                    let upstreams = String::from_utf8_lossy(&upstreams.stdout);
+                    let upstream = upstreams
+                        .lines()
+                        .filter_map(|line| line.split_once('\u{001e}'))
+                        .find(|(name, _)| *name == local_ref)
+                        .map(|(_, upstream)| upstream);
+                    if upstream != Some(remote_ref.as_str()) {
+                        return Err(AppError::new(ErrorCode::RefAlreadyExists,
+                            format!("local branch '{local}' already exists and does not track '{target}'; select it explicitly or create a branch with another name")));
+                    }
+                    GitInvocation::new(cwd, ["checkout", "--no-guess", local, "--"])
                 } else {
-                    GitInvocation::new(cwd, ["checkout", "-b", short, "--track", target])
-                        .kind(OpKind::Write)
-                        .git_bin(self.git_bin.clone())
+                    GitInvocation::new(cwd, ["checkout", "-b", local, "--track", &remote_ref, "--"])
                 }
             }
-            _ => GitInvocation::new(cwd, ["checkout", target])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone()),
-        };
-        self.run(inv, cancel).await.map_err(|e| {
-            let msg = e.message.to_lowercase();
-            if msg.contains("already checked out") || msg.contains("is already used by worktree") {
-                AppError::new(ErrorCode::BranchInUse, e.message)
-                    .with_stderr(e.git_stderr.unwrap_or_default())
-            } else {
-                e
+            _ => {
+                let branch = target.strip_prefix("refs/heads/").unwrap_or(target);
+                if branch.starts_with('-')
+                    || !self
+                        .checkout_ref_exists(cwd, &format!("refs/heads/{branch}"), cancel)
+                        .await?
+                {
+                    return Err(AppError::new(
+                        ErrorCode::NotFound,
+                        format!("local branch does not exist: {target}"),
+                    ));
+                }
+                GitInvocation::new(cwd, ["checkout", "--no-guess", branch, "--"])
             }
-        })?;
+        };
+        if no_recurse {
+            inv.args.insert(1, "--no-recurse-submodules".into());
+        }
+        self.run(inv.kind(OpKind::Write), cancel)
+            .await
+            .map_err(|e| {
+                let msg = e.message.to_lowercase();
+                if msg.contains("already checked out")
+                    || msg.contains("is already used by worktree")
+                {
+                    AppError::new(ErrorCode::BranchInUse, e.message)
+                        .with_stderr(e.git_stderr.unwrap_or_default())
+                } else {
+                    e
+                }
+            })?;
         Ok(())
+    }
+
+    async fn checkout_ref_exists(
+        &self,
+        cwd: &Path,
+        reference: &str,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AppError> {
+        match self
+            .run(
+                GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", reference]),
+                cancel,
+            )
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(error)
+                if error.exit_code == Some(1)
+                    && error.git_stderr.as_deref().unwrap_or("").trim().is_empty() =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn branch_rename(

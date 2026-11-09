@@ -1,97 +1,193 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
-import type { RebasePlan, RepoOpState, ResetMode, RewriteResult } from "@/lib/backend";
+import type { RebasePlan, RepoOpState, ResetMode, RewriteHead, RewriteResult } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { useLogStore } from "./logStore";
 import { useBranchesStore } from "./branchesStore";
 import { useConflictsStore } from "./conflictsStore";
 import { toast } from "@/composables/useToast";
-import { openDialog } from "@/composables/useDialog";
+import { openDialog, useDialogStack } from "@/composables/useDialog";
+import { i18n } from "@/i18n";
 import DirtyWorktreeDialog from "@/features/merge/DirtyWorktreeDialog.vue";
 import ConflictsDialog from "@/features/merge/ConflictsDialog.vue";
-import { formatErrorMessage } from "@/lib/errors";
+import { formatErrorMessage, invokeErrorCode } from "@/lib/errors";
+import { rewriteResultTitle, type RewriteOperation } from "@/lib/rewriteFeedback";
+
+type OperationContext = { path: string; generation: number };
 
 export const useRewriteStore = defineStore("rewrite", () => {
   const opState = ref<RepoOpState | null>(null);
   const busy = ref(false);
   const lastBackupRef = ref<string | null>(null);
+  const lastUndoHead = ref<RewriteHead | null>(null);
+  const canUndo = computed(
+    () =>
+      !!lastBackupRef.value &&
+      !!lastUndoHead.value &&
+      !busy.value &&
+      (!opState.value || opState.value.kind === "normal"),
+  );
+  let stateGeneration = 0;
+  let repoGeneration = 0;
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      ++stateGeneration;
+      ++repoGeneration;
+      opState.value = null;
+      lastBackupRef.value = null;
+      lastUndoHead.value = null;
+    },
+    { flush: "sync" },
+  );
 
-  async function afterRewrite() {
+  function isCurrent(context: OperationContext) {
+    return context.generation === repoGeneration && context.path === workspace.repoPath;
+  }
+
+  async function afterRewrite(context?: OperationContext) {
+    if (!workspace.repoPath) return;
+    const captured = context ?? { path: workspace.repoPath, generation: repoGeneration };
+    if (!isCurrent(captured)) return;
     await refreshOpState();
+    if (!isCurrent(captured)) return;
     await useChangesStore().refresh();
+    if (!isCurrent(captured)) return;
     await useLogStore().load(true);
+    if (!isCurrent(captured)) return;
     await useBranchesStore().refresh();
-    if (opState.value && opState.value.kind !== "normal" && (opState.value.conflictCount ?? 0) > 0) {
+    if (!isCurrent(captured)) return;
+    if (
+      opState.value &&
+      opState.value.kind !== "normal" &&
+      (opState.value.conflictCount ?? 0) > 0
+    ) {
       await useConflictsStore().refresh();
-      void openDialog(ConflictsDialog, {});
+      if (!isCurrent(captured)) return;
+      if (!useDialogStack().value.some((dialog) => dialog.component === ConflictsDialog)) {
+        void openDialog(ConflictsDialog, {});
+      }
     }
   }
 
   async function refreshOpState() {
+    const generation = ++stateGeneration;
     const ws = useWorkspaceStore();
     if (!ws.repoPath) {
       opState.value = null;
       return null;
     }
-    opState.value = await getBackend().repoOpStateGet({ path: ws.repoPath });
+    const result = await getBackend().repoOpStateGet({ path: ws.repoPath });
+    if (generation !== stateGeneration) return null;
+    opState.value = result;
     return opState.value;
   }
 
-  async function handleResult(result: RewriteResult, label: string) {
-    if (result.backupRef) lastBackupRef.value = result.backupRef;
+  async function handleResult(
+    result: RewriteResult,
+    operation: RewriteOperation,
+    context: OperationContext,
+  ) {
+    if (!isCurrent(context)) return result;
+    if (result.backupRef) {
+      lastBackupRef.value = result.backupRef;
+      lastUndoHead.value = result.undoHead ?? null;
+    }
+    const title = rewriteResultTitle(result, operation);
     if (result.outcome === "conflicts") {
+      toast({ title });
+    } else if (result.backupRef && result.undoHead) {
       toast({
-        title: result.message || `${label} conflicts`,
-        persistent: true,
-      });
-      await useConflictsStore().refresh();
-      void openDialog(ConflictsDialog, {});
-    } else if (result.backupRef) {
-      toast({
-        title: result.message || label,
+        title,
         action: {
-          label: "Undo",
+          label: i18n.global.t("rewrite.undo"),
+          disabled: () => busy.value || !isCurrent(context),
           onClick: () => {
-            void undoLast(result.backupRef!);
+            if (busy.value || !isCurrent(context)) return false;
+            void undoWithFeedback(result.backupRef!, result.undoHead!);
           },
         },
       });
     } else {
-      toast({ title: result.message || label });
+      toast({ title });
     }
-    await afterRewrite();
+    await afterRewrite(context);
     return result;
   }
 
-  async function undoLast(backupRef?: string) {
+  async function undoWithFeedback(backupRef?: string, expectedHead?: RewriteHead) {
+    if (!workspace.repoPath) return null;
+    const context = { path: workspace.repoPath, generation: repoGeneration };
+    try {
+      return await undoLast(backupRef, expectedHead);
+    } catch (error) {
+      if (isCurrent(context))
+        toast({
+          title: i18n.global.t("rewrite.undoFailed"),
+          persistent: true,
+          description:
+            invokeErrorCode(error) === "staleUndo"
+              ? i18n.global.t("rewrite.staleUndo")
+              : formatErrorMessage(error),
+        });
+      return null;
+    }
+  }
+
+  async function undoLast(backupRef?: string, expectedHead?: RewriteHead) {
     const ws = useWorkspaceStore();
     const refName = backupRef ?? lastBackupRef.value;
     if (!ws.repoPath || !refName) return null;
+    if (busy.value) return null;
+    const expected = expectedHead ?? (refName === lastBackupRef.value ? lastUndoHead.value : null);
+    if (!expected) throw new Error(i18n.global.t("rewrite.undoUnavailable"));
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       const result = await getBackend().undoRewrite({
-        path: ws.repoPath,
+        path: context.path,
         backupRef: refName,
         restoreWorktree: true,
+        expectedHead: expected,
       });
-      toast({ title: result.message || "Undone" });
-      await afterRewrite();
+      if (isCurrent(context)) {
+        lastBackupRef.value = result.backupRef;
+        lastUndoHead.value = result.undoHead ?? null;
+        toast({ title: i18n.global.t("rewrite.undone") });
+      }
+      await afterRewrite(context);
       return result;
+    } catch (error) {
+      // Snapshot restoration can fail after HEAD was restored. Refresh the
+      // actual repository state without replacing the original failure.
+      try {
+        await afterRewrite(context);
+      } catch {
+        /* the original error is actionable */
+      }
+      throw error;
     } finally {
       busy.value = false;
     }
   }
 
   async function withDirtyRetry<T>(
-    operation: string,
+    context: OperationContext,
+    operation: "merge" | "rebase" | "cherry-pick",
     run: (smart: boolean) => Promise<T>,
   ): Promise<T | null> {
     try {
       return await run(false);
     } catch (e: unknown) {
-      const err = e as { code?: string; message?: string; args?: { files?: string[]; operation?: string } };
+      if (!isCurrent(context)) throw e;
+      const err = e as {
+        code?: string;
+        message?: string;
+        args?: { files?: string[]; operation?: string };
+      };
       if (
         err?.code === "dirtyWorktreeWouldBeOverwritten" ||
         err?.code === "untrackedWouldBeOverwritten"
@@ -101,12 +197,19 @@ export const useRewriteStore = defineStore("rewrite", () => {
           files,
           operation: err.args?.operation ?? operation,
         });
-        if (choice === "smart") {
+        if (choice === "smart" && isCurrent(context)) {
           return await run(true);
         }
         return null;
       }
-      toast({ title: `${operation} failed`, description: formatErrorMessage(e) });
+      toast({
+        title: i18n.global.t("rewrite.operationFailed", {
+          operation: i18n.global.t(
+            `merge.operationNames.${operation === "cherry-pick" ? "cherryPick" : operation}`,
+          ),
+        }),
+        description: formatErrorMessage(e),
+      });
       throw e;
     }
   }
@@ -123,11 +226,13 @@ export const useRewriteStore = defineStore("rewrite", () => {
   }) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await withDirtyRetry("merge", (smart) =>
+      const result = await withDirtyRetry(context, "merge", (smart) =>
         getBackend().mergeRun({
-          path: ws.repoPath!,
+          path: context.path,
           branches: opts.branches,
           noFf: !!opts.noFf,
           ffOnly: !!opts.ffOnly,
@@ -140,7 +245,7 @@ export const useRewriteStore = defineStore("rewrite", () => {
         }),
       );
       if (!result) return null;
-      return handleResult(result, "Merge");
+      return await handleResult(result, "merge", context);
     } finally {
       busy.value = false;
     }
@@ -159,11 +264,13 @@ export const useRewriteStore = defineStore("rewrite", () => {
   }) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await withDirtyRetry("rebase", (smart) =>
+      const result = await withDirtyRetry(context, "rebase", (smart) =>
         getBackend().rebaseRun({
-          path: ws.repoPath!,
+          path: context.path,
           upstream: opts.upstream,
           onto: opts.onto ?? null,
           branch: opts.branch ?? null,
@@ -177,7 +284,7 @@ export const useRewriteStore = defineStore("rewrite", () => {
         }),
       );
       if (!result) return null;
-      return handleResult(result, "Rebase");
+      return await handleResult(result, "rebase", context);
     } finally {
       busy.value = false;
     }
@@ -191,11 +298,13 @@ export const useRewriteStore = defineStore("rewrite", () => {
   }) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await withDirtyRetry("cherry-pick", (smart) =>
+      const result = await withDirtyRetry(context, "cherry-pick", (smart) =>
         getBackend().cherryPickRun({
-          path: ws.repoPath!,
+          path: context.path,
           shas: opts.shas,
           mainline: opts.mainline ?? null,
           addSuffix: opts.addSuffix ?? null,
@@ -204,7 +313,7 @@ export const useRewriteStore = defineStore("rewrite", () => {
         }),
       );
       if (!result) return null;
-      return handleResult(result, "Cherry-pick");
+      return await handleResult(result, "cherryPick", context);
     } finally {
       busy.value = false;
     }
@@ -214,15 +323,17 @@ export const useRewriteStore = defineStore("rewrite", () => {
     const ws = useWorkspaceStore();
     if (!ws.repoPath || !opState.value) return;
     const kind = opState.value.kind;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       let result: RewriteResult;
-      if (kind === "merge") result = await getBackend().mergeAbort({ path: ws.repoPath });
-      else if (kind === "rebase") result = await getBackend().rebaseAbort({ path: ws.repoPath });
-      else if (kind === "revert") result = await getBackend().revertAbort({ path: ws.repoPath });
-      else result = await getBackend().cherryPickAbort({ path: ws.repoPath });
-      toast({ title: result.message });
-      await afterRewrite();
+      if (kind === "merge") result = await getBackend().mergeAbort({ path: context.path });
+      else if (kind === "rebase") result = await getBackend().rebaseAbort({ path: context.path });
+      else if (kind === "revert") result = await getBackend().revertAbort({ path: context.path });
+      else result = await getBackend().cherryPickAbort({ path: context.path });
+      if (isCurrent(context)) toast({ title: rewriteResultTitle(result, "abort") });
+      await afterRewrite(context);
     } finally {
       busy.value = false;
     }
@@ -232,19 +343,21 @@ export const useRewriteStore = defineStore("rewrite", () => {
     const ws = useWorkspaceStore();
     if (!ws.repoPath || !opState.value) return;
     const kind = opState.value.kind;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       let result: RewriteResult;
       if (kind === "merge") {
-        result = await getBackend().mergeCommit({ path: ws.repoPath, message: null });
+        result = await getBackend().mergeCommit({ path: context.path, message: null });
       } else if (kind === "rebase") {
-        result = await getBackend().rebaseContinue({ path: ws.repoPath });
+        result = await getBackend().rebaseContinue({ path: context.path });
       } else if (kind === "revert") {
-        result = await getBackend().revertContinue({ path: ws.repoPath });
+        result = await getBackend().revertContinue({ path: context.path });
       } else {
-        result = await getBackend().cherryPickContinue({ path: ws.repoPath });
+        result = await getBackend().cherryPickContinue({ path: context.path });
       }
-      return handleResult(result, "Continue");
+      return await handleResult(result, kind === "normal" ? "cherryPick" : kind, context);
     } finally {
       busy.value = false;
     }
@@ -254,12 +367,14 @@ export const useRewriteStore = defineStore("rewrite", () => {
     const ws = useWorkspaceStore();
     if (!ws.repoPath || !opState.value) return;
     const kind = opState.value.kind;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       let result: RewriteResult;
-      if (kind === "rebase") result = await getBackend().rebaseSkip({ path: ws.repoPath });
-      else result = await getBackend().cherryPickSkip({ path: ws.repoPath });
-      return handleResult(result, "Skip");
+      if (kind === "rebase") result = await getBackend().rebaseSkip({ path: context.path });
+      else result = await getBackend().cherryPickSkip({ path: context.path });
+      return await handleResult(result, kind === "rebase" ? "rebase" : "cherryPick", context);
     } finally {
       busy.value = false;
     }
@@ -274,13 +389,15 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function startInteractive(plan: RebasePlan) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await withDirtyRetry("rebase", (smart) =>
-        getBackend().rebaseInteractiveStart({ path: ws.repoPath!, plan, smart }),
+      const result = await withDirtyRetry(context, "rebase", (smart) =>
+        getBackend().rebaseInteractiveStart({ path: context.path, plan, smart }),
       );
       if (!result) return null;
-      return handleResult(result, "Interactive rebase");
+      return await handleResult(result, "rebase", context);
     } finally {
       busy.value = false;
     }
@@ -289,10 +406,12 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function reword(sha: string, message: string) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await getBackend().rewordCommit({ path: ws.repoPath, sha, message });
-      return handleResult(result, "Reword");
+      const result = await getBackend().rewordCommit({ path: context.path, sha, message });
+      return await handleResult(result, "reword", context);
     } finally {
       busy.value = false;
     }
@@ -301,10 +420,12 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function squash(shas: string[], message: string) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await getBackend().squashCommits({ path: ws.repoPath, shas, message });
-      return handleResult(result, "Squash");
+      const result = await getBackend().squashCommits({ path: context.path, shas, message });
+      return await handleResult(result, "squash", context);
     } finally {
       busy.value = false;
     }
@@ -313,10 +434,12 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function drop(shas: string[]) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await getBackend().dropCommits({ path: ws.repoPath, shas });
-      return handleResult(result, "Drop");
+      const result = await getBackend().dropCommits({ path: context.path, shas });
+      return await handleResult(result, "drop", context);
     } finally {
       busy.value = false;
     }
@@ -325,15 +448,17 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function fixupInto(target: string, squashMode: boolean, message?: string | null) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       const result = await getBackend().fixupInto({
-        path: ws.repoPath,
+        path: context.path,
         target,
         squash: squashMode,
         message: message ?? null,
       });
-      return handleResult(result, squashMode ? "Squash Into" : "Fixup");
+      return await handleResult(result, squashMode ? "squashInto" : "fixup", context);
     } finally {
       busy.value = false;
     }
@@ -342,10 +467,12 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function uncommit() {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await getBackend().uncommit({ path: ws.repoPath });
-      return handleResult(result, "Undo Commit");
+      const result = await getBackend().uncommit({ path: context.path });
+      return await handleResult(result, "uncommit", context);
     } finally {
       busy.value = false;
     }
@@ -354,15 +481,17 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function revert(shas: string[], mainline?: number | null) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       const result = await getBackend().revertRun({
-        path: ws.repoPath,
+        path: context.path,
         shas,
         mainline: mainline ?? null,
         noCommit: false,
       });
-      return handleResult(result, "Revert");
+      return await handleResult(result, "revert", context);
     } finally {
       busy.value = false;
     }
@@ -371,10 +500,12 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function reset(target: string, mode: ResetMode) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
-      const result = await getBackend().resetRun({ path: ws.repoPath, target, mode });
-      return handleResult(result, "Reset");
+      const result = await getBackend().resetRun({ path: context.path, target, mode });
+      return await handleResult(result, "reset", context);
     } finally {
       busy.value = false;
     }
@@ -383,15 +514,17 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function extractChanges(commit: string, paths: string[], message: string) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       const result = await getBackend().extractChanges({
-        path: ws.repoPath,
+        path: context.path,
         commit,
         paths,
         message,
       });
-      return handleResult(result, "Extract");
+      return await handleResult(result, "extract", context);
     } finally {
       busy.value = false;
     }
@@ -400,24 +533,28 @@ export const useRewriteStore = defineStore("rewrite", () => {
   async function dropChanges(commit: string, paths: string[]) {
     const ws = useWorkspaceStore();
     if (!ws.repoPath) return null;
+    if (busy.value) return null;
+    const context = { path: ws.repoPath, generation: repoGeneration };
     busy.value = true;
     try {
       const result = await getBackend().dropChanges({
-        path: ws.repoPath,
+        path: context.path,
         commit,
         paths,
         message: null,
       });
-      return handleResult(result, "Drop changes");
+      return await handleResult(result, "dropChanges", context);
     } finally {
       busy.value = false;
     }
   }
 
   return {
+    repositoryToken: () => repoGeneration,
     opState,
     busy,
     lastBackupRef,
+    canUndo,
     refreshOpState,
     merge,
     rebase,
@@ -438,5 +575,6 @@ export const useRewriteStore = defineStore("rewrite", () => {
     extractChanges,
     dropChanges,
     undoLast,
+    undoWithFeedback,
   };
 });

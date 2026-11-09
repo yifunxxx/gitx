@@ -23,7 +23,7 @@ pub async fn job_cancel(state: State<'_, AppState>, req: JobCancelReq) -> Result
     let ok = state.jobs.cancel(&id).await;
     if !ok {
         return Err(AppError::new(
-            ErrorCode::Internal,
+            ErrorCode::NotFound,
             format!("job not found or not cancellable: {}", id.0),
         ));
     }

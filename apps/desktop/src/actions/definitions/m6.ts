@@ -22,22 +22,7 @@ export function registerM6Actions() {
     scope: "global",
     enabled: () => hasRepo(),
     async run() {
-      const ws = useWorkspaceStore();
-      if (!ws.repoPath) return;
-      const message = await promptDialog({
-        title: "Stash Changes…",
-        defaultValue: "WIP",
-        placeholder: "Stash message",
-      });
-      if (message == null) return;
-      await getBackend().stashCreate({
-        path: ws.repoPath,
-        message: message || "WIP",
-        includeUntracked: true,
-      });
-      toast({ title: "Stashed" });
-      await useChangesStore().refresh();
-      await useStashShelfStore().refresh();
+      await useStashShelfStore().promptStash();
     },
   });
 
@@ -111,22 +96,8 @@ export function registerM6Actions() {
     scope: "changes",
     enabled: () => hasRepo() && useChangesStore().selectedPaths.length > 0,
     async run() {
-      const ws = useWorkspaceStore();
       const changes = useChangesStore();
-      if (!ws.repoPath) return;
-      const message = await promptDialog({
-        title: "Shelve Changes…",
-        defaultValue: "Shelved changes",
-      });
-      if (message == null) return;
-      await getBackend().shelfCreate({
-        path: ws.repoPath,
-        message: message || "Shelved changes",
-        paths: [...changes.selectedPaths],
-      });
-      toast({ title: "Shelved" });
-      await changes.refresh();
-      await useStashShelfStore().refresh();
+      await useStashShelfStore().promptShelf(changes.selectedPaths);
     },
   });
 
@@ -149,6 +120,8 @@ export function registerM6Actions() {
       const result = await getBackend().patchCreate({
         path: ws.repoPath,
         paths,
+        output: null,
+        base: null,
       });
       toast({
         title: "Patch created",

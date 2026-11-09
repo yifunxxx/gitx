@@ -15,13 +15,7 @@ import { getBackend } from "@/lib/backend";
 import type { AppSettings } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { formatGitDetectError } from "@/lib/errors";
-import {
-  SETTINGS_PAGES,
-  getByPath,
-  setByPath,
-  matchField,
-  type SettingField,
-} from "./schema";
+import { SETTINGS_PAGES, getByPath, setByPath, matchField, type SettingField } from "./schema";
 import KeymapPanel from "./KeymapPanel.vue";
 import { cloneJson } from "@/lib/clone";
 
@@ -30,9 +24,7 @@ const { t } = useI18n();
 
 const search = ref("");
 const activePageId = ref("appearance");
-const draft = reactive(
-  cloneJson(settings.settings ?? settings.emptySettings()),
-) as AppSettings;
+const draft = reactive(cloneJson(settings.settings ?? settings.emptySettings())) as AppSettings;
 const dirty = ref(false);
 const testingGit = ref(false);
 const gitTestResult = ref<string | null>(null);
@@ -143,7 +135,7 @@ function cancel() {
   closeDialog(false);
 }
 
-function onKeymapPatch(overrides: Record<string, string[]>) {
+function onKeymapPatch(overrides: AppSettings["keymapOverrides"]) {
   draft.keymapOverrides = overrides;
   markDirty();
 }
@@ -188,11 +180,7 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
         <div class="min-h-0 min-w-0 flex-1 overflow-auto p-4">
           <h3 class="mb-3 text-sm font-medium">{{ t(activePage.titleKey) }}</h3>
 
-          <KeymapPanel
-            v-if="activePage.id === 'keymap'"
-            :draft="draft"
-            @patch="onKeymapPatch"
-          />
+          <KeymapPanel v-if="activePage.id === 'keymap'" :draft="draft" @patch="onKeymapPatch" />
 
           <div v-else class="space-y-1">
             <div
@@ -229,18 +217,9 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
                   <input
                     type="checkbox"
                     :checked="Boolean(fieldValue(field))"
-                    @change="
-                      onFieldChange(
-                        field,
-                        ($event.target as HTMLInputElement).checked,
-                      )
-                    "
+                    @change="onFieldChange(field, ($event.target as HTMLInputElement).checked)"
                   />
-                  {{
-                    Boolean(fieldValue(field))
-                      ? t("settings.on")
-                      : t("settings.off")
-                  }}
+                  {{ Boolean(fieldValue(field)) ? t("settings.on") : t("settings.off") }}
                 </label>
 
                 <input
@@ -251,36 +230,20 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
                   :max="field.control.max"
                   :step="field.control.step"
                   :value="Number(fieldValue(field) ?? 0)"
-                  @change="
-                    onFieldChange(
-                      field,
-                      Number(($event.target as HTMLInputElement).value),
-                    )
-                  "
+                  @change="onFieldChange(field, Number(($event.target as HTMLInputElement).value))"
                 />
 
-                <div
-                  v-else-if="field.control.kind === 'path'"
-                  class="flex gap-2"
-                >
+                <div v-else-if="field.control.kind === 'path'" class="flex gap-2">
                   <input
                     type="text"
                     class="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-xs"
                     :placeholder="t('settings.gitPathPlaceholder')"
                     :value="String(fieldValue(field) ?? '')"
                     @change="
-                      onFieldChange(
-                        field,
-                        ($event.target as HTMLInputElement).value || null,
-                      )
+                      onFieldChange(field, ($event.target as HTMLInputElement).value || null)
                     "
                   />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    :disabled="testingGit"
-                    @click="testGitPath"
-                  >
+                  <Button size="sm" variant="outline" :disabled="testingGit" @click="testGitPath">
                     {{ t("settings.test") }}
                   </Button>
                 </div>
@@ -295,12 +258,7 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
                       ? (fieldValue(field) as string[]).join(', ')
                       : ''
                   "
-                  @change="
-                    onStringListInput(
-                      field,
-                      ($event.target as HTMLInputElement).value,
-                    )
-                  "
+                  @change="onStringListInput(field, ($event.target as HTMLInputElement).value)"
                 />
 
                 <input
@@ -308,17 +266,10 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
                   type="text"
                   class="h-8 rounded-md border bg-background px-2 text-xs"
                   :placeholder="
-                    field.control.kind === 'text'
-                      ? field.control.placeholder
-                      : undefined
+                    field.control.kind === 'text' ? field.control.placeholder : undefined
                   "
                   :value="String(fieldValue(field) ?? '')"
-                  @change="
-                    onFieldChange(
-                      field,
-                      ($event.target as HTMLInputElement).value,
-                    )
-                  "
+                  @change="onFieldChange(field, ($event.target as HTMLInputElement).value)"
                 />
 
                 <p
@@ -331,10 +282,7 @@ function onKeymapPatch(overrides: Record<string, string[]>) {
               </div>
             </div>
 
-            <p
-              v-if="search && !filteredFields.length"
-              class="text-xs text-muted-foreground"
-            >
+            <p v-if="search && !filteredFields.length" class="text-xs text-muted-foreground">
               {{ t("settings.noMatches") }}
             </p>
           </div>

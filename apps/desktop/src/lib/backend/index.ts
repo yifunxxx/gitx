@@ -32,7 +32,7 @@ import type {
   DiffFileResult,
   DiffRefsReq,
   DiffRefsResult,
-  FavoritesSetReq,
+  FavoritesToggleReq,
   FetchRunReq,
   FetchSummary,
   FileHistoryReq,
@@ -52,6 +52,8 @@ import type {
   LogCommitDetailsReq,
   LogPage,
   LogQueryReq,
+  LogLocation,
+  LogLocateReq,
   PathsReq,
   AddPathsReq,
   PullResult,
@@ -89,7 +91,7 @@ import type {
   VcsEnableReq,
   RepoOpState,
   RewriteResult,
-  RewritePathReq,
+  PathReq as RewritePathReq,
   MergeRunReq,
   MergeCommitReq,
   RebaseRunReq,
@@ -183,6 +185,7 @@ export type Backend = {
   jobList(): Promise<JobInfo[]>;
   jobCancel(jobId: string): Promise<boolean>;
   workspaceOpen(req: WorkspaceOpenReq): Promise<WorkspaceOpenRes>;
+  workspaceWatch(roots: RepoRoot[]): Promise<null>;
   workspaceRecent(): Promise<WorkspaceRecentRes>;
   statusProbe(req: StatusProbeReq): Promise<JobHandle>;
   initRun(req: InitRunReq): Promise<WorkspaceOpenRes>;
@@ -200,6 +203,7 @@ export type Backend = {
   commitCreate(req: CommitCreateReq): Promise<CommitResult>;
   commitHeadMessage(req: HeadMessageReq): Promise<string>;
   logQuery(req: LogQueryReq): Promise<LogPage>;
+  logLocate(req: LogLocateReq): Promise<LogLocation>;
   logCommitDetails(req: LogCommitDetailsReq): Promise<CommitDetails>;
   logChangedFiles(req: LogChangedFilesReq): Promise<ChangedFile[]>;
   // M3
@@ -213,7 +217,7 @@ export type Backend = {
   logIndexRebuild(req: IndexRebuildReq): Promise<IndexStatus>;
   // M2
   refsList(req: RefsListReq): Promise<RefsList>;
-  favoritesSet(req: FavoritesSetReq): Promise<null>;
+  favoritesToggle(req: FavoritesToggleReq): Promise<null>;
   branchCreate(req: BranchCreateReq): Promise<null>;
   branchCheckout(req: BranchCheckoutReq): Promise<null>;
   branchRename(req: BranchRenameReq): Promise<null>;
@@ -339,6 +343,7 @@ export const tauriBackend: Backend = {
   jobList: () => commands.jobList(),
   jobCancel: (jobId) => commands.jobCancel({ jobId }),
   workspaceOpen: (req) => commands.workspaceOpen(req),
+  workspaceWatch: (roots) => commands.workspaceWatch(roots),
   workspaceRecent: () => commands.workspaceRecent(),
   statusProbe: (req) => commands.statusProbe(req),
   initRun: (req) => commands.initRun(req),
@@ -356,6 +361,7 @@ export const tauriBackend: Backend = {
   commitCreate: (req) => commands.commitCreate(req),
   commitHeadMessage: (req) => commands.commitHeadMessage(req),
   logQuery: (req) => commands.logQuery(req),
+  logLocate: (req) => commands.logLocate(req),
   logCommitDetails: (req) => commands.logCommitDetails(req),
   logChangedFiles: (req) => commands.logChangedFiles(req),
   fileHistory: (req) => commands.fileHistory(req),
@@ -367,7 +373,7 @@ export const tauriBackend: Backend = {
   logIndexStatus: (req) => commands.logIndexStatus(req),
   logIndexRebuild: (req) => commands.logIndexRebuild(req),
   refsList: (req) => commands.refsList(req),
-  favoritesSet: (req) => commands.favoritesSet(req),
+  favoritesToggle: (req) => commands.favoritesToggle(req),
   branchCreate: (req) => commands.branchCreate(req),
   branchCheckout: (req) => commands.branchCheckout(req),
   branchRename: (req) => commands.branchRename(req),

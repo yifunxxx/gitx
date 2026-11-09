@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { ChangedFile, CombinedDiffResult, LogCommit } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -24,6 +24,15 @@ export type CompareTab = {
 export const useCompareStore = defineStore("compare", () => {
   const tabs = ref<CompareTab[]>([]);
   const activeId = ref<string | null>(null);
+  const workspace = useWorkspaceStore();
+  watch(
+    () => workspace.repoPath,
+    () => {
+      tabs.value = [];
+      activeId.value = null;
+    },
+    { flush: "sync" },
+  );
 
   async function compareVersions(a: string, b: string) {
     const workspace = useWorkspaceStore();
@@ -46,6 +55,7 @@ export const useCompareStore = defineStore("compare", () => {
       };
       tabs.value = [...tabs.value, tab];
     }
+    tab = tabs.value.find((t) => t.id === id)!;
     activeId.value = id;
     useLayoutStore().activeEditorKind = "compare";
     await reload(tab);
@@ -81,6 +91,7 @@ export const useCompareStore = defineStore("compare", () => {
       };
       tabs.value = [...tabs.value, tab];
     }
+    tab = tabs.value.find((t) => t.id === id)!;
     activeId.value = id;
     useLayoutStore().activeEditorKind = "compare";
     tab.loading = true;

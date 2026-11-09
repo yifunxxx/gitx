@@ -13,7 +13,8 @@ pub fn parse_status_porcelain_v2(stdout: &[u8], repo_id: &str, version: u64) -> 
     };
     let mut files = Vec::new();
 
-    for entry in text.split('\0') {
+    let mut entries = text.split('\0');
+    while let Some(entry) = entries.next() {
         if entry.is_empty() {
             continue;
         }
@@ -50,7 +51,15 @@ pub fn parse_status_porcelain_v2(stdout: &[u8], repo_id: &str, version: u64) -> 
             continue;
         }
 
-        if let Some(change) = parse_entry(entry) {
+        // A type-2 record owns the next NUL-delimited field, even when the
+        // source filename starts with text resembling another status record.
+        let change = if entry.starts_with("2 ") {
+            let original = entries.next();
+            parse_rename(entry, original)
+        } else {
+            parse_entry(entry)
+        };
+        if let Some(change) = change {
             files.push(change);
         }
     }
@@ -70,7 +79,6 @@ fn parse_entry(entry: &str) -> Option<FileChange> {
     }
     match bytes[0] {
         b'1' => parse_ordinary(entry),
-        b'2' => parse_rename(entry),
         b'u' => parse_unmerged(entry),
         b'?' => Some(FileChange {
             path: entry[2..].to_string(),
@@ -113,10 +121,9 @@ fn parse_ordinary(entry: &str) -> Option<FileChange> {
     })
 }
 
-fn parse_rename(entry: &str) -> Option<FileChange> {
-    // 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>\t<origPath>
-    // With -z, path and origPath are NUL-separated in the full stream; within one
-    // entry after our split we may still see TAB between path and orig.
+fn parse_rename(entry: &str, original: Option<&str>) -> Option<FileChange> {
+    // With -z: 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path> NUL <origPath> NUL.
+    // Spaces and tabs in either path are literal filename characters.
     let mut parts = entry.splitn(10, ' ');
     let _ = parts.next()?; // "2"
     let xy = parts.next()?;
@@ -127,12 +134,8 @@ fn parse_rename(entry: &str) -> Option<FileChange> {
     let _hh = parts.next()?;
     let _hi = parts.next()?;
     let _score = parts.next()?;
-    let rest = parts.next()?;
-    let (path, orig) = if let Some((a, b)) = rest.split_once('\t') {
-        (a.to_string(), Some(b.to_string()))
-    } else {
-        (rest.to_string(), None)
-    };
+    let path = parts.next()?.to_string();
+    let orig = original.filter(|path| !path.is_empty()).map(str::to_string);
     let (index_status, worktree_status) = xy_chars(xy);
     let kind = if index_status == "C" || worktree_status == "C" {
         FileChangeKind::Copied
@@ -196,7 +199,7 @@ mod tests {
 
     #[test]
     fn parses_modified_and_untracked() {
-        let raw = b"# branch.head main\0# branch.ab +1 -0\01 .M N... 100644 100644 100644 abc abc README.md\0? new.txt\0";
+        let raw = b"# branch.head main\0# branch.ab +1 -0\x001 .M N... 100644 100644 100644 abc abc README.md\0? new.txt\0";
         let snap = parse_status_porcelain_v2(raw, "/tmp/repo", 1);
         assert_eq!(snap.branch.head, "main");
         assert_eq!(snap.branch.ahead, Some(1));

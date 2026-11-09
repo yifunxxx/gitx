@@ -4,13 +4,14 @@ import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import { listActions, shortcutFor, detectPlatform } from "@/actions";
 import type { AppSettings } from "@/lib/backend";
+import type { KeymapOverrides } from "@/actions/keymap";
 
 const props = defineProps<{
   draft: AppSettings;
 }>();
 
 const emit = defineEmits<{
-  patch: [overrides: Record<string, string[]>];
+  patch: [overrides: KeymapOverrides];
 }>();
 
 const { t } = useI18n();
@@ -110,7 +111,11 @@ function resetAll() {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in rows" :key="row.id" class="border-b border-border/60 hover:bg-accent/40">
+          <tr
+            v-for="row in rows"
+            :key="row.id"
+            class="border-b border-border/60 hover:bg-accent/40"
+          >
             <td class="px-2 py-1">
               <div class="font-medium leading-5">{{ row.title }}</div>
               <div class="font-mono text-[10px] leading-4 text-muted-foreground">{{ row.id }}</div>

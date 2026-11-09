@@ -4,11 +4,10 @@
 use crate::runner::{GitInvocation, GitRunner, OpKind};
 use gitx_core::{
     AppError, ErrorCode, RebasePlan, RebaseTodoAction, RebaseTodoItem, ResetMode, ResetPreview,
-    RewriteOutcome, RewriteResult,
+    RewriteHead, RewriteOutcome, RewriteResult,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_util::sync::CancellationToken;
 
 impl GitRunner {
@@ -127,6 +126,47 @@ impl GitRunner {
                 "empty rebase plan",
             ));
         }
+        if plan.items.iter().any(|item| {
+            !matches!(item.sha.len(), 40 | 64)
+                || !item.sha.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "rebase plan requires full commit IDs",
+            ));
+        }
+        if plan
+            .items
+            .iter()
+            .find(|item| item.action != RebaseTodoAction::Drop)
+            .is_some_and(|item| {
+                matches!(
+                    item.action,
+                    RebaseTodoAction::Squash | RebaseTodoAction::Fixup
+                )
+            })
+        {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "squash/fixup requires a preceding commit in the plan",
+            ));
+        }
+        if plan.rebase_merges || plan.autosquash {
+            let range = if plan.base.is_empty() {
+                "HEAD".to_string()
+            } else {
+                format!("{}..HEAD", plan.base)
+            };
+            let original = self.list_todo_commits(cwd, &range, cancel).await?;
+            if !original
+                .iter()
+                .map(|item| &item.sha)
+                .eq(plan.items.iter().map(|item| &item.sha))
+            {
+                return Err(AppError::new(ErrorCode::InvalidArgument,
+                    "manual reordering is unavailable with rebase-merges or autosquash; use Drop to remove commits"));
+            }
+        }
         if !plan.rebase_merges {
             for i in &plan.items {
                 if self.is_merge_commit(cwd, &i.sha, cancel).await {
@@ -138,23 +178,21 @@ impl GitRunner {
             }
         }
 
-        self.save_rebase_plan(cwd, plan)?;
-
-        let old = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
-        let backup = self
-            .safety_backup(cwd, "rebase-interactive", &old, cancel)
-            .await
-            .ok();
+        let old = self.rev_parse_public(cwd, "HEAD", cancel).await?;
+        let backup = Some(
+            self.safety_backup(cwd, "rebase-interactive", &old, cancel)
+                .await?,
+        );
+        self.save_rebase_plan(cwd, plan, cancel).await?;
 
         let needs_edit = plan
             .items
             .iter()
             .any(|i| matches!(i.action, RebaseTodoAction::Edit));
         let can_in_memory = !needs_edit
+            && plan.onto.is_none()
             && !plan.rebase_merges
+            && !plan.autosquash
             && plan.items.iter().all(|i| {
                 matches!(
                     i.action,
@@ -210,7 +248,7 @@ impl GitRunner {
         }
 
         let old = head.clone();
-        let backup = self.safety_backup(cwd, "reword", &old, cancel).await.ok();
+        let backup = Some(self.safety_backup(cwd, "reword", &old, cancel).await?);
 
         // Capture mtime/index fingerprint for tests (caller may assert separately).
         if target == head {
@@ -227,6 +265,7 @@ impl GitRunner {
                 message: "Reworded commit".into(),
                 conflict_files: vec![],
                 backup_ref: backup,
+                undo_head: None,
             });
         }
 
@@ -284,7 +323,7 @@ impl GitRunner {
             }
         }
         let old = self.rev_parse_public(cwd, "HEAD", cancel).await?;
-        let backup = self.safety_backup(cwd, "squash", &old, cancel).await.ok();
+        let backup = Some(self.safety_backup(cwd, "squash", &old, cancel).await?);
         match self
             .in_memory_rebase(cwd, &plan, &old, backup.clone(), cancel)
             .await
@@ -339,7 +378,7 @@ impl GitRunner {
             }
         }
         let old = self.rev_parse_public(cwd, "HEAD", cancel).await?;
-        let backup = self.safety_backup(cwd, "drop", &old, cancel).await.ok();
+        let backup = Some(self.safety_backup(cwd, "drop", &old, cancel).await?);
         match self
             .in_memory_rebase(cwd, &plan, &old, backup.clone(), cancel)
             .await
@@ -356,7 +395,8 @@ impl GitRunner {
         }
     }
 
-    /// Commit current index as fixup!/squash! then autosquash rebase onto target's parent.
+    /// Commit the selected local changes and let Git's autosquash sequence
+    /// place them next to the selected historical commit.
     pub async fn fixup_into(
         &self,
         cwd: &Path,
@@ -368,124 +408,94 @@ impl GitRunner {
         self.ensure_not_busy(cwd, cancel).await?;
         let target = self.rev_parse_public(cwd, target, cancel).await?;
         self.ensure_on_current_branch(cwd, &target, cancel).await?;
+        if self.is_merge_commit(cwd, &target, cancel).await {
+            return Err(AppError::new(
+                ErrorCode::MergeCommitNotAllowed,
+                "cannot fixup or squash into a merge commit",
+            ));
+        }
+        if squash && message.is_some_and(|message| message.trim().is_empty()) {
+            return Err(AppError::new(
+                ErrorCode::EmptyCommitMessage,
+                "commit message is empty",
+            ));
+        }
+        let squash_message = if squash {
+            Some(match message {
+                Some(message) => message.to_string(),
+                None => self.commit_message(cwd, &target, cancel).await?,
+            })
+        } else {
+            None
+        };
         let old = self.rev_parse_public(cwd, "HEAD", cancel).await?;
-        let backup = self
-            .safety_backup(
+        let backup = Some(
+            self.safety_backup(
                 cwd,
                 if squash { "squash-into" } else { "fixup" },
                 &old,
                 cancel,
             )
-            .await
-            .ok();
+            .await?,
+        );
 
-        let short = &target[..target.len().min(7)];
-        let commit_msg = if squash {
-            format!("squash! {short}")
-        } else {
-            format!("fixup! {short}")
+        let staged = GitInvocation::new(cwd, ["diff", "--cached", "--quiet"])
+            .kind(OpKind::Read)
+            .git_bin(self.git_bin.clone());
+        let use_all_tracked = match self.run(staged, cancel).await {
+            Ok(_) => true,
+            Err(error) if error.exit_code == Some(1) => false,
+            Err(error) => return Err(error),
         };
-        let inv = GitInvocation::new(cwd, ["commit", "-a", "-m", &commit_msg])
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone());
-        // Prefer staged-only; fall back to -a if nothing staged.
-        let staged = GitInvocation::new(cwd, ["commit", "-m", &commit_msg])
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone());
-        if self.run(staged, cancel).await.is_err() {
-            self.run(inv, cancel).await?;
+        let mut args = vec![
+            "commit".to_string(),
+            "--message".into(),
+            // Subjects can repeat or themselves start with fixup!/squash!.
+            // Git's autosquash accepts an object ID as the exact target.
+            format!("{}! {target}", if squash { "squash" } else { "fixup" }),
+        ];
+        if use_all_tracked {
+            args.push("-a".into());
         }
-
-        let base = self
-            .rev_parse_public(cwd, &format!("{target}^"), cancel)
-            .await
-            .unwrap_or_default();
+        // A rejected hook is an error. Retrying with -a would silently include
+        // unrelated unstaged files and run the hook a second time.
+        self.run(
+            GitInvocation::new(cwd, args)
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone()),
+            cancel,
+        )
+        .await?;
+        let fixup = self.rev_parse_public(cwd, "HEAD", cancel).await?;
         let mut plan = self.rebase_interactive_plan(cwd, &target, cancel).await?;
-        // Ensure autosquash semantics in plan: mark fixup/squash commits.
+        plan.autosquash = true;
         for item in &mut plan.items {
-            let subj = item.subject.to_lowercase();
-            if subj.starts_with("fixup!") {
-                item.action = RebaseTodoAction::Fixup;
-            } else if subj.starts_with("squash!") {
-                item.action = RebaseTodoAction::Squash;
-                if let Some(m) = message {
-                    // Combined message goes on the target pick.
-                    if item.sha == target {
-                        item.message = Some(m.to_string());
-                    }
-                }
+            if self.is_merge_commit(cwd, &item.sha, cancel).await {
+                plan.rebase_merges = true;
             }
-            if item.sha == target {
-                item.action = RebaseTodoAction::Pick;
-                if squash {
-                    if let Some(m) = message {
-                        item.message = Some(m.to_string());
-                    }
-                }
+            if squash && item.sha == fixup {
+                item.action = RebaseTodoAction::Squash;
+                item.message = squash_message.clone();
             }
         }
-        plan.autosquash = true;
-        plan.base = base;
 
-        match self
-            .in_memory_rebase(cwd, &plan, &old, backup.clone(), cancel)
-            .await
-        {
-            Ok(r) => Ok(RewriteResult {
+        // A flat in-memory replay would fold the new change into the tip.
+        // Native autosquash performs the target-aware reorder, while Smart
+        // restoration preserves any local changes excluded from this commit.
+        let result = self
+            .cli_interactive_rebase(cwd, &plan, &old, backup, true, cancel)
+            .await?;
+        if result.outcome == RewriteOutcome::Success {
+            Ok(RewriteResult {
                 message: if squash {
                     "Squashed into commit".into()
                 } else {
                     "Fixed up into commit".into()
                 },
-                ..r
-            }),
-            Err(_) => {
-                // Fallback: rebase -i --autosquash
-                let mut args = vec![
-                    "rebase".into(),
-                    "-i".into(),
-                    "--autosquash".into(),
-                    format!("{target}^"),
-                ];
-                if plan.base.is_empty() {
-                    args = vec![
-                        "rebase".into(),
-                        "-i".into(),
-                        "--autosquash".into(),
-                        "--root".into(),
-                    ];
-                }
-                let helper = helper_bin();
-                let todo = self.write_todo_file(cwd, &plan)?;
-                let inv = GitInvocation::new(cwd, args)
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone())
-                    .timeout(Some(std::time::Duration::from_secs(300)))
-                    .env("GIT_SEQUENCE_EDITOR", format!("{helper} seq-editor"))
-                    .env("GITX_REBASE_TODO", todo.to_string_lossy())
-                    .env("GIT_EDITOR", format!("{helper} editor"));
-                match self.run(inv, cancel).await {
-                    Ok(_) => {
-                        let new = self.rev_parse_public(cwd, "HEAD", cancel).await?;
-                        Ok(RewriteResult {
-                            old_head: old,
-                            new_head: new,
-                            outcome: RewriteOutcome::Success,
-                            message: if squash {
-                                "Squashed into commit".into()
-                            } else {
-                                "Fixed up into commit".into()
-                            },
-                            conflict_files: vec![],
-                            backup_ref: backup,
-                        })
-                    }
-                    Err(e) => {
-                        self.map_rewrite_err(cwd, e, &old, backup, "fixup", cancel)
-                            .await
-                    }
-                }
-            }
+                ..result
+            })
+        } else {
+            Ok(result)
         }
     }
 
@@ -503,7 +513,7 @@ impl GitRunner {
             ));
         }
         let old = head;
-        let backup = self.safety_backup(cwd, "uncommit", &old, cancel).await.ok();
+        let backup = Some(self.safety_backup(cwd, "uncommit", &old, cancel).await?);
         let inv = GitInvocation::new(cwd, ["reset", "--soft", "HEAD~1"])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
@@ -519,6 +529,7 @@ impl GitRunner {
             message: "Undid commit — changes kept staged".into(),
             conflict_files: vec![],
             backup_ref: backup,
+            undo_head: None,
         })
     }
 
@@ -541,7 +552,7 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "revert", &old, cancel).await.ok();
+        let backup = Some(self.safety_backup(cwd, "revert", &old, cancel).await?);
         let mut args = vec!["revert".to_string(), "--no-edit".into()];
         if no_commit {
             args.push("--no-commit".into());
@@ -570,6 +581,7 @@ impl GitRunner {
                         message: format!("Conflicts in {} file(s)", files.len().max(1)),
                         conflict_files: files,
                         backup_ref: backup,
+                        undo_head: None,
                     });
                 }
                 Ok(RewriteResult {
@@ -579,6 +591,7 @@ impl GitRunner {
                     message: format!("Reverted {} commit(s)", shas.len()),
                     conflict_files: vec![],
                     backup_ref: backup,
+                    undo_head: None,
                 })
             }
             Err(e) => {
@@ -647,7 +660,7 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "reset", &old, cancel).await.ok();
+        let backup = Some(self.safety_backup(cwd, "reset", &old, cancel).await?);
         let mode_flag = match mode {
             ResetMode::Soft => "--soft",
             ResetMode::Mixed => "--mixed",
@@ -671,6 +684,7 @@ impl GitRunner {
                     message: format!("Reset to {short} ({})", mode_flag.trim_start_matches("--")),
                     conflict_files: vec![],
                     backup_ref: backup,
+                    undo_head: None,
                 })
             }
             Err(e) => {
@@ -680,57 +694,137 @@ impl GitRunner {
         }
     }
 
+    async fn backup_worktree_snapshot(
+        &self,
+        cwd: &Path,
+        backup_ref: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<String>, AppError> {
+        let Some(reference) = companion_wt_ref(backup_ref) else {
+            return Ok(None);
+        };
+        let inv = GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", &reference])
+            .git_bin(self.git_bin.clone());
+        match self.run(inv, cancel).await {
+            Ok(_) => Ok(Some(self.rev_parse_public(cwd, &reference, cancel).await?)),
+            Err(error) if error.exit_code == Some(1) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Restore branch tip to a backup ref (Undo after rewrite).
     pub async fn undo_rewrite(
         &self,
         cwd: &Path,
         backup_ref: &str,
         restore_worktree: bool,
+        expected: &RewriteHead,
         cancel: &CancellationToken,
     ) -> Result<RewriteResult, AppError> {
         self.ensure_not_busy(cwd, cancel).await?;
-        let old = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
+        if !backup_ref.starts_with("refs/gitx/backup/") {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "undo requires a gitx backup reference",
+            ));
+        }
+        self.run(
+            GitInvocation::new(cwd, ["check-ref-format", backup_ref]).git_bin(self.git_bin.clone()),
+            cancel,
+        )
+        .await?;
+        self.check_undo_head(cwd, expected, cancel).await?;
+        let old = self.rev_parse_public(cwd, "HEAD", cancel).await?;
         let target = self.rev_parse_public(cwd, backup_ref, cancel).await?;
-        // Soft safety of current HEAD before undoing.
-        let _ = self.safety_backup(cwd, "undo", &old, cancel).await;
-        let inv = GitInvocation::new(cwd, ["reset", "--keep", &target])
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone());
-        match self.run(inv, cancel).await {
-            Ok(_) => {}
-            Err(_) => {
-                // Fall back to hard if keep fails and caller allows.
-                let inv = GitInvocation::new(cwd, ["reset", "--hard", &target])
+        let snapshot = if restore_worktree {
+            self.backup_worktree_snapshot(cwd, backup_ref, cancel)
+                .await?
+        } else {
+            None
+        };
+        let backup = self.safety_backup(cwd, "undo", &old, cancel).await?;
+        // Partial drop (and other ref-only rewrites) retain the original index
+        // and worktree. If both still equal the saved snapshot, only HEAD needs
+        // restoring. Checking out would reject the already-preserved local work
+        // on paths whose committed content changed. Exact trees are required;
+        // matching deltas alone cannot establish that a checkout is unnecessary.
+        let preserve_checkout = if let Some(original) = snapshot.as_ref() {
+            if let Some(current) = self.backup_worktree_snapshot(cwd, &backup, cancel).await? {
+                self.same_snapshot_trees(cwd, original, &current, cancel)
+                    .await?
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        // A two-tree checkout retains staged and unstaged changes on paths
+        // unchanged between the two commits, and refuses an overwrite. Unlike
+        // reset --keep, it does not silently unstage unrelated local work.
+        if !preserve_checkout {
+            let inv = GitInvocation::new(cwd, ["read-tree", "-m", "-u", &old, &target])
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone());
+            self.run(inv, cancel).await?;
+        }
+        if let Err(mut error) = self
+            .update_ref_cas(cwd, "HEAD", &target, &old, "gitx: undo rewrite", cancel)
+            .await
+        {
+            // A ref lock or transaction hook can reject the final HEAD update.
+            // Reverse only this checkout, using the same overwrite protection.
+            if !preserve_checkout {
+                let rollback = GitInvocation::new(cwd, ["read-tree", "-m", "-u", &target, &old])
                     .kind(OpKind::Write)
                     .git_bin(self.git_bin.clone());
-                self.run(inv, cancel).await?;
-            }
-        }
-        if restore_worktree {
-            // Look for companion wt snapshot: refs/gitx/backup/<op>-wt-<ts>
-            if let Some(wt) = companion_wt_ref(backup_ref) {
-                if self.rev_parse_public(cwd, &wt, cancel).await.is_ok() {
-                    let inv = GitInvocation::new(cwd, ["stash", "apply", &wt])
-                        .kind(OpKind::Write)
-                        .git_bin(self.git_bin.clone());
-                    let _ = self.run(inv, cancel).await;
+                if let Err(rollback_error) = self.run(rollback, &CancellationToken::new()).await {
+                    error.message = format!(
+                        "{}; checkout rollback failed: {}. Backup retained at {backup}",
+                        error.message, rollback_error.message
+                    );
                 }
             }
+            return Err(error);
         }
-        let new = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
+        if let Some(snapshot) = snapshot.filter(|_| !preserve_checkout) {
+            // Pure message rewrites leave the original dirty state in place.
+            // Do not reapply a snapshot that is already present in full.
+            let current = self
+                .run(
+                    GitInvocation::new(cwd, ["stash", "create"]).git_bin(self.git_bin.clone()),
+                    cancel,
+                )
+                .await?;
+            let current = String::from_utf8_lossy(&current.stdout).trim().to_owned();
+            let mut already_restored = !current.is_empty()
+                && self
+                    .same_snapshot_trees(cwd, &snapshot, &current, cancel)
+                    .await?;
+            if !already_restored && !current.is_empty() {
+                already_restored = self
+                    .same_snapshot_changes(cwd, &snapshot, &current, cancel)
+                    .await?;
+            }
+            if !already_restored {
+                let inv = GitInvocation::new(cwd, ["stash", "apply", "--index", &snapshot])
+                    .kind(OpKind::Write)
+                    .git_bin(self.git_bin.clone());
+                self.run(inv, cancel).await.map_err(|error| {
+                    AppError::new(error.code, format!(
+                        "Previous HEAD restored, but local changes could not be restored from snapshot {snapshot}. Both snapshots are retained ({backup_ref}, {backup}): {}",
+                        error.message
+                    )).with_stderr(error.git_stderr.unwrap_or_default())
+                })?;
+            }
+        }
         Ok(RewriteResult {
             old_head: old,
-            new_head: new,
+            new_head: target,
             outcome: RewriteOutcome::Success,
             message: "Restored previous HEAD".into(),
             conflict_files: vec![],
-            backup_ref: Some(backup_ref.to_string()),
+            backup_ref: Some(backup),
+            undo_head: None,
         })
     }
 
@@ -812,39 +906,70 @@ impl GitRunner {
         self.ensure_not_busy(cwd, cancel).await?;
         if paths.is_empty() {
             return Err(AppError::new(
-                ErrorCode::GitCommandFailed,
+                ErrorCode::InvalidArgument,
                 "no paths selected",
             ));
         }
+        let root = self.resolve_repo_root(cwd, 0, cancel).await?;
+        let cwd = Path::new(&root.worktree_root);
         let c = self.rev_parse_public(cwd, commit, cancel).await?;
         self.ensure_on_current_branch(cwd, &c, cancel).await?;
-        if self.is_merge_commit(cwd, &c, cancel).await {
+        let details = self.log_commit_details(cwd, &c, cancel).await?;
+        if details.parents.len() > 1 {
             return Err(AppError::new(
                 ErrorCode::MergeCommitNotAllowed,
                 "cannot extract/drop from a merge commit",
             ));
         }
-        let parent = self
-            .rev_parse_public(cwd, &format!("{c}^"), cancel)
-            .await
-            .map_err(|_| {
-                AppError::new(
-                    ErrorCode::GitCommandFailed,
-                    "root commit does not support extract/drop yet",
-                )
-            })?;
         let old = self.rev_parse_public(cwd, "HEAD", cancel).await?;
-        let backup = self
-            .safety_backup(
+        let merges = self
+            .run(
+                GitInvocation::new(cwd, ["rev-list", "--merges", "-1", &format!("{c}..{old}")])
+                    .kind(OpKind::Read)
+                    .git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await?;
+        if !merges.stdout.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::MergeCommitNotAllowed,
+                "cannot extract/drop across descendant merge commits",
+            ));
+        }
+        let changed = self.commit_changed_files(cwd, &c, cancel).await?;
+        let mut selected = HashSet::new();
+        for path in paths {
+            let file = changed
+                .iter()
+                .find(|file| file.path == *path)
+                .ok_or_else(|| {
+                    AppError::new(
+                        ErrorCode::InvalidArgument,
+                        format!("path is not changed in this commit: {path}"),
+                    )
+                })?;
+            selected.insert(file.path.clone());
+            // A rename is one change: restore both its source and destination.
+            // Copies leave the source unchanged.
+            if file.status.starts_with('R') {
+                if let Some(original) = &file.orig_path {
+                    selected.insert(original.clone());
+                }
+            }
+        }
+        let donor = match details.parents.first() {
+            Some(parent) => parent.clone(),
+            None => self.empty_tree(cwd, cancel).await?,
+        };
+        let backup = Some(
+            self.safety_backup(
                 cwd,
                 if extract { "extract" } else { "drop-changes" },
                 &old,
                 cancel,
             )
-            .await
-            .ok();
-
-        let fp_before = self.worktree_fingerprint(cwd, cancel).await.ok();
+            .await?,
+        );
 
         // T1 = parent tree with only non-selected changes from C applied
         // = C's tree with selected paths restored from parent
@@ -852,14 +977,15 @@ impl GitRunner {
             .rev_parse_public(cwd, &format!("{c}^{{tree}}"), cancel)
             .await?;
         let t1 = self
-            .tree_with_paths_from(cwd, &t_c, &parent, paths, cancel)
+            .tree_with_paths_from(cwd, &t_c, &donor, &selected, cancel)
             .await?;
 
         let orig_msg = self.commit_message(cwd, &c, cancel).await?;
         let author_env = self.commit_author_env(cwd, &c, cancel).await?;
 
+        let parents: Vec<&str> = details.parents.iter().map(String::as_str).collect();
         let c_prime = self
-            .commit_tree(cwd, &t1, &[&parent], &orig_msg, &author_env, cancel)
+            .commit_tree(cwd, &t1, &parents, &orig_msg, &author_env, cancel)
             .await?;
 
         let new_tip = if extract {
@@ -882,13 +1008,6 @@ impl GitRunner {
         )
         .await?;
 
-        if let Some(before) = fp_before {
-            let after = self.worktree_fingerprint(cwd, cancel).await?;
-            if before != after {
-                // Should not happen for pure object rewrite — surface as internal warning via result msg.
-            }
-        }
-
         Ok(RewriteResult {
             old_head: old,
             new_head: new_tip,
@@ -900,6 +1019,7 @@ impl GitRunner {
             },
             conflict_files: vec![],
             backup_ref: backup,
+            undo_head: None,
         })
     }
 
@@ -933,9 +1053,7 @@ impl GitRunner {
                     let tree = self
                         .rev_parse_public(cwd, &format!("{}^{{tree}}", item.sha), cancel)
                         .await?;
-                    let msg = if matches!(item.action, RebaseTodoAction::Reword) {
-                        item.message.clone().unwrap_or_else(|| item.subject.clone())
-                    } else if let Some(ref m) = item.message {
+                    let msg = if let Some(ref m) = item.message {
                         m.clone()
                     } else {
                         self.commit_message(cwd, &item.sha, cancel).await?
@@ -1036,6 +1154,7 @@ impl GitRunner {
             message: "Rebase finished".into(),
             conflict_files: vec![],
             backup_ref: backup,
+            undo_head: None,
         })
     }
 
@@ -1048,9 +1167,14 @@ impl GitRunner {
         smart: bool,
         cancel: &CancellationToken,
     ) -> Result<RewriteResult, AppError> {
-        let todo_path = self.write_todo_file(cwd, plan)?;
-        let helper = helper_bin();
-        let mut args = vec!["rebase".into(), "-i".into()];
+        let todo_path = self.write_todo_file(cwd, plan, cancel).await?;
+        let plan_path = todo_path.with_file_name("rebase-plan.json");
+        let mut args = vec![
+            "-c".into(),
+            "rebase.abbreviateCommands=false".into(),
+            "rebase".into(),
+            "-i".into(),
+        ];
         if plan.rebase_merges {
             args.push("--rebase-merges".into());
         }
@@ -1067,35 +1191,16 @@ impl GitRunner {
             args.push(plan.base.clone());
         }
 
-        // Prepare first reword message if any.
-        let msg_path = {
-            let gitx = self.gitx_dir(cwd, cancel).await?;
-            let p = gitx.join("rebase-msg.txt");
-            if let Some(item) = plan
-                .items
-                .iter()
-                .find(|i| matches!(i.action, RebaseTodoAction::Reword) && i.message.is_some())
-            {
-                std::fs::write(&p, item.message.as_deref().unwrap_or(""))
-                    .map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
-                Some(p)
-            } else {
-                None
-            }
-        };
-
-        let seq_editor = format!("{helper} seq-editor");
-        let editor = format!("{helper} editor");
-        let mut inv = GitInvocation::new(cwd, args)
+        let seq_editor = helper_command("seq-editor");
+        let editor = helper_command("editor");
+        let inv = GitInvocation::new(cwd, args)
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone())
             .timeout(Some(std::time::Duration::from_secs(600)))
             .env("GIT_SEQUENCE_EDITOR", seq_editor)
             .env("GITX_REBASE_TODO", todo_path.to_string_lossy())
+            .env("GITX_REBASE_PLAN", plan_path.to_string_lossy())
             .env("GIT_EDITOR", editor);
-        if let Some(p) = msg_path {
-            inv = inv.env("GITX_COMMIT_MSG", p.to_string_lossy());
-        }
 
         let run = if smart {
             self.with_clean_tree_inv(cwd, "rebase", inv, cancel).await
@@ -1117,12 +1222,13 @@ impl GitRunner {
                         new_head: new,
                         outcome: RewriteOutcome::Conflicts,
                         message: if files.is_empty() {
-                            "Rebase paused".into()
+                            format!("Rebase paused{}", self.smart_stash_note(cwd, cancel).await?)
                         } else {
                             format!("Conflicts in {} file(s)", files.len())
                         },
                         conflict_files: files,
                         backup_ref: backup,
+                        undo_head: None,
                     });
                 }
                 Ok(RewriteResult {
@@ -1132,6 +1238,7 @@ impl GitRunner {
                     message: "Rebase finished".into(),
                     conflict_files: vec![],
                     backup_ref: backup,
+                    undo_head: None,
                 })
             }
             Err(e) => {
@@ -1139,47 +1246,6 @@ impl GitRunner {
                     .await
             }
         }
-    }
-
-    async fn with_clean_tree_inv(
-        &self,
-        cwd: &Path,
-        op_name: &str,
-        inv: GitInvocation,
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let msg = format!("gitx: {op_name}");
-        let stash_inv = GitInvocation::new(
-            cwd,
-            [
-                "stash".into(),
-                "push".into(),
-                "--include-untracked".into(),
-                "-m".into(),
-                msg,
-            ],
-        )
-        .kind(OpKind::Write)
-        .git_bin(self.git_bin.clone());
-        let stashed = match self.run(stash_inv, cancel).await {
-            Ok(_) => true,
-            Err(e) => {
-                let m = e.message.to_lowercase();
-                if m.contains("no local changes") || m.contains("no changes") {
-                    false
-                } else {
-                    return Err(e);
-                }
-            }
-        };
-        let op_result = self.run(inv, cancel).await;
-        if stashed {
-            let pop = GitInvocation::new(cwd, ["stash", "pop", "--index"])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            let _ = self.run(pop, cancel).await;
-        }
-        op_result.map(|_| ())
     }
 
     async fn merge_tree_write(
@@ -1229,6 +1295,11 @@ impl GitRunner {
                 }
             }
             Err(e) => {
+                if e.exit_code == Some(129) {
+                    return self
+                        .replay_with_temporary_index(cwd, ours, merge_base, theirs, cancel)
+                        .await;
+                }
                 let msg = e.message.to_lowercase();
                 if msg.contains("conflict") || e.exit_code == Some(1) {
                     Err(AppError::new(
@@ -1240,6 +1311,92 @@ impl GitRunner {
                 }
             }
         }
+    }
+
+    /// Compatibility with Git versions predating merge-tree --write-tree.
+    /// An isolated index keeps both the user's index and worktree untouched.
+    async fn replay_with_temporary_index(
+        &self,
+        cwd: &Path,
+        ours: &str,
+        base: &str,
+        theirs: &str,
+        cancel: &CancellationToken,
+    ) -> Result<String, AppError> {
+        // git apply silently skips paths outside its cwd. Replay the complete
+        // commit from the repository root even when the caller opened a subdir.
+        let root = self.resolve_repo_root(cwd, 0, cancel).await?;
+        let cwd = Path::new(&root.worktree_root);
+        let dir =
+            tempfile::tempdir().map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
+        let index = dir.path().join("index").to_string_lossy().into_owned();
+        // This patch is machine input. Display settings and text converters
+        // must not change its paths/content or hide submodule updates.
+        let patch = self
+            .run(
+                GitInvocation::new(
+                    cwd,
+                    [
+                        "diff",
+                        "--binary",
+                        "--full-index",
+                        "--no-ext-diff",
+                        "--no-textconv",
+                        "--no-color",
+                        "--no-relative",
+                        "--src-prefix=a/",
+                        "--dst-prefix=b/",
+                        "--output-indicator-new=+",
+                        "--output-indicator-old=-",
+                        "--output-indicator-context= ",
+                        "--ignore-submodules=none",
+                        "--submodule=short",
+                        base,
+                        theirs,
+                        "--",
+                    ],
+                )
+                .git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await?
+            .stdout;
+        self.run(
+            GitInvocation::new(cwd, ["read-tree", ours])
+                .git_bin(self.git_bin.clone())
+                .env("GIT_INDEX_FILE", &index),
+            cancel,
+        )
+        .await?;
+        if !patch.is_empty() {
+            if let Err(error) = self
+                .run(
+                    GitInvocation::new(cwd, ["apply", "--cached", "--3way", "--whitespace=nowarn"])
+                        .git_bin(self.git_bin.clone())
+                        .env("GIT_INDEX_FILE", &index)
+                        .stdin(patch),
+                    cancel,
+                )
+                .await
+            {
+                if error.exit_code == Some(1) {
+                    return Err(AppError::new(
+                        ErrorCode::RewriteConflict,
+                        "in-memory replay conflicted",
+                    ));
+                }
+                return Err(error);
+            }
+        }
+        let out = self
+            .run(
+                GitInvocation::new(cwd, ["write-tree"])
+                    .git_bin(self.git_bin.clone())
+                    .env("GIT_INDEX_FILE", &index),
+                cancel,
+            )
+            .await?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
     async fn commit_tree(
@@ -1348,88 +1505,76 @@ impl GitRunner {
         &self,
         cwd: &Path,
         base_tree: &str,
-        donor_commit: &str,
-        paths: &[String],
+        donor_tree: &str,
+        paths: &HashSet<String>,
         cancel: &CancellationToken,
     ) -> Result<String, AppError> {
-        // Temporary index: read base_tree, then checkout paths from donor into index, write-tree.
-        let tmp = cwd.join(format!(
-            ".git/gitx-tmp-index-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        // Prefer git-dir relative via env GIT_INDEX_FILE.
+        // Keep temporary state in the actual git directory, including linked
+        // worktrees. RAII removes the index and lock on errors/cancellation too.
         let git_dir = self.git_dir(cwd, cancel).await?;
-        let index_path = git_dir.join(format!(
-            "gitx-tmp-index-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        let _ = tmp;
-        let inv = GitInvocation::new(cwd, ["read-tree", base_tree])
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone())
-            .env("GIT_INDEX_FILE", index_path.to_string_lossy());
-        self.run(inv, cancel).await?;
+        let temporary = tempfile::Builder::new()
+            .prefix("gitx-partial-")
+            .tempdir_in(git_dir)
+            .map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
+        let index_path = temporary.path().join("index");
+        self.run(
+            GitInvocation::new(cwd, ["read-tree", base_tree])
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone())
+                .env("GIT_INDEX_FILE", index_path.to_string_lossy()),
+            cancel,
+        )
+        .await?;
 
-        // Restore selected paths from donor (parent) into the temp index via update-index.
-        for path in paths {
-            let inv = GitInvocation::new(
-                cwd,
-                [
-                    "ls-tree".into(),
-                    "-z".into(),
-                    format!("{donor_commit}^{{tree}}"),
-                    "--".into(),
-                    path.clone(),
-                ],
+        // Compare exact, repository-relative names instead of treating filenames
+        // as pathspecs. NUL-delimited index-info also preserves commas and tabs.
+        let donor = self
+            .run(
+                GitInvocation::new(cwd, ["ls-tree", "-rz", "--full-tree", donor_tree])
+                    .kind(OpKind::Read)
+                    .git_bin(self.git_bin.clone()),
+                cancel,
             )
-            .kind(OpKind::Read)
-            .git_bin(self.git_bin.clone());
-            let out = self.run(inv, cancel).await?;
-            let text = String::from_utf8_lossy(&out.stdout);
-            if text.trim().is_empty() {
-                // Path absent in donor → remove from index.
-                let inv = GitInvocation::new(cwd, ["update-index", "--remove", "--", path])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone())
-                    .env("GIT_INDEX_FILE", index_path.to_string_lossy());
-                let _ = self.run(inv, cancel).await;
-            } else {
-                // format: <mode> SP <type> SP <sha> TAB <path>
-                for line in text.split('\0') {
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let (meta, _p) = line.split_once('\t').unwrap_or((line, path));
-                    let parts: Vec<_> = meta.split_whitespace().collect();
-                    if parts.len() >= 3 {
-                        let mode = parts[0];
-                        let sha = parts[2];
-                        let cacheinfo = format!("{mode},{sha},{path}");
-                        let inv = GitInvocation::new(
-                            cwd,
-                            ["update-index", "--add", "--cacheinfo", &cacheinfo],
-                        )
-                        .kind(OpKind::Write)
-                        .git_bin(self.git_bin.clone())
-                        .env("GIT_INDEX_FILE", index_path.to_string_lossy());
-                        self.run(inv, cancel).await?;
-                    }
-                }
+            .await?;
+        let selected_bytes: HashSet<&[u8]> = paths.iter().map(|path| path.as_bytes()).collect();
+        let mut updates = Vec::new();
+        for path in paths {
+            updates.extend_from_slice(
+                format!("0 {}\t{}\0", "0".repeat(base_tree.len()), path).as_bytes(),
+            );
+        }
+        for entry in donor
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|entry| !entry.is_empty())
+        {
+            let separator = entry
+                .iter()
+                .position(|byte| *byte == b'\t')
+                .ok_or_else(|| AppError::new(ErrorCode::Internal, "invalid tree entry"))?;
+            if selected_bytes.contains(&entry[separator + 1..]) {
+                updates.extend_from_slice(entry);
+                updates.push(0);
             }
         }
-
-        let inv = GitInvocation::new(cwd, ["write-tree"])
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone())
-            .env("GIT_INDEX_FILE", index_path.to_string_lossy());
-        let out = self.run(inv, cancel).await?;
-        let _ = std::fs::remove_file(&index_path);
+        self.run(
+            GitInvocation::new(cwd, ["update-index", "-z", "--index-info"])
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone())
+                .env("GIT_INDEX_FILE", index_path.to_string_lossy())
+                .stdin(updates),
+            cancel,
+        )
+        .await?;
+        let out = self
+            .run(
+                GitInvocation::new(cwd, ["write-tree"])
+                    .kind(OpKind::Write)
+                    .git_bin(self.git_bin.clone())
+                    .env("GIT_INDEX_FILE", index_path.to_string_lossy()),
+                cancel,
+            )
+            .await?;
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
@@ -1511,15 +1656,19 @@ impl GitRunner {
         Ok(plan)
     }
 
-    fn write_todo_file(&self, cwd: &Path, plan: &RebasePlan) -> Result<PathBuf, AppError> {
-        let dir = cwd.join(".git").join("gitx");
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
+    async fn write_todo_file(
+        &self,
+        cwd: &Path,
+        plan: &RebasePlan,
+        cancel: &CancellationToken,
+    ) -> Result<PathBuf, AppError> {
+        self.save_rebase_plan(cwd, plan, cancel).await?;
+        let dir = self.gitx_dir(cwd, cancel).await?;
         let path = dir.join("rebase-todo");
         let mut body = String::new();
         for item in &plan.items {
-            let short = &item.sha[..item.sha.len().min(7)];
             let verb = match item.action {
+                RebaseTodoAction::Pick if item.message.is_some() => "reword",
                 RebaseTodoAction::Pick => "pick",
                 RebaseTodoAction::Reword => "reword",
                 RebaseTodoAction::Edit => "edit",
@@ -1527,19 +1676,44 @@ impl GitRunner {
                 RebaseTodoAction::Fixup => "fixup",
                 RebaseTodoAction::Drop => "drop",
             };
-            body.push_str(&format!("{verb} {short} {}\n", item.subject));
+            let subject = item.subject.replace(['\r', '\n'], " ");
+            body.push_str(&format!("{verb} {} {subject}\n", item.sha));
         }
         std::fs::write(&path, body)
             .map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
         Ok(path)
     }
 
-    fn save_rebase_plan(&self, cwd: &Path, plan: &RebasePlan) -> Result<(), AppError> {
-        let dir = cwd.join(".git").join("gitx");
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
+    async fn save_rebase_plan(
+        &self,
+        cwd: &Path,
+        plan: &RebasePlan,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let dir = self.gitx_dir(cwd, cancel).await?;
         let path = dir.join("rebase-plan.json");
-        let json = serde_json::to_string_pretty(plan)
+        let mut data = serde_json::to_value(plan)
+            .map_err(|e| AppError::new(ErrorCode::Internal, e.to_string()))?;
+        if plan
+            .items
+            .iter()
+            .any(|item| item.action == RebaseTodoAction::Squash && item.message.is_some())
+        {
+            let mut originals = serde_json::Map::new();
+            for item in &plan.items {
+                if item.message.is_none()
+                    && (item.action == RebaseTodoAction::Squash
+                        || (plan.autosquash && item.subject.starts_with("squash! ")))
+                {
+                    originals.insert(
+                        item.sha.clone(),
+                        self.commit_message(cwd, &item.sha, cancel).await?.into(),
+                    );
+                }
+            }
+            data["originalMessages"] = originals.into();
+        }
+        let json = serde_json::to_string_pretty(&data)
             .map_err(|e| AppError::new(ErrorCode::Internal, e.to_string()))?;
         std::fs::write(path, json).map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
         Ok(())
@@ -1684,8 +1858,13 @@ impl GitRunner {
     }
 }
 
-fn helper_bin() -> String {
-    crate::runner::helper_bin()
+pub(crate) fn helper_command(mode: &str) -> String {
+    let path = crate::runner::helper_bin();
+    // Git evaluates editor commands with its shell, including Git for Windows.
+    // Preserve spaces and shell metacharacters as part of the executable path.
+    #[cfg(windows)]
+    let path = path.replace('\\', "/");
+    format!("'{}' {mode}", path.replace('\'', "'\\''"))
 }
 
 fn companion_wt_ref(backup_ref: &str) -> Option<String> {
@@ -1694,3 +1873,6 @@ fn companion_wt_ref(backup_ref: &str) -> Option<String> {
     let (op, ts) = name.rsplit_once('-')?;
     Some(format!("refs/gitx/backup/{op}-wt-{ts}"))
 }
+
+#[cfg(test)]
+mod tests;

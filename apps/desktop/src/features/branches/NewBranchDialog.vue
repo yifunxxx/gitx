@@ -24,9 +24,17 @@ function ok() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[50] flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg">
-      <h2 class="text-sm font-semibold">Create New Branch</h2>
+  <div
+    class="fixed inset-0 z-[50] flex items-center justify-center bg-black/40 p-4"
+    @keydown.esc.stop="closeDialog(null)"
+  >
+    <div
+      class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-branch-title"
+    >
+      <h2 id="new-branch-title" class="text-sm font-semibold">Create New Branch</h2>
       <p class="mt-1 text-[11px] text-muted-foreground">from: {{ props.startPoint }}</p>
       <input
         v-model="name"

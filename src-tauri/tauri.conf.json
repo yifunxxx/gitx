@@ -4,9 +4,9 @@
   "version": "0.1.11",
   "identifier": "app.gitx.desktop",
   "build": {
-    "beforeDevCommand": "pnpm --filter @gitx/desktop dev",
+    "beforeDevCommand": "pnpm helper:build && pnpm --filter @gitx/desktop dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm --filter @gitx/desktop build",
+    "beforeBuildCommand": "pnpm helper:build --release && pnpm --filter @gitx/desktop build",
     "frontendDist": "../apps/desktop/dist"
   },
   "app": {

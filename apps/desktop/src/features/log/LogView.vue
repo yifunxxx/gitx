@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
 import { Eye, Filter, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useBranchesStore } from "@/stores/branchesStore";
 import { useCompareStore } from "@/stores/compareStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
@@ -20,7 +21,7 @@ import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
-import { confirmDialog, promptDialog } from "@/composables/useConfirm";
+import { confirmDialog } from "@/composables/useConfirm";
 import { markContextHandled } from "@/lib/contextMenu";
 import {
   Select,
@@ -33,10 +34,28 @@ import PathTreeList from "@/components/files/PathTreeList.vue";
 import type { ChangedFile } from "@/lib/backend";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
+import { layoutCommitGraph } from "./graphLayout";
+import { formatErrorMessage } from "@/lib/errors";
+import { captureRewriteContext } from "@/features/merge/rewriteContext";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const timeFormatter = computed(
+  () => new Intl.DateTimeFormat(locale.value, { dateStyle: "medium", timeStyle: "short" }),
+);
+const rowTimeFormatter = computed(
+  () =>
+    new Intl.DateTimeFormat(locale.value, {
+      year: "2-digit",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }),
+);
 const log = useLogStore();
 const workspace = useWorkspaceStore();
+const branches = useBranchesStore();
 const compare = useCompareStore();
 const history = useHistoryStore();
 const repoAtRev = useRepoAtRevStore();
@@ -49,25 +68,27 @@ const textDraft = ref("");
 const authorDraft = ref("");
 const revDraft = ref("");
 const pathDraft = ref("");
+const datePreset = computed(() =>
+  log.filters.since === "24.hours" ? "24h" : log.filters.since === "7.days" ? "7d" : "all",
+);
 const ctx = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
 
 onMounted(() => {
-  if (workspace.isRepo) void log.load(true);
+  void log.load(true);
 });
 
 watch(
   () => workspace.repoPath,
   () => {
-    if (workspace.isRepo) void log.load(true);
+    closeCtx();
+    fileCtx.value.open = false;
+    void log.load(true);
   },
 );
 
 function formatTime(ts: number) {
   try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(ts * 1000));
+    return timeFormatter.value.format(new Date(ts * 1000));
   } catch {
     return String(ts);
   }
@@ -97,58 +118,65 @@ function tidyRef(name: string) {
     .replace(/^refs\/tags\//, "");
 }
 
-/** Precompute edge colors, lane labels, and column width while walking newest→oldest. */
-const graphLayout = computed(() => {
-  const laneColors = new Map<number, number>();
-  const pendingIncoming = new Set<number>();
-  const laneLabels: Record<number, string> = {};
-  let maxLane = 0;
-  const edgeColors: number[][] = [];
-  const incoming: boolean[] = [];
-  const nodeLabels: string[] = [];
-
-  for (const c of log.commits) {
-    maxLane = Math.max(maxLane, c.graph.lane);
-    incoming.push(pendingIncoming.has(c.graph.lane));
-    pendingIncoming.delete(c.graph.lane);
-
-    const refs = visibleRefs(c.refs).map(tidyRef).filter(Boolean);
-    const nodeLabel = refs.length ? refs.join(", ") : c.shortSha;
-    nodeLabels.push(nodeLabel);
-    // Prefer first-seen (newer tip) label for a lane; keep until replaced by a tip with refs.
-    if (refs.length && !laneLabels[c.graph.lane]) {
-      laneLabels[c.graph.lane] = refs.join(", ");
-    } else if (!laneLabels[c.graph.lane]) {
-      laneLabels[c.graph.lane] = c.shortSha;
-    }
-
-    const colors: number[] = [];
-    for (const e of c.graph.edges) {
-      maxLane = Math.max(maxLane, e.fromLane, e.toLane);
-      const color = laneColors.get(e.fromLane) ?? c.graph.color;
-      colors.push(color);
-      pendingIncoming.add(e.toLane);
-      if (laneLabels[e.fromLane] && !laneLabels[e.toLane]) {
-        laneLabels[e.toLane] = laneLabels[e.fromLane]!;
-      }
-    }
-    edgeColors.push(colors);
-    laneColors.set(c.graph.lane, c.graph.color);
-    c.graph.edges.forEach((e, i) => {
-      const color = colors[i] ?? c.graph.color;
-      laneColors.set(e.fromLane, color);
-      laneColors.set(e.toLane, color);
-    });
-  }
-
-  // Fill missing lanes with i18n fallback.
-  for (let i = 0; i <= maxLane; i++) {
-    if (!laneLabels[i]) laneLabels[i] = t("log.laneUntitled", { lane: i });
-  }
-
-  const colPx = Math.max(56, (maxLane + 1) * 16 + 12);
-  return { edgeColors, incoming, maxLane, colPx, laneLabels, nodeLabels };
+const graphLayout = computed(() =>
+  layoutCommitGraph(log.commits, {
+    filtered: !!(
+      log.filters.text ||
+      log.filters.authors?.length ||
+      log.filters.paths?.length ||
+      log.filters.since ||
+      log.filters.until ||
+      log.filters.noMerges
+    ),
+    firstParent: !!log.filters.firstParent,
+  }),
+);
+const selectedSet = computed(() => new Set(log.selectedShas));
+const scrollLeft = ref(0);
+const selectedFile = ref<ChangedFile | null>(null);
+const fileCtx = ref({ open: false, x: 0, y: 0 });
+watch(
+  () => log.selectedSha,
+  () => {
+    selectedFile.value = null;
+    fileCtx.value.open = false;
+  },
+);
+const graphPanel = ref<HTMLElement | null>(null);
+const panelWidth = ref(720);
+const graphOffset = ref(0);
+// Keep commit text readable even with dozens of parallel branches. The graph
+// retains its lane spacing and pans as one viewport across all visible rows.
+const graphColumnWidth = computed(() =>
+  Math.min(graphLayout.value.colPx, Math.max(100, Math.floor(panelWidth.value * 0.35))),
+);
+const graphMaxOffset = computed(() =>
+  Math.max(0, graphLayout.value.colPx - graphColumnWidth.value),
+);
+const selectedNodeX = computed(() => {
+  const index = log.commits.findIndex((c) => c.sha === log.selectedSha);
+  return index < 0 ? 0 : 13 + (graphLayout.value.rows[index]?.graph.lane ?? 0) * 14;
 });
+watch(graphPanel, (element, _, onCleanup) => {
+  if (!element || typeof ResizeObserver === "undefined") return;
+  const measure = () => {
+    if (element.clientWidth) panelWidth.value = element.clientWidth;
+  };
+  measure();
+  const observer = new ResizeObserver(measure);
+  observer.observe(element);
+  onCleanup(() => observer.disconnect());
+});
+watch(
+  [() => log.selectedSha, selectedNodeX, graphColumnWidth, graphMaxOffset],
+  ([, node, width, maximum]) => {
+    let offset = graphOffset.value;
+    if (node < offset + 8) offset = node - 8;
+    else if (node > offset + width - 8) offset = node - width + 8;
+    graphOffset.value = Math.max(0, Math.min(maximum, offset));
+  },
+);
+const gridColumns = computed(() => `${graphColumnWidth.value}px minmax(140px, 1fr) 90px 126px`);
 
 const indexLabel = computed(() => {
   const st = log.indexStatus;
@@ -159,7 +187,82 @@ const indexLabel = computed(() => {
 
 function visibleRefs(refs: string[]) {
   const list = log.showTagNames ? refs : refs.filter((r) => !r.startsWith("tag:"));
-  return log.compactRefs ? list.slice(0, 2) : list;
+  if (!log.compactRefs) return list;
+  // Prefer the checked-out/local branch to its duplicate tracking ref.
+  const remotePrefix = (ref: string) =>
+    branches.remotes.find((remote) => ref.startsWith(`${remote.name}/`))?.name;
+  const localNames = new Set(
+    list.filter((ref) => !remotePrefix(ref) && !ref.startsWith("tag:")).map(tidyRef),
+  );
+  return list
+    .filter((ref) => {
+      const remote = remotePrefix(ref);
+      return !remote || !localNames.has(ref.slice(remote.length + 1));
+    })
+    .sort((a, b) => Number(b.startsWith("HEAD")) - Number(a.startsWith("HEAD")))
+    .slice(0, 2);
+}
+
+watch(
+  () => log.filters,
+  (filters) => {
+    textDraft.value = filters.text ?? "";
+    authorDraft.value = (filters.authors ?? []).join(", ");
+    revDraft.value = (filters.revisions ?? []).join(" ");
+    pathDraft.value = (filters.paths ?? []).join(" ");
+  },
+  { deep: true, immediate: true },
+);
+
+async function selectCommit(sha: string, multi = false, range = false) {
+  try {
+    await log.select(sha, multi, range);
+  } catch (error) {
+    toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+  }
+}
+
+async function onCommitKeydown(sha: string, event: KeyboardEvent) {
+  const index = log.commits.findIndex((commit) => commit.sha === sha);
+  let target = index;
+  if (event.key === "ArrowDown") target++;
+  else if (event.key === "ArrowUp") target--;
+  else if (event.key === "Home") target = 0;
+  else if (event.key === "End") target = log.commits.length - 1;
+  else if (event.key === "ArrowLeft") {
+    const parent = log.commits[index]?.parents[0];
+    if (!parent) return;
+    event.preventDefault();
+    target = log.commits.findIndex((commit) => commit.sha === parent);
+    if (target < 0) {
+      log.goToInput = parent;
+      try {
+        await log.goToHashOrRef();
+      } catch (error) {
+        toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+        return;
+      }
+      target = log.commits.findIndex((commit) => commit.sha === parent);
+    }
+    if (target < 0) return;
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    target = log.commits.findIndex((commit) => commit.parents.includes(sha));
+    if (target < 0) return;
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    await ctxCombined();
+    return;
+  } else return;
+  event.preventDefault();
+  const commit = log.commits[Math.max(0, Math.min(log.commits.length - 1, target))];
+  if (!commit) return;
+  void selectCommit(commit.sha, false, event.shiftKey);
+  commitListRef.value?.scrollToIndex(Math.max(0, target));
+  await nextTick();
+  document
+    .querySelector<HTMLElement>('[role="option"][tabindex="0"]')
+    ?.focus({ preventScroll: true });
 }
 
 async function applySearch() {
@@ -167,14 +270,43 @@ async function applySearch() {
   log.setAuthorFilter(authorDraft.value);
   log.setRevisions(revDraft.value.trim() ? [revDraft.value.trim()] : []);
   log.setPathsFilter(pathDraft.value.trim() ? [pathDraft.value.trim()] : []);
-  await log.applyFilters();
+  await reloadFilters();
 }
 
-const commitListRef = ref<{ pointerDown?: boolean } | null>(null);
+async function reloadFilters() {
+  await log.applyFilters();
+  await nextTick();
+  commitListRef.value?.scrollToIndex(0);
+}
+
+async function clearSearch() {
+  log.clearAllFilters();
+  // Reload the cleared store directly. The draft watcher runs on the next
+  // Vue tick, so applying drafts here would restore the previous filters.
+  await reloadFilters();
+}
+
+async function goToCommit(reveal = false) {
+  try {
+    if (reveal) await log.revealNavigationTarget();
+    else await log.goToHashOrRef();
+    await nextTick();
+    const index = log.commits.findIndex((commit) => commit.sha === log.selectedSha);
+    if (index >= 0) commitListRef.value?.scrollToIndex(index, "center");
+  } catch (error) {
+    toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+  }
+}
+
+const commitListRef = ref<{
+  pointerDown?: boolean;
+  scrollToIndex: (index: number, align?: "nearest" | "center") => void;
+} | null>(null);
 
 function onListScroll(e: Event) {
-  const el = e.target as HTMLElement;
+  const el = (e.currentTarget ?? e.target) as HTMLElement;
   if (!el) return;
+  scrollLeft.value = el.scrollLeft;
   // Defer load-more while the scrollbar thumb is being dragged — appending
   // rows mid-drag changes scrollHeight and makes the thumb jam (GIT-40).
   if (commitListRef.value?.pointerDown) return;
@@ -183,12 +315,12 @@ function onListScroll(e: Event) {
 }
 
 function onCommitClick(sha: string, e: MouseEvent) {
-  void log.select(sha, e.metaKey || e.ctrlKey);
+  void selectCommit(sha, e.metaKey || e.ctrlKey, e.shiftKey);
 }
 
 function onCommitContext(sha: string, e: MouseEvent) {
   markContextHandled(e);
-  if (!log.selectedShas.includes(sha)) void log.select(sha, false);
+  if (!log.selectedShas.includes(sha)) void selectCommit(sha);
   // Placement (flip / clamp / scroll) handled by ContextMenuSurface.
   ctx.value = { open: true, x: e.clientX, y: e.clientY };
 }
@@ -227,19 +359,28 @@ async function ctxRepoAtRev() {
 async function ctxCombined() {
   if (!log.selectedSha) return;
   const tab = await (async () => {
-    await compare.compareVersions(log.selectedSha!, `${log.selectedSha}^`);
+    const selected = log.commits.find((c) => c.sha === log.selectedSha);
+    await compare.compareVersions(selected?.parents[0] ?? "EMPTY", log.selectedSha!);
     const t = compare.tabs.find((x) => x.left === log.selectedSha || x.right === log.selectedSha);
     if (t) await compare.showCombined(t);
     return t;
   })();
   if (tab) layout.activeEditorKind = "compare";
   closeCtx();
+  layout.bottomMaximized = false;
 }
 
 async function openChangedFile(path: string, origPath: string | null) {
   if (!log.selectedSha) return;
-  await diffs.openRevDiff(path, `${log.selectedSha}^`, log.selectedSha, origPath ?? undefined);
+  const commit = log.commits.find((c) => c.sha === log.selectedSha);
+  await diffs.openRevDiff(
+    path,
+    commit?.parents[0] ?? "EMPTY",
+    log.selectedSha,
+    origPath ?? undefined,
+  );
   layout.activeEditorKind = "diff";
+  layout.bottomMaximized = false;
 }
 
 async function showFileHistory(path: string) {
@@ -259,27 +400,33 @@ async function ctxCherryPick() {
 
 async function ctxReword() {
   if (!log.selectedSha) return;
+  const sha = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const RewordDialog = (await import("@/features/merge/RewordDialog.vue")).default;
-  await openDialog(RewordDialog, { sha: log.selectedSha });
+  if (current()) await openDialog(RewordDialog, { sha });
 }
 
 async function ctxInteractive() {
   if (!log.selectedSha) return;
+  const fromSha = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const InteractiveRebaseEditor = (await import("@/features/merge/InteractiveRebaseEditor.vue"))
     .default;
-  await openDialog(InteractiveRebaseEditor, { fromSha: log.selectedSha });
+  if (current()) await openDialog(InteractiveRebaseEditor, { fromSha });
 }
 
 async function ctxReset() {
   if (!log.selectedSha) return;
+  const target = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const ResetDialog = (await import("@/features/merge/ResetDialog.vue")).default;
-  await openDialog(ResetDialog, { target: log.selectedSha });
+  if (current()) await openDialog(ResetDialog, { target });
 }
 
 async function ctxRevert() {
@@ -294,6 +441,7 @@ async function ctxRevert() {
 }
 
 async function ctxDrop() {
+  const current = captureRewriteContext();
   const shas = log.selectedShas.length
     ? [...log.selectedShas]
     : log.selectedSha
@@ -306,11 +454,12 @@ async function ctxDrop() {
     message: t("log.dropConfirm", { count: shas.length }),
     destructive: true,
   });
-  if (!ok) return;
+  if (!ok || !current()) return;
   await rewrite.drop(shas);
 }
 
 async function ctxSquash() {
+  const current = captureRewriteContext();
   const shas = log.selectedShas.length ? [...log.selectedShas] : [];
   if (shas.length < 2) {
     toast({ title: t("log.selectTwoOrMore") });
@@ -319,7 +468,7 @@ async function ctxSquash() {
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const SquashDialog = (await import("@/features/merge/SquashDialog.vue")).default;
-  await openDialog(SquashDialog, { shas });
+  if (current()) await openDialog(SquashDialog, { shas });
 }
 
 async function ctxUncommit() {
@@ -327,16 +476,25 @@ async function ctxUncommit() {
   await rewrite.uncommit();
 }
 
-async function ctxExtract() {
-  if (!log.selectedSha || !log.changedFiles.length) return;
+async function ctxPartialChanges(mode: "extract" | "drop", initialPaths?: string[]) {
+  if (!log.selectedSha) return;
+  const commit = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
-  const paths = log.changedFiles.map((f) => f.path);
-  const msg = await promptDialog({
-    title: t("actions.extractSelected"),
-    defaultValue: t("log.extractedDefault"),
-  });
-  if (msg == null) return;
-  await rewrite.extractChanges(log.selectedSha, paths, msg || t("log.extractedDefault"));
+  fileCtx.value.open = false;
+  const { openDialog } = await import("@/composables/useDialog");
+  const PartialChangesDialog = (await import("@/features/merge/PartialChangesDialog.vue")).default;
+  if (current()) await openDialog(PartialChangesDialog, { commit, mode, initialPaths });
+}
+
+async function runRewriteAction(action: () => Promise<void>) {
+  if (rewrite.busy) return;
+  const current = captureRewriteContext();
+  try {
+    await action();
+  } catch (error) {
+    if (current()) toast({ title: formatErrorMessage(error) });
+  }
 }
 </script>
 
@@ -376,7 +534,7 @@ async function ctxExtract() {
           @keydown.enter="applySearch"
         />
         <Select
-          model-value="all"
+          :model-value="datePreset"
           @update:model-value="
             (v) => {
               log.setDatePreset(String(v ?? 'all') as '24h' | '7d' | 'all');
@@ -399,14 +557,7 @@ async function ctxExtract() {
           }}</Button>
         </Tip>
         <Tip :text="t('log.clearTip')">
-          <Button
-            size="xs"
-            variant="ghost"
-            @click="
-              log.clearAllFilters();
-              applySearch();
-            "
-          >
+          <Button size="xs" variant="ghost" @click="clearSearch">
             {{ t("log.clear") }}
           </Button>
         </Tip>
@@ -428,8 +579,11 @@ async function ctxExtract() {
             v-model="log.goToInput"
             class="h-6 min-w-[8rem] flex-1 rounded border bg-background px-1.5"
             :placeholder="t('log.goToPlaceholder')"
-            @keydown.enter="log.goToHashOrRef()"
+            :aria-label="t('log.goToPlaceholder')"
+            :aria-busy="log.locating"
+            @keydown.enter="goToCommit()"
           />
+          <span v-if="log.locating" role="status">{{ t("log.locating") }}</span>
         </div>
         <span v-if="indexLabel" class="truncate text-muted-foreground" :title="indexLabel">
           {{ indexLabel }}
@@ -497,158 +651,244 @@ async function ctxExtract() {
         </label>
       </div>
 
-      <div v-if="log.activeFilterChips.length" class="flex flex-wrap gap-1 border-b px-2 py-1">
-        <button
-          v-for="chip in log.activeFilterChips"
-          :key="chip.key"
-          type="button"
-          class="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] hover:bg-accent"
-          @click="
-            log.clearFilter(chip.key);
-            applySearch();
-          "
-        >
-          {{ chip.label }} ×
-        </button>
-      </div>
-
       <Splitpanes class="min-h-0 flex-1">
-        <Pane :size="18" min-size="12" max-size="36">
+        <Pane :size="16" min-size="10" max-size="30">
           <BranchesPane />
         </Pane>
-        <Pane :size="82" min-size="40">
-          <EmptyState
-            v-if="!log.loading && !log.commits.length"
-            :title="t('log.noMatchesTitle')"
-            :description="t('log.noMatchesHint')"
-          />
-          <Splitpanes v-else class="h-full min-h-0">
-            <Pane :size="58" min-size="30">
-              <div class="flex h-full min-h-0 flex-col">
-                <div
-                  class="grid h-7 shrink-0 items-center border-b px-2 text-[11px] text-muted-foreground"
-                  :style="{
-                    gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
-                  }"
-                >
-                  <span>{{ t("log.colGraph") }}</span>
-                  <span>{{ t("log.colMessage") }}</span>
-                  <span>{{ t("log.colAuthor") }}</span>
-                  <span>{{ t("log.colDate") }}</span>
-                </div>
-                <VirtualList
-                  ref="commitListRef"
-                  :items="log.commits"
-                  :item-height="ROW_H"
-                  :get-key="(c) => c.sha"
-                  @scroll="onListScroll"
-                >
-                  <template #default="{ item: c, index: idx }">
-                    <button
-                      type="button"
-                      class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
-                      :style="{
-                        gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
-                      }"
-                      :class="
-                        log.selectedShas.includes(c.sha)
-                          ? 'bg-selection text-selection-foreground'
-                          : 'hover:bg-hover-surface'
-                      "
-                      @click="onCommitClick(c.sha, $event)"
-                      @contextmenu="onCommitContext(c.sha, $event)"
-                    >
-                      <span class="flex h-full items-center justify-start">
-                        <CommitGraphCell
-                          :graph="c.graph"
-                          :edge-colors="graphLayout.edgeColors[idx] ?? []"
-                          :incoming="graphLayout.incoming[idx] ?? false"
-                          :max-lane="graphLayout.maxLane"
-                          :lane-labels="graphLayout.laneLabels"
-                          :node-label="graphLayout.nodeLabels[idx]"
-                        />
-                      </span>
-                      <span class="flex min-w-0 items-center gap-1 truncate">
-                        <span
-                          v-for="refName in visibleRefs(c.refs)"
-                          :key="refName"
-                          class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
-                        >
-                          {{ refName }}
-                        </span>
-                        <span class="truncate">{{ c.subject }}</span>
-                      </span>
-                      <span class="truncate text-muted-foreground">{{ c.author }}</span>
-                      <span class="truncate text-muted-foreground">{{
-                        formatTime(c.authorTime)
-                      }}</span>
-                    </button>
-                  </template>
-                  <template #footer>
-                    <div
-                      v-if="log.truncated || log.loadingMore"
-                      class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
-                    >
-                      <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
-                      <button
-                        v-else
-                        type="button"
-                        class="hover:text-foreground"
-                        @click="log.loadMore()"
+        <Pane :size="84" min-size="40">
+          <div class="flex h-full min-h-0 flex-col">
+            <!-- Filter feedback must not move the branch under an in-progress double-click. -->
+            <div
+              v-if="log.activeFilterChips.length"
+              class="flex shrink-0 flex-wrap gap-1 border-b px-2 py-1"
+            >
+              <button
+                v-for="chip in log.activeFilterChips"
+                :key="chip.key"
+                type="button"
+                class="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] hover:bg-accent"
+                @click="
+                  log.clearFilter(chip.key);
+                  reloadFilters();
+                "
+              >
+                {{ chip.label }} ×
+              </button>
+            </div>
+
+            <div
+              v-if="log.navigationMiss"
+              role="status"
+              class="flex shrink-0 flex-wrap items-center gap-2 border-b px-2 py-1 text-xs"
+            >
+              <span>{{
+                t("log.commitOutsideHistory", { sha: log.navigationMiss.slice(0, 7) })
+              }}</span>
+              <button
+                v-if="log.activeFilterChips.length"
+                type="button"
+                class="text-primary hover:underline"
+                @click="goToCommit(true)"
+              >
+                {{ t("log.clearAndGo") }}
+              </button>
+            </div>
+
+            <div class="min-h-0 flex-1">
+              <EmptyState
+                v-if="!log.loading && !log.commits.length"
+                :title="t('log.noMatchesTitle')"
+                :description="t('log.noMatchesHint')"
+              />
+              <Splitpanes v-else class="h-full min-h-0">
+                <Pane :size="72" min-size="35">
+                  <div ref="graphPanel" class="flex h-full min-h-0 flex-col">
+                    <div class="shrink-0 overflow-hidden">
+                      <div
+                        class="grid h-7 shrink-0 items-center border-b px-2 text-[11px] text-muted-foreground"
+                        :style="{
+                          gridTemplateColumns: gridColumns,
+                          transform: `translateX(${-scrollLeft}px)`,
+                          minWidth: `${graphColumnWidth + 372}px`,
+                        }"
                       >
-                        {{ t("log.loadMore") }}
+                        <span class="flex min-w-0 items-center gap-2 pr-3">
+                          <span>{{ t("log.colGraph") }}</span>
+                          <input
+                            v-if="graphMaxOffset > 0"
+                            v-model.number="graphOffset"
+                            type="range"
+                            min="0"
+                            :max="graphMaxOffset"
+                            step="1"
+                            :aria-label="t('log.panGraph')"
+                            :title="t('log.panGraph')"
+                            class="h-4 min-w-0 flex-1 accent-primary"
+                          />
+                        </span>
+                        <span>{{ t("log.colMessage") }}</span>
+                        <span>{{ t("log.colAuthor") }}</span>
+                        <span>{{ t("log.colDate") }}</span>
+                      </div>
+                    </div>
+                    <div
+                      v-if="log.startOffset > 0"
+                      class="flex shrink-0 items-center justify-center gap-3 border-b py-1 text-xs text-muted-foreground"
+                    >
+                      <button
+                        type="button"
+                        class="hover:text-foreground disabled:opacity-50"
+                        :disabled="
+                          log.loading || log.loadingPrevious || log.loadingMore || log.locating
+                        "
+                        @click="log.loadPrevious()"
+                      >
+                        {{ log.loadingPrevious ? t("log.loadingMore") : t("log.loadNewer") }}
+                      </button>
+                      <button type="button" class="hover:text-foreground" @click="reloadFilters">
+                        {{ t("log.backToLatest") }}
                       </button>
                     </div>
-                  </template>
-                </VirtualList>
-              </div>
-            </Pane>
-            <Pane :size="42" min-size="24">
-              <Splitpanes horizontal class="h-full">
-                <Pane :size="45">
-                  <div class="flex h-full min-h-0 flex-col">
-                    <div class="border-b px-2 py-1 text-[11px] font-medium">
-                      {{ t("log.changedFiles") }}
-                    </div>
-                    <PathTreeList
-                      :files="log.changedFiles"
-                      :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
-                      empty-text=""
-                      @open="(f) => openChangedFile(f.path, f.origPath)"
-                      @context="({ file }) => showFileHistory(file.path)"
-                    />
+                    <VirtualList
+                      ref="commitListRef"
+                      :items="log.commits"
+                      :item-height="ROW_H"
+                      :get-key="(c) => c.sha"
+                      preserve-scroll-anchor
+                      @scroll="onListScroll"
+                    >
+                      <template #default="{ item: c, index: idx }">
+                        <button
+                          type="button"
+                          class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          role="option"
+                          :aria-selected="selectedSet.has(c.sha)"
+                          :title="`${c.shortSha} · ${c.subject}\n${c.author} · ${formatTime(c.authorTime)}`"
+                          :tabindex="log.selectedSha === c.sha ? 0 : -1"
+                          @keydown="onCommitKeydown(c.sha, $event)"
+                          :style="{
+                            gridTemplateColumns: gridColumns,
+                            minWidth: `${graphColumnWidth + 372}px`,
+                          }"
+                          :class="
+                            selectedSet.has(c.sha)
+                              ? 'bg-selection text-selection-foreground'
+                              : 'hover:bg-hover-surface'
+                          "
+                          @click="onCommitClick(c.sha, $event)"
+                          @dblclick="ctxCombined"
+                          @contextmenu="onCommitContext(c.sha, $event)"
+                        >
+                          <span
+                            class="flex h-full min-w-0 items-center justify-start overflow-hidden"
+                          >
+                            <CommitGraphCell
+                              :graph="graphLayout.rows[idx]!.graph"
+                              :edge-colors="graphLayout.rows[idx]!.edgeColors"
+                              :incoming="graphLayout.rows[idx]!.incoming"
+                              :hidden-parents="graphLayout.rows[idx]!.hiddenParents"
+                              :max-lane="graphLayout.maxLane"
+                              :lane-labels="graphLayout.rows[idx]!.laneLabels"
+                              :node-label="graphLayout.rows[idx]!.nodeLabel"
+                              :lane-width="14"
+                              :style="{ transform: `translateX(${-graphOffset}px)` }"
+                            />
+                          </span>
+                          <span class="flex min-w-0 items-center gap-1 truncate pr-2">
+                            <span
+                              v-for="refName in visibleRefs(c.refs)"
+                              :key="refName"
+                              class="max-w-28 shrink-0 truncate rounded-sm border px-1 text-[10px]"
+                              :class="
+                                refName.startsWith('HEAD')
+                                  ? 'border-primary/40 bg-primary/10 text-foreground'
+                                  : 'border-border bg-muted text-muted-foreground'
+                              "
+                              :title="refName"
+                            >
+                              {{ tidyRef(refName) }}
+                            </span>
+                            <span class="truncate">{{ c.subject }}</span>
+                          </span>
+                          <span class="truncate pr-2 text-muted-foreground">{{ c.author }}</span>
+                          <span
+                            class="truncate text-muted-foreground"
+                            :title="formatTime(c.authorTime)"
+                            >{{ rowTimeFormatter.format(new Date(c.authorTime * 1000)) }}</span
+                          >
+                        </button>
+                      </template>
+                      <template #footer>
+                        <div
+                          v-if="log.truncated || log.loadingMore"
+                          class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
+                        >
+                          <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
+                          <button
+                            v-else
+                            type="button"
+                            class="hover:text-foreground"
+                            @click="log.loadMore()"
+                          >
+                            {{ t("log.loadMore") }}
+                          </button>
+                        </div>
+                      </template>
+                    </VirtualList>
                   </div>
                 </Pane>
-                <Pane :size="55">
-                  <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
-                    <div class="font-mono text-[11px] text-muted-foreground">
-                      {{ log.details.sha }}
-                    </div>
-                    <div class="mt-1 font-medium">{{ log.details.subject }}</div>
-                    <pre
-                      v-if="log.details.body"
-                      class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
-                      >{{ log.details.body }}</pre
-                    >
-                    <dl
-                      class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
-                    >
-                      <dt>{{ t("log.author") }}</dt>
-                      <dd>
-                        {{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;
-                      </dd>
-                      <dt>{{ t("log.date") }}</dt>
-                      <dd>{{ formatTime(log.details.authorTime) }}</dd>
-                      <dt>{{ t("log.parents") }}</dt>
-                      <dd class="font-mono">
-                        {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
-                      </dd>
-                    </dl>
-                  </div>
+                <Pane :size="28" min-size="20">
+                  <Splitpanes horizontal class="h-full">
+                    <Pane :size="45">
+                      <div class="flex h-full min-h-0 flex-col">
+                        <div class="border-b px-2 py-1 text-[11px] font-medium">
+                          {{ t("log.changedFiles") }}
+                        </div>
+                        <PathTreeList
+                          :files="log.changedFiles"
+                          :selected-path="selectedFile?.path"
+                          @select="(file) => (selectedFile = file)"
+                          :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
+                          empty-text=""
+                          @open="(f) => openChangedFile(f.path, f.origPath)"
+                          @context="
+                            ({ file, x, y }) => {
+                              selectedFile = file;
+                              fileCtx = { open: true, x, y };
+                            }
+                          "
+                        />
+                      </div>
+                    </Pane>
+                    <Pane :size="55">
+                      <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
+                        <div class="font-mono text-[11px] text-muted-foreground">
+                          {{ log.details.sha }}
+                        </div>
+                        <div class="mt-1 font-medium">{{ log.details.subject }}</div>
+                        <pre
+                          v-if="log.details.body"
+                          class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
+                          >{{ log.details.body }}</pre>
+                        <dl
+                          class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+                        >
+                          <dt>{{ t("log.author") }}</dt>
+                          <dd>{{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;</dd>
+                          <dt>{{ t("log.date") }}</dt>
+                          <dd>{{ formatTime(log.details.authorTime) }}</dd>
+                          <dt>{{ t("log.parents") }}</dt>
+                          <dd class="font-mono">
+                            {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
+                          </dd>
+                        </dl>
+                      </div>
+                    </Pane>
+                  </Splitpanes>
                 </Pane>
               </Splitpanes>
-            </Pane>
-          </Splitpanes>
+            </div>
+          </div>
         </Pane>
       </Splitpanes>
     </template>
@@ -671,65 +911,82 @@ async function ctxExtract() {
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxCherryPick"
+        :disabled="rewrite.busy"
+        @click="runRewriteAction(ctxCherryPick)"
       >
         {{ t("actions.cherryPick") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxReword"
+        :disabled="rewrite.busy || log.selectedShas.length !== 1"
+        @click="runRewriteAction(ctxReword)"
       >
         {{ t("actions.reword") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxInteractive"
+        :disabled="rewrite.busy || log.selectedShas.length !== 1"
+        @click="runRewriteAction(ctxInteractive)"
       >
         {{ t("actions.interactiveRebase") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxSquash"
+        :disabled="rewrite.busy || log.selectedShas.length < 2"
+        @click="runRewriteAction(ctxSquash)"
       >
         {{ t("actions.squash") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxDrop"
+        :disabled="rewrite.busy"
+        @click="runRewriteAction(ctxDrop)"
       >
         {{ t("actions.dropCommits") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxUncommit"
+        :disabled="rewrite.busy"
+        @click="runRewriteAction(ctxUncommit)"
       >
         {{ t("actions.uncommit") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxRevert"
+        :disabled="rewrite.busy"
+        @click="runRewriteAction(ctxRevert)"
       >
         {{ t("actions.revert") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxReset"
+        :disabled="rewrite.busy || log.selectedShas.length !== 1"
+        @click="runRewriteAction(ctxReset)"
       >
         {{ t("actions.reset") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxExtract"
+        :disabled="rewrite.busy || log.selectedShas.length !== 1"
+        @click="runRewriteAction(() => ctxPartialChanges('extract'))"
       >
         {{ t("actions.extractSelected") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        :disabled="rewrite.busy || log.selectedShas.length !== 1"
+        @click="runRewriteAction(() => ctxPartialChanges('drop'))"
+      >
+        {{ t("actions.dropSelected") }}
       </button>
       <button
         type="button"
@@ -758,6 +1015,43 @@ async function ctxExtract() {
         @click="ctxRepoAtRev"
       >
         {{ t("history.repoAtRevision") }}
+      </button>
+    </ContextMenuSurface>
+    <ContextMenuSurface
+      :open="fileCtx.open"
+      :anchor-x="fileCtx.x"
+      :anchor-y="fileCtx.y"
+      :estimated-height="160"
+      @close="fileCtx.open = false"
+    >
+      <button
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="
+          fileCtx.open = false;
+          selectedFile && openChangedFile(selectedFile.path, selectedFile.origPath);
+        "
+      >
+        {{ t("actions.showDiff") }}
+      </button>
+      <button
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="
+          fileCtx.open = false;
+          selectedFile && showFileHistory(selectedFile.path);
+        "
+      >
+        {{ t("history.showHistory") }}
+      </button>
+      <button
+        v-for="mode in ['extract', 'drop'] as const"
+        :key="mode"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        :disabled="rewrite.busy || !selectedFile || log.selectedShas.length !== 1"
+        @click="
+          runRewriteAction(() => ctxPartialChanges(mode, selectedFile ? [selectedFile.path] : []))
+        "
+      >
+        {{ t(mode === "extract" ? "actions.extractSelected" : "actions.dropSelected") }}
       </button>
     </ContextMenuSurface>
   </div>

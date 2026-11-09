@@ -7,12 +7,31 @@ import { useI18n } from "vue-i18n";
 import CreateWorktreeDialog from "./CreateWorktreeDialog.vue";
 import OpenRefWorktreeDialog from "./OpenRefWorktreeDialog.vue";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
+import { openDialog } from "@/composables/useDialog";
 
 const { t } = useI18n();
 const store = useWorktreesStore();
 const workspace = useWorkspaceStore();
 
 store.userOpened = true;
+watch(
+  () => store.createOpen,
+  async (open) => {
+    if (!open) return;
+    await openDialog(CreateWorktreeDialog);
+    store.createOpen = false;
+  },
+  { immediate: true },
+);
+watch(
+  () => store.openRefOpen,
+  async (open) => {
+    if (!open) return;
+    await openDialog(OpenRefWorktreeDialog);
+    store.openRefOpen = false;
+  },
+  { immediate: true },
+);
 
 const selected = computed(() => store.items.find((w) => w.path === store.selectedPath) ?? null);
 const canRemove = computed(() => {
@@ -34,32 +53,41 @@ watch(
 
 async function removeSelected() {
   if (!selected.value || !canRemove.value) return;
+  const target = selected.value;
+  const repository = store.repositoryToken();
   const ok = await confirmDialog({
     title: t("worktrees.remove"),
-    message: t("worktrees.removeConfirm", { path: selected.value.path }),
+    message: t("worktrees.removeConfirm", { path: target.path }),
     destructive: true,
   });
-  if (!ok) return;
-  const dirtyForce = await confirmDialog({
-    title: t("worktrees.remove"),
-    message: t("worktrees.removeForceConfirm"),
-    destructive: true,
-  });
-  await store.remove(selected.value.path, dirtyForce);
+  if (
+    !ok ||
+    repository !== store.repositoryToken() ||
+    !store.items.some((w) => w.path === target.path)
+  )
+    return;
+  await store.remove(target.path, false);
 }
 
 async function lockSelected() {
   if (!selected.value) return;
+  const target = selected.value;
+  const repository = store.repositoryToken();
   if (selected.value.locked) {
     await store.unlock(selected.value.path);
     return;
   }
-  const reason =
-    (await promptDialog({
-      title: t("worktrees.lock"),
-      placeholder: t("worktrees.lockReason"),
-    })) ?? undefined;
-  await store.lock(selected.value.path, reason || undefined);
+  const reason = await promptDialog({
+    title: t("worktrees.lock"),
+    placeholder: t("worktrees.lockReason"),
+  });
+  if (
+    reason == null ||
+    repository !== store.repositoryToken() ||
+    !store.items.some((w) => w.path === target.path)
+  )
+    return;
+  await store.lock(target.path, reason || undefined);
 }
 
 function shortHead(sha: string) {
@@ -72,61 +100,57 @@ function shortHead(sha: string) {
     <div class="flex h-8 items-center gap-1 border-b px-2">
       <span class="font-medium">{{ t("toolWindows.worktrees") }}</span>
       <div class="flex-1" />
-      <Button size="xs" variant="ghost" @click="store.createOpen = true">
+      <Button size="xs" variant="ghost" :disabled="store.busy" @click="store.createOpen = true">
         {{ t("worktrees.new") }}
       </Button>
-      <Button size="xs" variant="ghost" @click="store.openRefOpen = true">
+      <Button size="xs" variant="ghost" :disabled="store.busy" @click="store.openRefOpen = true">
         {{ t("worktrees.openRef") }}
       </Button>
-      <Button size="xs" variant="ghost" @click="store.prune()">{{ t("worktrees.prune") }}</Button>
-      <Button size="xs" variant="ghost" @click="store.refresh()">{{ t("actions.refreshStatus") }}</Button>
+      <Button size="xs" variant="ghost" :disabled="store.busy" @click="store.prune()">{{
+        t("worktrees.prune")
+      }}</Button>
+      <Button
+        size="xs"
+        variant="ghost"
+        :disabled="store.busy || store.loading"
+        @click="store.refresh()"
+        >{{ t("actions.refreshStatus") }}</Button
+      >
     </div>
 
     <div v-if="store.error" class="px-2 py-1 text-destructive">{{ store.error }}</div>
-    <div
-      v-else-if="store.loading && !store.items.length"
-      class="p-2 text-muted-foreground"
-    >
+    <div v-else-if="store.loading && !store.items.length" class="p-2 text-muted-foreground">
       {{ t("common.loading") }}
     </div>
-    <div
-      v-else-if="store.items.length <= 1"
-      class="p-3 text-muted-foreground"
-    >
+    <div v-else-if="store.items.length <= 1" class="p-3 text-muted-foreground">
       {{ t("worktrees.empty") }}
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto">
-      <div
+      <button
         v-for="w in store.items"
         :key="w.path"
-        class="flex cursor-pointer items-center gap-2 border-b border-border/40 px-2 py-1.5 hover:bg-accent/50"
+        type="button"
+        :aria-pressed="store.selectedPath === w.path"
+        class="flex w-full cursor-pointer items-center gap-2 border-b border-border/40 px-2 py-1.5 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
         :class="store.selectedPath === w.path ? 'bg-accent' : ''"
         @click="store.selectedPath = w.path"
         @dblclick="store.openWorktree(w.path, true)"
       >
         <span class="w-16 shrink-0 text-muted-foreground">
-          <template v-if="w.isMain">main</template>
-          <template v-else-if="w.isCurrent">current</template>
+          <template v-if="w.isCurrent">{{ t("worktrees.current") }}</template>
+          <template v-else-if="w.isMain">{{ t("worktrees.main") }}</template>
         </span>
         <span class="min-w-0 flex-1 truncate font-mono" :title="w.path">{{ w.path }}</span>
         <span class="w-28 truncate">
-          {{ w.detached ? `detached ${shortHead(w.head)}` : w.branch ?? shortHead(w.head) }}
+          {{ w.detached ? `detached ${shortHead(w.head)}` : (w.branch ?? shortHead(w.head)) }}
         </span>
         <span v-if="w.locked" class="text-amber-600" :title="w.lockReason ?? ''">🔒</span>
         <span v-if="w.prunable" class="text-destructive" :title="w.pruneReason ?? ''">⚠</span>
-      </div>
+      </button>
     </div>
 
-    <div class="flex h-8 items-center gap-1 border-t px-2">
-      <Button
-        size="xs"
-        variant="ghost"
-        :disabled="!selected"
-        @click="selected && store.openWorktree(selected.path, true)"
-      >
-        {{ t("worktrees.open") }}
-      </Button>
+    <fieldset :disabled="store.busy" class="flex h-8 items-center gap-1 border-t px-2">
       <Button
         size="xs"
         variant="ghost"
@@ -135,7 +159,12 @@ function shortHead(sha: string) {
       >
         {{ t("worktrees.openHere") }}
       </Button>
-      <Button size="xs" variant="ghost" :disabled="!selected" @click="lockSelected">
+      <Button
+        size="xs"
+        variant="ghost"
+        :disabled="!selected || selected.isMain"
+        @click="lockSelected"
+      >
         {{ selected?.locked ? t("worktrees.unlock") : t("worktrees.lock") }}
       </Button>
       <Button
@@ -154,9 +183,6 @@ function shortHead(sha: string) {
       >
         {{ t("worktrees.remove") }}
       </Button>
-    </div>
-
-    <CreateWorktreeDialog v-if="store.createOpen" @close="store.createOpen = false" />
-    <OpenRefWorktreeDialog v-if="store.openRefOpen" @close="store.openRefOpen = false" />
+    </fieldset>
   </div>
 </template>

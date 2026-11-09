@@ -28,15 +28,12 @@ export async function promptCredentials(opts: AuthPromptOpts = {}): Promise<bool
 
   const errText = opts.error != null ? formatErrorMessage(opts.error) : null;
   const remoteUrl =
-    opts.url ??
-    branches.remotes[0]?.fetchUrl ??
-    branches.remotes[0]?.pushUrl ??
-    null;
+    opts.url ?? branches.remotes[0]?.fetchUrl ?? branches.remotes[0]?.pushUrl ?? null;
   const fromErr = errText ? parseAuthTarget(errText) : null;
   const fromUrl = remoteUrl ? parseAuthTarget(remoteUrl) : null;
 
   const url = fromUrl?.url ?? fromErr?.url ?? remoteUrl;
-  const host = fromUrl?.host ?? fromErr?.host;
+  const host = fromUrl?.host ?? fromErr?.host ?? null;
   const protocol = fromUrl?.protocol ?? fromErr?.protocol ?? "https";
   const username = fromErr?.username ?? fromUrl?.username ?? "";
 
@@ -52,8 +49,7 @@ export async function promptCredentials(opts: AuthPromptOpts = {}): Promise<bool
 
   if (!result?.retry) return false;
 
-  const storeHelper =
-    result.storeHelper && (settings.settings?.git?.useCredentialHelper ?? true);
+  const storeHelper = result.storeHelper && (settings.settings?.git?.useCredentialHelper ?? true);
 
   await getBackend().credentialSessionSet({
     path: ws.repoPath,

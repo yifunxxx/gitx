@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { ChangelistsState, FileChange } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -49,11 +49,38 @@ export const useChangesStore = defineStore("changes", () => {
   const localVersion = ref(0);
   /** Monotonic generation — drop stale refresh results. */
   let refreshGen = 0;
+  let repositoryGeneration = 0;
+  let changelistRequest = 0;
+  let changelistWrites = 0;
+  let changelistQueue: Promise<unknown> = Promise.resolve();
+  const workspace = useWorkspaceStore();
+  function currentRepository() {
+    const path = workspace.repoPath;
+    const navigation = workspace.navigationToken();
+    return () => workspace.repoPath === path && workspace.navigationToken() === navigation;
+  }
+  watch(
+    () => workspace.repoPath,
+    () => {
+      ++refreshGen;
+      ++repositoryGeneration;
+      ++changelistRequest;
+      changelistWrites = 0;
+      changelistQueue = Promise.resolve();
+      localVersion.value = 0;
+      snapshot.value = null;
+      changelists.value = null;
+      selectedPaths.value = [];
+      selectedSection.value = null;
+      checkedPaths.value = [];
+      loading.value = false;
+      error.value = null;
+    },
+    { flush: "sync" },
+  );
 
   const stagingMode = computed(() => useSettingsStore().settings?.stagingMode ?? false);
-  const showIgnoredFiles = computed(
-    () => useSettingsStore().settings?.showIgnoredFiles ?? false,
-  );
+  const showIgnoredFiles = computed(() => useSettingsStore().settings?.showIgnoredFiles ?? false);
 
   const staged = computed(() => snapshot.value?.files.filter(isStaged) ?? []);
   const unstaged = computed(() => snapshot.value?.files.filter(isUnstaged) ?? []);
@@ -87,9 +114,7 @@ export const useChangesStore = defineStore("changes", () => {
     return [];
   }
 
-  function checkStateForSection(
-    section: ChangesSection,
-  ): "none" | "all" | "partial" {
+  function checkStateForSection(section: ChangesSection): "none" | "all" | "partial" {
     const paths = pathsForSection(section);
     if (!paths.length) return "none";
     const set = new Set(checkedPaths.value);
@@ -115,59 +140,97 @@ export const useChangesStore = defineStore("changes", () => {
 
   async function refreshChangelists() {
     const workspace = useWorkspaceStore();
+    const request = ++changelistRequest;
     if (!workspace.repoPath || !workspace.isRepo || stagingMode.value) {
       changelists.value = null;
       return;
     }
+    if (changelistWrites) return;
+    const path = workspace.repoPath;
+    const generation = repositoryGeneration;
+    const isCurrentRepository = currentRepository();
+    const current = () =>
+      generation === repositoryGeneration && request === changelistRequest && !stagingMode.value && isCurrentRepository();
     try {
       const backend = getBackend();
-      changelists.value = await backend.changelistList({ path: workspace.repoPath });
+      const result = await backend.changelistList({ path });
+      if (current()) changelists.value = result;
     } catch (e) {
-      error.value = formatErrorMessage(e);
+      if (current()) error.value = formatErrorMessage(e);
     }
   }
 
-  async function refresh() {
-    const workspace = useWorkspaceStore();
-    const settings = useSettingsStore();
-    if (!settings.settings) {
+  function mutateChangelists(operation: (path: string) => Promise<ChangelistsState>) {
+    const path = workspace.repoPath;
+    if (!path) return Promise.resolve(null);
+    const generation = repositoryGeneration;
+    const isCurrentRepository = currentRepository();
+    const current = () => generation === repositoryGeneration && isCurrentRepository();
+    ++changelistRequest;
+    ++changelistWrites;
+    const task = changelistQueue.then(async () => {
       try {
-        await settings.load();
-      } catch {
-        /* keep going with defaults */
+        if (!current()) return null;
+        const result = await operation(path);
+        if (!current()) return null;
+        ++changelistRequest;
+        if (!stagingMode.value) changelists.value = result;
+        error.value = null;
+        return result;
+      } catch (e) {
+        if (current()) error.value = formatErrorMessage(e);
+        return null;
+      } finally {
+        if (generation === repositoryGeneration) --changelistWrites;
       }
-    }
+    });
+    changelistQueue = task;
+    return task;
+  }
+
+  async function refresh(background = false) {
+    const settings = useSettingsStore();
     const path = workspace.repoPath;
     const id = workspace.repoId;
+    const gen = ++refreshGen;
+    const isCurrentRepository = currentRepository();
+    const current = () => gen === refreshGen && isCurrentRepository();
     if (!path || !id || !workspace.isRepo) {
+      loading.value = false;
       snapshot.value = null;
       changelists.value = null;
       return;
     }
-    const gen = ++refreshGen;
-    loading.value = true;
+    loading.value = !background || !snapshot.value;
     error.value = null;
     try {
+      if (!settings.settings) {
+        try {
+          await settings.load();
+        } catch {
+          /* keep going with defaults */
+        }
+      }
+      if (!current()) return;
       const backend = getBackend();
       const includeIgnored = showIgnoredFiles.value;
       const next = await backend.statusGet({ repoId: id, path, includeIgnored });
-      if (gen !== refreshGen) return;
+      if (!current()) return;
       if (next.version < localVersion.value) return;
       localVersion.value = next.version;
       snapshot.value = next;
       workspace.setBranch(next.branch);
       if (!stagingMode.value) {
         await refreshChangelists();
-        if (gen !== refreshGen) return;
+        if (!current()) return;
       } else {
         changelists.value = null;
       }
-      // Drop checks that no longer exist
+      // Drop checks that no longer exist.
       const known = new Set(next.files.map((f) => f.path));
       checkedPaths.value = checkedPaths.value.filter((p) => known.has(p));
     } catch (e) {
-      if (gen !== refreshGen) return;
-      error.value = formatErrorMessage(e);
+      if (current()) error.value = formatErrorMessage(e);
     } finally {
       if (gen === refreshGen) loading.value = false;
     }
@@ -281,37 +344,39 @@ export const useChangesStore = defineStore("changes", () => {
   }
 
   async function moveToChangelist(paths: string[], targetListId: string) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath || !paths.length) return;
+    if (!paths.length) return null;
     const backend = getBackend();
-    changelists.value = await backend.changelistMove({
-      path: workspace.repoPath,
-      paths,
-      targetListId,
-    });
+    const selected = [...paths];
+    return mutateChangelists((path) =>
+      backend.changelistMove({
+        path,
+        paths: selected,
+        targetListId,
+      }),
+    );
   }
 
   async function createChangelist(name: string, setActive = true) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath || !name.trim()) return null;
+    if (!name.trim()) return null;
     const backend = getBackend();
-    changelists.value = await backend.changelistCreate({
-      path: workspace.repoPath,
-      name: name.trim(),
-      comment: "",
-      setActive,
-    });
-    return changelists.value;
+    return mutateChangelists((path) =>
+      backend.changelistCreate({
+        path,
+        name: name.trim(),
+        comment: "",
+        setActive,
+      }),
+    );
   }
 
   async function setActiveChangelist(id: string) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
     const backend = getBackend();
-    changelists.value = await backend.changelistSetActive({
-      path: workspace.repoPath,
-      id,
-    });
+    return mutateChangelists((path) =>
+      backend.changelistSetActive({
+        path,
+        id,
+      }),
+    );
   }
 
   async function toggleShowIgnored() {

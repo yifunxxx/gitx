@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Minus, Square, X } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { isTauri } from "@/lib/utils";
 
 const platform = ref<"mac" | "win" | "linux">("linux");
+const { t } = useI18n();
 
 onMounted(() => {
   const p = navigator.platform.toLowerCase();
@@ -41,7 +43,8 @@ async function close() {
     <button
       type="button"
       class="flex h-8 w-10 items-center justify-center text-muted-foreground hover:bg-accent"
-      aria-label="Minimize"
+      :aria-label="t('chrome.minimizeWindow')"
+      :title="t('chrome.minimizeWindow')"
       @click.stop="minimize"
     >
       <Minus class="h-3.5 w-3.5" />
@@ -49,7 +52,8 @@ async function close() {
     <button
       type="button"
       class="flex h-8 w-10 items-center justify-center text-muted-foreground hover:bg-accent"
-      aria-label="Maximize"
+      :aria-label="t('chrome.toggleMaximizeWindow')"
+      :title="t('chrome.toggleMaximizeWindow')"
       @click.stop="toggleMax"
     >
       <Square class="h-3 w-3" />
@@ -57,7 +61,8 @@ async function close() {
     <button
       type="button"
       class="flex h-8 w-10 items-center justify-center text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-      aria-label="Close"
+      :aria-label="t('chrome.closeWindow')"
+      :title="t('chrome.closeWindow')"
       @click.stop="close"
     >
       <X class="h-3.5 w-3.5" />

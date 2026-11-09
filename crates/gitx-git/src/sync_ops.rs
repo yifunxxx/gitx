@@ -3,8 +3,8 @@
 use crate::runner::{GitInvocation, GitRunner, OpKind};
 use gitx_core::{
     AppError, ChangedFile, ErrorCode, FetchSummary, FetchTagsPolicy, IncomingCheck, PullResult,
-    PushOutcome, PushPreview, PushRefspec, PushResult, SubmoduleUpdateItem, SubmoduleUpdatePolicy,
-    SubmoduleUpdateResult, SyncForkResult, UpdateInfo, UpdateMethod,
+    PushOutcome, PushPreview, PushRefspec, PushResult, SubmoduleUpdatePolicy, SyncForkResult,
+    UpdateInfo, UpdateMethod,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -120,6 +120,14 @@ impl GitRunner {
             .rev_parse(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
+        // Squash and --no-commit can update the index without advancing HEAD.
+        // Compare index trees so pre-existing staged files are not reported as
+        // files downloaded by this pull.
+        let old_index = if squash || no_commit {
+            Some(self.index_tree(cwd, cancel).await?)
+        } else {
+            None
+        };
         let mut args = vec!["pull".to_string(), "--progress".into(), "--no-edit".into()];
         if rebase {
             args.push("--rebase".into());
@@ -152,7 +160,32 @@ impl GitRunner {
             .rev_parse(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let updated = old != new;
+        let head_changed = old != new;
+        let new_index = if old_index.is_some() && !head_changed {
+            Some(self.index_tree(cwd, cancel).await?)
+        } else {
+            None
+        };
+        let pending_merge =
+            !head_changed && no_commit && self.rev_parse(cwd, "MERGE_HEAD", cancel).await.is_ok();
+        let index_changed = new_index.is_some() && new_index != old_index;
+        let updated = head_changed || index_changed || pending_merge;
+        let updated_files = if head_changed {
+            self.name_status(cwd, &old, &new, cancel)
+                .await
+                .unwrap_or_default()
+        } else if let (Some(before), Some(after)) = (&old_index, &new_index) {
+            self.name_status(cwd, before, after, cancel).await?
+        } else {
+            Vec::new()
+        };
+        let commits = if head_changed {
+            self.rev_list_oneline(cwd, &format!("{old}..{new}"), cancel)
+                .await
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         Ok(PullResult {
             old_head: old,
             new_head: new,
@@ -164,12 +197,32 @@ impl GitRunner {
                 "merge".into()
             },
             updated,
-            message: if updated {
+            updated_files,
+            commits,
+            message: if updated && !head_changed {
+                "Changes applied; commit required".into()
+            } else if updated {
                 "Pulled successfully".into()
             } else {
                 "Already up to date".into()
             },
         })
+    }
+
+    pub(crate) async fn index_tree(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<String, AppError> {
+        let out = self
+            .run(
+                GitInvocation::new(cwd, ["write-tree"])
+                    .kind(OpKind::Write)
+                    .git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
     pub async fn update_project_run(
@@ -178,6 +231,7 @@ impl GitRunner {
         strategy: UpdateMethod,
         cancel: &CancellationToken,
     ) -> Result<UpdateInfo, AppError> {
+        self.ensure_not_busy(cwd, cancel).await?;
         // Fetch upstream remote first.
         let upstream = self.upstream_ref(cwd, cancel).await.map_err(|e| {
             AppError::new(
@@ -193,18 +247,13 @@ impl GitRunner {
             .map(|(r, b)| (r.to_string(), b.to_string()))
             .unwrap_or_else(|| ("origin".into(), "main".into()));
 
+        let old = self.rev_parse(cwd, "HEAD", cancel).await?;
+        self.safety_backup(cwd, "update-project", &old, cancel)
+            .await?;
+
         let _ = self
             .fetch_run(cwd, Some(&remote), true, FetchTagsPolicy::Auto, cancel)
             .await?;
-
-        let old = self
-            .rev_parse(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
-        let upstream_now = self
-            .upstream_ref(cwd, cancel)
-            .await
-            .unwrap_or_else(|_| format!("{remote}/HEAD"));
 
         match strategy {
             UpdateMethod::Merge => {
@@ -220,12 +269,6 @@ impl GitRunner {
                 self.run(inv, cancel).await?;
             }
             UpdateMethod::Reset => {
-                // Safety backup of HEAD.
-                let backup = format!("refs/gitx/backup/update-reset-{}", now_ts());
-                let inv = GitInvocation::new(cwd, ["update-ref", &backup, "HEAD"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                let _ = self.run(inv, cancel).await;
                 let inv = GitInvocation::new(cwd, ["reset", "--keep", "@{u}"])
                     .kind(OpKind::Write)
                     .git_bin(self.git_bin.clone());
@@ -233,10 +276,7 @@ impl GitRunner {
             }
         }
 
-        let new = self
-            .rev_parse(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
+        let new = self.rev_parse(cwd, "HEAD", cancel).await?;
         let updated_files = if old != new {
             self.name_status(cwd, &old, &new, cancel)
                 .await
@@ -267,7 +307,6 @@ impl GitRunner {
             )
         };
 
-        let _ = upstream_now;
         Ok(UpdateInfo {
             old_head: old,
             new_head: new,
@@ -275,7 +314,34 @@ impl GitRunner {
             updated_files,
             commits,
             message,
+            submodules: None,
+            submodule_error: None,
         })
+    }
+
+    pub async fn update_project_with_submodules(
+        &self,
+        cwd: &Path,
+        strategy: UpdateMethod,
+        policy: SubmoduleUpdatePolicy,
+        cancel: &CancellationToken,
+    ) -> Result<UpdateInfo, AppError> {
+        let mut info = self.update_project_run(cwd, strategy, cancel).await?;
+        if !matches!(policy, SubmoduleUpdatePolicy::Never) {
+            let changed = info
+                .updated_files
+                .iter()
+                .map(|file| file.path.clone())
+                .collect::<Vec<_>>();
+            match self
+                .submodule_update(cwd, policy, Some(&changed), cancel)
+                .await
+            {
+                Ok(result) => info.submodules = Some(result),
+                Err(error) => info.submodule_error = Some(error.message),
+            }
+        }
+        Ok(info)
     }
 
     /// Sync local default branch with fork parent remote (#17 host-agnostic).
@@ -287,6 +353,7 @@ impl GitRunner {
         push_origin: bool,
         cancel: &CancellationToken,
     ) -> Result<SyncForkResult, AppError> {
+        self.ensure_not_busy(cwd, cancel).await?;
         // Ensure parent remote exists.
         let remotes = self.remote_list(cwd, cancel).await?;
         if !remotes.iter().any(|r| r.name == parent_remote) {
@@ -296,11 +363,15 @@ impl GitRunner {
             ));
         }
 
-        let default_branch = self
-            .default_branch_name(cwd, cancel)
-            .await
-            .unwrap_or_else(|_| "main".into());
+        let default_branch = self.default_branch_name(cwd, cancel).await?;
         let upstream_ref = format!("{parent_remote}/{default_branch}");
+        // Save the branch being updated, before checkout can change the active
+        // branch or index. The companion snapshot preserves the caller's local
+        // index/worktree even when it starts on a different branch.
+        let old = self
+            .rev_parse(cwd, &format!("refs/heads/{default_branch}"), cancel)
+            .await?;
+        self.safety_backup(cwd, "sync-fork", &old, cancel).await?;
 
         let _ = self
             .fetch_run(
@@ -313,19 +384,11 @@ impl GitRunner {
             .await?;
 
         // Checkout default branch if needed.
-        let current = self
-            .rev_parse_abbrev(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
+        let current = self.rev_parse_abbrev(cwd, "HEAD", cancel).await?;
         if current != default_branch {
             self.branch_checkout(cwd, &default_branch, "local", cancel)
                 .await?;
         }
-
-        let old = self
-            .rev_parse(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
 
         match strategy {
             UpdateMethod::Merge => {
@@ -352,11 +415,6 @@ impl GitRunner {
                 self.run(inv, cancel).await?;
             }
             UpdateMethod::Reset => {
-                let backup = format!("refs/gitx/backup/sync-fork-{}", now_ts());
-                let inv = GitInvocation::new(cwd, ["update-ref", &backup, "HEAD"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                let _ = self.run(inv, cancel).await;
                 let inv = GitInvocation::new(cwd, ["reset", "--keep", &upstream_ref])
                     .kind(OpKind::Write)
                     .git_bin(self.git_bin.clone());
@@ -364,10 +422,7 @@ impl GitRunner {
             }
         }
 
-        let new = self
-            .rev_parse(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
+        let new = self.rev_parse(cwd, "HEAD", cancel).await?;
 
         let mut pushed = false;
         if push_origin {
@@ -406,175 +461,6 @@ impl GitRunner {
             } else {
                 "Synced with upstream".into()
             },
-        })
-    }
-
-    /// Update changed submodules after superproject update (#81).
-    pub async fn submodule_update(
-        &self,
-        cwd: &Path,
-        policy: SubmoduleUpdatePolicy,
-        changed_paths: Option<&[String]>,
-        cancel: &CancellationToken,
-    ) -> Result<SubmoduleUpdateResult, AppError> {
-        if matches!(policy, SubmoduleUpdatePolicy::Never) {
-            return Ok(SubmoduleUpdateResult {
-                items: Vec::new(),
-                message: "Submodule update skipped (Never)".into(),
-            });
-        }
-        if !cwd.join(".gitmodules").exists() {
-            return Ok(SubmoduleUpdateResult {
-                items: Vec::new(),
-                message: "No .gitmodules".into(),
-            });
-        }
-
-        // List submodule paths from .gitmodules.
-        let inv = GitInvocation::new(
-            cwd,
-            ["config", "-f", ".gitmodules", "--get-regexp", r"path$"],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone());
-        let out = match self.run(inv, cancel).await {
-            Ok(o) => o,
-            Err(_) => {
-                return Ok(SubmoduleUpdateResult {
-                    items: Vec::new(),
-                    message: "No submodule paths configured".into(),
-                });
-            }
-        };
-        let all_paths: Vec<String> = String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter_map(|l| l.split_whitespace().nth(1).map(|s| s.to_string()))
-            .collect();
-
-        let targets: Vec<String> = if let Some(changed) = changed_paths {
-            if matches!(policy, SubmoduleUpdatePolicy::Auto) {
-                all_paths
-                    .into_iter()
-                    .filter(|p| {
-                        changed
-                            .iter()
-                            .any(|c| c == p || c.starts_with(&format!("{p}/")))
-                    })
-                    .collect()
-            } else {
-                all_paths
-            }
-        } else if matches!(policy, SubmoduleUpdatePolicy::Always) {
-            all_paths
-        } else {
-            // Auto with no changed list → update all present.
-            all_paths
-        };
-
-        if targets.is_empty() {
-            return Ok(SubmoduleUpdateResult {
-                items: Vec::new(),
-                message: "No submodule pointers changed".into(),
-            });
-        }
-
-        let mut items = Vec::new();
-        for path in &targets {
-            let sub = cwd.join(path);
-            let on_branch = if sub.is_dir() {
-                self.rev_parse_abbrev(&sub, "HEAD", cancel)
-                    .await
-                    .ok()
-                    .filter(|b| b != "HEAD")
-            } else {
-                None
-            };
-
-            if on_branch.is_some() {
-                // IDEA: do not force-detach a submodule that is on a branch.
-                items.push(SubmoduleUpdateItem {
-                    path: path.clone(),
-                    old_sha: None,
-                    new_sha: None,
-                    on_branch: on_branch.clone(),
-                    updated: false,
-                    skipped: true,
-                    message: format!(
-                        "Submodule '{path}' is on branch '{}', updated pointer not checked out",
-                        on_branch.as_deref().unwrap_or("?")
-                    ),
-                });
-                continue;
-            }
-
-            let old_sha = self
-                .run(
-                    GitInvocation::new(cwd, ["rev-parse", &format!("HEAD:{path}")])
-                        .kind(OpKind::Read)
-                        .git_bin(self.git_bin.clone()),
-                    cancel,
-                )
-                .await
-                .ok()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-            let inv = GitInvocation::new(
-                cwd,
-                [
-                    "submodule",
-                    "update",
-                    "--init",
-                    "--recursive",
-                    "--progress",
-                    "--",
-                    path,
-                ],
-            )
-            .kind(OpKind::NetworkWrite)
-            .timeout(Some(Duration::from_secs(300)))
-            .git_bin(self.git_bin.clone());
-
-            match self.run(inv, cancel).await {
-                Ok(_) => {
-                    let new_sha = self
-                        .run(
-                            GitInvocation::new(cwd, ["rev-parse", &format!("HEAD:{path}")])
-                                .kind(OpKind::Read)
-                                .git_bin(self.git_bin.clone()),
-                            cancel,
-                        )
-                        .await
-                        .ok()
-                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-                    items.push(SubmoduleUpdateItem {
-                        path: path.clone(),
-                        old_sha,
-                        new_sha,
-                        on_branch: None,
-                        updated: true,
-                        skipped: false,
-                        message: format!("Updated submodule '{path}'"),
-                    });
-                }
-                Err(e) => {
-                    items.push(SubmoduleUpdateItem {
-                        path: path.clone(),
-                        old_sha,
-                        new_sha: None,
-                        on_branch: None,
-                        updated: false,
-                        skipped: false,
-                        message: e.message,
-                    });
-                }
-            }
-        }
-
-        let updated = items.iter().filter(|i| i.updated).count();
-        let skipped = items.iter().filter(|i| i.skipped).count();
-        Ok(SubmoduleUpdateResult {
-            message: format!("Submodules: {updated} updated, {skipped} skipped (on branch)"),
-            items,
         })
     }
 
@@ -625,43 +511,113 @@ impl GitRunner {
         &self,
         cwd: &Path,
         remote: Option<&str>,
+        branch: Option<&str>,
+        remote_branch: Option<&str>,
         cancel: &CancellationToken,
     ) -> Result<PushPreview, AppError> {
         let remotes = self.remote_list(cwd, cancel).await?;
-        let has_remote = !remotes.is_empty();
+        let branch = match branch {
+            Some(branch) => branch.to_string(),
+            None => self.rev_parse_abbrev(cwd, "HEAD", cancel).await?,
+        };
+        self.validate_push_branch(cwd, &branch, cancel).await?;
+        let source = format!("refs/heads/{branch}");
+        // Verify the source even when it differs from the checked-out branch.
+        self.rev_parse(cwd, &source, cancel).await?;
+        let tracking = self
+            .run(
+                GitInvocation::new(
+                    cwd,
+                    [
+                        "for-each-ref",
+                        "--format=%(refname)%00%(upstream:remotename)%00%(upstream:remoteref)",
+                        &source,
+                    ],
+                ),
+                cancel,
+            )
+            .await?;
+        let tracking_text = String::from_utf8_lossy(&tracking.stdout);
+        let tracking_fields = tracking_text
+            .lines()
+            .find(|line| line.split('\0').next() == Some(source.as_str()))
+            .unwrap_or("")
+            .split('\0')
+            .collect::<Vec<_>>();
+        let upstream_remote = tracking_fields.get(1).copied().unwrap_or("");
+        let upstream_branch = tracking_fields
+            .get(2)
+            .copied()
+            .unwrap_or("")
+            .strip_prefix("refs/heads/")
+            .unwrap_or("");
         let remote_name = remote
             .map(|s| s.to_string())
+            .or_else(|| {
+                remotes
+                    .iter()
+                    .find(|r| r.name == upstream_remote)
+                    .map(|r| r.name.clone())
+            })
+            .or_else(|| {
+                remotes
+                    .iter()
+                    .find(|r| r.name == "origin")
+                    .map(|r| r.name.clone())
+            })
             .or_else(|| remotes.first().map(|r| r.name.clone()))
             .unwrap_or_else(|| "origin".into());
-
-        let branch = self
-            .rev_parse_abbrev(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_else(|_| "HEAD".into());
-        let upstream = self.upstream_ref(cwd, cancel).await.ok();
-        let set_upstream = upstream.is_none();
-
-        let commits = if let Some(up) = &upstream {
-            self.rev_list_oneline(cwd, &format!("{up}..HEAD"), cancel)
-                .await
-                .unwrap_or_default()
+        let has_remote = remotes.iter().any(|r| r.name == remote_name);
+        if !has_remote && !remotes.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::RemoteNotFound,
+                format!("remote '{remote_name}' not found"),
+            ));
+        }
+        let target_branch = remote_branch.unwrap_or_else(|| {
+            if upstream_remote == remote_name && !upstream_branch.is_empty() {
+                upstream_branch
+            } else {
+                &branch
+            }
+        });
+        self.validate_push_branch(cwd, target_branch, cancel)
+            .await?;
+        let set_upstream = upstream_remote != remote_name || upstream_branch != target_branch;
+        let target_ref = format!("refs/remotes/{remote_name}/{target_branch}");
+        let tips = self.remote_tips(cwd, cancel).await?;
+        let mut args = vec![
+            "log".to_string(),
+            "--oneline".into(),
+            "--max-count=201".into(),
+        ];
+        if let Some(target_sha) = tips.get(&target_ref) {
+            args.push(format!("{target_sha}..{source}"));
         } else {
-            self.rev_list_oneline(cwd, "HEAD", cancel)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .take(20)
-                .collect()
-        };
+            // A new branch only needs history not already known on this remote.
+            args.push(source);
+            args.push("--not".into());
+            args.push(format!("--remotes={remote_name}"));
+        }
+        args.push("--".into());
+        let output = self.run(GitInvocation::new(cwd, args), cancel).await?;
+        let mut commits: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let commits_truncated = commits.len() > 200;
+        commits.truncate(200);
 
         Ok(PushPreview {
             remote: remote_name.clone(),
             refs: vec![PushRefspec {
                 local: branch.clone(),
                 remote: remote_name,
-                remote_branch: branch,
+                remote_branch: target_branch.to_string(),
             }],
             commits,
+            commits_truncated,
             set_upstream,
             has_remote,
         })
@@ -673,16 +629,32 @@ impl GitRunner {
         cwd: &Path,
         remote: &str,
         branch: &str,
+        remote_branch: Option<&str>,
         set_upstream: bool,
         force_with_lease: bool,
         push_tags: Option<&str>,
         protected: &[String],
         cancel: &CancellationToken,
     ) -> Result<PushResult, AppError> {
-        if force_with_lease && is_protected(branch, protected) {
+        let remote_branch = remote_branch.unwrap_or(branch);
+        self.validate_push_branch(cwd, branch, cancel).await?;
+        self.validate_push_branch(cwd, remote_branch, cancel)
+            .await?;
+        if !self
+            .remote_list(cwd, cancel)
+            .await?
+            .iter()
+            .any(|r| r.name == remote)
+        {
+            return Err(AppError::new(
+                ErrorCode::RemoteNotFound,
+                format!("remote '{remote}' not found"),
+            ));
+        }
+        if force_with_lease && is_protected(remote_branch, protected) {
             return Err(AppError::new(
                 ErrorCode::ProtectedBranch,
-                format!("force push to protected branch '{branch}' is not allowed"),
+                format!("force push to protected branch '{remote_branch}' is not allowed"),
             ));
         }
 
@@ -706,7 +678,7 @@ impl GitRunner {
             _ => {}
         }
         args.push(remote.into());
-        args.push(branch.into());
+        args.push(format!("refs/heads/{branch}:refs/heads/{remote_branch}"));
 
         let inv = GitInvocation::new(cwd, args)
             .kind(OpKind::NetworkWrite)
@@ -716,9 +688,14 @@ impl GitRunner {
         match self.run(inv, cancel).await {
             Ok(out) => {
                 let text = String::from_utf8_lossy(&out.stdout);
-                let up_to_date = text
+                let statuses: Vec<_> = text
                     .lines()
-                    .any(|l| l.contains("up to date") || l.contains("="));
+                    .filter_map(|line| {
+                        let (flag, _) = line.split_once('\t')?;
+                        (flag.len() == 1).then_some(flag)
+                    })
+                    .collect();
+                let up_to_date = !statuses.is_empty() && statuses.iter().all(|flag| *flag == "=");
                 Ok(PushResult {
                     outcome: if up_to_date {
                         PushOutcome::UpToDate
@@ -729,7 +706,7 @@ impl GitRunner {
                     message: if up_to_date {
                         "Everything up-to-date".into()
                     } else {
-                        format!("Pushed to {remote}/{branch}")
+                        format!("Pushed to {remote}/{remote_branch}")
                     },
                     rejected: false,
                     set_upstream,
@@ -750,6 +727,31 @@ impl GitRunner {
                 }
             }
         }
+    }
+
+    async fn validate_push_branch(
+        &self,
+        cwd: &Path,
+        branch: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        if branch.is_empty()
+            || branch == "HEAD"
+            || branch.starts_with('-')
+            || branch.starts_with("refs/")
+        {
+            return Err(AppError::new(
+                ErrorCode::InvalidRefName,
+                "Choose a named local and remote branch",
+            ));
+        }
+        // Full names avoid interpreting a free-form refspec (including deletions).
+        self.run(
+            GitInvocation::new(cwd, ["check-ref-format", &format!("refs/heads/{branch}")]),
+            cancel,
+        )
+        .await
+        .map(|_| ())
     }
 
     pub async fn tag_push(
@@ -1022,11 +1024,4 @@ fn is_protected(branch: &str, patterns: &[String]) -> bool {
             short == p || branch == p
         }
     })
-}
-
-fn now_ts() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }
