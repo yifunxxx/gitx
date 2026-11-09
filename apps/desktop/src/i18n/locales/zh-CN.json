@@ -387,6 +387,10 @@
     "clearConfirm": "清除全部 {count} 条 Stash？本地修改不会被应用。"
   },
   "shelf": {
+    "removeApplied": "成功应用后移除 Shelf",
+    "unshelved": "Shelf 已应用",
+    "noChanges": "Shelf 中没有可应用的修改",
+    "applyFailed": "有 {count} 个 Shelf 文件未能应用，请检查工作区和冲突。",
     "section": "Shelf 列表",
     "unshelve": "取消搁置",
     "rename": "重命名",

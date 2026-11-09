@@ -387,6 +387,10 @@
     "clearConfirm": "Clear all {count} stashes without applying them?"
   },
   "shelf": {
+    "removeApplied": "Remove shelf after successful apply",
+    "unshelved": "Shelf applied",
+    "noChanges": "No changes in the shelf",
+    "applyFailed": "Could not apply {count} shelf files. Review the working tree and conflicts.",
     "section": "Shelves",
     "unshelve": "Unshelve",
     "rename": "Rename",

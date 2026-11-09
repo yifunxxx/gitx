@@ -223,19 +223,16 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     }, "stash.cleared");
   }
 
-  async function unshelve(id: string, removeApplied = true) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
-    const result = await getBackend().shelfUnshelve({
-      path: workspace.repoPath,
-      id,
-      removeApplied,
-    });
-    toast({
-      title: "Unshelved",
-      description: `${result.applied.length} applied, ${result.failed.length} failed`,
-    });
-    await refresh();
+  async function unshelve(id: string, removeApplied = false) {
+    return mutate(
+      async (path) => {
+        const result = await getBackend().shelfUnshelve({ path, id, removeApplied });
+        if (result.failed.length)
+          throw new Error(t("shelf.applyFailed", { count: result.failed.length }));
+      },
+      "shelf.unshelved",
+      "shelf.noChanges",
+    );
   }
 
   async function deleteShelf(id: string) {

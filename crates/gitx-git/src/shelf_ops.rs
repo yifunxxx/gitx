@@ -109,158 +109,26 @@ impl GitRunner {
         let common = self.git_common_dir(cwd, cancel).await?;
         let meta = gitx_meta::load_shelf_meta(&common, shelf_id)?;
         let patch = gitx_meta::read_shelf_patch(&common, shelf_id)?;
-
-        let patch_path = common
-            .join("gitx")
-            .join("shelf")
-            .join(shelf_id)
-            .join("changes.patch");
-        // Write patch to temp if needed — already on disk.
-        let inv = GitInvocation::new(
-            cwd,
-            [
-                "apply",
-                "--3way",
-                "--whitespace=nowarn",
-                &patch_path.to_string_lossy(),
-            ],
-        )
-        .kind(OpKind::Write)
-        .git_bin(self.git_bin.clone());
-
-        let applied = meta.paths.clone();
-        let failed: Vec<String> = Vec::new();
-        match self.run(inv, cancel).await {
-            Ok(_) => {}
-            Err(e) => {
-                let msg = e.message.clone();
-                let stderr = e.git_stderr.clone().unwrap_or_default();
-                let conflictish = msg.to_lowercase().contains("conflict")
-                    || stderr.to_lowercase().contains("conflict");
-                if conflictish {
-                    // Leave conflict markers / conflicted state for M4 UI.
-                } else {
-                    // Fallback 1: plain apply (clean worktree matching preimage).
-                    let plain = GitInvocation::new(
-                        cwd,
-                        [
-                            "apply",
-                            "--whitespace=nowarn",
-                            &patch_path.to_string_lossy(),
-                        ],
-                    )
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                    if self.run(plain, cancel).await.is_ok() {
-                        // ok
-                    } else {
-                        // Fallback 2: reconstruct shelved text from base + patch in a temp
-                        // dir, then write over worktree (best-effort when local diverged).
-                        if let Err(err) = self
-                            .unshelve_via_temp(cwd, &meta.base_sha, &patch, &meta.paths, cancel)
-                            .await
-                        {
-                            return Err(AppError::new(
-                                ErrorCode::ShelfFailed,
-                                format!("unshelve failed: {msg}"),
-                            )
-                            .with_stderr(format!("{stderr}\n{}", err.message)));
-                        }
-                    }
-                }
-            }
-        }
-
-        if remove_applied && !applied.is_empty() {
-            let _ = gitx_meta::remove_paths_from_shelf(&common, shelf_id, &applied)?;
-        }
-
-        Ok((applied, failed))
-    }
-
-    async fn unshelve_via_temp(
-        &self,
-        cwd: &Path,
-        base_sha: &str,
-        patch: &[u8],
-        paths: &[String],
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let tmp = cwd.join(".git").join("gitx").join("unshelve-tmp");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp)
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("unshelve tmp: {e}")))?;
-        for path in paths {
-            let inv = GitInvocation::new(cwd, ["show", &format!("{base_sha}:{path}")])
-                .kind(OpKind::Read)
-                .git_bin(self.git_bin.clone());
-            if let Ok(out) = self.run(inv, cancel).await {
-                let dest = tmp.join(path);
-                if let Some(parent) = dest.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                let _ = std::fs::write(&dest, out.stdout);
-            }
-        }
-        let patch_file = tmp.join("changes.patch");
-        std::fs::write(&patch_file, patch)
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("write temp patch: {e}")))?;
-        let inv = GitInvocation::new(
-            &tmp,
-            [
-                "apply",
-                "--whitespace=nowarn",
-                &patch_file.to_string_lossy(),
-            ],
-        )
-        .kind(OpKind::Write)
-        .git_bin(self.git_bin.clone());
-        // `git apply` needs to run with cwd=tmp but git dir from repo — set GIT_DIR.
-        let git_dir = self.git_dir(cwd, cancel).await?;
-        let mut cmd = tokio::process::Command::new(&self.git_bin);
-        cmd.args([
-            "apply",
-            "--whitespace=nowarn",
-            &patch_file.to_string_lossy(),
-        ])
-        .current_dir(&tmp)
-        .env("GIT_DIR", &git_dir)
-        .env("GIT_WORK_TREE", &tmp)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-        crate::process_win::hide_console_tokio(&mut cmd);
-        let _ = inv;
-        let output = cmd.output().await.map_err(|e| {
-            AppError::new(
-                ErrorCode::GitCommandFailed,
-                format!("unshelve temp apply: {e}"),
-            )
-        })?;
-        if !output.status.success() {
-            // Last resort: copy shelved intent by applying patch with --reverse on base
-            // failed — write patch new-side via `git apply --cached` skip; just overwrite
-            // from `git apply` using stdin against reconstructed files already at base.
+        if patch.is_empty() {
             return Err(AppError::new(
-                ErrorCode::ShelfFailed,
-                String::from_utf8_lossy(&output.stderr).to_string(),
+                ErrorCode::NothingToCommit,
+                "shelf patch is empty",
             ));
         }
-        for path in paths {
-            let src = tmp.join(path);
-            if src.exists() {
-                let dest = cwd.join(path);
-                if let Some(parent) = dest.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                std::fs::copy(&src, &dest).map_err(|e| {
-                    AppError::new(ErrorCode::FsError, format!("copy unshelved file: {e}"))
-                })?;
-            }
+        // Three-way apply either succeeds or leaves Git's conflict state for
+        // resolution. Never overwrite local files through a reconstruction
+        // fallback, and never consume the shelf after an unsuccessful apply.
+        let inv = GitInvocation::new(cwd, ["apply", "--3way", "--whitespace=nowarn", "-"])
+            .stdin(patch)
+            .kind(OpKind::Write)
+            .git_bin(self.git_bin.clone());
+        self.run(inv, cancel).await?;
+        let applied = meta.paths;
+        if remove_applied && !applied.is_empty() {
+            gitx_meta::remove_paths_from_shelf(&common, shelf_id, &applied)?;
         }
-        let _ = std::fs::remove_dir_all(&tmp);
-        Ok(())
+        Ok((applied, Vec::new()))
     }
-
     pub async fn shelf_list(
         &self,
         cwd: &Path,

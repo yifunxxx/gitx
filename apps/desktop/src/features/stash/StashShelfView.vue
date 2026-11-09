@@ -16,6 +16,7 @@ const { t } = useI18n();
 const store = useStashShelfStore();
 const workspace = useWorkspaceStore();
 const reinstateIndex = ref(false);
+const removeAppliedShelf = ref(false);
 const stashRows = ref<HTMLElement | null>(null);
 const menu = ref<{
   sha: string;
@@ -284,17 +285,29 @@ async function renameSelectedShelf() {
         <div v-if="!store.shelves.length" class="px-3 py-2 text-muted-foreground">
           {{ t("shelf.empty") }}
         </div>
-        <div v-if="store.selectedShelfId" class="flex flex-wrap gap-1 px-2 py-1">
-          <Button size="xs" variant="outline" @click="store.unshelve(store.selectedShelfId!)">
+        <fieldset
+          v-if="store.selectedShelfId"
+          :disabled="store.busy"
+          class="flex flex-wrap items-center gap-1 px-2 py-1"
+        >
+          <Button
+            size="xs"
+            variant="outline"
+            @click="store.unshelve(store.selectedShelfId!, removeAppliedShelf)"
+          >
             {{ t("shelf.unshelve") }}
           </Button>
+          <label class="mr-2 flex items-center gap-1 text-[11px]">
+            <input v-model="removeAppliedShelf" type="checkbox" />
+            {{ t("shelf.removeApplied") }}
+          </label>
           <Button size="xs" variant="outline" @click="renameSelectedShelf">
             {{ t("shelf.rename") }}
           </Button>
           <Button size="xs" variant="outline" @click="store.deleteShelf(store.selectedShelfId!)">
             {{ t("shelf.delete") }}
           </Button>
-        </div>
+        </fieldset>
       </template>
     </div>
     <ContextMenuSurface

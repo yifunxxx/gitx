@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     stashDrop: vi.fn(),
     stashPop: vi.fn(),
     stashClear: vi.fn(),
+    shelfUnshelve: vi.fn(),
   },
   refresh: vi.fn(),
   conflicts: vi.fn(),
@@ -215,4 +216,55 @@ it("clears only after confirmation and a matching snapshot", async () => {
   mocks.confirm.mockResolvedValue(true);
   expect(await store.clearStashes()).toBe(true);
   expect(mocks.backend.stashClear).toHaveBeenCalledExactlyOnceWith({ path: "A" });
+});
+
+it("keeps the shelf by default and refreshes all views after a successful apply", async () => {
+  mocks.backend.shelfUnshelve.mockResolvedValue({ applied: ["saved.txt"], failed: [] });
+  const store = useStashShelfStore();
+  expect(await store.unshelve("shelf-id")).toBe(true);
+  expect(mocks.backend.shelfUnshelve).toHaveBeenCalledExactlyOnceWith({
+    path: "A",
+    id: "shelf-id",
+    removeApplied: false,
+  });
+  expect(mocks.refresh).toHaveBeenCalledOnce();
+  expect(mocks.conflicts).toHaveBeenCalledOnce();
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.unshelved" });
+});
+
+it("reports failed unshelve, refreshes conflicts and releases the write guard", async () => {
+  mocks.backend.shelfUnshelve.mockRejectedValue(new Error("local changes would be overwritten"));
+  const store = useStashShelfStore();
+  expect(await store.unshelve("shelf-id", true)).toBe(false);
+  expect(mocks.backend.shelfUnshelve).toHaveBeenCalledExactlyOnceWith({
+    path: "A",
+    id: "shelf-id",
+    removeApplied: true,
+  });
+  expect(mocks.conflicts).toHaveBeenCalledOnce();
+  expect(mocks.opState).toHaveBeenCalledOnce();
+  expect(store.error).toBe("local changes would be overwritten");
+  expect(store.busy).toBe(false);
+});
+
+it("blocks duplicate unshelve and suppresses feedback after navigation", async () => {
+  const pending = deferred();
+  mocks.backend.shelfUnshelve.mockReturnValue(pending.promise);
+  const store = useStashShelfStore();
+  const first = store.unshelve("shelf-id");
+  expect(await store.unshelve("shelf-id")).toBe(false);
+  mocks.workspace.repoPath = "B";
+  pending.resolve({ applied: ["saved.txt"], failed: [] });
+  expect(await first).toBe(false);
+  expect(mocks.backend.shelfUnshelve).toHaveBeenCalledOnce();
+  expect(mocks.toast).not.toHaveBeenCalled();
+  expect(mocks.refresh).not.toHaveBeenCalled();
+});
+
+it("does not announce success if an older backend returns failed paths", async () => {
+  mocks.backend.shelfUnshelve.mockResolvedValue({ applied: [], failed: ["conflict.txt"] });
+  const store = useStashShelfStore();
+  expect(await store.unshelve("shelf-id")).toBe(false);
+  expect(store.error).toBe("shelf.applyFailed");
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.applyFailed" });
 });
