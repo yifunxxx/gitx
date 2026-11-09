@@ -2,7 +2,8 @@ import { ref } from "vue";
 
 export type ToastAction = {
   label: string;
-  onClick: () => void;
+  disabled?: () => boolean;
+  onClick: () => void | false;
 };
 
 export type ToastItem = {
@@ -44,8 +45,8 @@ export function toast(input: Omit<ToastItem, "id">) {
 
   const item: ToastItem = { id: crypto.randomUUID(), ...input };
   toasts.value = [...toasts.value, item];
-  // Keep actionable toasts visible longer so Undo remains reachable.
-  const ttl = item.persistent ? null : item.action ? 8000 : 2000;
+  // Leave time to read the result and reach the action with keyboard navigation.
+  const ttl = item.persistent ? null : item.action ? 30000 : 2000;
   if (ttl != null) {
     timers.set(
       item.id,

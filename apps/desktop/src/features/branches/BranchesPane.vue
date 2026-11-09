@@ -83,9 +83,8 @@ async function onSelect(entry: RefEntry) {
 /** Double click: checkout. */
 async function onCheckout(entry: RefEntry) {
   try {
-    await branches.checkout(entry);
+    if ((await branches.checkout(entry)) === false) return;
     toast({ title: t("branches.checkedOut", { name: entry.name }) });
-    await afterBranchChange();
   } catch (e) {
     toast({ title: t("branches.checkoutFailed"), description: formatErrorMessage(e) });
   }

@@ -99,12 +99,11 @@ async function afterBranchChange() {
 
 async function onCheckout(entry: RefEntry) {
   try {
-    await branches.checkout(entry);
-    toast({ title: `Checked out ${entry.name}` });
-    await afterBranchChange();
+    if ((await branches.checkout(entry)) === false) return;
+    toast({ title: t("branches.checkedOut", { name: entry.name }) });
     branches.closePopup();
   } catch (e) {
-    toast({ title: "Checkout failed", description: formatErrorMessage(e) });
+    toast({ title: t("branches.checkoutFailed"), description: formatErrorMessage(e) });
   }
 }
 

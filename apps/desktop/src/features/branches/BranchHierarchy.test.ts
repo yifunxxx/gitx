@@ -4,7 +4,12 @@ import { reactive } from "vue";
 import BranchesPane from "./BranchesPane.vue";
 import BranchesPopup from "./BranchesPopup.vue";
 
-const mocks = vi.hoisted(() => ({ branches: {} as any, settings: {} as any, log: {} as any }));
+const mocks = vi.hoisted(() => ({
+  branches: {} as any,
+  settings: {} as any,
+  log: {} as any,
+  toast: vi.fn(),
+}));
 vi.mock("vue-i18n", () => ({
   useI18n: () => ({
     t: (key: string, values?: any) => (values?.name ? `${key} ${values.name}` : key),
@@ -18,7 +23,7 @@ vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ refresh: vi.
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({}) }));
 vi.mock("@/stores/syncStore", () => ({ useSyncStore: () => ({}) }));
 vi.mock("@/actions", () => ({ runAction: vi.fn() }));
-vi.mock("@/composables/useToast", () => ({ toast: vi.fn() }));
+vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 
 const names = ["main", "feature/ui/button", "feature/api/button", "修复/界面/焦点"];
 beforeEach(() => {
@@ -63,36 +68,72 @@ describe("popup recent branches and other references", () => {
   });
 
   it("removes deleted and duplicate recent entries while retaining their order", () => {
-    mocks.branches.refs.recent = ["feature/ui/button", "deleted/topic", "feature/ui/button", "feature/api/button"];
+    mocks.branches.refs.recent = [
+      "feature/ui/button",
+      "deleted/topic",
+      "feature/ui/button",
+      "feature/api/button",
+    ];
     const wrapper = shallowMount(BranchesPopup);
     const recentButtons = wrapper.findAll("button").filter((button) => button.text().includes("/"));
-    expect(recentButtons.map((button) => button.text())).toEqual(["feature/ui/button", "feature/api/button"]);
+    expect(recentButtons.map((button) => button.text())).toEqual([
+      "feature/ui/button",
+      "feature/api/button",
+    ]);
     wrapper.unmount();
   });
 
-  it.each(["recent", "remoteBranch", "tag"])("checks out %s once for double-click activation", async (kind) => {
-    const entry = { name: "qa/target", fullName: `refs/${kind}/qa/target`, kind };
-    if (kind === "recent") {
-      mocks.branches.filteredLocal = [{ ...entry, kind: "localBranch" }];
-      mocks.branches.refs.recent = [entry.name];
-    } else if (kind === "remoteBranch") mocks.branches.filteredRemote = [entry];
-    else mocks.branches.filteredTags = [entry];
-    const wrapper = shallowMount(BranchesPopup);
-    const branch = wrapper.findAll("button").find((button) => button.text() === entry.name)!;
-    await branch.trigger("click", { detail: 1 });
-    await branch.trigger("click", { detail: 2 });
-    await branch.trigger("dblclick");
-    await flushPromises();
-    expect(mocks.branches.checkout).toHaveBeenCalledOnce();
-    expect(mocks.branches.checkout.mock.calls[0][0].name).toBe(entry.name);
-    wrapper.unmount();
-  });
+  it.each(["recent", "remoteBranch", "tag"])(
+    "checks out %s once for double-click activation",
+    async (kind) => {
+      const entry = { name: "qa/target", fullName: `refs/${kind}/qa/target`, kind };
+      if (kind === "recent") {
+        mocks.branches.filteredLocal = [{ ...entry, kind: "localBranch" }];
+        mocks.branches.refs.recent = [entry.name];
+      } else if (kind === "remoteBranch") mocks.branches.filteredRemote = [entry];
+      else mocks.branches.filteredTags = [entry];
+      const wrapper = shallowMount(BranchesPopup);
+      const branch = wrapper.findAll("button").find((button) => button.text() === entry.name)!;
+      await branch.trigger("click", { detail: 1 });
+      await branch.trigger("click", { detail: 2 });
+      await branch.trigger("dblclick");
+      await flushPromises();
+      expect(mocks.branches.checkout).toHaveBeenCalledOnce();
+      expect(mocks.branches.checkout.mock.calls[0][0].name).toBe(entry.name);
+      wrapper.unmount();
+    },
+  );
 });
 
 describe.each([
   ["pane", BranchesPane],
   ["popup", BranchesPopup],
 ] as const)("%s local branches", (kind, component) => {
+  it("keeps a failed checkout open without a success message or duplicate refresh", async () => {
+    mocks.branches.checkout.mockResolvedValue(false);
+    const wrapper = shallowMount(component);
+    const branch = wrapper.get('button[aria-label="feature/ui/button"]');
+    await branch.trigger(kind === "pane" ? "dblclick" : "click", { detail: 1 });
+    await flushPromises();
+    expect(mocks.branches.checkout).toHaveBeenCalledOnce();
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.log.load).not.toHaveBeenCalled();
+    expect(mocks.branches.closePopup).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("reports a completed checkout without refreshing the same stores twice", async () => {
+    mocks.branches.checkout.mockResolvedValue(true);
+    const wrapper = shallowMount(component);
+    const branch = wrapper.get('button[aria-label="feature/ui/button"]');
+    await branch.trigger(kind === "pane" ? "dblclick" : "click", { detail: 1 });
+    await flushPromises();
+    expect(mocks.toast).toHaveBeenCalledWith({ title: "branches.checkedOut feature/ui/button" });
+    expect(mocks.log.load).not.toHaveBeenCalled();
+    if (kind === "popup") expect(mocks.branches.closePopup).toHaveBeenCalledOnce();
+    wrapper.unmount();
+  });
+
   it("renders every nested branch with an unambiguous full-name label", () => {
     const wrapper = shallowMount(component);
     for (const name of names) {

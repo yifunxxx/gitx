@@ -428,6 +428,13 @@
     "enterCredentials": "Enter credentials…"
   },
   "branches": {
+    "multiRootFailed": "Checkout did not complete in every repository",
+    "refreshFailed": "Could not refresh the repository after checkout",
+    "rollbackFailed": "Recovery failed",
+    "rootsRestored": "All switched repositories have returned to their original positions",
+    "rollbackIncomplete": "Some repositories have not been restored. Review the errors for each repository.",
+    "retryRollback": "Retry recovery",
+    "multiRootSkipped": "Some repositories did not have the target branch and were skipped",
     "toggleFavorite": "Toggle favorite branch {name}",
     "search": "Search branches…",
     "local": "Local",

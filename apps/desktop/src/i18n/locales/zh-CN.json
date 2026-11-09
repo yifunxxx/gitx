@@ -428,6 +428,13 @@
     "enterCredentials": "输入凭据…"
   },
   "branches": {
+    "multiRootFailed": "多仓库切换未全部完成",
+    "refreshFailed": "无法刷新切换后的仓库状态",
+    "rollbackFailed": "恢复失败",
+    "rootsRestored": "所有已切换仓库均已恢复原位置",
+    "rollbackIncomplete": "部分仓库尚未恢复，请查看各仓库错误。",
+    "retryRollback": "重试恢复",
+    "multiRootSkipped": "部分仓库未找到目标分支，已跳过",
     "toggleFavorite": "收藏或取消收藏分支 {name}",
     "search": "搜索分支…",
     "local": "本地",
