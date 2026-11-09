@@ -10,6 +10,7 @@ mod ignore_ops;
 mod jobs;
 mod multi_root_ops;
 mod ops;
+mod partial_ops;
 mod patch_ops;
 mod process_win;
 mod progress;

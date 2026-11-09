@@ -16,7 +16,7 @@ import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import NewBranchDialog from "./NewBranchDialog.vue";
 import RenameBranchDialog from "./RenameBranchDialog.vue";
 import CompareBranchesDialog from "./CompareBranchesDialog.vue";
-import { buildRefTree } from "./buildRefTree";
+import { buildRefTree, flattenRefTree } from "./buildRefTree";
 import type { RefEntry } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
 import { markContextHandled } from "@/lib/contextMenu";
@@ -35,16 +35,19 @@ const menuFor = ref<RefEntry | null>(null);
 const menuPos = ref({ x: 0, y: 0 });
 const selected = ref<string | null>(null);
 
-const groupByDir = computed(
-  () => settings.settings?.git?.groupBranchesByDirectory ?? true,
-);
+const groupByDir = computed(() => settings.settings?.git?.groupBranchesByDirectory ?? true);
 const showTags = computed(() => settings.settings?.git?.showTags ?? true);
 
-const localTree = computed(() =>
-  buildRefTree(
-    branches.filteredLocal.map((r) => r.name),
-    groupByDir.value,
-  ),
+const localRefs = computed(
+  () => new Map(branches.filteredLocal.map((entry) => [entry.name, entry])),
+);
+const localRows = computed(() =>
+  flattenRefTree(
+    buildRefTree(
+      branches.filteredLocal.map((entry) => entry.name),
+      groupByDir.value,
+    ),
+  ).map((row) => ({ ...row, entry: localRefs.value.get(row.refName ?? row.id) })),
 );
 
 onMounted(() => {
@@ -62,10 +65,6 @@ function closeMenu() {
   menuFor.value = null;
 }
 
-function findLocal(name: string): RefEntry | undefined {
-  return branches.filteredLocal.find((r) => r.name === name);
-}
-
 async function afterBranchChange() {
   await changes.refresh();
   await log.load(true);
@@ -76,8 +75,7 @@ async function afterBranchChange() {
 async function onSelect(entry: RefEntry) {
   selected.value = entry.fullName;
   branches.selectedFullName = entry.fullName;
-  const rev =
-    entry.kind === "remoteBranch" || entry.kind === "tag" ? entry.name : entry.name;
+  const rev = entry.kind === "remoteBranch" || entry.kind === "tag" ? entry.name : entry.name;
   log.setRevisions([rev]);
   await log.applyFilters();
 }
@@ -95,11 +93,7 @@ async function onCheckout(entry: RefEntry) {
 
 async function onNewBranchFrom(entry: RefEntry) {
   const start =
-    entry.kind === "tag"
-      ? entry.fullName
-      : entry.kind === "remoteBranch"
-        ? entry.name
-        : entry.name;
+    entry.kind === "tag" ? entry.fullName : entry.kind === "remoteBranch" ? entry.name : entry.name;
   const result = await openDialog<{
     name: string;
     checkout: boolean;
@@ -225,14 +219,8 @@ async function onPush(entry: RefEntry) {
 
 function rowClass(entry: RefEntry | undefined) {
   if (!entry) return "hover:bg-accent";
-  const active =
-    selected.value === entry.fullName ||
-    log.filters.revisions?.includes(entry.name);
-  return [
-    "hover:bg-accent",
-    active ? "bg-selection/40" : "",
-    entry.isHead ? "font-medium" : "",
-  ];
+  const active = selected.value === entry.fullName || log.filters.revisions?.includes(entry.name);
+  return ["hover:bg-accent", active ? "bg-selection/40" : "", entry.isHead ? "font-medium" : ""];
 }
 </script>
 
@@ -253,55 +241,51 @@ function rowClass(entry: RefEntry | undefined) {
         <div class="px-2 py-1 text-[11px] font-medium text-primary">
           {{ t("branches.local") }}
         </div>
-        <template v-for="node in localTree" :key="node.id">
+        <template v-for="row in localRows" :key="row.id">
           <div
-            v-if="node.kind === 'folder'"
-            class="px-2 py-0.5 text-[11px] text-muted-foreground"
+            v-if="row.kind === 'folder'"
+            class="truncate py-0.5 pr-2 text-[11px] text-muted-foreground"
+            :style="{ paddingLeft: `${8 + Math.min(row.depth, 6) * 12}px` }"
+            :title="row.id"
           >
-            {{ node.label }}/
+            {{ row.label }}/
           </div>
-          <button
-            v-for="child in node.kind === 'folder' ? node.children ?? [] : [node]"
-            :key="child.id"
-            type="button"
-            class="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left"
-            :class="rowClass(findLocal(child.refName ?? child.id))"
-            @click="findLocal(child.refName ?? child.id) && onSelect(findLocal(child.refName ?? child.id)!)"
-            @dblclick="findLocal(child.refName ?? child.id) && onCheckout(findLocal(child.refName ?? child.id)!)"
-            @contextmenu="openRefMenu(findLocal(child.refName ?? child.id) ?? null, $event)"
+          <div
+            v-else-if="row.entry"
+            class="flex w-full items-center gap-1.5 rounded pr-2 text-left hover:bg-accent"
+            :style="{ paddingLeft: `${8 + Math.min(row.depth, 6) * 12}px` }"
+            :class="rowClass(row.entry)"
+            @contextmenu="openRefMenu(row.entry, $event)"
           >
             <button
               type="button"
-              class="text-muted-foreground hover:text-warning"
-              @click.stop="
-                findLocal(child.refName ?? child.id) &&
-                  branches.toggleFavorite(findLocal(child.refName ?? child.id)!)
-              "
+              class="shrink-0 rounded py-1 text-muted-foreground hover:text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :aria-label="t('branches.toggleFavorite', { name: row.entry.name })"
+              :aria-pressed="row.entry.isFavorite"
+              @click.stop="$event.detail < 2 && branches.toggleFavorite(row.entry)"
             >
               <Star
                 class="h-3 w-3"
-                :class="
-                  findLocal(child.refName ?? child.id)?.isFavorite
-                    ? 'fill-current text-warning'
-                    : ''
-                "
+                :class="row.entry.isFavorite ? 'fill-current text-warning' : ''"
               />
             </button>
-            <GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-            <Check
-              v-if="findLocal(child.refName ?? child.id)?.isHead"
-              class="h-3 w-3 shrink-0 text-primary"
-            />
-            <span class="shrink-0 text-[10px] text-muted-foreground">
-              <template v-if="findLocal(child.refName ?? child.id)?.behind"
-                >↓{{ findLocal(child.refName ?? child.id)?.behind }}</template
-              >
-              <template v-if="findLocal(child.refName ?? child.id)?.ahead"
-                >↑{{ findLocal(child.refName ?? child.id)?.ahead }}</template
-              >
-            </span>
-          </button>
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-1.5 rounded py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :aria-label="row.entry.name"
+              :title="row.entry.name"
+              @click="$event.detail < 2 && onSelect(row.entry)"
+              @dblclick="onCheckout(row.entry)"
+            >
+              <GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span class="min-w-0 flex-1 truncate">{{ row.label }}</span>
+              <Check v-if="row.entry.isHead" class="h-3 w-3 shrink-0 text-primary" />
+              <span class="shrink-0 text-[10px] text-muted-foreground">
+                <template v-if="row.entry.behind">↓{{ row.entry.behind }}</template>
+                <template v-if="row.entry.ahead">↑{{ row.entry.ahead }}</template>
+              </span>
+            </button>
+          </div>
         </template>
         <div
           v-if="!branches.filteredLocal.length"
@@ -380,14 +364,20 @@ function rowClass(entry: RefEntry | undefined) {
         <button
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onCheckout(menuFor); closeMenu()"
+          @click="
+            onCheckout(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.checkout") }}
         </button>
         <button
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onNewBranchFrom(menuFor); closeMenu()"
+          @click="
+            onNewBranchFrom(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.newBranchFrom", { name: menuFor.name }) }}
         </button>
@@ -395,7 +385,10 @@ function rowClass(entry: RefEntry | undefined) {
           v-if="menuFor.kind === 'localBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onRename(menuFor); closeMenu()"
+          @click="
+            onRename(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.rename") }}
         </button>
@@ -403,7 +396,10 @@ function rowClass(entry: RefEntry | undefined) {
           v-if="!menuFor.isHead"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onMergeIntoCurrent(menuFor); closeMenu()"
+          @click="
+            onMergeIntoCurrent(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.mergeIntoCurrent", { name: menuFor.name }) }}
         </button>
@@ -411,7 +407,10 @@ function rowClass(entry: RefEntry | undefined) {
           v-if="!menuFor.isHead"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onRebaseCurrentOnto(menuFor); closeMenu()"
+          @click="
+            onRebaseCurrentOnto(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.rebaseOnto", { name: menuFor.name }) }}
         </button>
@@ -419,7 +418,10 @@ function rowClass(entry: RefEntry | undefined) {
           v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onCheckoutAndRebase(menuFor); closeMenu()"
+          @click="
+            onCheckoutAndRebase(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.checkoutAndRebase") }}
         </button>
@@ -427,7 +429,10 @@ function rowClass(entry: RefEntry | undefined) {
           v-if="menuFor.kind === 'localBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onPush(menuFor); closeMenu()"
+          @click="
+            onPush(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.push") }}
         </button>
@@ -435,7 +440,10 @@ function rowClass(entry: RefEntry | undefined) {
           v-if="menuFor.kind === 'remoteBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onPullUsing(menuFor, false); closeMenu()"
+          @click="
+            onPullUsing(menuFor, false);
+            closeMenu();
+          "
         >
           {{ t("branches.pullMerge") }}
         </button>
@@ -443,32 +451,43 @@ function rowClass(entry: RefEntry | undefined) {
           v-if="menuFor.kind === 'remoteBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onPullUsing(menuFor, true); closeMenu()"
+          @click="
+            onPullUsing(menuFor, true);
+            closeMenu();
+          "
         >
           {{ t("branches.pullRebase") }}
         </button>
         <button
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onCompare(menuFor); closeMenu()"
+          @click="
+            onCompare(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.compareWithCurrent") }}
         </button>
         <button
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-          @click="onCopy(menuFor); closeMenu()"
+          @click="
+            onCopy(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.copyName") }}
         </button>
         <button
           v-if="
-            (menuFor.kind === 'localBranch' && !menuFor.isHead) ||
-            menuFor.kind === 'remoteBranch'
+            (menuFor.kind === 'localBranch' && !menuFor.isHead) || menuFor.kind === 'remoteBranch'
           "
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm text-destructive hover:bg-accent"
-          @click="onDelete(menuFor); closeMenu()"
+          @click="
+            onDelete(menuFor);
+            closeMenu();
+          "
         >
           {{ t("branches.delete") }}
         </button>

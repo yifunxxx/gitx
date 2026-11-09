@@ -33,6 +33,7 @@ import PathTreeList from "@/components/files/PathTreeList.vue";
 import type { ChangedFile } from "@/lib/backend";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
+import { layoutCommitGraph } from "./graphLayout";
 
 const { t } = useI18n();
 const log = useLogStore();
@@ -88,67 +89,54 @@ function mapStatus(s: string): FileChangeKind {
   }
 }
 
-function tidyRef(name: string) {
-  return name
-    .replace(/^HEAD -> /, "")
-    .replace(/^tag: /, "")
-    .replace(/^refs\/heads\//, "")
-    .replace(/^refs\/remotes\//, "")
-    .replace(/^refs\/tags\//, "");
-}
-
-/** Precompute edge colors, lane labels, and column width while walking newest→oldest. */
-const graphLayout = computed(() => {
-  const laneColors = new Map<number, number>();
-  const pendingIncoming = new Set<number>();
-  const laneLabels: Record<number, string> = {};
-  let maxLane = 0;
-  const edgeColors: number[][] = [];
-  const incoming: boolean[] = [];
-  const nodeLabels: string[] = [];
-
-  for (const c of log.commits) {
-    maxLane = Math.max(maxLane, c.graph.lane);
-    incoming.push(pendingIncoming.has(c.graph.lane));
-    pendingIncoming.delete(c.graph.lane);
-
-    const refs = visibleRefs(c.refs).map(tidyRef).filter(Boolean);
-    const nodeLabel = refs.length ? refs.join(", ") : c.shortSha;
-    nodeLabels.push(nodeLabel);
-    // Prefer first-seen (newer tip) label for a lane; keep until replaced by a tip with refs.
-    if (refs.length && !laneLabels[c.graph.lane]) {
-      laneLabels[c.graph.lane] = refs.join(", ");
-    } else if (!laneLabels[c.graph.lane]) {
-      laneLabels[c.graph.lane] = c.shortSha;
-    }
-
-    const colors: number[] = [];
-    for (const e of c.graph.edges) {
-      maxLane = Math.max(maxLane, e.fromLane, e.toLane);
-      const color = laneColors.get(e.fromLane) ?? c.graph.color;
-      colors.push(color);
-      pendingIncoming.add(e.toLane);
-      if (laneLabels[e.fromLane] && !laneLabels[e.toLane]) {
-        laneLabels[e.toLane] = laneLabels[e.fromLane]!;
-      }
-    }
-    edgeColors.push(colors);
-    laneColors.set(c.graph.lane, c.graph.color);
-    c.graph.edges.forEach((e, i) => {
-      const color = colors[i] ?? c.graph.color;
-      laneColors.set(e.fromLane, color);
-      laneColors.set(e.toLane, color);
-    });
-  }
-
-  // Fill missing lanes with i18n fallback.
-  for (let i = 0; i <= maxLane; i++) {
-    if (!laneLabels[i]) laneLabels[i] = t("log.laneUntitled", { lane: i });
-  }
-
-  const colPx = Math.max(56, (maxLane + 1) * 16 + 12);
-  return { edgeColors, incoming, maxLane, colPx, laneLabels, nodeLabels };
+const graphLayout = computed(() =>
+  layoutCommitGraph(log.commits, {
+    filtered: !!(
+      log.filters.text ||
+      log.filters.authors?.length ||
+      log.filters.paths?.length ||
+      log.filters.since ||
+      log.filters.until ||
+      log.filters.noMerges
+    ),
+    firstParent: !!log.filters.firstParent,
+  }),
+);
+const scrollLeft = ref(0);
+const graphPanel = ref<HTMLElement | null>(null);
+const panelWidth = ref(720);
+const graphOffset = ref(0);
+// Reserve space for the message while preserving the graph's lane spacing.
+const graphColumnWidth = computed(() =>
+  Math.min(graphLayout.value.colPx, Math.max(100, Math.floor(panelWidth.value * 0.35))),
+);
+const graphMaxOffset = computed(() =>
+  Math.max(0, graphLayout.value.colPx - graphColumnWidth.value),
+);
+const selectedNodeX = computed(() => {
+  const index = log.commits.findIndex((c) => c.sha === log.selectedSha);
+  return index < 0 ? 0 : 13 + (graphLayout.value.rows[index]?.graph.lane ?? 0) * 14;
 });
+watch(graphPanel, (element, _, onCleanup) => {
+  if (!element || typeof ResizeObserver === "undefined") return;
+  const measure = () => {
+    if (element.clientWidth) panelWidth.value = element.clientWidth;
+  };
+  measure();
+  const observer = new ResizeObserver(measure);
+  observer.observe(element);
+  onCleanup(() => observer.disconnect());
+});
+watch(
+  [() => log.selectedSha, selectedNodeX, graphColumnWidth, graphMaxOffset],
+  ([, node, width, maximum]) => {
+    let offset = graphOffset.value;
+    if (node < offset + 8) offset = node - 8;
+    else if (node > offset + width - 8) offset = node - width + 8;
+    graphOffset.value = Math.max(0, Math.min(maximum, offset));
+  },
+);
+const gridColumns = computed(() => `${graphColumnWidth.value}px minmax(140px, 1fr) 90px 126px`);
 
 const indexLabel = computed(() => {
   const st = log.indexStatus;
@@ -175,6 +163,7 @@ const commitListRef = ref<{ pointerDown?: boolean } | null>(null);
 function onListScroll(e: Event) {
   const el = e.target as HTMLElement;
   if (!el) return;
+  scrollLeft.value = el.scrollLeft;
   // Defer load-more while the scrollbar thumb is being dragged — appending
   // rows mid-drag changes scrollHeight and makes the thumb jam (GIT-40).
   if (commitListRef.value?.pointerDown) return;
@@ -523,18 +512,35 @@ async function ctxExtract() {
             :description="t('log.noMatchesHint')"
           />
           <Splitpanes v-else class="h-full min-h-0">
-            <Pane :size="58" min-size="30">
-              <div class="flex h-full min-h-0 flex-col">
-                <div
-                  class="grid h-7 shrink-0 items-center border-b px-2 text-[11px] text-muted-foreground"
-                  :style="{
-                    gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
-                  }"
-                >
-                  <span>{{ t("log.colGraph") }}</span>
-                  <span>{{ t("log.colMessage") }}</span>
-                  <span>{{ t("log.colAuthor") }}</span>
-                  <span>{{ t("log.colDate") }}</span>
+            <Pane :size="72" min-size="35">
+              <div ref="graphPanel" class="flex h-full min-h-0 flex-col">
+                <div class="shrink-0 overflow-hidden">
+                  <div
+                    class="grid h-7 shrink-0 items-center border-b px-2 text-[11px] text-muted-foreground"
+                    :style="{
+                      gridTemplateColumns: gridColumns,
+                      transform: `translateX(${-scrollLeft}px)`,
+                      minWidth: `${graphColumnWidth + 372}px`,
+                    }"
+                  >
+                    <span class="flex min-w-0 items-center gap-2 pr-3">
+                      <span>{{ t("log.colGraph") }}</span>
+                      <input
+                        v-if="graphMaxOffset > 0"
+                        v-model.number="graphOffset"
+                        type="range"
+                        min="0"
+                        :max="graphMaxOffset"
+                        step="1"
+                        :aria-label="t('log.panGraph')"
+                        :title="t('log.panGraph')"
+                        class="h-4 min-w-0 flex-1 accent-primary"
+                      />
+                    </span>
+                    <span>{{ t("log.colMessage") }}</span>
+                    <span>{{ t("log.colAuthor") }}</span>
+                    <span>{{ t("log.colDate") }}</span>
+                  </div>
                 </div>
                 <VirtualList
                   ref="commitListRef"
@@ -548,7 +554,8 @@ async function ctxExtract() {
                       type="button"
                       class="grid h-[22px] w-full items-center px-2 text-left text-[12.5px]"
                       :style="{
-                        gridTemplateColumns: `${graphLayout.colPx}px 1fr 120px 140px`,
+                        gridTemplateColumns: gridColumns,
+                        minWidth: `${graphColumnWidth + 372}px`,
                       }"
                       :class="
                         log.selectedShas.includes(c.sha)
@@ -558,30 +565,38 @@ async function ctxExtract() {
                       @click="onCommitClick(c.sha, $event)"
                       @contextmenu="onCommitContext(c.sha, $event)"
                     >
-                      <span class="flex h-full items-center justify-start">
+                      <span class="flex h-full min-w-0 items-center justify-start overflow-hidden">
                         <CommitGraphCell
-                          :graph="c.graph"
-                          :edge-colors="graphLayout.edgeColors[idx] ?? []"
-                          :incoming="graphLayout.incoming[idx] ?? false"
+                          :graph="graphLayout.rows[idx]!.graph"
+                          :edge-colors="graphLayout.rows[idx]!.edgeColors"
+                          :incoming="graphLayout.rows[idx]!.incoming"
+                          :hidden-parents="graphLayout.rows[idx]!.hiddenParents"
                           :max-lane="graphLayout.maxLane"
-                          :lane-labels="graphLayout.laneLabels"
-                          :node-label="graphLayout.nodeLabels[idx]"
+                          :lane-labels="graphLayout.rows[idx]!.laneLabels"
+                          :node-label="graphLayout.rows[idx]!.nodeLabel"
+                          :lane-width="14"
+                          :style="{ transform: `translateX(${-graphOffset}px)` }"
                         />
                       </span>
                       <span class="flex min-w-0 items-center gap-1 truncate">
                         <span
                           v-for="refName in visibleRefs(c.refs)"
                           :key="refName"
-                          class="shrink-0 rounded-sm bg-muted px-1 text-[10px] text-foreground"
+                          class="max-w-28 shrink-0 truncate rounded-sm bg-muted px-1 text-[10px] text-foreground"
+                          :title="refName"
                         >
                           {{ refName }}
                         </span>
                         <span class="truncate">{{ c.subject }}</span>
                       </span>
-                      <span class="truncate text-muted-foreground">{{ c.author }}</span>
-                      <span class="truncate text-muted-foreground">{{
-                        formatTime(c.authorTime)
+                      <span class="truncate pr-2 text-muted-foreground" :title="c.author">{{
+                        c.author
                       }}</span>
+                      <span
+                        class="truncate text-muted-foreground"
+                        :title="formatTime(c.authorTime)"
+                        >{{ formatTime(c.authorTime) }}</span
+                      >
                     </button>
                   </template>
                   <template #footer>
@@ -603,7 +618,7 @@ async function ctxExtract() {
                 </VirtualList>
               </div>
             </Pane>
-            <Pane :size="42" min-size="24">
+            <Pane :size="28" min-size="20">
               <Splitpanes horizontal class="h-full">
                 <Pane :size="45">
                   <div class="flex h-full min-h-0 flex-col">
@@ -628,15 +643,12 @@ async function ctxExtract() {
                     <pre
                       v-if="log.details.body"
                       class="mt-1 whitespace-pre-wrap font-sans text-muted-foreground"
-                      >{{ log.details.body }}</pre
-                    >
+                      >{{ log.details.body }}</pre>
                     <dl
                       class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
                     >
                       <dt>{{ t("log.author") }}</dt>
-                      <dd>
-                        {{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;
-                      </dd>
+                      <dd>{{ log.details.author }} &lt;{{ log.details.authorEmail }}&gt;</dd>
                       <dt>{{ t("log.date") }}</dt>
                       <dd>{{ formatTime(log.details.authorTime) }}</dd>
                       <dt>{{ t("log.parents") }}</dt>

@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import {
-  GitBranch,
-  RefreshCw,
-  Search,
-  Settings2,
-  Star,
-  Tag,
-} from "@lucide/vue";
+import { GitBranch, RefreshCw, Search, Settings2, Star, Tag } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -22,7 +15,7 @@ import NewBranchDialog from "./NewBranchDialog.vue";
 import RenameBranchDialog from "./RenameBranchDialog.vue";
 import CompareBranchesDialog from "./CompareBranchesDialog.vue";
 import CreateTagDialog from "./CreateTagDialog.vue";
-import { buildRefTree } from "./buildRefTree";
+import { buildRefTree, flattenRefTree } from "./buildRefTree";
 import type { RefEntry } from "@/lib/backend";
 import { runAction } from "@/actions";
 import type { ActionContext } from "@/actions";
@@ -66,17 +59,25 @@ const actionCtx = computed<ActionContext>(() => ({
 async function runPopupAction(id: string) {
   await runAction(id, actionCtx.value);
 }
-const groupByDir = computed(
-  () => settings.settings?.git?.groupBranchesByDirectory ?? true,
-);
+const groupByDir = computed(() => settings.settings?.git?.groupBranchesByDirectory ?? true);
 const showRecent = computed(() => settings.settings?.git?.showRecentBranches ?? true);
 const showTags = computed(() => settings.settings?.git?.showTags ?? true);
 
-const localTree = computed(() =>
-  buildRefTree(
-    branches.filteredLocal.map((r) => r.name),
-    groupByDir.value,
-  ),
+const localRefs = computed(
+  () => new Map(branches.filteredLocal.map((entry) => [entry.name, entry])),
+);
+const recentRefs = computed(() =>
+  [...new Set(branches.refs?.recent ?? [])]
+    .map((name) => localRefs.value.get(name))
+    .filter((entry): entry is RefEntry => entry !== undefined),
+);
+const localRows = computed(() =>
+  flattenRefTree(
+    buildRefTree(
+      branches.filteredLocal.map((entry) => entry.name),
+      groupByDir.value,
+    ),
+  ).map((row) => ({ ...row, entry: localRefs.value.get(row.refName ?? row.id) })),
 );
 
 onMounted(() => {
@@ -113,11 +114,7 @@ async function onNewBranch() {
 
 async function onNewBranchFrom(entry: RefEntry) {
   const start =
-    entry.kind === "tag"
-      ? entry.fullName
-      : entry.kind === "remoteBranch"
-        ? entry.name
-        : entry.name;
+    entry.kind === "tag" ? entry.fullName : entry.kind === "remoteBranch" ? entry.name : entry.name;
   await onNewBranchFromPoint(start);
 }
 
@@ -205,10 +202,6 @@ async function onNewTag() {
   await branches.refresh();
 }
 
-function findLocal(name: string): RefEntry | undefined {
-  return branches.filteredLocal.find((r) => r.name === name);
-}
-
 async function onMergeIntoCurrent(entry: RefEntry) {
   await rewrite.merge({ branches: [entry.name] });
   await afterBranchChange();
@@ -269,94 +262,125 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
       </div>
 
       <div class="flex flex-wrap gap-1 border-b px-2 py-1.5">
-        <Button size="xs" variant="ghost" @click="runPopupAction('Vcs.UpdateProject')">Update Project…</Button>
+        <Button size="xs" variant="ghost" @click="runPopupAction('Vcs.UpdateProject')"
+          >Update Project…</Button
+        >
         <Button size="xs" variant="ghost" @click="runPopupAction('CheckinProject')">Commit…</Button>
         <Button size="xs" variant="ghost" @click="runPopupAction('Git.Push')">Push…</Button>
         <Button size="xs" variant="ghost" @click="onNewBranch">New Branch…</Button>
         <Button size="xs" variant="ghost" @click="onNewTag">New Tag…</Button>
-        <Button size="xs" variant="ghost" @click="runPopupAction('Git.Configure.Remotes')">Remotes…</Button>
+        <Button size="xs" variant="ghost" @click="runPopupAction('Git.Configure.Remotes')"
+          >Remotes…</Button
+        >
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto text-sm">
-        <div v-if="showRecent && branches.refs?.recent?.length" class="px-2 py-1">
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">Recent</div>
+        <div
+          v-if="showRecent && recentRefs.length"
+          class="px-2 py-1"
+          role="group"
+          :aria-label="t('branches.recent')"
+        >
+          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
+            {{ t("branches.recent") }}
+          </div>
           <button
-            v-for="name in branches.refs.recent"
-            :key="'r-' + name"
+            v-for="entry in recentRefs"
+            :key="'r-' + entry.fullName"
             type="button"
             class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="findLocal(name) && onCheckout(findLocal(name)!)"
+            :title="entry.name"
+            @click="$event.detail < 2 && onCheckout(entry)"
           >
             <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
-            <span class="truncate">{{ name }}</span>
+            <span class="truncate">{{ entry.name }}</span>
           </button>
         </div>
 
         <div class="px-2 py-1">
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">{{ t("branches.local") }}</div>
-          <template v-for="node in localTree" :key="node.id">
-            <div v-if="node.kind === 'folder'" class="px-2 py-0.5 text-[11px] text-muted-foreground">
-              {{ node.label }}/
+          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
+            {{ t("branches.local") }}
+          </div>
+          <template v-for="row in localRows" :key="row.id">
+            <div
+              v-if="row.kind === 'folder'"
+              class="truncate py-0.5 pr-2 text-[11px] text-muted-foreground"
+              :style="{ paddingLeft: `${8 + Math.min(row.depth, 6) * 12}px` }"
+              :title="row.id"
+            >
+              {{ row.label }}/
             </div>
-            <button
-              v-for="child in node.kind === 'folder' ? node.children ?? [] : [node]"
-              :key="child.id"
-              type="button"
-              class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-              :class="{ 'font-medium': findLocal(child.refName ?? child.id)?.isHead }"
-              @click="findLocal(child.refName ?? child.id) && onCheckout(findLocal(child.refName ?? child.id)!)"
-              @contextmenu="openRefMenu(findLocal(child.refName ?? child.id) ?? null, $event)"
+            <div
+              v-else-if="row.entry"
+              class="flex w-full items-center gap-1.5 rounded pr-2 text-left hover:bg-accent"
+              :style="{ paddingLeft: `${8 + Math.min(row.depth, 6) * 12}px` }"
+              :class="{ 'font-medium': row.entry.isHead }"
+              @contextmenu="openRefMenu(row.entry, $event)"
             >
               <button
                 type="button"
-                class="text-muted-foreground hover:text-warning"
-                @click.stop="findLocal(child.refName ?? child.id) && branches.toggleFavorite(findLocal(child.refName ?? child.id)!)"
+                class="shrink-0 rounded py-1 text-muted-foreground hover:text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                :aria-label="t('branches.toggleFavorite', { name: row.entry.name })"
+                :aria-pressed="row.entry.isFavorite"
+                @click.stop="$event.detail < 2 && branches.toggleFavorite(row.entry)"
               >
                 <Star
                   class="h-3 w-3"
-                  :class="findLocal(child.refName ?? child.id)?.isFavorite ? 'fill-current text-warning' : ''"
+                  :class="row.entry.isFavorite ? 'fill-current text-warning' : ''"
                 />
               </button>
-              <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
-              <span class="truncate">{{ child.label }}</span>
-              <span
-                v-if="findLocal(child.refName ?? child.id)?.isHead"
-                class="rounded bg-muted px-1 text-[10px]"
-              >HEAD</span>
-              <span class="ml-auto text-[11px] text-muted-foreground">
-                <template v-if="findLocal(child.refName ?? child.id)?.behind">↓{{ findLocal(child.refName ?? child.id)?.behind }}</template>
-                <template v-if="findLocal(child.refName ?? child.id)?.ahead">↑{{ findLocal(child.refName ?? child.id)?.ahead }}</template>
-              </span>
-            </button>
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-center gap-1.5 rounded py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                :aria-label="row.entry.name"
+                :title="row.entry.name"
+                @click="$event.detail < 2 && onCheckout(row.entry)"
+              >
+                <GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span class="min-w-0 flex-1 truncate">{{ row.label }}</span>
+                <span v-if="row.entry.isHead" class="rounded bg-muted px-1 text-[10px]">HEAD</span>
+                <span class="shrink-0 text-[10px] text-muted-foreground">
+                  <template v-if="row.entry.behind">↓{{ row.entry.behind }}</template>
+                  <template v-if="row.entry.ahead">↑{{ row.entry.ahead }}</template>
+                </span>
+              </button>
+            </div>
           </template>
         </div>
 
         <div class="px-2 py-1">
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">{{ t("branches.remote") }}</div>
+          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
+            {{ t("branches.remote") }}
+          </div>
           <button
             v-for="entry in branches.filteredRemote"
             :key="entry.fullName"
             type="button"
             class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="onCheckout(entry)"
+            @click="$event.detail < 2 && onCheckout(entry)"
             @contextmenu="openRefMenu(entry, $event)"
           >
             <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
             <span class="truncate">{{ entry.name }}</span>
           </button>
-          <div v-if="!branches.filteredRemote.length" class="px-2 py-1 text-[11px] text-muted-foreground">
+          <div
+            v-if="!branches.filteredRemote.length"
+            class="px-2 py-1 text-[11px] text-muted-foreground"
+          >
             {{ t("branches.noRemotes") }}
           </div>
         </div>
 
         <div v-if="showTags" class="px-2 py-1">
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">{{ t("branches.tags") }}</div>
+          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
+            {{ t("branches.tags") }}
+          </div>
           <button
             v-for="entry in branches.filteredTags"
             :key="entry.fullName"
             type="button"
             class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="onCheckout(entry)"
+            @click="$event.detail < 2 && onCheckout(entry)"
             @contextmenu="openRefMenu(entry, $event)"
           >
             <Tag class="h-3.5 w-3.5 text-muted-foreground" />
@@ -374,14 +398,45 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
         @close="closeMenu"
       >
         <template v-if="menuFor">
-          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onCheckout(menuFor); closeMenu()">{{ t("branches.checkout") }}</button>
-          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onNewBranchFrom(menuFor); closeMenu()">{{ t("branches.newBranchFrom", { name: menuFor.name }) }}</button>
-          <button v-if="menuFor.kind === 'localBranch'" type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onRename(menuFor); closeMenu()">{{ t("branches.rename") }}</button>
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="
+              onCheckout(menuFor);
+              closeMenu();
+            "
+          >
+            {{ t("branches.checkout") }}
+          </button>
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="
+              onNewBranchFrom(menuFor);
+              closeMenu();
+            "
+          >
+            {{ t("branches.newBranchFrom", { name: menuFor.name }) }}
+          </button>
+          <button
+            v-if="menuFor.kind === 'localBranch'"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="
+              onRename(menuFor);
+              closeMenu();
+            "
+          >
+            {{ t("branches.rename") }}
+          </button>
           <button
             v-if="!menuFor.isHead"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-            @click="onMergeIntoCurrent(menuFor); closeMenu()"
+            @click="
+              onMergeIntoCurrent(menuFor);
+              closeMenu();
+            "
           >
             {{ t("branches.mergeIntoCurrent", { name: menuFor.name }) }}
           </button>
@@ -389,7 +444,10 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             v-if="!menuFor.isHead"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-            @click="onRebaseCurrentOnto(menuFor); closeMenu()"
+            @click="
+              onRebaseCurrentOnto(menuFor);
+              closeMenu();
+            "
           >
             {{ t("branches.rebaseOnto", { name: menuFor.name }) }}
           </button>
@@ -397,7 +455,10 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-            @click="onCheckoutAndRebase(menuFor); closeMenu()"
+            @click="
+              onCheckoutAndRebase(menuFor);
+              closeMenu();
+            "
           >
             {{ t("branches.checkoutAndRebase") }}
           </button>
@@ -405,7 +466,10 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             v-if="menuFor.kind === 'localBranch'"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-            @click="runPopupAction('Git.Push'); closeMenu()"
+            @click="
+              runPopupAction('Git.Push');
+              closeMenu();
+            "
           >
             {{ t("branches.push") }}
           </button>
@@ -413,7 +477,10 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             v-if="menuFor.kind === 'remoteBranch'"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-            @click="onPullUsing(menuFor, false); closeMenu()"
+            @click="
+              onPullUsing(menuFor, false);
+              closeMenu();
+            "
           >
             {{ t("branches.pullMerge") }}
           </button>
@@ -421,14 +488,51 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             v-if="menuFor.kind === 'remoteBranch'"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
-            @click="onPullUsing(menuFor, true); closeMenu()"
+            @click="
+              onPullUsing(menuFor, true);
+              closeMenu();
+            "
           >
             {{ t("branches.pullRebase") }}
           </button>
-          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onCompare(menuFor); closeMenu()">{{ t("branches.compareWithCurrent") }}</button>
-          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="onCopy(menuFor); closeMenu()">{{ t("branches.copyName") }}</button>
-          <button v-if="menuFor.kind === 'localBranch' && !menuFor.isHead" type="button" class="block w-full rounded px-2 py-1 text-left text-sm text-destructive hover:bg-accent" @click="onDelete(menuFor); closeMenu()">{{ t("branches.delete") }}</button>
-          <button type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" @click="closeMenu()">{{ t("common.close") }}</button>
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="
+              onCompare(menuFor);
+              closeMenu();
+            "
+          >
+            {{ t("branches.compareWithCurrent") }}
+          </button>
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="
+              onCopy(menuFor);
+              closeMenu();
+            "
+          >
+            {{ t("branches.copyName") }}
+          </button>
+          <button
+            v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm text-destructive hover:bg-accent"
+            @click="
+              onDelete(menuFor);
+              closeMenu();
+            "
+          >
+            {{ t("branches.delete") }}
+          </button>
+          <button
+            type="button"
+            class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            @click="closeMenu()"
+          >
+            {{ t("common.close") }}
+          </button>
         </template>
       </ContextMenuSurface>
 

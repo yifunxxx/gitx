@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import Skeleton from "@/components/common/Skeleton.vue";
 import { useDiffStore } from "@/stores/diffStore";
 import { useChangesStore } from "@/stores/changesStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { getBackend } from "@/lib/backend";
+import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
 import type { IgnoreWhitespace } from "@/lib/backend";
@@ -19,11 +22,13 @@ import {
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 import { normalizeEolForDisplay } from "./diffPaint";
+import { expandUnifiedHunks, unifiedLineMap } from "./expandedDiff";
 
 const props = defineProps<{ tabId: string }>();
 const { t } = useI18n();
 const diffs = useDiffStore();
 const changes = useChangesStore();
+const workspace = useWorkspaceStore();
 
 type DiffPane = { applyScroll: (left: number, top: number) => void };
 const leftPane = ref<DiffPane | null>(null);
@@ -40,6 +45,14 @@ const tab = computed(() => diffs.tabs.find((t) => t.id === props.tabId));
 const result = computed(() => tab.value?.result);
 
 const visibleHunks = computed(() => result.value?.hunks ?? []);
+const waitingForTexts = computed(() =>
+  !tab.value?.collapseUnchanged && !tab.value?.textsLoaded &&
+  !result.value?.binary && !result.value?.tooLarge,
+);
+const unifiedHunks = computed(() => tab.value?.collapseUnchanged
+  ? visibleHunks.value
+  : expandUnifiedHunks(visibleHunks.value, result.value?.leftText ?? "", result.value?.rightText ?? ""),
+);
 
 const collapsed = computed(() => {
   if (!tab.value?.collapseUnchanged || !visibleHunks.value.length) return null;
@@ -94,47 +107,101 @@ function wsLabel(id: IgnoreWhitespace | undefined): string {
   return t(mode.key);
 }
 
-async function stageSelectedLines() {
-  if (!tab.value || !canStage.value) return;
-  const raw = await promptDialog({
-    title: t("diff.stageLinesTitle"),
-    message: t("diff.stageLinesPrompt"),
-    allowEmpty: false,
-  });
-  if (raw == null || !raw.trim()) return;
-  const lines = raw
-    .split(/[,\s]+/)
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (!lines.length) {
-    toast({ title: t("diff.noValidLines") });
-    return;
-  }
-  const { getBackend } = await import("@/lib/backend");
-  const { useWorkspaceStore } = await import("@/stores/workspaceStore");
-  const workspace = useWorkspaceStore();
-  if (!workspace.repoPath || !workspace.repoId) return;
-  await getBackend().stageLines({
-    repoId: workspace.repoId,
-    path: workspace.repoPath,
-    filePath: tab.value.path,
-    lines,
-  });
-  toast({
-    title: t("diff.linesStaged"),
-    description: t("diff.linesStagedCount", { count: lines.length }),
-  });
-  await changes.refresh();
-  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
-}
+const stagingLines = ref(false);
+let stageGeneration = 0;
+let previewGeneration = 0;
+// Synchronous invalidation also catches A → B → A navigation in one tick.
+watch(
+  () => [
+    workspace.repoId, workspace.repoPath, props.tabId, diffs.activeId,
+    tab.value?.path, tab.value?.left, tab.value?.right,
+    tab.value?.leftRev, tab.value?.rightRev, tab.value?.leftPath,
+  ],
+  () => { stageGeneration += 1; },
+  { flush: "sync" },
+);
+watch(
+  () => [tab.value?.result, tab.value?.loading, tab.value?.ignoreWhitespace],
+  () => { previewGeneration += 1; },
+  { flush: "sync" },
+);
+onBeforeUnmount(() => { stageGeneration += 1; });
 
-const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.leftRev);
+const stageableLines = computed(() => {
+  const lines = new Set<number>();
+  for (const hunk of visibleHunks.value) {
+    let number = hunk.newStart;
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) lines.add(number);
+      if (line.startsWith("+") || line.startsWith(" ")) number += 1;
+    }
+  }
+  return lines;
+});
+const canStage = computed(() =>
+  tab.value?.kind === "file" && tab.value.left === "index" &&
+  tab.value.right === "worktree" && !tab.value.leftRev && !tab.value.rightRev &&
+  (!tab.value.leftPath || tab.value.leftPath === tab.value.path) &&
+  !tab.value.loading && !tab.value.error && stageableLines.value.size > 0 &&
+  !result.value?.binary && !result.value?.tooLarge,
+);
+
+async function stageSelectedLines() {
+  if (!tab.value || !canStage.value || stagingLines.value) return;
+  const { repoId, repoPath } = workspace;
+  if (!repoId || !repoPath) return;
+  const { id, path } = tab.value;
+  const generation = stageGeneration;
+  const preview = previewGeneration;
+  const current = () => stageGeneration === generation;
+  stagingLines.value = true;
+  let staged = false;
+  try {
+    const raw = await promptDialog({
+      title: t("diff.stageLinesTitle"),
+      message: t("diff.stageLinesPrompt"),
+      allowEmpty: false,
+    });
+    if (!current() || preview !== previewGeneration || raw == null || !raw.trim()) return;
+    const tokens = raw.trim().split(/[,\s]+/);
+    const lines = [...new Set(tokens.map(Number))];
+    if (tokens.some((s) => !/^\d+$/.test(s)) ||
+        lines.some((n) => !Number.isInteger(n) || n <= 0 || n > 0xffffffff)) {
+      toast({ title: t("diff.noValidLines") });
+      return;
+    }
+    if (lines.some((line) => !stageableLines.value.has(line))) {
+      toast({ title: t("diff.onlyChangedLines") });
+      return;
+    }
+    await getBackend().stageLines({ repoId, path: repoPath, filePath: path, lines });
+    staged = true;
+    if (!current()) return;
+    toast({
+      title: t("diff.linesStaged"),
+      description: t("diff.linesStagedCount", { count: lines.length }),
+    });
+    await changes.refresh();
+    if (current()) await diffs.reloadTab(id);
+  } catch (error) {
+    if (current()) toast({
+      title: t(staged ? "diff.stagedRefreshFailed" : "diff.stageLinesFailed"),
+      description: formatErrorMessage(error),
+      persistent: true,
+    });
+  } finally {
+    stagingLines.value = false;
+  }
+}
 </script>
 
 <template>
   <div v-if="tab" class="flex h-full min-h-0 flex-col">
     <div class="flex h-8 flex-wrap items-center gap-2 border-b bg-dbx-chrome px-2 text-xs">
-      <span class="font-medium">{{ tab.path }}</span>
+      <span class="font-medium">
+        <template v-if="tab.leftPath && tab.leftPath !== tab.path">{{ tab.leftPath }} → </template>
+        {{ tab.path }}
+      </span>
       <span class="text-muted-foreground">{{ sideSummary }}</span>
       <div class="flex-1" />
       <Tip :text="t('toolbar.diffWhitespace')">
@@ -177,13 +244,19 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
         </Button>
       </Tip>
       <Tip v-if="canStage" :text="t('toolbar.diffStageLines')">
-        <Button size="xs" variant="outline" @click="stageSelectedLines">
+        <Button size="xs" variant="outline" :disabled="stagingLines" @click="stageSelectedLines">
           {{ t("diff.stageSelectedLines") }}
         </Button>
       </Tip>
     </div>
 
-    <div v-if="tab.loading && !result" class="space-y-2 p-4">
+    <div v-if="tab.error" class="space-y-2 border-b p-3 text-xs" role="alert">
+      <div>{{ t("diff.loadFailed") }}: {{ tab.error }}</div>
+      <Button size="xs" variant="outline" :disabled="tab.loading" @click="diffs.reloadTab(tab.id)">
+        {{ t("diff.retry") }}
+      </Button>
+    </div>
+    <div v-if="tab.loading && (!result || waitingForTexts)" class="space-y-2 p-4">
       <div class="text-xs text-muted-foreground">{{ t("diff.loading") }}</div>
       <Skeleton class="h-4 w-2/3" />
       <Skeleton class="h-4 w-1/2" />
@@ -193,18 +266,18 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
     <div v-else-if="result?.binary" class="p-4 text-xs">{{ t("diff.binary") }}</div>
     <div v-else-if="result?.tooLarge" class="p-4 text-xs">
       {{ t("diff.tooLarge") }}
-      <button type="button" class="cursor-pointer underline" @click="diffs.reloadTab(tab)">
-        {{ t("diff.showAnyway") }}
-      </button>
     </div>
     <div
-      v-else-if="result && !result.hunks.length"
+      v-else-if="result && !result.hunks.length && tab.collapseUnchanged"
       class="space-y-2 p-4 text-xs leading-5 text-muted-foreground"
     >
       <div>{{ t("diff.noDifferences") }}</div>
       <div v-if="result.eolMismatch">{{ t("diff.eolMismatchShort") }}</div>
     </div>
-    <div v-else-if="result" class="relative flex min-h-0 flex-1 flex-col">
+    <div v-else-if="result && !waitingForTexts" class="relative flex min-h-0 flex-1 flex-col">
+      <div v-if="!result.hunks.length" class="shrink-0 border-b px-3 py-1.5 text-xs text-muted-foreground">
+        {{ t("diff.noDifferences") }}
+      </div>
       <div
         v-if="tab.loading"
         class="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-foreground/80 px-2 py-0.5 text-[10px] leading-4 text-background-solid"
@@ -225,7 +298,8 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
           side="unified"
           unified
           :text="''"
-          :hunks="visibleHunks"
+          :hunks="unifiedHunks"
+          :line-map="unifiedLineMap(unifiedHunks)"
           :paint-key="paintKey"
           :enable-inline="enableInline"
         />

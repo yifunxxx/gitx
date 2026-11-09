@@ -205,7 +205,7 @@ impl GitRunner {
         let out = self.run(inv, cancel).await?;
         let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
         let cacheinfo = format!("{mode},{sha},{path}");
-        let inv = GitInvocation::new(cwd, ["update-index", "--cacheinfo", &cacheinfo])
+        let inv = GitInvocation::new(cwd, ["update-index", "--add", "--cacheinfo", &cacheinfo])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
@@ -535,101 +535,6 @@ impl GitRunner {
             subject,
             amended: amend,
         })
-    }
-
-    /// Stage selected new-side lines from worktree into index (#57).
-    pub async fn stage_lines(
-        &self,
-        cwd: &Path,
-        path: &str,
-        selected_new_lines: &[u32],
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let index_bytes = self
-            .read_blob_side(cwd, path, DiffSide::Index, cancel)
-            .await?;
-        let work_bytes = self
-            .read_blob_side(cwd, path, DiffSide::Worktree, cancel)
-            .await?;
-        if work_bytes.as_ref().is_some_and(|b| b.contains(&0)) {
-            return Err(AppError::new(
-                ErrorCode::GitCommandFailed,
-                "binary files must be staged as a whole file",
-            ));
-        }
-        let index_text = gitx_diff::decode_lossy(index_bytes.as_deref()).unwrap_or_default();
-        let work_text = gitx_diff::decode_lossy(work_bytes.as_deref()).unwrap_or_default();
-        let new_index =
-            gitx_diff::apply_selected_lines_to_base(&index_text, &work_text, selected_new_lines);
-        if index_bytes.is_none() {
-            self.add_paths(cwd, &[path.to_string()], false, cancel)
-                .await?;
-            let new_index =
-                gitx_diff::apply_selected_lines_to_base("", &work_text, selected_new_lines);
-            let mode = self
-                .file_mode_in_index(cwd, path, cancel)
-                .await
-                .unwrap_or_else(|_| "100644".into());
-            return self
-                .stage_hunk_text(cwd, path, &new_index, &mode, cancel)
-                .await;
-        }
-        let mode = self
-            .file_mode_in_index(cwd, path, cancel)
-            .await
-            .unwrap_or_else(|_| "100644".into());
-        self.stage_hunk_text(cwd, path, &new_index, &mode, cancel)
-            .await
-    }
-
-    /// Unstage selected new-side lines (index → HEAD) (#57).
-    pub async fn unstage_lines(
-        &self,
-        cwd: &Path,
-        path: &str,
-        selected_new_lines: &[u32],
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let head_bytes = self
-            .read_blob_side(cwd, path, DiffSide::Head, cancel)
-            .await?;
-        let index_bytes = self
-            .read_blob_side(cwd, path, DiffSide::Index, cancel)
-            .await?;
-        let head_text = gitx_diff::decode_lossy(head_bytes.as_deref()).unwrap_or_default();
-        let index_text = gitx_diff::decode_lossy(index_bytes.as_deref()).unwrap_or_default();
-        // Revert selected lines on index toward head.
-        let new_index =
-            gitx_diff::revert_selected_lines_to_base(&head_text, &index_text, selected_new_lines);
-        if new_index.is_empty() && head_bytes.is_none() {
-            return self.unstage_paths(cwd, &[path.to_string()], cancel).await;
-        }
-        let mode = self
-            .file_mode_in_index(cwd, path, cancel)
-            .await
-            .unwrap_or_else(|_| "100644".into());
-        self.stage_hunk_text(cwd, path, &new_index, &mode, cancel)
-            .await
-    }
-
-    /// Write constructed content back to worktree (line rollback / revert).
-    pub async fn write_worktree_text(
-        &self,
-        cwd: &Path,
-        path: &str,
-        content: &str,
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let _ = cancel;
-        let full = cwd.join(path);
-        if let Some(parent) = full.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("create parent dirs: {e}"))
-            })?;
-        }
-        std::fs::write(&full, content)
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("write worktree: {e}")))?;
-        Ok(())
     }
 
     pub async fn log_page(
