@@ -428,6 +428,7 @@
     "enterCredentials": "Enter credentials…"
   },
   "branches": {
+    "toggleFavorite": "Toggle favorite branch {name}",
     "search": "Search branches…",
     "local": "Local",
     "remote": "Remote",

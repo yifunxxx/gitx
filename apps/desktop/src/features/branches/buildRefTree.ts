@@ -6,11 +6,28 @@ export type RefTreeNode = {
   refName?: string;
 };
 
+export type RefTreeRow = Omit<RefTreeNode, "children"> & { depth: number };
+
+/** Enumerate every level for list rendering without dropping nested folders. */
+export function flattenRefTree(nodes: RefTreeNode[]): RefTreeRow[] {
+  const rows: RefTreeRow[] = [];
+  const pending = nodes
+    .slice()
+    .reverse()
+    .map((node) => ({ node, depth: 0 }));
+  while (pending.length) {
+    const { node, depth } = pending.pop()!;
+    const { children, ...row } = node;
+    rows.push({ ...row, depth });
+    for (const child of children?.slice().reverse() ?? []) {
+      pending.push({ node: child, depth: depth + 1 });
+    }
+  }
+  return rows;
+}
+
 /** Group `feature/a` under folder `feature` when enabled. */
-export function buildRefTree(
-  names: string[],
-  groupByDirectory: boolean,
-): RefTreeNode[] {
+export function buildRefTree(names: string[], groupByDirectory: boolean): RefTreeNode[] {
   if (!groupByDirectory) {
     return names.map((name) => ({
       id: name,
@@ -42,9 +59,7 @@ export function buildRefTree(
 
   function toNodes(folder: Folder, prefix: string): RefTreeNode[] {
     const nodes: RefTreeNode[] = [];
-    const folders = [...folder.children.entries()].sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
+    const folders = [...folder.children.entries()].sort(([a], [b]) => a.localeCompare(b));
     for (const [label, child] of folders) {
       const id = prefix ? `${prefix}/${label}` : label;
       nodes.push({

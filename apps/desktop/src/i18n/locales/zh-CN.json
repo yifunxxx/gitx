@@ -428,6 +428,7 @@
     "enterCredentials": "输入凭据…"
   },
   "branches": {
+    "toggleFavorite": "收藏或取消收藏分支 {name}",
     "search": "搜索分支…",
     "local": "本地",
     "remote": "远程",
