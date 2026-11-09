@@ -324,7 +324,7 @@ impl GitRunner {
         self.run(inv, cancel).await?;
         let applied = meta.paths;
         if remove_applied && !applied.is_empty() {
-            gitx_meta::remove_paths_from_shelf(&common, shelf_id, &applied)?;
+            gitx_meta::soft_delete_shelf(&common, shelf_id)?;
         }
         Ok((applied, Vec::new()))
     }
