@@ -112,6 +112,7 @@
     "chipBranch": "Branch: {value}",
     "laneUntitled": "Lane {lane}",
     "hiddenParents": "Parents outside the current results: {parents}",
+    "panGraph": "Pan commit graph (select a commit to reveal its node)",
     "applyTip": "Apply filters",
     "clearTip": "Clear all filters"
   },

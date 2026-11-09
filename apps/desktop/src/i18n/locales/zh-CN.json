@@ -112,6 +112,7 @@
     "chipBranch": "分支：{value}",
     "laneUntitled": "泳道 {lane}",
     "hiddenParents": "父提交未显示在当前结果中：{parents}",
+    "panGraph": "横向查看提交图（选择提交时自动显示对应节点）",
     "applyTip": "应用筛选",
     "clearTip": "清除全部筛选"
   },
