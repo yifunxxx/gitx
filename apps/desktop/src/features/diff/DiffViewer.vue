@@ -251,9 +251,6 @@ async function stageSelectedLines() {
     <div v-else-if="result?.binary" class="p-4 text-xs">{{ t("diff.binary") }}</div>
     <div v-else-if="result?.tooLarge" class="p-4 text-xs">
       {{ t("diff.tooLarge") }}
-      <button type="button" class="cursor-pointer underline" @click="diffs.reloadTab(tab)">
-        {{ t("diff.showAnyway") }}
-      </button>
     </div>
     <div
       v-else-if="result && !result.hunks.length && tab.collapseUnchanged"
