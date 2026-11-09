@@ -482,5 +482,21 @@
     "detectFail": "未检测到 Git",
     "detectHint": "未找到 git，请安装 Git for Windows 或在设置中填写 git.exe 完整路径",
     "openSettings": "打开设置"
+  },
+  "clone": {
+    "title": "克隆仓库",
+    "url": "仓库地址",
+    "directory": "目标目录",
+    "browse": "浏览…",
+    "shallow": "浅克隆，深度",
+    "depth": "克隆深度",
+    "openAfter": "克隆后打开仓库",
+    "found": "已找到仓库",
+    "checkFailed": "暂时无法验证地址；克隆时可能需要身份验证。",
+    "done": "克隆完成",
+    "cancel": "取消",
+    "start": "克隆",
+    "running": "正在克隆仓库…",
+    "cancelling": "正在取消…"
   }
 }

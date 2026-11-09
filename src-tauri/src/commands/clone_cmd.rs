@@ -1,10 +1,10 @@
 use crate::commands::workspace::remember_recent_path;
 use crate::state::AppState;
-use gitx_core::{AppError, CloneResult, ErrorCode};
+use gitx_core::{AppError, CloneResult, ErrorCode, JobId, JobKind, RepoId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{Emitter, State};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -16,6 +16,7 @@ pub struct CloneCheckUrlReq {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CloneRunReq {
+    pub job_id: String,
     pub url: String,
     pub dir: String,
     pub depth: Option<u32>,
@@ -56,21 +57,60 @@ pub async fn clone_check_url(
 #[tauri::command]
 #[specta::specta]
 pub async fn clone_run(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     req: CloneRunReq,
 ) -> Result<CloneResult, AppError> {
     let dir = PathBuf::from(&req.dir);
-    let git = state.git.read().await;
-    let cancel = CancellationToken::new();
-    let permits = state
-        .scheduler
-        .acquire_repo_writes(&git, &[], std::slice::from_ref(&dir), &cancel)
+    let id = uuid::Uuid::parse_str(&req.job_id)
+        .map_err(|_| AppError::new(ErrorCode::InvalidArgument, "invalid clone job ID"))?;
+    let job = state
+        .jobs
+        .start_with_id(
+            JobId(id.to_string()),
+            JobKind::NetworkWrite,
+            format!("Clone {}", req.dir),
+            vec![RepoId::new(&req.dir)],
+            true,
+            false,
+        )
         .await?;
-    let result = git
-        .clone_run(&req.url, &dir, req.depth, req.branch.as_deref(), &cancel)
-        .await?;
-    drop(permits);
-    drop(git);
+    let _ = app.emit(
+        "job://started",
+        serde_json::json!({ "id": job.info.id, "title": job.info.title }),
+    );
+    let result = async {
+        let git = tokio::select! {
+            _ = job.cancel.cancelled() => {
+                return Err(AppError::new(ErrorCode::Cancelled, "clone cancelled"));
+            }
+            git = state.git.read() => git,
+        };
+        let _permits = state
+            .scheduler
+            .acquire_repo_writes(&git, &[], std::slice::from_ref(&dir), &job.cancel)
+            .await?;
+        git.clone_run(
+            &req.url,
+            &dir,
+            req.depth,
+            req.branch.as_deref(),
+            &job.cancel,
+        )
+        .await
+    }
+    .await;
+    state
+        .jobs
+        .finish(
+            &job.info.id,
+            result.is_ok(),
+            result.as_ref().err().cloned(),
+            None,
+        )
+        .await;
+    let _ = app.emit("job://finished", serde_json::json!({ "id": job.info.id }));
+    let result = result?;
     if req.open_after {
         remember_recent_path(&state, &result.path).await;
     }

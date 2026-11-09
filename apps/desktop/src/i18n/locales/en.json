@@ -482,5 +482,21 @@
     "detectFail": "Git not detected",
     "detectHint": "Git not found. Install Git for Windows, or set the full path to git.exe in Settings.",
     "openSettings": "Open Settings"
+  },
+  "clone": {
+    "title": "Clone Repository",
+    "url": "Repository URL",
+    "directory": "Destination directory",
+    "browse": "Browse…",
+    "shallow": "Shallow clone, depth",
+    "depth": "Clone depth",
+    "openAfter": "Open repository after cloning",
+    "found": "Repository found",
+    "checkFailed": "Could not verify the URL; authentication may be required when cloning.",
+    "done": "Repository cloned",
+    "cancel": "Cancel",
+    "start": "Clone",
+    "running": "Cloning repository…",
+    "cancelling": "Cancelling…"
   }
 }

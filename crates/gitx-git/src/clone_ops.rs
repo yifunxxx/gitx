@@ -42,6 +42,9 @@ impl GitRunner {
         branch: Option<&str>,
         cancel: &CancellationToken,
     ) -> Result<CloneResult, AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "clone cancelled"));
+        }
         if dir.exists() {
             let is_empty = std::fs::read_dir(dir)
                 .map(|mut d| d.next().is_none())
@@ -61,7 +64,6 @@ impl GitRunner {
             })?;
         }
 
-        let created_by_us = !dir.exists();
         let mut args = vec!["clone".to_string(), "--progress".into()];
         if let Some(d) = depth {
             // Local (file) clones skip shallow unless --no-local is set.
@@ -86,18 +88,13 @@ impl GitRunner {
             .timeout(Some(Duration::from_secs(3600)))
             .git_bin(self.git_bin.clone());
 
-        match self.run(inv, cancel).await {
-            Ok(_) => Ok(CloneResult {
-                path: dir.display().to_string(),
-                shallow: depth.is_some(),
-            }),
-            Err(e) => {
-                if cancel.is_cancelled() && created_by_us {
-                    let _ = std::fs::remove_dir_all(dir);
-                }
-                Err(e)
-            }
-        }
+        // Another writer can create content in the target while Git is running.
+        // Leave rollback to Git; never recursively delete the destination here.
+        self.run(inv, cancel).await?;
+        Ok(CloneResult {
+            path: dir.display().to_string(),
+            shallow: depth.is_some(),
+        })
     }
 
     pub async fn unshallow_run(

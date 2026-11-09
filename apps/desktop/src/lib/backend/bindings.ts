@@ -605,13 +605,7 @@ export type PushRunReq = {
 }
 export type IncomingCheckReq = { path: string; remote: string }
 export type CloneCheckUrlReq = { url: string }
-export type CloneRunReq = {
-  url: string
-  dir: string
-  depth?: number | null
-  branch?: string | null
-  openAfter: boolean
-}
+export type CloneRunReq = { jobId: string; url: string; dir: string; depth: number | null; branch: string | null; openAfter: boolean }
 export type UnshallowReq = { path: string; remote?: string | null }
 export type RepoStateReq = { path: string }
 export type RepoStateRes = { isShallow: boolean }
