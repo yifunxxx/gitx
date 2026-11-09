@@ -230,7 +230,14 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
       async (path) => {
         const result = await getBackend().shelfUnshelve({ path, id, removeApplied });
         if (result.failed.length)
-          throw new Error(t("shelf.applyFailed", { count: result.failed.length }));
+          throw new Error(
+            result.applied.length
+              ? t("shelf.applyPartial", {
+                  applied: result.applied.length,
+                  failed: result.failed.length,
+                })
+              : t("shelf.applyFailed", { count: result.failed.length }),
+          );
       },
       "shelf.unshelved",
       "shelf.noChanges",

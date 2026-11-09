@@ -277,6 +277,21 @@ it("does not announce success if an older backend returns failed paths", async (
   expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.applyFailed" });
 });
 
+it("reports partial application and refreshes both the remaining Shelf and conflicts", async () => {
+  mocks.backend.shelfUnshelve.mockResolvedValue({
+    applied: ["applied.txt"],
+    failed: ["conflict.txt"],
+  });
+  const store = useStashShelfStore();
+  expect(await store.unshelve("shelf-id", true)).toBe(false);
+  expect(store.error).toBe("shelf.applyPartial");
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.applyPartial" });
+  expect(mocks.backend.shelfList).toHaveBeenCalledOnce();
+  expect(mocks.refresh).toHaveBeenCalledOnce();
+  expect(mocks.conflicts).toHaveBeenCalledOnce();
+  expect(store.busy).toBe(false);
+});
+
 it("captures Shelf paths and blocks all overlapping dialogs until creation completes", async () => {
   const dialog = deferred();
   mocks.dialog.mockReturnValue(dialog.promise);

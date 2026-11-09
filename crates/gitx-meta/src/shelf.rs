@@ -1,6 +1,7 @@
 //! Shelf storage under `<common-dir>/gitx/shelf/<id>/`.
 
 use gitx_core::{AppError, ErrorCode, ShelfEntry};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -98,30 +99,63 @@ fn checked_root(common: &Path, deleted: bool, create: bool) -> Result<PathBuf, A
     Ok(parts.pop().expect("Shelf root"))
 }
 
-fn load_entry(root: &Path, id: &str) -> Result<ShelfEntry, AppError> {
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShelfRecord {
+    #[serde(flatten)]
+    meta: ShelfEntry,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    patch_file: Option<String>,
+}
+
+impl ShelfRecord {
+    fn patch_name(&self) -> Result<&str, AppError> {
+        let Some(name) = self.patch_file.as_deref() else {
+            return Ok("changes.patch");
+        };
+        let generation = name
+            .strip_prefix("changes-")
+            .and_then(|s| s.strip_suffix(".patch"))
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ShelfFailed, "invalid Shelf patch generation")
+            })?;
+        validate_id(generation)?;
+        Ok(name)
+    }
+}
+
+fn load_record(root: &Path, id: &str) -> Result<ShelfRecord, AppError> {
     validate_id(id)?;
     let dir = root.join(id);
     if !check_component(&dir, true)? {
         return Err(AppError::new(ErrorCode::NotFound, "Shelf entry not found"));
     }
-    if !check_component(&dir.join("meta.json"), false)?
-        || !check_component(&dir.join("changes.patch"), false)?
-    {
+    if !check_component(&dir.join("meta.json"), false)? {
         return Err(AppError::new(
             ErrorCode::ShelfFailed,
             "Shelf metadata or patch is missing",
         ));
     }
     let raw = fs::read(dir.join("meta.json")).map_err(|e| fs_error("read Shelf metadata", e))?;
-    let meta: ShelfEntry = serde_json::from_slice(&raw)
+    let record: ShelfRecord = serde_json::from_slice(&raw)
         .map_err(|e| AppError::new(ErrorCode::ShelfFailed, format!("parse Shelf metadata: {e}")))?;
-    if meta.id != id {
+    if record.meta.id != id {
         return Err(AppError::new(
             ErrorCode::ShelfFailed,
             "Shelf metadata ID does not match its directory",
         ));
     }
-    Ok(meta)
+    if !check_component(&dir.join(record.patch_name()?), false)? {
+        return Err(AppError::new(
+            ErrorCode::ShelfFailed,
+            "Shelf patch is missing",
+        ));
+    }
+    Ok(record)
+}
+
+fn load_entry(root: &Path, id: &str) -> Result<ShelfEntry, AppError> {
+    Ok(load_record(root, id)?.meta)
 }
 
 fn list_entries(common: &Path, deleted: bool) -> Result<Vec<ShelfEntry>, AppError> {
@@ -223,11 +257,76 @@ pub fn load_shelf_meta(common: &Path, id: &str) -> Result<ShelfEntry, AppError> 
 }
 
 pub fn read_shelf_patch(common: &Path, id: &str) -> Result<Vec<u8>, AppError> {
+    Ok(load_shelf_snapshot(common, id)?.1)
+}
+
+/// Read metadata and the referenced immutable patch under one metadata lock.
+pub fn load_shelf_snapshot(common: &Path, id: &str) -> Result<(ShelfEntry, Vec<u8>), AppError> {
     validate_id(id)?;
     transaction::with_metadata_access(common, || {
         let root = checked_root(common, false, false)?;
-        load_entry(&root, id)?;
-        fs::read(root.join(id).join("changes.patch")).map_err(|e| fs_error("read Shelf patch", e))
+        let record = load_record(&root, id)?;
+        let patch = fs::read(root.join(id).join(record.patch_name()?))
+            .map_err(|e| fs_error("read Shelf patch", e))?;
+        Ok((record.meta, patch))
+    })
+}
+
+/// Publish a remaining patch and its paths through one atomic metadata switch.
+/// Immutable older generations remain recoverable and usable by readers that
+/// already loaded the old metadata. Failed writes leave that snapshot current.
+pub fn consume_shelf_patch(
+    common: &Path,
+    id: &str,
+    expected_patch: &[u8],
+    remaining_paths: &[String],
+    remaining_patch: &[u8],
+    binary: bool,
+) -> Result<(), AppError> {
+    validate_id(id)?;
+    if remaining_patch.is_empty() != remaining_paths.is_empty() {
+        return Err(AppError::new(
+            ErrorCode::InvalidArgument,
+            "Shelf patch and paths must agree",
+        ));
+    }
+    transaction::with_metadata_access(common, || {
+        let root = checked_root(common, false, false)?;
+        let mut record = load_record(&root, id)?;
+        let dir = root.join(id);
+        let saved = fs::read(dir.join(record.patch_name()?))
+            .map_err(|e| fs_error("read Shelf patch", e))?;
+        if saved != expected_patch {
+            return Err(AppError::new(
+                ErrorCode::ShelfFailed,
+                "Shelf changed during application; saved contents were preserved",
+            ));
+        }
+        if remaining_patch.is_empty() {
+            let deleted = checked_root(common, true, true)?.join(id);
+            require_absent(&deleted)?;
+            return fs::rename(dir, deleted).map_err(|e| fs_error("move Shelf to deleted", e));
+        }
+        let name = format!("changes-{}.patch", Uuid::new_v4());
+        let target = dir.join(&name);
+        let mut temp = tempfile::NamedTempFile::new_in(&dir)
+            .map_err(|e| fs_error("create remaining Shelf patch", e))?;
+        temp.write_all(remaining_patch)
+            .map_err(|e| fs_error("write remaining Shelf patch", e))?;
+        temp.as_file()
+            .sync_all()
+            .map_err(|e| fs_error("flush remaining Shelf patch", e))?;
+        temp.into_temp_path()
+            .persist_noclobber(&target)
+            .map_err(|e| fs_error("publish remaining Shelf patch", e.error))?;
+        record.meta.paths = remaining_paths.to_vec();
+        record.meta.binary = binary;
+        record.patch_file = Some(name);
+        if let Err(error) = transaction::write_json(&dir.join("meta.json"), &record) {
+            let _ = fs::remove_file(target);
+            return Err(error);
+        }
+        Ok(())
     })
 }
 
@@ -235,10 +334,10 @@ pub fn rename_shelf(common: &Path, id: &str, message: &str) -> Result<ShelfEntry
     validate_id(id)?;
     transaction::with_metadata_access(common, || {
         let root = checked_root(common, false, false)?;
-        let mut meta = load_entry(&root, id)?;
-        meta.message = message.to_owned();
-        transaction::write_json(&root.join(id).join("meta.json"), &meta)?;
-        Ok(meta)
+        let mut record = load_record(&root, id)?;
+        record.meta.message = message.to_owned();
+        transaction::write_json(&root.join(id).join("meta.json"), &record)?;
+        Ok(record.meta)
     })
 }
 
