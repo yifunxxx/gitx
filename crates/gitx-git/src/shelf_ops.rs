@@ -6,6 +6,150 @@ use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 impl GitRunner {
+    async fn shelf_base(&self, cwd: &Path, cancel: &CancellationToken) -> Result<String, AppError> {
+        match self
+            .run(
+                GitInvocation::new(cwd, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]),
+                cancel,
+            )
+            .await
+        {
+            Ok(out) => Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned()),
+            Err(error) if error.exit_code == Some(1) => {
+                // Only an unborn symbolic HEAD may use an empty tree. Broken
+                // refs, cancellation and process failures must remain errors.
+                let head = self
+                    .run(
+                        GitInvocation::new(cwd, ["symbolic-ref", "--quiet", "HEAD"]),
+                        cancel,
+                    )
+                    .await?;
+                let head = String::from_utf8_lossy(&head.stdout);
+                match self
+                    .run(
+                        GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", head.trim()]),
+                        cancel,
+                    )
+                    .await
+                {
+                    Err(missing) if missing.exit_code == Some(1) => {
+                        let out = self
+                            .run(
+                                GitInvocation::new(
+                                    cwd,
+                                    ["hash-object", "-t", "tree", "-w", "--stdin"],
+                                )
+                                .stdin(Vec::new())
+                                .kind(OpKind::Write),
+                                cancel,
+                            )
+                            .await?;
+                        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+                    }
+                    Err(other) => Err(other),
+                    Ok(_) => Err(error),
+                }
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn shelf_diff(
+        &self,
+        cwd: &Path,
+        base: Option<&str>,
+        cached: bool,
+        paths: &[String],
+        cancel: &CancellationToken,
+    ) -> Result<Vec<u8>, AppError> {
+        let mut args: Vec<String> = [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--no-renames",
+            "--no-relative",
+            "--binary",
+            "--full-index",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "--ignore-submodules=none",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        if cached {
+            args.push("--cached".into());
+        }
+        if let Some(base) = base {
+            args.push(base.into());
+        }
+        args.push("--".into());
+        args.extend(paths.iter().map(|p| format!(":(top,literal){p}")));
+        Ok(self
+            .run(GitInvocation::new(cwd, args), cancel)
+            .await?
+            .stdout)
+    }
+
+    async fn shelf_patch_paths(
+        &self,
+        cwd: &Path,
+        patch: &[u8],
+        cancel: &CancellationToken,
+    ) -> Result<Vec<String>, AppError> {
+        if patch.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Derive metadata from the exact saved patch rather than a second diff
+        // that may observe different working files. -z preserves unusual names.
+        let out = self
+            .run(
+                GitInvocation::new(cwd, ["apply", "--numstat", "-z", "-"]).stdin(patch.to_vec()),
+                cancel,
+            )
+            .await?;
+        let text = std::str::from_utf8(&out.stdout).map_err(|_| {
+            AppError::new(
+                ErrorCode::InvalidArgument,
+                "Shelf requires UTF-8 file paths",
+            )
+        })?;
+        let mut paths = Vec::new();
+        for record in text.split_terminator('\0') {
+            let path = record
+                .splitn(3, '\t')
+                .nth(2)
+                .filter(|p| !p.is_empty())
+                .ok_or_else(|| AppError::new(ErrorCode::ShelfFailed, "invalid Shelf patch path"))?;
+            paths.push(path.to_owned());
+        }
+        paths.sort();
+        paths.dedup();
+        Ok(paths)
+    }
+
+    async fn check_shelf_untracked(
+        &self,
+        cwd: &Path,
+        paths: &[String],
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let mut args: Vec<String> = ["ls-files", "--others", "-z", "--"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        args.extend(paths.iter().map(|p| format!(":(top,literal){p}")));
+        let out = self.run(GitInvocation::new(cwd, args), cancel).await?;
+        // Include ignored files too. A staged deletion may have been replaced
+        // by an untracked file or directory that restore would overwrite.
+        if !out.stdout.is_empty() {
+            return Err(AppError::new(ErrorCode::UntrackedWouldBeOverwritten,
+                "An untracked file occupies a shelved path; keep local changes or move it before shelving"));
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn shelve_changes(
         &self,
@@ -23,50 +167,69 @@ impl GitRunner {
                 "no paths to shelve",
             ));
         }
+        for path in paths {
+            if path.is_empty()
+                || path.contains('\0')
+                || Path::new(path)
+                    .components()
+                    .any(|p| !matches!(p, std::path::Component::Normal(_)))
+            {
+                return Err(AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "Shelf requires repository-relative paths",
+                ));
+            }
+        }
         let common = self.git_common_dir(cwd, cancel).await?;
-
-        // Base revision sha (HEAD); empty tree for unborn.
-        let base_sha = match self
-            .run(
-                GitInvocation::new(cwd, ["rev-parse", "HEAD"])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone()),
-                cancel,
-            )
-            .await
-        {
-            Ok(out) => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-            Err(_) => "4b825dc642cb6eb9a060e54bf8d69257bf5ff90".into(),
-        };
-
-        // Ensure base blobs stay reachable.
+        let base_sha = self.shelf_base(cwd, cancel).await?;
+        let index_patch = self
+            .shelf_diff(cwd, Some(&base_sha), true, paths, cancel)
+            .await?;
+        if !keep_changes && !index_patch.is_empty() {
+            let staged = self.shelf_patch_paths(cwd, &index_patch, cancel).await?;
+            let unstaged = self.shelf_diff(cwd, None, false, &staged, cancel).await?;
+            if !unstaged.is_empty() {
+                return Err(AppError::new(ErrorCode::ShelfFailed,
+                    "Cannot remove partially staged changes: stage or unstage these files first, or keep local changes"));
+            }
+        }
+        let patch = self
+            .shelf_diff(cwd, Some(&base_sha), false, paths, cancel)
+            .await?;
+        if patch.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::NothingToCommit,
+                "no tracked changes to shelve",
+            ));
+        }
+        let changed_paths = self.shelf_patch_paths(cwd, &patch, cancel).await?;
+        if changed_paths.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::ShelfFailed,
+                "Shelf patch contains no file changes",
+            ));
+        }
+        if !keep_changes {
+            self.check_shelf_untracked(cwd, &changed_paths, cancel)
+                .await?;
+        }
+        let binary = patch
+            .windows(b"GIT binary patch".len())
+            .any(|w| w == b"GIT binary patch");
+        // Keep the base reachable before publishing the patch. Failures here
+        // must not allow working files or staged content to be removed.
         let keepalive = format!("refs/gitx/shelf-base-{base_sha}");
-        let inv = GitInvocation::new(cwd, ["update-ref", &keepalive, &base_sha])
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone());
-        let _ = self.run(inv, cancel).await;
-
-        // Binary-aware diff.
-        let mut args = vec!["diff".into(), "--binary".into(), "HEAD".into(), "--".into()];
-        args.extend(paths.iter().cloned());
-        let inv = GitInvocation::new(cwd, args)
-            .kind(OpKind::Read)
-            .git_bin(self.git_bin.clone());
-        let diff_out = self.run(inv, cancel).await?;
-        let binary = diff_out
-            .stdout
-            .windows(14)
-            .any(|w| w == b"GIT binary patch")
-            || String::from_utf8_lossy(&diff_out.stdout).contains("Binary files");
-
-        // Also capture unstaged? For shelve we want worktree vs HEAD for tracked;
-        // untracked are not shelved (IDEA).
+        self.run(
+            GitInvocation::new(cwd, ["update-ref", &keepalive, &base_sha]).kind(OpKind::Write),
+            cancel,
+        )
+        .await?;
         let entry = gitx_meta::create_shelf_entry(
             &common,
             message,
             &base_sha,
-            paths,
-            &diff_out.stdout,
+            &changed_paths,
+            &patch,
             source_changelist,
             binary,
             system,
@@ -77,23 +240,59 @@ impl GitRunner {
         let inv = GitInvocation::new(cwd, ["update-ref", &shelf_ref, &base_sha])
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
-        let _ = self.run(inv, cancel).await;
+        self.run(inv, cancel).await?;
 
         if !keep_changes {
-            // Rollback worktree for these paths to HEAD.
-            let mut args = vec!["checkout".into(), "HEAD".into(), "--".into()];
-            args.extend(paths.iter().cloned());
-            let inv = GitInvocation::new(cwd, args)
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            let _ = self.run(inv, cancel).await;
-            // Also reset index for those paths.
-            let mut args = vec!["reset".into(), "-q".into(), "HEAD".into(), "--".into()];
-            args.extend(paths.iter().cloned());
-            let inv = GitInvocation::new(cwd, args)
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            let _ = self.run(inv, cancel).await;
+            // A hook/editor may have changed data while the Shelf was saved.
+            // Keep both versions rather than clearing data absent from the patch.
+            let saved = async {
+                if self
+                    .shelf_diff(cwd, Some(&base_sha), false, paths, cancel)
+                    .await?
+                    != patch
+                    || self
+                        .shelf_diff(cwd, Some(&base_sha), true, paths, cancel)
+                        .await?
+                        != index_patch
+                {
+                    return Err(AppError::new(
+                        ErrorCode::ShelfFailed,
+                        "local changes changed while saving the Shelf; nothing was removed",
+                    ));
+                }
+                self.check_shelf_untracked(cwd, &changed_paths, cancel)
+                    .await?;
+                let literal_paths: Vec<_> = changed_paths
+                    .iter()
+                    .map(|p| format!(":(top,literal){p}"))
+                    .collect();
+                self.run(
+                    GitInvocation::new(
+                        cwd,
+                        [
+                            "restore",
+                            &format!("--source={base_sha}"),
+                            "--staged",
+                            "--worktree",
+                            "--pathspec-from-file=-",
+                            "--pathspec-file-nul",
+                        ],
+                    )
+                    .stdin(crate::ops::pathspec_nul(&literal_paths))
+                    .kind(OpKind::Write),
+                    cancel,
+                )
+                .await?;
+                Ok::<_, AppError>(())
+            }
+            .await;
+            saved.map_err(|mut error| {
+                error.message = format!(
+                    "Shelf {} was saved, but local changes could not be removed: {}",
+                    entry.id, error.message
+                );
+                error
+            })?;
         }
 
         Ok(entry)
