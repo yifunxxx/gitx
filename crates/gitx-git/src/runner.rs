@@ -5,7 +5,9 @@ use std::process::Stdio;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::debug;
+#[cfg(not(windows))]
+use tracing::warn;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpKind {
@@ -119,6 +121,9 @@ impl GitRunner {
         mut inv: GitInvocation,
         cancel: &CancellationToken,
     ) -> Result<GitOutput, AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
+        }
         if inv.git_bin == "git" {
             inv.git_bin = self.git_bin.clone();
         }
@@ -139,6 +144,7 @@ impl GitRunner {
         };
         cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("LC_ALL", "C");
         crate::process_win::hide_console_tokio(&mut cmd);
@@ -181,41 +187,69 @@ impl GitRunner {
             });
         }
 
+        #[cfg(windows)]
+        let process_job = crate::process_win::ProcessJob::new()
+            .map_err(|e| AppError::new(ErrorCode::Internal, format!("create process job: {e}")))?;
+        #[cfg(windows)]
+        process_job.prepare(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| {
             AppError::new(ErrorCode::FsError, format!("failed to spawn git: {e}"))
                 .with_command(command.clone())
         })?;
+        #[cfg(windows)]
+        process_job
+            .attach_and_resume(&child)
+            .map_err(|e| AppError::new(ErrorCode::Internal, format!("attach process job: {e}")))?;
 
-        if let Some(bytes) = inv.stdin.take() {
-            use tokio::io::AsyncWriteExt;
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(&bytes).await.map_err(|e| {
-                    AppError::new(
-                        ErrorCode::FsError,
-                        format!("failed to write git stdin: {e}"),
-                    )
-                    .with_command(command.clone())
-                })?;
-                stdin.shutdown().await.ok();
-            }
-        }
-
+        #[cfg(not(windows))]
         let pid = child.id();
         let timeout = inv.timeout.unwrap_or(Duration::from_secs(30));
+        let stdin = child.stdin.take();
+        let input = inv.stdin.take();
+        // Drain stdout/stderr while writing stdin. A hook or helper may fill its
+        // output pipe before consuming a large patch; writing first deadlocks.
+        let output_future = async move {
+            let write_input = async move {
+                use tokio::io::AsyncWriteExt;
+                if let (Some(mut stdin), Some(bytes)) = (stdin, input) {
+                    stdin.write_all(&bytes).await?;
+                    stdin.shutdown().await?;
+                }
+                Ok::<(), std::io::Error>(())
+            };
+            let (_, output) = tokio::try_join!(write_input, child.wait_with_output())?;
+            Ok::<_, std::io::Error>(output)
+        };
+        // Keep the child alive until cancellation has terminated its whole tree.
+        // Dropping wait_with_output first only kills the root on Windows.
+        tokio::pin!(output_future);
 
         let output = tokio::select! {
             _ = cancel.cancelled() => {
+                #[cfg(windows)]
+                process_job.terminate();
+                #[cfg(not(windows))]
                 kill_process_tree(pid).await;
                 return Err(AppError::new(ErrorCode::Cancelled, "git command cancelled")
                     .with_command(command.clone()));
             }
-            result = child.wait_with_output() => {
-                result.map_err(|e| {
-                    AppError::new(ErrorCode::Internal, format!("git wait failed: {e}"))
-                        .with_command(command.clone())
-                })?
+            result = &mut output_future => {
+                match result {
+                    Ok(output) => output,
+                    Err(e) => {
+                        #[cfg(windows)]
+                        process_job.terminate();
+                        #[cfg(not(windows))]
+                        kill_process_tree(pid).await;
+                        return Err(AppError::new(ErrorCode::Internal, format!("git I/O failed: {e}"))
+                            .with_command(command.clone()));
+                    }
+                }
             }
             _ = tokio::time::sleep(timeout) => {
+                #[cfg(windows)]
+                process_job.terminate();
+                #[cfg(not(windows))]
                 kill_process_tree(pid).await;
                 return Err(AppError::new(ErrorCode::Timeout, "git command timed out")
                     .with_command(command.clone()));
@@ -370,6 +404,7 @@ fn redact_command(cmd: &str) -> String {
     }
 }
 
+#[cfg(not(windows))]
 async fn kill_process_tree(pid: Option<u32>) {
     let Some(pid) = pid else { return };
     #[cfg(unix)]
@@ -383,14 +418,6 @@ async fn kill_process_tree(pid: Option<u32>) {
         unsafe {
             libc::kill(-pgid, libc::SIGKILL);
         }
-    }
-    #[cfg(windows)]
-    {
-        // M0 stub: taskkill /T. Full Job Object integration lands with Windows CI.
-        let mut kill = tokio::process::Command::new("taskkill");
-        kill.args(["/PID", &pid.to_string(), "/T", "/F"]);
-        crate::process_win::hide_console_tokio(&mut kill);
-        let _ = kill.status().await;
     }
     let _ = pid;
     warn!(pid, "cancelled git process tree");
