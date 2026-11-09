@@ -1,6 +1,6 @@
 use crate::state::AppState;
-use gitx_core::{AppError, DiffSide, ErrorCode};
-use gitx_diff::{apply_selected_hunks_to_base, decode_lossy, revert_selected_lines_to_base};
+use gitx_core::{AppError, DiffSide};
+use gitx_diff::{decode_lossy, revert_selected_lines_to_base};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -109,40 +109,7 @@ pub async fn stage_hunks(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let index_bytes = git
-        .read_blob_side(&cwd, &req.file_path, DiffSide::Index, &cancel)
-        .await?;
-    let work_bytes = git
-        .read_blob_side(&cwd, &req.file_path, DiffSide::Worktree, &cancel)
-        .await?;
-    let index_text = decode_lossy(index_bytes.as_deref()).unwrap_or_default();
-    let work_text = decode_lossy(work_bytes.as_deref()).unwrap_or_default();
-    if work_bytes.as_ref().is_some_and(|b| b.contains(&0)) {
-        return Err(AppError::new(
-            ErrorCode::GitCommandFailed,
-            "binary files must be staged as a whole file",
-        ));
-    }
-    let new_index = apply_selected_hunks_to_base(&index_text, &work_text, &req.hunk_indexes);
-    let mode = git
-        .file_mode_in_index(&cwd, &req.file_path, &cancel)
-        .await
-        .unwrap_or_else(|_| "100644".into());
-    // If file not in index yet, intent-to-add via add first for mode, then update.
-    if index_bytes.is_none() {
-        git.add_paths(&cwd, std::slice::from_ref(&req.file_path), false, &cancel)
-            .await?;
-        // Re-write index content to selected hunks only (from empty base).
-        let new_index = apply_selected_hunks_to_base("", &work_text, &req.hunk_indexes);
-        let mode = git
-            .file_mode_in_index(&cwd, &req.file_path, &cancel)
-            .await
-            .unwrap_or_else(|_| "100644".into());
-        return git
-            .stage_hunk_text(&cwd, &req.file_path, &new_index, &mode, &cancel)
-            .await;
-    }
-    git.stage_hunk_text(&cwd, &req.file_path, &new_index, &mode, &cancel)
+    git.stage_hunks(&cwd, &req.file_path, &req.hunk_indexes, &cancel)
         .await
 }
 

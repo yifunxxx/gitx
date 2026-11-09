@@ -82,6 +82,127 @@ fn partial_error(message: &str) -> AppError {
 }
 
 impl GitRunner {
+    pub async fn stage_hunks(
+        &self,
+        cwd: &Path,
+        path: &str,
+        hunks: &[u32],
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        self.stage_selection(cwd, path, PartialSelection::Hunks(hunks), cancel)
+            .await
+    }
+
+    pub async fn stage_lines(
+        &self,
+        cwd: &Path,
+        path: &str,
+        lines: &[u32],
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        self.stage_selection(cwd, path, PartialSelection::Lines(lines), cancel)
+            .await
+    }
+
+    async fn stage_selection(
+        &self,
+        cwd: &Path,
+        path: &str,
+        selection: PartialSelection<'_>,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        if selection.is_empty() {
+            return Ok(());
+        }
+        validate_partial_path(path)?;
+        let index = self.partial_index_blob(cwd, path, cancel).await?;
+        let file = match std::fs::symlink_metadata(cwd.join(path)) {
+            Ok(file) if file.file_type().is_file() => Some(file),
+            Ok(_) => return Err(partial_error("partial changes require a regular file")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(AppError::new(
+                    ErrorCode::FsError,
+                    format!("read file metadata: {error}"),
+                ))
+            }
+        };
+        if index.is_none() {
+            if file.is_none() {
+                return Err(partial_error("file no longer exists"));
+            }
+            match self
+                .run(
+                    GitInvocation::new(cwd, ["check-ignore", "-q", "--", path])
+                        .git_bin(self.git_bin.clone()),
+                    cancel,
+                )
+                .await
+            {
+                Ok(_) => return Err(partial_error("ignored files cannot be partially staged")),
+                Err(error) if error.exit_code == Some(1) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        let index_text = index.as_ref().map_or("", |blob| blob.text.as_str());
+        let work_text = if file.is_some() {
+            decode_partial_text(std::fs::read(cwd.join(path)).map_err(|error| {
+                AppError::new(ErrorCode::FsError, format!("read worktree file: {error}"))
+            })?)?
+        } else {
+            String::new()
+        };
+        let hunks = gitx_diff::compute_hunks(
+            Some(index_text),
+            Some(&work_text),
+            &gitx_diff::DiffComputeOptions::default(),
+        );
+        selection.validate(&hunks)?;
+        let content = match selection {
+            PartialSelection::Lines(lines) => {
+                gitx_diff::apply_selected_lines_to_base(index_text, &work_text, lines)
+            }
+            PartialSelection::Hunks(hunks) => {
+                gitx_diff::apply_selected_hunks_to_base(index_text, &work_text, hunks)
+            }
+        };
+        if content == index_text {
+            return Err(AppError::new(
+                ErrorCode::NothingToCommit,
+                "no selected changes to stage",
+            ));
+        }
+        if file.is_none() {
+            self.run(
+                GitInvocation::new(cwd, ["update-index", "--force-remove", "--", path])
+                    .kind(OpKind::Write)
+                    .git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await?;
+            return Ok(());
+        }
+        let mode = index
+            .as_ref()
+            .map(|blob| blob.mode.as_str())
+            .unwrap_or_else(|| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if file
+                        .as_ref()
+                        .is_some_and(|file| file.permissions().mode() & 0o111 != 0)
+                    {
+                        return "100755";
+                    }
+                }
+                "100644"
+            });
+        // Never add the entire file before computing the selected content.
+        self.stage_hunk_text(cwd, path, &content, mode, cancel)
+            .await
+    }
+
     pub(crate) async fn partial_index_blob(
         &self,
         cwd: &Path,
