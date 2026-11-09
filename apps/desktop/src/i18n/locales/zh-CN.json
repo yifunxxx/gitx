@@ -180,6 +180,8 @@
     "noValidLines": "没有有效的行号",
     "linesStaged": "已暂存行",
     "linesStagedCount": "{count} 行",
+    "stageLinesFailed": "暂存行失败",
+    "stagedRefreshFailed": "行已暂存，但刷新失败",
     "loading": "正在加载 Diff…",
     "refreshing": "刷新中…",
     "binary": "二进制文件 — 请整文件暂存。",

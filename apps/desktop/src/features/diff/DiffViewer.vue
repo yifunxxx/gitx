@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import Skeleton from "@/components/common/Skeleton.vue";
 import { useDiffStore } from "@/stores/diffStore";
 import { useChangesStore } from "@/stores/changesStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { getBackend } from "@/lib/backend";
+import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
 import type { IgnoreWhitespace } from "@/lib/backend";
@@ -24,6 +27,7 @@ const props = defineProps<{ tabId: string }>();
 const { t } = useI18n();
 const diffs = useDiffStore();
 const changes = useChangesStore();
+const workspace = useWorkspaceStore();
 
 type DiffPane = { applyScroll: (left: number, top: number) => void };
 const leftPane = ref<DiffPane | null>(null);
@@ -94,41 +98,77 @@ function wsLabel(id: IgnoreWhitespace | undefined): string {
   return t(mode.key);
 }
 
-async function stageSelectedLines() {
-  if (!tab.value || !canStage.value) return;
-  const raw = await promptDialog({
-    title: t("diff.stageLinesTitle"),
-    message: t("diff.stageLinesPrompt"),
-    allowEmpty: false,
-  });
-  if (raw == null || !raw.trim()) return;
-  const lines = raw
-    .split(/[,\s]+/)
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (!lines.length) {
-    toast({ title: t("diff.noValidLines") });
-    return;
-  }
-  const { getBackend } = await import("@/lib/backend");
-  const { useWorkspaceStore } = await import("@/stores/workspaceStore");
-  const workspace = useWorkspaceStore();
-  if (!workspace.repoPath || !workspace.repoId) return;
-  await getBackend().stageLines({
-    repoId: workspace.repoId,
-    path: workspace.repoPath,
-    filePath: tab.value.path,
-    lines,
-  });
-  toast({
-    title: t("diff.linesStaged"),
-    description: t("diff.linesStagedCount", { count: lines.length }),
-  });
-  await changes.refresh();
-  await diffs.openFileDiff(tab.value.path, tab.value.left, tab.value.right, { force: true });
-}
+const stagingLines = ref(false);
+let stageGeneration = 0;
+let previewGeneration = 0;
+// Synchronous invalidation also catches A → B → A navigation in one tick.
+watch(
+  () => [
+    workspace.repoId, workspace.repoPath, props.tabId, diffs.activeId,
+    tab.value?.path, tab.value?.left, tab.value?.right,
+    tab.value?.leftRev, tab.value?.rightRev, tab.value?.leftPath,
+  ],
+  () => { stageGeneration += 1; },
+  { flush: "sync" },
+);
+watch(
+  () => [tab.value?.result, tab.value?.loading, tab.value?.ignoreWhitespace],
+  () => { previewGeneration += 1; },
+  { flush: "sync" },
+);
+onBeforeUnmount(() => { stageGeneration += 1; });
 
-const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.leftRev);
+const canStage = computed(() =>
+  tab.value?.kind === "file" && tab.value.left === "index" &&
+  tab.value.right === "worktree" && !tab.value.leftRev && !tab.value.rightRev &&
+  (!tab.value.leftPath || tab.value.leftPath === tab.value.path) &&
+  !tab.value.loading && !!result.value?.hunks.length &&
+  !result.value.binary && !result.value.tooLarge,
+);
+
+async function stageSelectedLines() {
+  if (!tab.value || !canStage.value || stagingLines.value) return;
+  const { repoId, repoPath } = workspace;
+  if (!repoId || !repoPath) return;
+  const { id, path } = tab.value;
+  const generation = stageGeneration;
+  const preview = previewGeneration;
+  const current = () => stageGeneration === generation;
+  stagingLines.value = true;
+  let staged = false;
+  try {
+    const raw = await promptDialog({
+      title: t("diff.stageLinesTitle"),
+      message: t("diff.stageLinesPrompt"),
+      allowEmpty: false,
+    });
+    if (!current() || preview !== previewGeneration || raw == null || !raw.trim()) return;
+    const tokens = raw.trim().split(/[,\s]+/);
+    const lines = [...new Set(tokens.map(Number))];
+    if (tokens.some((s) => !/^\d+$/.test(s)) ||
+        lines.some((n) => !Number.isInteger(n) || n <= 0 || n > 0xffffffff)) {
+      toast({ title: t("diff.noValidLines") });
+      return;
+    }
+    await getBackend().stageLines({ repoId, path: repoPath, filePath: path, lines });
+    staged = true;
+    if (!current()) return;
+    toast({
+      title: t("diff.linesStaged"),
+      description: t("diff.linesStagedCount", { count: lines.length }),
+    });
+    await changes.refresh();
+    if (current()) await diffs.reloadTab(id);
+  } catch (error) {
+    if (current()) toast({
+      title: t(staged ? "diff.stagedRefreshFailed" : "diff.stageLinesFailed"),
+      description: formatErrorMessage(error),
+      persistent: true,
+    });
+  } finally {
+    stagingLines.value = false;
+  }
+}
 </script>
 
 <template>
@@ -180,7 +220,7 @@ const canStage = computed(() => tab.value?.right === "worktree" && !tab.value.le
         </Button>
       </Tip>
       <Tip v-if="canStage" :text="t('toolbar.diffStageLines')">
-        <Button size="xs" variant="outline" @click="stageSelectedLines">
+        <Button size="xs" variant="outline" :disabled="stagingLines" @click="stageSelectedLines">
           {{ t("diff.stageSelectedLines") }}
         </Button>
       </Tip>

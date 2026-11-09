@@ -180,6 +180,8 @@
     "noValidLines": "No valid line numbers",
     "linesStaged": "Lines staged",
     "linesStagedCount": "{count} line(s)",
+    "stageLinesFailed": "Could not stage lines",
+    "stagedRefreshFailed": "Lines staged, but refresh failed",
     "loading": "Loading diff…",
     "refreshing": "Refreshing…",
     "binary": "Binary file — stage as a whole file.",
