@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
+import { formatErrorMessage } from "@/lib/errors";
 import type { DiffFileResult, DiffSide, IgnoreWhitespace } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
@@ -16,6 +17,9 @@ export type DiffTab = {
   title: string;
   result: DiffFileResult | null;
   loading: boolean;
+  /** Distinguishes omitted full texts from an intentionally absent file side. */
+  textsLoaded?: boolean;
+  error?: string | null;
   unified: boolean;
   ignoreWhitespace: IgnoreWhitespace;
   collapseUnchanged: boolean;
@@ -182,15 +186,13 @@ export const useDiffStore = defineStore("diff", () => {
     if (!tab) return;
 
     const gen = bumpGen(id);
-    // Soft refresh keeps existing paint; only show skeleton when nothing to show.
-    if (!opts?.soft || !tab.result) {
-      patchTab(id, { loading: true });
-    }
+    // Keep existing paint during refresh, but always expose the pending state.
+    patchTab(id, { loading: true, error: null });
     // Collapsed default: skip full texts on the wire until Expand asks for them.
     const includeTexts =
       opts?.includeTexts ??
       (!tab.collapseUnchanged ||
-        tab.unified ||
+        tab.textsLoaded ||
         tab.result?.leftText != null ||
         tab.result?.rightText != null);
     const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -225,10 +227,11 @@ export const useDiffStore = defineStore("diff", () => {
       const prev = liveTab(id)?.result;
       const key = resultContentKey(result);
       if (opts?.soft && liveTab(id)?.contentKey === key && prev) {
+        patchTab(id, { textsLoaded: includeTexts });
         // Unchanged content — keep paint, skip assign thrash.
         return;
       }
-      patchTab(id, { result, contentKey: key });
+      patchTab(id, { result, contentKey: key, textsLoaded: includeTexts });
       const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
       lastPerf.value = {
         id,
@@ -240,6 +243,8 @@ export const useDiffStore = defineStore("diff", () => {
         (window as Window & { __gitxDiffPerf?: typeof lastPerf.value }).__gitxDiffPerf =
           lastPerf.value;
       }
+    } catch (error) {
+      if (isCurrent(id, gen)) patchTab(id, { error: formatErrorMessage(error) });
     } finally {
       if (isCurrent(id, gen)) patchTab(id, { loading: false });
     }
@@ -263,7 +268,7 @@ export const useDiffStore = defineStore("diff", () => {
     if (!tab) return;
     patchTab(id, { ignoreWhitespace: mode });
     await reloadTab(id, {
-      includeTexts: !tab.collapseUnchanged || tab.unified,
+      includeTexts: !tab.collapseUnchanged || !!tab.textsLoaded,
     });
   }
 
@@ -276,7 +281,7 @@ export const useDiffStore = defineStore("diff", () => {
     if (
       !value &&
       live?.result &&
-      (live.result.leftText == null || live.result.rightText == null) &&
+      !live.textsLoaded &&
       !live.result.binary &&
       !live.result.tooLarge
     ) {

@@ -181,6 +181,8 @@
     "linesStaged": "Lines staged",
     "linesStagedCount": "{count} line(s)",
     "stageLinesFailed": "Could not stage lines",
+    "loadFailed": "Could not load diff",
+    "retry": "Retry",
     "stagedRefreshFailed": "Lines staged, but refresh failed",
     "loading": "Loading diff…",
     "refreshing": "Refreshing…",

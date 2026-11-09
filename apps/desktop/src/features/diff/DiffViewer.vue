@@ -22,6 +22,7 @@ import {
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 import { normalizeEolForDisplay } from "./diffPaint";
+import { expandUnifiedHunks } from "./expandedDiff";
 
 const props = defineProps<{ tabId: string }>();
 const { t } = useI18n();
@@ -44,6 +45,14 @@ const tab = computed(() => diffs.tabs.find((t) => t.id === props.tabId));
 const result = computed(() => tab.value?.result);
 
 const visibleHunks = computed(() => result.value?.hunks ?? []);
+const waitingForTexts = computed(() =>
+  !tab.value?.collapseUnchanged && !tab.value?.textsLoaded &&
+  !result.value?.binary && !result.value?.tooLarge,
+);
+const unifiedHunks = computed(() => tab.value?.collapseUnchanged
+  ? visibleHunks.value
+  : expandUnifiedHunks(visibleHunks.value, result.value?.leftText ?? "", result.value?.rightText ?? ""),
+);
 
 const collapsed = computed(() => {
   if (!tab.value?.collapseUnchanged || !visibleHunks.value.length) return null;
@@ -122,7 +131,7 @@ const canStage = computed(() =>
   tab.value?.kind === "file" && tab.value.left === "index" &&
   tab.value.right === "worktree" && !tab.value.leftRev && !tab.value.rightRev &&
   (!tab.value.leftPath || tab.value.leftPath === tab.value.path) &&
-  !tab.value.loading && !!result.value?.hunks.length &&
+  !tab.value.loading && !tab.value.error && !!result.value?.hunks.length &&
   !result.value.binary && !result.value.tooLarge,
 );
 
@@ -226,7 +235,13 @@ async function stageSelectedLines() {
       </Tip>
     </div>
 
-    <div v-if="tab.loading && !result" class="space-y-2 p-4">
+    <div v-if="tab.error" class="space-y-2 border-b p-3 text-xs" role="alert">
+      <div>{{ t("diff.loadFailed") }}: {{ tab.error }}</div>
+      <Button size="xs" variant="outline" :disabled="tab.loading" @click="diffs.reloadTab(tab.id)">
+        {{ t("diff.retry") }}
+      </Button>
+    </div>
+    <div v-if="tab.loading && (!result || waitingForTexts)" class="space-y-2 p-4">
       <div class="text-xs text-muted-foreground">{{ t("diff.loading") }}</div>
       <Skeleton class="h-4 w-2/3" />
       <Skeleton class="h-4 w-1/2" />
@@ -241,13 +256,16 @@ async function stageSelectedLines() {
       </button>
     </div>
     <div
-      v-else-if="result && !result.hunks.length"
+      v-else-if="result && !result.hunks.length && tab.collapseUnchanged"
       class="space-y-2 p-4 text-xs leading-5 text-muted-foreground"
     >
       <div>{{ t("diff.noDifferences") }}</div>
       <div v-if="result.eolMismatch">{{ t("diff.eolMismatchShort") }}</div>
     </div>
-    <div v-else-if="result" class="relative flex min-h-0 flex-1 flex-col">
+    <div v-else-if="result && !waitingForTexts" class="relative flex min-h-0 flex-1 flex-col">
+      <div v-if="!result.hunks.length" class="shrink-0 border-b px-3 py-1.5 text-xs text-muted-foreground">
+        {{ t("diff.noDifferences") }}
+      </div>
       <div
         v-if="tab.loading"
         class="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-foreground/80 px-2 py-0.5 text-[10px] leading-4 text-background-solid"
@@ -268,7 +286,7 @@ async function stageSelectedLines() {
           side="unified"
           unified
           :text="''"
-          :hunks="visibleHunks"
+          :hunks="unifiedHunks"
           :paint-key="paintKey"
           :enable-inline="enableInline"
         />

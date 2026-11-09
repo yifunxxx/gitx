@@ -181,6 +181,8 @@
     "linesStaged": "已暂存行",
     "linesStagedCount": "{count} 行",
     "stageLinesFailed": "暂存行失败",
+    "loadFailed": "加载差异失败",
+    "retry": "重试",
     "stagedRefreshFailed": "行已暂存，但刷新失败",
     "loading": "正在加载 Diff…",
     "refreshing": "刷新中…",
