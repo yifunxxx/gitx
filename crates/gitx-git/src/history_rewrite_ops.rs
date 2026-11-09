@@ -1229,6 +1229,11 @@ impl GitRunner {
                 }
             }
             Err(e) => {
+                if e.exit_code == Some(129) {
+                    return self
+                        .replay_with_temporary_index(cwd, ours, merge_base, theirs, cancel)
+                        .await;
+                }
                 let msg = e.message.to_lowercase();
                 if msg.contains("conflict") || e.exit_code == Some(1) {
                     Err(AppError::new(
@@ -1240,6 +1245,92 @@ impl GitRunner {
                 }
             }
         }
+    }
+
+    /// Compatibility with Git versions predating merge-tree --write-tree.
+    /// An isolated index keeps both the user's index and worktree untouched.
+    async fn replay_with_temporary_index(
+        &self,
+        cwd: &Path,
+        ours: &str,
+        base: &str,
+        theirs: &str,
+        cancel: &CancellationToken,
+    ) -> Result<String, AppError> {
+        // git apply silently skips paths outside its cwd. Replay the complete
+        // commit from the repository root even when the caller opened a subdir.
+        let root = self.resolve_repo_root(cwd, 0, cancel).await?;
+        let cwd = Path::new(&root.worktree_root);
+        let dir =
+            tempfile::tempdir().map_err(|e| AppError::new(ErrorCode::FsError, e.to_string()))?;
+        let index = dir.path().join("index").to_string_lossy().into_owned();
+        // This patch is machine input. Display settings and text converters
+        // must not change its paths/content or hide submodule updates.
+        let patch = self
+            .run(
+                GitInvocation::new(
+                    cwd,
+                    [
+                        "diff",
+                        "--binary",
+                        "--full-index",
+                        "--no-ext-diff",
+                        "--no-textconv",
+                        "--no-color",
+                        "--no-relative",
+                        "--src-prefix=a/",
+                        "--dst-prefix=b/",
+                        "--output-indicator-new=+",
+                        "--output-indicator-old=-",
+                        "--output-indicator-context= ",
+                        "--ignore-submodules=none",
+                        "--submodule=short",
+                        base,
+                        theirs,
+                        "--",
+                    ],
+                )
+                .git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await?
+            .stdout;
+        self.run(
+            GitInvocation::new(cwd, ["read-tree", ours])
+                .git_bin(self.git_bin.clone())
+                .env("GIT_INDEX_FILE", &index),
+            cancel,
+        )
+        .await?;
+        if !patch.is_empty() {
+            if let Err(error) = self
+                .run(
+                    GitInvocation::new(cwd, ["apply", "--cached", "--3way", "--whitespace=nowarn"])
+                        .git_bin(self.git_bin.clone())
+                        .env("GIT_INDEX_FILE", &index)
+                        .stdin(patch),
+                    cancel,
+                )
+                .await
+            {
+                if error.exit_code == Some(1) {
+                    return Err(AppError::new(
+                        ErrorCode::RewriteConflict,
+                        "in-memory replay conflicted",
+                    ));
+                }
+                return Err(error);
+            }
+        }
+        let out = self
+            .run(
+                GitInvocation::new(cwd, ["write-tree"])
+                    .git_bin(self.git_bin.clone())
+                    .env("GIT_INDEX_FILE", &index),
+                cancel,
+            )
+            .await?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
     async fn commit_tree(
@@ -1694,3 +1785,6 @@ fn companion_wt_ref(backup_ref: &str) -> Option<String> {
     let (op, ts) = name.rsplit_once('-')?;
     Some(format!("refs/gitx/backup/{op}-wt-{ts}"))
 }
+
+#[cfg(test)]
+mod tests;

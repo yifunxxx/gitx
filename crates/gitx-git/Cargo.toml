@@ -19,6 +19,7 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 regex = "1"
 libc = "0.2"
+tempfile = "3"
 
 [dev-dependencies]
 gitx-testkit = { workspace = true }
