@@ -49,6 +49,46 @@ beforeEach(() => {
   };
 });
 
+describe("popup recent branches and other references", () => {
+  it("filters recent entries with the local results, including Chinese searches", async () => {
+    mocks.branches.refs.recent = ["feature/ui/button", "修复/界面/焦点"];
+    mocks.branches.filteredLocal = [mocks.branches.filteredLocal[3]];
+    const wrapper = shallowMount(BranchesPopup);
+    expect(wrapper.text()).not.toContain("feature/ui/button");
+    const recent = wrapper.findAll("button").find((button) => button.text() === "修复/界面/焦点")!;
+    expect(recent.exists()).toBe(true);
+    await recent.trigger("click", { detail: 0 });
+    expect(mocks.branches.checkout).toHaveBeenCalledWith(mocks.branches.filteredLocal[0]);
+    wrapper.unmount();
+  });
+
+  it("removes deleted and duplicate recent entries while retaining their order", () => {
+    mocks.branches.refs.recent = ["feature/ui/button", "deleted/topic", "feature/ui/button", "feature/api/button"];
+    const wrapper = shallowMount(BranchesPopup);
+    const recentButtons = wrapper.findAll("button").filter((button) => button.text().includes("/"));
+    expect(recentButtons.map((button) => button.text())).toEqual(["feature/ui/button", "feature/api/button"]);
+    wrapper.unmount();
+  });
+
+  it.each(["recent", "remoteBranch", "tag"])("checks out %s once for double-click activation", async (kind) => {
+    const entry = { name: "qa/target", fullName: `refs/${kind}/qa/target`, kind };
+    if (kind === "recent") {
+      mocks.branches.filteredLocal = [{ ...entry, kind: "localBranch" }];
+      mocks.branches.refs.recent = [entry.name];
+    } else if (kind === "remoteBranch") mocks.branches.filteredRemote = [entry];
+    else mocks.branches.filteredTags = [entry];
+    const wrapper = shallowMount(BranchesPopup);
+    const branch = wrapper.findAll("button").find((button) => button.text() === entry.name)!;
+    await branch.trigger("click", { detail: 1 });
+    await branch.trigger("click", { detail: 2 });
+    await branch.trigger("dblclick");
+    await flushPromises();
+    expect(mocks.branches.checkout).toHaveBeenCalledOnce();
+    expect(mocks.branches.checkout.mock.calls[0][0].name).toBe(entry.name);
+    wrapper.unmount();
+  });
+});
+
 describe.each([
   ["pane", BranchesPane],
   ["popup", BranchesPopup],

@@ -66,6 +66,11 @@ const showTags = computed(() => settings.settings?.git?.showTags ?? true);
 const localRefs = computed(
   () => new Map(branches.filteredLocal.map((entry) => [entry.name, entry])),
 );
+const recentRefs = computed(() =>
+  [...new Set(branches.refs?.recent ?? [])]
+    .map((name) => localRefs.value.get(name))
+    .filter((entry): entry is RefEntry => entry !== undefined),
+);
 const localRows = computed(() =>
   flattenRefTree(
     buildRefTree(
@@ -197,10 +202,6 @@ async function onNewTag() {
   await branches.refresh();
 }
 
-function findLocal(name: string): RefEntry | undefined {
-  return localRefs.value.get(name);
-}
-
 async function onMergeIntoCurrent(entry: RefEntry) {
   await rewrite.merge({ branches: [entry.name] });
   await afterBranchChange();
@@ -274,19 +275,25 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto text-sm">
-        <div v-if="showRecent && branches.refs?.recent?.length" class="px-2 py-1">
+        <div
+          v-if="showRecent && recentRefs.length"
+          class="px-2 py-1"
+          role="group"
+          :aria-label="t('branches.recent')"
+        >
           <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
-            Recent
+            {{ t("branches.recent") }}
           </div>
           <button
-            v-for="name in branches.refs.recent"
-            :key="'r-' + name"
+            v-for="entry in recentRefs"
+            :key="'r-' + entry.fullName"
             type="button"
             class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="findLocal(name) && onCheckout(findLocal(name)!)"
+            :title="entry.name"
+            @click="$event.detail < 2 && onCheckout(entry)"
           >
             <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
-            <span class="truncate">{{ name }}</span>
+            <span class="truncate">{{ entry.name }}</span>
           </button>
         </div>
 
@@ -350,7 +357,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             :key="entry.fullName"
             type="button"
             class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="onCheckout(entry)"
+            @click="$event.detail < 2 && onCheckout(entry)"
             @contextmenu="openRefMenu(entry, $event)"
           >
             <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
@@ -373,7 +380,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             :key="entry.fullName"
             type="button"
             class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="onCheckout(entry)"
+            @click="$event.detail < 2 && onCheckout(entry)"
             @contextmenu="openRefMenu(entry, $event)"
           >
             <Tag class="h-3.5 w-3.5 text-muted-foreground" />
