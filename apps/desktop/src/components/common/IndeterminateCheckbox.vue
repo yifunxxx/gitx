@@ -12,9 +12,9 @@ defineEmits<{ change: [event: Event] }>();
 const el = ref<HTMLInputElement | null>(null);
 
 watch(
-  () => [props.indeterminate, props.checked] as const,
-  ([ind]) => {
-    if (el.value) el.value.indeterminate = !!ind;
+  () => [el.value, props.indeterminate, props.checked] as const,
+  ([element, ind]) => {
+    if (element) element.indeterminate = !!ind;
   },
   { immediate: true },
 );

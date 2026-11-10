@@ -378,6 +378,7 @@
     "cannotRemoveLocked": "请先解锁再移除"
   },
   "commitTw": {
+    "changesTree": "更改文件树",
     "viewMode": "视图模式",
     "docked": "停靠",
     "window": "独立面板",

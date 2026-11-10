@@ -378,6 +378,7 @@
     "cannotRemoveLocked": "Unlock the worktree before removing"
   },
   "commitTw": {
+    "changesTree": "Changed files",
     "viewMode": "View Mode",
     "docked": "Docked",
     "window": "Window panel",

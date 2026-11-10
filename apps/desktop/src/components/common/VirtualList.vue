@@ -8,6 +8,7 @@ const props = withDefaults(
     getItemHeight?: (item: T, index: number) => number;
     overscan?: number;
     preserveScrollAnchor?: boolean;
+    scrollTabindex?: number;
     getKey: (item: T, index: number) => string | number;
   }>(),
   { overscan: 10 },
@@ -170,6 +171,7 @@ watch(
 defineExpose({
   el: root,
   pointerDown,
+  isIndexVisible: (index: number) => index >= start.value && index < end.value,
   scrollToIndex(index: number, align: "nearest" | "center" = "nearest") {
     if (!root.value || !props.items.length) return;
     ++scrollGeneration;
@@ -191,6 +193,7 @@ defineExpose({
   <div class="flex min-h-0 flex-1 flex-col">
     <div
       ref="root"
+      :tabindex="scrollTabindex"
       class="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
       @scroll.passive="onScroll"
       @pointerdown="onPointerDown"
