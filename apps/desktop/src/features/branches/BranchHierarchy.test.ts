@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, shallowMount } from "@vue/test-utils";
 import { reactive } from "vue";
+import VirtualList from "@/components/common/VirtualList.vue";
 import BranchesPane from "./BranchesPane.vue";
 import BranchesPopup from "./BranchesPopup.vue";
 
@@ -28,6 +29,13 @@ vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 const names = ["main", "feature/ui/button", "feature/api/button", "修复/界面/焦点"];
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   mocks.branches = reactive({
     filteredLocal: names.map((name) => ({
       name,
@@ -58,7 +66,7 @@ describe("popup recent branches and other references", () => {
   it("filters recent entries with the local results, including Chinese searches", async () => {
     mocks.branches.refs.recent = ["feature/ui/button", "修复/界面/焦点"];
     mocks.branches.filteredLocal = [mocks.branches.filteredLocal[3]];
-    const wrapper = shallowMount(BranchesPopup);
+    const wrapper = shallowMount(BranchesPopup, { global: { stubs: { VirtualList: false } } });
     expect(wrapper.text()).not.toContain("feature/ui/button");
     const recent = wrapper.findAll("button").find((button) => button.text() === "修复/界面/焦点")!;
     expect(recent.exists()).toBe(true);
@@ -74,7 +82,7 @@ describe("popup recent branches and other references", () => {
       "feature/ui/button",
       "feature/api/button",
     ];
-    const wrapper = shallowMount(BranchesPopup);
+    const wrapper = shallowMount(BranchesPopup, { global: { stubs: { VirtualList: false } } });
     const recentButtons = wrapper.findAll("button").filter((button) => button.text().includes("/"));
     expect(recentButtons.map((button) => button.text())).toEqual([
       "feature/ui/button",
@@ -92,7 +100,7 @@ describe("popup recent branches and other references", () => {
         mocks.branches.refs.recent = [entry.name];
       } else if (kind === "remoteBranch") mocks.branches.filteredRemote = [entry];
       else mocks.branches.filteredTags = [entry];
-      const wrapper = shallowMount(BranchesPopup);
+      const wrapper = shallowMount(BranchesPopup, { global: { stubs: { VirtualList: false } } });
       const branch = wrapper.findAll("button").find((button) => button.text() === entry.name)!;
       await branch.trigger("click", { detail: 1 });
       await branch.trigger("click", { detail: 2 });
@@ -111,7 +119,7 @@ describe.each([
 ] as const)("%s local branches", (kind, component) => {
   it("keeps a failed checkout open without a success message or duplicate refresh", async () => {
     mocks.branches.checkout.mockResolvedValue(false);
-    const wrapper = shallowMount(component);
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
     const branch = wrapper.get('button[aria-label="feature/ui/button"]');
     await branch.trigger(kind === "pane" ? "dblclick" : "click", { detail: 1 });
     await flushPromises();
@@ -124,7 +132,7 @@ describe.each([
 
   it("reports a completed checkout without refreshing the same stores twice", async () => {
     mocks.branches.checkout.mockResolvedValue(true);
-    const wrapper = shallowMount(component);
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
     const branch = wrapper.get('button[aria-label="feature/ui/button"]');
     await branch.trigger(kind === "pane" ? "dblclick" : "click", { detail: 1 });
     await flushPromises();
@@ -135,7 +143,7 @@ describe.each([
   });
 
   it("renders every nested branch with an unambiguous full-name label", () => {
-    const wrapper = shallowMount(component);
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
     for (const name of names) {
       expect(
         wrapper.findAll("button").filter((button) => button.attributes("aria-label") === name),
@@ -147,7 +155,7 @@ describe.each([
   });
 
   it("keeps favorite double-clicks separate from selection and checkout", async () => {
-    const wrapper = shallowMount(component);
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
     const favorite = wrapper.get('button[aria-label="branches.toggleFavorite feature/ui/button"]');
     expect(favorite.attributes("aria-pressed")).toBe("false");
     await favorite.trigger("click", { detail: 1 });
@@ -162,7 +170,7 @@ describe.each([
   });
 
   it("activates the exact nested branch once for a double-click sequence", async () => {
-    const wrapper = shallowMount(component);
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
     const branch = wrapper.get('button[aria-label="feature/api/button"]');
     await branch.trigger("click", { detail: 1 });
     await branch.trigger("click", { detail: 2 });
@@ -175,7 +183,7 @@ describe.each([
   });
 
   it("opens the nested branch context menu without selecting or checking out", async () => {
-    const wrapper = shallowMount(component);
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
     await wrapper
       .get('button[aria-label="修复/界面/焦点"]')
       .trigger("contextmenu", { clientX: 40, clientY: 50 });
@@ -187,7 +195,7 @@ describe.each([
 
   it("keeps full branch names when grouping is disabled or search narrows the result", async () => {
     mocks.settings.settings.git.groupBranchesByDirectory = false;
-    const wrapper = shallowMount(component);
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
     expect(wrapper.get('button[aria-label="feature/ui/button"]').text()).toContain(
       "feature/ui/button",
     );
@@ -196,6 +204,61 @@ describe.each([
     await flushPromises();
     expect(wrapper.get('button[aria-label="feature/ui/button"]').text()).toContain("button");
     expect(wrapper.find('button[aria-label="feature/api/button"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe.each([
+  ["pane", BranchesPane],
+  ["popup", BranchesPopup],
+] as const)("%s large reference list", (kind, component) => {
+  it("bounds mounted rows while scrolling across 6,000 refs, and recovers after filtering", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+      frames.push(callback),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const entries = (kind: string, prefix: string) =>
+      Array.from({ length: 2000 }, (_, i) => ({
+        name: `${prefix}${String(i).padStart(4, "0")}`,
+        fullName: `refs/${prefix}${i}`,
+        kind,
+        isHead: false,
+        isFavorite: false,
+      }));
+    mocks.branches.filteredLocal = entries("localBranch", "local/");
+    mocks.branches.filteredRemote = entries("remoteBranch", "origin/remote/");
+    mocks.branches.filteredTags = entries("tag", "v/");
+    mocks.settings.settings.git.groupBranchesByDirectory = false;
+    const wrapper = shallowMount(component, { global: { stubs: { VirtualList: false } } });
+    const port = wrapper.findComponent(VirtualList).get(".overflow-auto");
+    const scroll = async (top: number) => {
+      port.element.scrollTop = top;
+      await port.trigger("scroll");
+      for (const callback of frames.splice(0)) callback(0);
+      await flushPromises();
+    };
+    expect(wrapper.findAll("button[title]").length).toBeLessThan(40);
+    await scroll(3000 * 28);
+    expect(wrapper.findAll("button[title]").length).toBeLessThan(40);
+    const target = wrapper.get('button[aria-label="origin/remote/1000"]');
+    await target.trigger("click", { detail: 1 });
+    if (kind === "pane")
+      expect(mocks.log.setRevisions).toHaveBeenCalledWith(["origin/remote/1000"]);
+    else expect(mocks.branches.checkout.mock.calls.at(-1)?.[0].name).toBe("origin/remote/1000");
+    await target.trigger("contextmenu", { clientX: 30, clientY: 40 });
+    expect(wrapper.findComponent({ name: "ContextMenuSurface" }).props("open")).toBe(true);
+    await scroll(6003 * 28 - 400);
+    expect(wrapper.find('button[aria-label="v/1999"]').exists()).toBe(true);
+    expect(wrapper.findAll("button[title]").length).toBeLessThan(40);
+    mocks.branches.filteredLocal = [mocks.branches.filteredLocal[1999]];
+    mocks.branches.filteredRemote = [];
+    mocks.branches.filteredTags = [];
+    await flushPromises();
+    expect(port.element.scrollTop).toBe(0);
+    expect(wrapper.find('button[aria-label="local/1999"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

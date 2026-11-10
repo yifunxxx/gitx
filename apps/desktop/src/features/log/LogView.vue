@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatCommitTime as formatTime } from "@/lib/commitTime";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
@@ -68,17 +69,6 @@ watch(
     if (workspace.isRepo) void log.load(true);
   },
 );
-
-function formatTime(ts: number) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(ts * 1000));
-  } catch {
-    return String(ts);
-  }
-}
 
 function mapStatus(s: string): FileChangeKind {
   switch (s) {
@@ -299,12 +289,14 @@ async function ctxCompareVersions() {
     return;
   }
   await compare.compareVersions(log.selectedShas[0]!, log.selectedShas[1]!);
+  layout.bottomMaximized = false;
   closeCtx();
 }
 
 async function ctxRepoAtRev() {
   if (!log.selectedSha) return;
   await repoAtRev.open(log.selectedSha);
+  layout.bottomMaximized = false;
   closeCtx();
 }
 
@@ -316,7 +308,10 @@ async function ctxCombined() {
     if (t) await compare.showCombined(t);
     return t;
   })();
-  if (tab) layout.activeEditorKind = "compare";
+  if (tab) {
+    layout.activeEditorKind = "compare";
+    layout.bottomMaximized = false;
+  }
   closeCtx();
 }
 
@@ -324,10 +319,12 @@ async function openChangedFile(path: string, origPath: string | null) {
   if (!log.selectedSha) return;
   await diffs.openRevDiff(path, `${log.selectedSha}^`, log.selectedSha, origPath ?? undefined);
   layout.activeEditorKind = "diff";
+  layout.bottomMaximized = false;
 }
 
 async function showFileHistory(path: string) {
   await history.openFileHistory(path);
+  layout.bottomMaximized = false;
 }
 
 async function ctxCherryPick() {

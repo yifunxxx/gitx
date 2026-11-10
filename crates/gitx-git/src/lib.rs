@@ -23,6 +23,7 @@ mod rewrite_ops;
 mod rewrite_undo;
 mod runner;
 mod scheduler;
+mod shelf_export;
 mod shelf_ops;
 mod smart_ops;
 mod stash_ops;
@@ -30,6 +31,7 @@ mod status;
 mod stderr;
 mod submodule_ops;
 mod sync_ops;
+mod update_local_changes;
 mod worktree_ops;
 
 pub use detect::{

@@ -10,6 +10,13 @@ vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/composables/useConfirm", () => ({ promptDialog: vi.fn() }));
 enableAutoUnmount(afterEach);
 beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   mocks.workspace = reactive({ isRepo: true, repoPath: "A", navigationToken: () => 0 });
   mocks.store = reactive({
     stashes: [
@@ -44,9 +51,28 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });
 const create = () => mount(StashShelfView, { props: { mode: "stash" }, attachTo: document.body });
+
+it("keeps thousands of stashes bounded and focuses offscreen End/Home targets", async () => {
+  mocks.store.stashes = Array.from({ length: 5000 }, (_, index) => ({
+    sha: `stash-${index}`,
+    index,
+    message: `saved ${index}`,
+  }));
+  const wrapper = create();
+  expect(wrapper.findAll('[data-entry="stash"]').length).toBeLessThan(40);
+  await wrapper.get('[data-stash-sha="stash-0"]').trigger("keydown", { key: "End" });
+  await flushPromises();
+  expect(mocks.store.selectedStashSha).toBe("stash-4999");
+  expect(document.activeElement).toBe(wrapper.get('[data-stash-sha="stash-4999"]').element);
+  expect(wrapper.findAll('[data-entry="stash"]').length).toBeLessThan(40);
+  await wrapper.get('[data-stash-sha="stash-4999"]').trigger("keydown", { key: "Home" });
+  await flushPromises();
+  expect(document.activeElement).toBe(wrapper.get('[data-stash-sha="stash-0"]').element);
+});
 
 it("selects with clicks and keyboard without applying on double click", async () => {
   const wrapper = create();

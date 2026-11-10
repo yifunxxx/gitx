@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import VirtualList from "@/components/common/VirtualList.vue";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -273,14 +274,28 @@ async function ok() {
             />
           </label>
         </div>
-        <div class="mt-3 h-32 overflow-auto rounded border p-2 font-mono text-[11px]" :aria-busy="loading">
+        <div
+          class="mt-3 flex h-32 flex-col overflow-hidden rounded border p-2 font-mono text-[11px]"
+          :aria-busy="loading"
+        >
           <p v-if="loading" role="status" class="text-muted-foreground">{{ t("common.loading") }}</p>
           <template v-else-if="preview">
             <div v-if="!preview.commits.length" class="text-muted-foreground">
               {{ t("syncUi.noOutgoingCommits") }}
             </div>
-            <div v-for="c in preview.commits" :key="c">{{ c }}</div>
-            <div v-if="preview.commitsTruncated" class="mt-1 text-muted-foreground">
+            <VirtualList
+              v-else
+              :items="preview.commits"
+              :item-height="22"
+              :get-key="(_c, index) => index"
+            >
+              <template #default="{ item: c }"
+                ><div class="flex h-full min-w-0 items-center" :title="c">
+                  <span class="truncate">{{ c }}</span>
+                </div></template
+              >
+            </VirtualList>
+            <div v-if="preview.commitsTruncated" class="mt-1 shrink-0 text-muted-foreground">
               {{ t("syncUi.previewTruncated") }}
             </div>
           </template>

@@ -13,6 +13,9 @@ import { formatErrorMessage } from "@/lib/errors";
 import { handleAuthFailure } from "@/composables/useCredentials";
 import { i18n } from "@/i18n";
 import { submoduleFeedback } from "@/lib/submoduleFeedback";
+import { useConflictsStore } from "./conflictsStore";
+import { useRewriteStore } from "./rewriteStore";
+import { useStashShelfStore } from "./stashShelfStore";
 
 export const useSyncStore = defineStore("sync", () => {
   const lastUpdate = ref<UpdateInfo | null>(null);
@@ -165,10 +168,24 @@ export const useSyncStore = defineStore("sync", () => {
     });
     const run = async () => {
       jobs.progress(jobId, { message: "Fetching & updating…" });
-      const info = await getBackend().updateProjectRun({
-        path,
-        strategy,
-      });
+      const info = await getBackend()
+        .updateProjectRun({
+          path,
+          strategy,
+        })
+        .catch(async (error) => {
+          // An update can stop after changing HEAD, creating conflicts or saving
+          // local work. Publish that state before showing the recovery message.
+          if (request === generation) {
+            await Promise.allSettled([
+              afterSync(request),
+              useConflictsStore().refresh(),
+              useRewriteStore().refreshOpState(),
+              useStashShelfStore().refresh(),
+            ]);
+          }
+          throw error;
+        });
       if (request !== generation) return info;
       lastUpdate.value = info;
       const moduleFeedback = info.submodules ? submoduleFeedback(info.submodules) : null;

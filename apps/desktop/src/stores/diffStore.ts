@@ -5,6 +5,8 @@ import { formatErrorMessage } from "@/lib/errors";
 import type { DiffFileResult, DiffSide, IgnoreWhitespace } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
+import { sameDiffResult } from "@/features/diff/sameDiffResult";
+import { diffViewKey, type DiffPaneSide, type DiffPaneSnapshot, type DiffPaneViewState } from "@/features/diff/diffViewState";
 
 export type DiffTab = {
   id: string;
@@ -24,24 +26,18 @@ export type DiffTab = {
   ignoreWhitespace: IgnoreWhitespace;
   collapseUnchanged: boolean;
   kind: "file" | "combined" | "compare";
-  /** Content fingerprint of last successful load (path+oids/size proxy). */
-  contentKey?: string;
+  /** Changes only when this tab receives different content. */
+  contentVersion?: number;
 };
-
-function resultContentKey(result: DiffFileResult): string {
-  // Equal lengths and hunk headers do not imply equal content.
-  return JSON.stringify(result);
-}
 
 export const useDiffStore = defineStore("diff", () => {
   const tabs = ref<DiffTab[]>([]);
   const activeId = ref<string | null>(null);
-  /**
-   * Bumped on every successful result assign. DiffViewer keys off this so Vue
-   * always tears down CodeMirror when IPC finishes — even if a caller held a
-   * raw (non-proxy) tab object (GIT-34: tab-flip-only refresh).
-   */
-  const paintEpoch = ref(0);
+  let nextContentVersion = 0;
+  const paneStates = new Map<string, {
+    key: string;
+    panes: Partial<Record<DiffPaneSide, DiffPaneViewState>>;
+  }>();
   /** Per-tab load generation — stale responses are dropped. */
   const loadGen = new Map<string, number>();
   let nextGeneration = 0;
@@ -50,6 +46,7 @@ export const useDiffStore = defineStore("diff", () => {
     () => workspace.repoPath,
     () => {
       loadGen.clear();
+      paneStates.clear();
       tabs.value = [];
       activeId.value = null;
       lastPerf.value = null;
@@ -79,6 +76,24 @@ export const useDiffStore = defineStore("diff", () => {
     return tabs.value.find((t) => t.id === id);
   }
 
+  function savePaneViewState(id: string, snapshot: DiffPaneSnapshot) {
+    const tab = liveTab(id);
+    // An outgoing pane may finish unmounting after a close, refresh or navigation.
+    if (!tab || diffViewKey(tab) !== snapshot.key) return;
+    let saved = paneStates.get(id);
+    if (!saved || saved.key !== snapshot.key) {
+      saved = { key: snapshot.key, panes: {} };
+      paneStates.set(id, saved);
+    }
+    saved.panes[snapshot.side] = snapshot.state;
+  }
+
+  function getPaneViewState(id: string, side: DiffPaneSide) {
+    const tab = liveTab(id);
+    const saved = paneStates.get(id);
+    return tab && saved?.key === diffViewKey(tab) ? saved.panes[side] : undefined;
+  }
+
   /**
    * Patch through the array proxy (or replace the slot). Mutating a *raw*
    * object that was pushed into `tabs` bypasses Vue setters and leaves Diff
@@ -90,9 +105,6 @@ export const useDiffStore = defineStore("diff", () => {
     // Immutable slot replace — never mutate a raw insert object (bypasses Vue).
     const next: DiffTab = { ...tabs.value[i]!, ...patch };
     tabs.value = [...tabs.value.slice(0, i), next, ...tabs.value.slice(i + 1)];
-    if ("result" in patch || "contentKey" in patch) {
-      paintEpoch.value += 1;
-    }
   }
 
   function ensureTab(init: DiffTab): DiffTab {
@@ -135,7 +147,6 @@ export const useDiffStore = defineStore("diff", () => {
     // Instant reactivation from cache. Soft refresh only when forced (e.g. after stage).
     if (tab.result) {
       if (opts?.force) await reloadTab(id, { soft: true });
-      else paintEpoch.value += 1; // force CM remount when switching back to cached tab
       return;
     }
     await reloadTab(id);
@@ -149,7 +160,8 @@ export const useDiffStore = defineStore("diff", () => {
   ) {
     const workspace = useWorkspaceStore();
     if (!workspace.repoPath || !workspace.repoId) return;
-    const id = `rev:${leftRev}:${rightRev}:${filePath}`;
+    const originalPath = leftPath && leftPath !== filePath ? leftPath : undefined;
+    const id = `rev:${JSON.stringify([leftRev, rightRev, filePath, originalPath ?? null])}`;
     const tab = ensureTab({
       id,
       path: filePath,
@@ -157,7 +169,7 @@ export const useDiffStore = defineStore("diff", () => {
       right: "worktree",
       leftRev,
       rightRev,
-      leftPath,
+      leftPath: originalPath,
       title: `${filePath.split(/[\\/]/).pop() ?? filePath} (${leftRev.slice(0, 7)}…${rightRev.slice(0, 7)})`,
       result: null,
       loading: true,
@@ -168,11 +180,8 @@ export const useDiffStore = defineStore("diff", () => {
     });
     activeId.value = id;
     useLayoutStore().activeEditorKind = "diff";
-    if (tab.result) {
-      paintEpoch.value += 1;
-      return;
-    }
-    await reloadTab(id, { leftPath });
+    if (tab.result) return;
+    await reloadTab(id);
   }
 
   async function reloadTab(
@@ -225,13 +234,13 @@ export const useDiffStore = defineStore("diff", () => {
       }
       if (!isCurrent(id, gen)) return;
       const prev = liveTab(id)?.result;
-      const key = resultContentKey(result);
-      if (opts?.soft && liveTab(id)?.contentKey === key && prev) {
+      if (prev && sameDiffResult(prev, result)) {
         patchTab(id, { textsLoaded: includeTexts });
         // Unchanged content — keep paint, skip assign thrash.
         return;
       }
-      patchTab(id, { result, contentKey: key, textsLoaded: includeTexts });
+      paneStates.delete(id);
+      patchTab(id, { result, contentVersion: ++nextContentVersion, textsLoaded: includeTexts });
       const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
       lastPerf.value = {
         id,
@@ -252,6 +261,7 @@ export const useDiffStore = defineStore("diff", () => {
 
   function closeTab(id: string) {
     bumpGen(id);
+    paneStates.delete(id);
     tabs.value = tabs.value.filter((t) => t.id !== id);
     loadGen.delete(id);
     if (activeId.value === id) {
@@ -260,6 +270,7 @@ export const useDiffStore = defineStore("diff", () => {
   }
 
   function setUnified(id: string, unified: boolean) {
+    if (liveTab(id)?.unified !== unified) paneStates.delete(id);
     patchTab(id, { unified });
   }
 
@@ -275,6 +286,7 @@ export const useDiffStore = defineStore("diff", () => {
   async function setCollapseUnchanged(id: string, value: boolean) {
     const tab = liveTab(id);
     if (!tab) return;
+    if (tab.collapseUnchanged !== value) paneStates.delete(id);
     patchTab(id, { collapseUnchanged: value });
     // Expanding needs full texts; fetch lazily if missing.
     const live = liveTab(id);
@@ -316,8 +328,9 @@ export const useDiffStore = defineStore("diff", () => {
   return {
     tabs,
     activeId,
-    paintEpoch,
     lastPerf,
+    savePaneViewState,
+    getPaneViewState,
     openFileDiff,
     openRevDiff,
     closeTab,

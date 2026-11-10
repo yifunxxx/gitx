@@ -122,6 +122,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     operation: (path: string, current: () => boolean) => Promise<unknown>,
     successKey?: string,
     emptyKey = "stash.noChanges",
+    refreshAfter = true,
   ) {
     const path = workspace.repoPath;
     if (!path || !workspace.isRepo || pendingPaths.value.has(path)) return false;
@@ -136,7 +137,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     try {
       if ((await operation(path, current)) === false) return false;
       if (!current()) return false;
-      await refreshRelated();
+      if (refreshAfter) await refreshRelated();
       if (current() && successKey) toast({ title: t(successKey) });
       return current();
     } catch (e) {
@@ -144,7 +145,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
         const message =
           invokeErrorCode(e) === "nothingToCommit" ? t(emptyKey) : formatErrorMessage(e);
         // Failed apply may still have produced conflicts or partial changes.
-        await refreshRelated();
+        if (refreshAfter) await refreshRelated();
         if (current()) {
           error.value = message;
           toast({ title: message });
@@ -306,6 +307,27 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     }, "shelf.deleted");
   }
 
+  async function promptExportShelf(id: string) {
+    if (!shelves.value.some((entry) => entry.id === id)) return false;
+    return mutate(
+      async (path, current) => {
+        if (!isTauri()) throw new Error(t("shelf.exportDesktopOnly"));
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        if (!current()) return false;
+        const output = await save({
+          title: t("shelf.exportPatch"),
+          defaultPath: `shelf-${id}.patch`,
+          filters: [{ name: t("shelf.patchFiles"), extensions: ["patch", "diff"] }],
+        });
+        if (!output || !current() || !shelves.value.some((entry) => entry.id === id)) return false;
+        await getBackend().shelfExport({ path, id, output });
+      },
+      "shelf.exported",
+      "shelf.noChanges",
+      false,
+    );
+  }
+
   async function promptImportShelf() {
     return mutate(
       async (path, current) => {
@@ -393,6 +415,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     unshelve,
     promptShelf,
     promptImportShelf,
+    promptExportShelf,
     promptRenameShelf,
     deleteShelf,
     renameShelf,

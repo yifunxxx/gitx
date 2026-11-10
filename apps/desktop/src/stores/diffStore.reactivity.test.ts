@@ -67,16 +67,16 @@ describe("diffStore reactivity (GIT-34)", () => {
     expect(diffs.tabs[0]?.result?.path).toBe("A.java");
     // Watcher must fire from patchTab — not only after an unrelated remount.
     expect(seen).toContain("A.java");
-    expect(diffs.paintEpoch).toBeGreaterThan(0);
+    expect(diffs.tabs[0]?.contentVersion).toBeGreaterThan(0);
   });
 
-  it("bumps paintEpoch when switching between cached file tabs", async () => {
+  it("reactivates cached file tabs without changing their content versions", async () => {
     const diffs = useDiffStore();
     await diffs.openFileDiff("A.java", "index", "worktree");
     await diffs.openFileDiff("B.java", "index", "worktree");
-    const epochAfterB = diffs.paintEpoch;
+    const versions = diffs.tabs.map((tab) => tab.contentVersion);
     await diffs.openFileDiff("A.java", "index", "worktree"); // cached
     expect(diffs.activeId).toBe("index:worktree:A.java");
-    expect(diffs.paintEpoch).toBeGreaterThan(epochAfterB);
+    expect(diffs.tabs.map((tab) => tab.contentVersion)).toEqual(versions);
   });
 });

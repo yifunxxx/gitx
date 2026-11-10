@@ -15,7 +15,8 @@ import NewBranchDialog from "./NewBranchDialog.vue";
 import RenameBranchDialog from "./RenameBranchDialog.vue";
 import CompareBranchesDialog from "./CompareBranchesDialog.vue";
 import CreateTagDialog from "./CreateTagDialog.vue";
-import { buildRefTree, flattenRefTree } from "./buildRefTree";
+import VirtualList from "@/components/common/VirtualList.vue";
+import { branchListRows, type BranchListRow } from "./branchListRows";
 import type { RefEntry } from "@/lib/backend";
 import { runAction } from "@/actions";
 import type { ActionContext } from "@/actions";
@@ -75,21 +76,22 @@ const groupByDir = computed(() => settings.settings?.git?.groupBranchesByDirecto
 const showRecent = computed(() => settings.settings?.git?.showRecentBranches ?? true);
 const showTags = computed(() => settings.settings?.git?.showTags ?? true);
 
-const localRefs = computed(
-  () => new Map(branches.filteredLocal.map((entry) => [entry.name, entry])),
+const rows = computed(() =>
+  branchListRows(
+    branches.filteredLocal,
+    branches.filteredRemote,
+    branches.filteredTags,
+    groupByDir.value,
+    showTags.value,
+    showRecent.value ? (branches.refs?.recent ?? []) : [],
+  ),
 );
-const recentRefs = computed(() =>
-  [...new Set(branches.refs?.recent ?? [])]
-    .map((name) => localRefs.value.get(name))
-    .filter((entry): entry is RefEntry => entry !== undefined),
-);
-const localRows = computed(() =>
-  flattenRefTree(
-    buildRefTree(
-      branches.filteredLocal.map((entry) => entry.name),
-      groupByDir.value,
-    ),
-  ).map((row) => ({ ...row, entry: localRefs.value.get(row.refName ?? row.id) })),
+const rowKey = (row: BranchListRow) => row.key;
+const list = ref<{ scrollToIndex: (index: number) => void } | null>(null);
+watch(
+  () => branches.search,
+  () => list.value?.scrollToIndex(0),
+  { flush: "post" },
 );
 
 onMounted(() => {
@@ -285,120 +287,82 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
         >
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto text-sm">
-        <div
-          v-if="showRecent && recentRefs.length"
-          class="px-2 py-1"
-          role="group"
-          :aria-label="t('branches.recent')"
-        >
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
-            {{ t("branches.recent") }}
-          </div>
-          <button
-            v-for="entry in recentRefs"
-            :key="'r-' + entry.fullName"
-            type="button"
-            class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            :title="entry.name"
-            @click="$event.detail < 2 && onCheckout(entry)"
-          >
-            <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
-            <span class="truncate">{{ entry.name }}</span>
-          </button>
-        </div>
-
-        <div class="px-2 py-1">
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
-            {{ t("branches.local") }}
-          </div>
-          <template v-for="row in localRows" :key="row.id">
-            <div
-              v-if="row.kind === 'folder'"
-              class="truncate py-0.5 pr-2 text-[11px] text-muted-foreground"
-              :style="{ paddingLeft: `${8 + Math.min(row.depth, 6) * 12}px` }"
-              :title="row.id"
-            >
-              {{ row.label }}/
-            </div>
-            <div
-              v-else-if="row.entry"
-              class="flex w-full items-center gap-1.5 rounded pr-2 text-left hover:bg-accent"
-              :style="{ paddingLeft: `${8 + Math.min(row.depth, 6) * 12}px` }"
-              :class="{ 'font-medium': row.entry.isHead }"
-              @contextmenu="openRefMenu(row.entry, $event)"
-            >
-              <button
-                type="button"
-                class="shrink-0 rounded py-1 text-muted-foreground hover:text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                :aria-label="t('branches.toggleFavorite', { name: row.entry.name })"
-                :aria-pressed="row.entry.isFavorite"
-                @click.stop="$event.detail < 2 && branches.toggleFavorite(row.entry)"
-              >
-                <Star
-                  class="h-3 w-3"
-                  :class="row.entry.isFavorite ? 'fill-current text-warning' : ''"
-                />
-              </button>
-              <button
-                type="button"
-                class="flex min-w-0 flex-1 items-center gap-1.5 rounded py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                :aria-label="row.entry.name"
-                :title="row.entry.name"
-                @click="$event.detail < 2 && onCheckout(row.entry)"
-              >
-                <GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span class="min-w-0 flex-1 truncate">{{ row.label }}</span>
-                <span v-if="row.entry.isHead" class="rounded bg-muted px-1 text-[10px]">HEAD</span>
-                <span class="shrink-0 text-[10px] text-muted-foreground">
-                  <template v-if="row.entry.behind">↓{{ row.entry.behind }}</template>
-                  <template v-if="row.entry.ahead">↑{{ row.entry.ahead }}</template>
-                </span>
-              </button>
-            </div>
-          </template>
-        </div>
-
-        <div class="px-2 py-1">
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
-            {{ t("branches.remote") }}
-          </div>
-          <button
-            v-for="entry in branches.filteredRemote"
-            :key="entry.fullName"
-            type="button"
-            class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="$event.detail < 2 && onCheckout(entry)"
-            @contextmenu="openRefMenu(entry, $event)"
-          >
-            <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
-            <span class="truncate">{{ entry.name }}</span>
-          </button>
+      <VirtualList
+        ref="list"
+        :items="rows"
+        :item-height="28"
+        :get-key="rowKey"
+        :preserve-scroll-anchor="true"
+        class="branch-list min-w-0 text-sm"
+        :style="{ height: `${Math.min(rows.length * 28, 480)}px`, maxHeight: 'calc(70vh - 112px)' }"
+      >
+        <template #default="{ item: row }">
           <div
-            v-if="!branches.filteredRemote.length"
-            class="px-2 py-1 text-[11px] text-muted-foreground"
+            v-if="row.kind === 'header'"
+            class="flex h-full items-center px-3 text-[11px] font-medium uppercase text-muted-foreground"
           >
+            {{ t(`branches.${row.section}`) }}
+          </div>
+          <div
+            v-else-if="row.kind === 'folder'"
+            class="flex h-full min-w-0 items-center pr-2 text-[11px] text-muted-foreground"
+            :style="{ paddingLeft: `${12 + Math.min(row.depth, 6) * 12}px` }"
+            :title="row.title"
+          >
+            <span class="truncate">{{ row.label }}/</span>
+          </div>
+          <div
+            v-else-if="row.kind === 'ref'"
+            class="mx-1 flex h-full min-w-0 items-center gap-1.5 rounded pr-2 text-left hover:bg-accent"
+            :style="{ paddingLeft: `${8 + Math.min(row.depth, 6) * 12}px` }"
+            :class="{ 'font-medium': row.entry.isHead }"
+            @contextmenu="openRefMenu(row.entry, $event)"
+          >
+            <button
+              v-if="row.section === 'local'"
+              type="button"
+              class="shrink-0 rounded py-1 text-muted-foreground hover:text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :aria-label="t('branches.toggleFavorite', { name: row.entry.name })"
+              :aria-pressed="row.entry.isFavorite"
+              @click.stop="$event.detail < 2 && branches.toggleFavorite(row.entry)"
+            >
+              <Star
+                class="h-3 w-3"
+                :class="row.entry.isFavorite ? 'fill-current text-warning' : ''"
+              />
+            </button>
+            <button
+              type="button"
+              class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :aria-label="row.entry.name"
+              :title="row.entry.name"
+              @click="$event.detail < 2 && onCheckout(row.entry)"
+            >
+              <Tag
+                v-if="row.entry.kind === 'tag'"
+                class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              />
+              <GitBranch v-else class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span class="min-w-0 flex-1 truncate">{{ row.label }}</span>
+              <span
+                v-if="row.entry.isHead && row.section === 'local'"
+                class="rounded bg-muted px-1 text-[10px]"
+                >HEAD</span
+              >
+              <span
+                v-if="row.section === 'local'"
+                class="shrink-0 text-[10px] text-muted-foreground"
+              >
+                <template v-if="row.entry.behind">↓{{ row.entry.behind }}</template>
+                <template v-if="row.entry.ahead">↑{{ row.entry.ahead }}</template>
+              </span>
+            </button>
+          </div>
+          <div v-else class="flex h-full items-center px-3 text-[11px] text-muted-foreground">
             {{ t("branches.noRemotes") }}
           </div>
-        </div>
-
-        <div v-if="showTags" class="px-2 py-1">
-          <div class="px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground">
-            {{ t("branches.tags") }}
-          </div>
-          <button
-            v-for="entry in branches.filteredTags"
-            :key="entry.fullName"
-            type="button"
-            class="flex w-full items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-            @click="$event.detail < 2 && onCheckout(entry)"
-            @contextmenu="openRefMenu(entry, $event)"
-          >
-            <Tag class="h-3.5 w-3.5 text-muted-foreground" />
-            <span class="truncate">{{ entry.name }}</span>
-          </button>
-        </div>
-      </div>
+        </template>
+      </VirtualList>
 
       <ContextMenuSurface
         :open="!!menuFor"

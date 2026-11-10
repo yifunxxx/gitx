@@ -13,6 +13,7 @@ import type { DiffHunk } from "@/lib/backend";
 import { computeSideInlineRanges, computeUnifiedInlineRanges, type CharRange } from "./inlineDiff";
 import { countHunkLines } from "./collapsedDiff";
 import { contentFingerprint } from "./diffPaint";
+import type { DiffPaneSnapshot, DiffPaneViewState } from "./diffViewState";
 
 const props = defineProps<{
   text: string;
@@ -25,12 +26,14 @@ const props = defineProps<{
   lineMap?: number[] | null;
   /** Skip expensive char-level highlights for huge diffs. */
   enableInline?: boolean;
-  /** External remount token (tab id + content key) so selection changes always refresh. */
+  /** Identifies this tab's content and display mode. */
   paintKey?: string;
+  initialViewState?: DiffPaneViewState;
 }>();
 
 const emit = defineEmits<{
   scroll: [pos: { left: number; top: number }];
+  saveViewState: [snapshot: DiffPaneSnapshot];
 }>();
 
 const hostRef = ref<HTMLDivElement | null>(null);
@@ -41,6 +44,9 @@ let onScroll: (() => void) | null = null;
 let mountToken = 0;
 let lastFingerprint = "";
 let resizeObserver: ResizeObserver | null = null;
+let mountedKey = "";
+let selectionVisible = false;
+let detachSelection: (() => void) | null = null;
 
 const insertLine = Decoration.line({ class: "cm-diff-insert" });
 const deleteLine = Decoration.line({ class: "cm-diff-delete" });
@@ -331,8 +337,14 @@ function mountNow() {
     return;
   }
   lastFingerprint = fp;
+  const saved = !view && props.initialViewState?.docLength === content.length
+    ? props.initialViewState : undefined;
+  mountedKey = props.paintKey ?? "";
+  selectionVisible = saved?.selectionVisible ?? false;
 
   detachScroll();
+  detachSelection?.();
+  detachSelection = null;
   view?.destroy();
   view = null;
   // Clear any leftover CM DOM from a prior view before recreating.
@@ -344,8 +356,10 @@ function mountNow() {
 
   view = new EditorView({
     parent: hostEl,
+    scrollTo: saved?.scroll,
     state: EditorState.create({
       doc: content,
+      selection: saved?.selection,
       extensions: [
         lineNumberExt(),
         gutter({
@@ -359,9 +373,68 @@ function mountNow() {
     }),
   });
   attachScroll();
+  attachSelection(view);
   attachResize(hostEl);
   view.requestMeasure();
+  if (saved?.selectionVisible) restoreVisibleSelection(view);
   forceHostLayout(hostEl);
+}
+
+function restoreVisibleSelection(editor: EditorView) {
+  // Restore the native read-only selection after CM has rendered the saved viewport.
+  // Keep keyboard focus on the tab/toolbar that the user used to navigate.
+  editor.requestMeasure({
+    read: () => {
+      const { anchor, head } = editor.state.selection.main;
+      const visible = (pos: number) => editor.visibleRanges.some(
+        ({ from, to }) => pos >= from && pos <= to,
+      );
+      return visible(anchor) && visible(head)
+        ? { anchor: editor.domAtPos(anchor), head: editor.domAtPos(head) }
+        : null;
+    },
+    write: (positions) => {
+      if (view !== editor || !positions) return;
+      const { anchor, head } = positions;
+      editor.dom.ownerDocument.getSelection()?.setBaseAndExtent(
+        anchor.node, anchor.offset, head.node, head.offset,
+      );
+    },
+  });
+}
+
+function saveViewState() {
+  if (!view || !mountedKey) return;
+  emit("saveViewState", {
+    key: mountedKey,
+    side: props.side,
+    state: {
+      scroll: view.scrollSnapshot(),
+      selection: view.state.selection,
+      selectionVisible,
+      docLength: view.state.doc.length,
+    },
+  });
+}
+
+function attachSelection(editor: EditorView) {
+  const document = editor.dom.ownerDocument;
+  const changed = () => {
+    const selection = document.getSelection();
+    const anchor = selection?.anchorNode;
+    const head = selection?.focusNode;
+    if (!anchor || !head) return;
+    if (editor.contentDOM.contains(anchor) && editor.contentDOM.contains(head)) {
+      selectionVisible = !selection.isCollapsed;
+    } else {
+      const element = anchor.nodeType === Node.ELEMENT_NODE ? anchor as Element : anchor.parentElement;
+      // Remember the last selected pane even if navigation selects a file name
+      // before unmount. Selecting the other diff pane transfers ownership.
+      if (element?.closest("[data-diff-pane]")) selectionVisible = false;
+    }
+  };
+  document.addEventListener("selectionchange", changed);
+  detachSelection = () => document.removeEventListener("selectionchange", changed);
 }
 
 function scheduleMount() {
@@ -411,6 +484,9 @@ defineExpose({ getScroller, applyScroll });
 onMounted(() => scheduleMount());
 onBeforeUnmount(() => {
   mountToken += 1;
+  saveViewState();
+  detachSelection?.();
+  detachSelection = null;
   detachScroll();
   detachResize();
   view?.destroy();
@@ -434,5 +510,5 @@ watch(
 </script>
 
 <template>
-  <div ref="hostRef" class="h-full min-h-0 overflow-hidden" />
+  <div ref="hostRef" data-diff-pane class="h-full min-h-0 overflow-hidden" />
 </template>

@@ -401,6 +401,9 @@ export const commands = {
   async shelfRename(req: ShelfRenameReq): Promise<ShelfEntry> {
     return await TAURI_INVOKE("shelf_rename", { req });
   },
+  async shelfExport(req: ShelfExportReq): Promise<PatchCreateResult> {
+    return await TAURI_INVOKE("shelf_export", { req });
+  },
   async shelfImport(req: ShelfImportReq): Promise<ShelfEntry> {
     return await TAURI_INVOKE("shelf_import", { req });
   },
@@ -1439,6 +1442,7 @@ export type ShelfEntry = {
   binary: boolean;
   system: boolean;
 };
+export type ShelfExportReq = { path: string; id: string; output: string };
 export type ShelfIdReq = { path: string; id: string };
 export type ShelfImportReq = { path: string; patchFile: string; message: string };
 export type ShelfPathReq = { path: string };

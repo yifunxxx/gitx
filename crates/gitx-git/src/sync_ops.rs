@@ -260,22 +260,16 @@ impl GitRunner {
 
         match strategy {
             UpdateMethod::Merge => {
-                let inv = GitInvocation::new(cwd, ["merge", "--no-edit", "@{u}"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                self.run(inv, cancel).await?;
+                self.update_preserving_changes(cwd, &["merge", "--no-edit", "@{u}"], cancel)
+                    .await?;
             }
             UpdateMethod::Rebase => {
-                let inv = GitInvocation::new(cwd, ["rebase", "@{u}"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                self.run(inv, cancel).await?;
+                self.update_preserving_changes(cwd, &["rebase", "@{u}"], cancel)
+                    .await?;
             }
             UpdateMethod::Reset => {
-                let inv = GitInvocation::new(cwd, ["reset", "--keep", "@{u}"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                self.run(inv, cancel).await?;
+                self.update_preserving_changes(cwd, &["reset", "--keep", "@{u}"], cancel)
+                    .await?;
             }
         }
 

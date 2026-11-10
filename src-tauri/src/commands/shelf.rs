@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use gitx_core::{AppError, ErrorCode, ShelfEntry};
+use gitx_core::{AppError, ErrorCode, PatchCreateResult, ShelfEntry};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -66,6 +66,35 @@ pub struct ShelfImportReq {
     pub path: String,
     pub patch_file: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfExportReq {
+    pub path: String,
+    pub id: String,
+    pub output: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn shelf_export(
+    state: State<'_, AppState>,
+    req: ShelfExportReq,
+) -> Result<PatchCreateResult, AppError> {
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.shelf_export_patch(
+        PathBuf::from(&req.path).as_path(),
+        &req.id,
+        PathBuf::from(&req.output).as_path(),
+        &cancel,
+    )
+    .await
 }
 
 async fn emit_cmd(app: &AppHandle, line: String) {

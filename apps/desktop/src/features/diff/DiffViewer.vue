@@ -23,6 +23,7 @@ import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 import { normalizeEolForDisplay } from "./diffPaint";
 import { expandUnifiedHunks, unifiedLineMap } from "./expandedDiff";
+import { diffViewKey } from "./diffViewState";
 
 const props = defineProps<{ tabId: string }>();
 const { t } = useI18n();
@@ -70,10 +71,9 @@ const rightText = computed(() => {
 
 const enableInline = computed(() => countHunkLines(visibleHunks.value) <= 900);
 
-/** Forces CodeMirror remount when IPC result lands or selection changes (GIT-34). */
+/** Rebuild panes only for this tab's content or display mode. */
 const paintKey = computed(
-  () =>
-    `${props.tabId}|e${diffs.paintEpoch}|${tab.value?.contentKey ?? ""}|${tab.value?.path ?? ""}|${tab.value?.collapseUnchanged ? "c" : "e"}|${tab.value?.unified ? "u" : "s"}`,
+  () => tab.value ? diffViewKey(tab.value) : "",
 );
 
 function localizeSideLabel(label: string | undefined): string {
@@ -302,6 +302,8 @@ async function stageSelectedLines() {
           :line-map="unifiedLineMap(unifiedHunks)"
           :paint-key="paintKey"
           :enable-inline="enableInline"
+          :initial-view-state="diffs.getPaneViewState(tabId, 'unified')"
+          @save-view-state="diffs.savePaneViewState(tabId, $event)"
         />
       </div>
       <div v-else class="grid min-h-0 flex-1 grid-cols-2">
@@ -316,6 +318,8 @@ async function stageSelectedLines() {
             :changed-lines="collapsed?.left.changed ?? null"
             :line-map="collapsed?.left.lineMap ?? null"
             :enable-inline="enableInline"
+            :initial-view-state="diffs.getPaneViewState(tabId, 'left')"
+            @save-view-state="diffs.savePaneViewState(tabId, $event)"
             @scroll="onLeftScroll"
           />
         </div>
@@ -330,6 +334,8 @@ async function stageSelectedLines() {
             :changed-lines="collapsed?.right.changed ?? null"
             :line-map="collapsed?.right.lineMap ?? null"
             :enable-inline="enableInline"
+            :initial-view-state="diffs.getPaneViewState(tabId, 'right')"
+            @save-view-state="diffs.savePaneViewState(tabId, $event)"
             @scroll="onRightScroll"
           />
         </div>

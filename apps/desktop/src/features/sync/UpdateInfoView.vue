@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useSyncStore } from "@/stores/syncStore";
+import VirtualList from "@/components/common/VirtualList.vue";
 import PathTreeList from "@/components/files/PathTreeList.vue";
 import type { ChangedFile } from "@/lib/backend";
 import { statusClass } from "@/features/commit/statusColor";
@@ -88,16 +89,26 @@ function mapStatus(s: string): FileChangeKind {
             :empty-text="t('syncUi.noFiles')"
           />
         </div>
-        <div class="min-h-0 overflow-auto rounded-md border p-2">
+        <div class="flex min-h-0 flex-col overflow-hidden rounded-md border p-2">
           <div class="mb-1 text-[11px] font-medium uppercase text-muted-foreground">
             {{ t("syncUi.commits") }}
           </div>
           <div v-if="!sync.lastUpdate.commits.length" class="text-xs text-muted-foreground">
             {{ t("syncUi.noCommits") }}
           </div>
-          <div v-for="c in sync.lastUpdate.commits" :key="c" class="font-mono text-[11px]">
-            {{ c }}
-          </div>
+          <VirtualList
+            v-else
+            :items="sync.lastUpdate.commits"
+            :item-height="22"
+            :get-key="(_c, index) => index"
+            class="font-mono text-[11px]"
+          >
+            <template #default="{ item: c }"
+              ><div class="flex h-full min-w-0 items-center" :title="c">
+                <span class="truncate">{{ c }}</span>
+              </div></template
+            >
+          </VirtualList>
         </div>
       </div>
     </template>
