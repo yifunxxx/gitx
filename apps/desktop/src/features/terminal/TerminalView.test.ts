@@ -145,7 +145,10 @@ it("retains sessions while hidden and starts a new session in the newly selected
   expect(mocks.terminals[1].dispose).toHaveBeenCalledOnce();
 });
 
-it("keeps shell shortcuts away from Git actions and preserves the panel toggle", async () => {
+it.each([
+  { code: "Backquote", ctrlKey: true },
+  { key: "`", ctrlKey: true },
+])("keeps shell shortcuts scoped and propagates the panel toggle %j", async (toggle) => {
   const wrapper = mount(TerminalView, { props: { visible: true }, attachTo: document.body });
   await flushPromises();
   const globalKey = vi.fn();
@@ -153,7 +156,7 @@ it("keeps shell shortcuts away from Git actions and preserves the panel toggle",
   try {
     await wrapper.trigger("keydown", { key: "a", ctrlKey: true, shiftKey: true });
     expect(globalKey).not.toHaveBeenCalled();
-    await wrapper.trigger("keydown", { code: "Backquote", ctrlKey: true });
+    await wrapper.trigger("keydown", toggle);
     expect(globalKey).toHaveBeenCalledOnce();
     expect(
       isTerminalToggle(
@@ -161,6 +164,7 @@ it("keeps shell shortcuts away from Git actions and preserves the panel toggle",
       ),
     ).toBe(false);
     const handler = mocks.terminals[0].handler;
+    expect(handler(new KeyboardEvent("keydown", toggle))).toBe(false);
     expect(handler(new KeyboardEvent("keydown", { code: "KeyC", ctrlKey: true }))).toBe(false);
     await flushPromises();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected text");
