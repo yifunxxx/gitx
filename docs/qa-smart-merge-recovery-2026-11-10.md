@@ -41,4 +41,4 @@ SHA256：`1F42D350D4DC9912EACAAA2C642BBA9AF5ADA466AC8C814BA0BDCAAAFCAF8031`。
 
 本地日志与证据位于 `E:/IDEAproject/gitx/test-results/`：`smart-merge-recovery-rust-main-final.log`、`smart-merge-recovery-rust-integration.log`、`smart-merge-recovery-unit-*.log`、`smart-merge-recovery-all-*.log`、`smart-merge-recovery-frontend-*-final.log`、`smart-merge-recovery-build-*-final.log`、`smart-merge-recovery-native-build.log`、`smart-merge-recovery-contracts-final.log`、`smart-merge-gui-{before,verified}.json`。
 
-QA-019 已完成代码和验证，待提交推送并补记远端 SHA。`D:/gitx/gitx.exe` 未替换。总体目标仍在进行。
+QA-019 已完成代码和验证。功能提交 `90c40eb` 已推送；ls-remote 核对远端 SHA 为 `90c40eb624cd545c0c0a494586a11fbc5beb6b3e`。`D:/gitx/gitx.exe` 未替换。总体目标仍在进行。
