@@ -2,19 +2,23 @@
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
-import { closeDialog } from "@/composables/useDialog";
+import { closeDialog, useDialogState } from "@/composables/useDialog";
 
 const props = defineProps<{ includeUntracked?: boolean }>();
 const { t } = useI18n();
+const dialogId = useDialogState().value?.id;
 const message = ref("WIP");
 const includeUntracked = ref(props.includeUntracked ?? false);
 const keepIndex = ref(false);
 function submit() {
-  closeDialog({
-    message: message.value.trim() || "WIP",
-    includeUntracked: includeUntracked.value,
-    keepIndex: keepIndex.value,
-  });
+  closeDialog(
+    {
+      message: message.value.trim() || "WIP",
+      includeUntracked: includeUntracked.value,
+      keepIndex: keepIndex.value,
+    },
+    dialogId,
+  );
 }
 </script>
 
@@ -45,7 +49,7 @@ function submit() {
         ><input v-model="keepIndex" type="checkbox" />{{ t("stash.keepIndex") }}</label
       >
       <div class="mt-4 flex justify-end gap-2">
-        <Button type="button" size="sm" variant="ghost" @click="closeDialog(null)">{{
+        <Button type="button" size="sm" variant="ghost" @click="closeDialog(null, dialogId)">{{
           t("common.cancel")
         }}</Button>
         <Button type="submit" size="sm">{{ t("common.ok") }}</Button>

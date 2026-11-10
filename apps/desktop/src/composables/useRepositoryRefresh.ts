@@ -15,8 +15,15 @@ import { useConsoleStore } from "@/stores/consoleStore";
 import { formatErrorMessage } from "@/lib/errors";
 
 type ChangeKind = "worktree" | "index" | "refs" | "opState" | "ignore" | "metadata";
-type ChangedEvent = { repoId: string; kinds: ChangeKind[] };
+type ChangedEvent = {
+  repoId: string;
+  kinds: ChangeKind[];
+  watchGeneration?: number;
+  degraded?: boolean;
+};
 const allKinds: ChangeKind[] = ["worktree", "index", "refs", "opState", "ignore", "metadata"];
+// Monotonic across component remounts; timestamps also survive module reloads.
+let lastRegistration = Date.now();
 
 /** One refresh at a time. Bursts are coalesced and events received during a
  * refresh cause one subsequent pass, with no overlapping polling requests. */
@@ -35,23 +42,32 @@ export function useRepositoryRefresh() {
   const pending = new Set<ChangeKind>();
   let disposed = false;
   let ready = false;
-  let running = false;
+  let running: number | null = null;
   let fallback = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let poll: ReturnType<typeof setInterval> | undefined;
   let unlisten: (() => void) | undefined;
   let generation = 0;
+  let nativeGeneration: number | undefined;
+  let logPending = false;
   let configureChain = Promise.resolve();
 
   function schedule(kinds: ChangeKind[]) {
     if (disposed || !ws.isRepo || !ws.repoPath) return;
     for (const kind of kinds) pending.add(kind);
-    if (!running && !timer) timer = setTimeout(() => void flush(), 200);
+    if (running === null && !timer && document.visibilityState !== "hidden")
+      timer = setTimeout(() => void flush(), 200);
   }
 
   async function flush() {
     timer = undefined;
-    if (disposed || !pending.size || !ws.isRepo) return;
+    if (
+      disposed ||
+      (!pending.size && !logPending) ||
+      !ws.isRepo ||
+      document.visibilityState === "hidden"
+    )
+      return;
     // Wait for gitx writes to finish, then publish their final state.
     if (jobs.count || rewrite.busy) {
       timer = setTimeout(() => void flush(), 300);
@@ -59,40 +75,69 @@ export function useRepositoryRefresh() {
     }
     const kinds = new Set(pending);
     pending.clear();
-    running = true;
-    const tasks: Promise<unknown>[] = [changes.refresh(true)];
+    const version = generation;
+    const path = ws.repoPath;
+    const current = () => !disposed && version === generation && path === ws.repoPath;
+    running = version;
+    const tasks: Promise<unknown>[] = [];
+    const run = (task: () => unknown) =>
+      tasks.push(Promise.resolve().then(() => (current() ? task() : undefined)));
+    if (kinds.size) run(() => changes.refresh(true));
     if (kinds.has("refs")) {
-      tasks.push(branches.refresh(), log.load(true, true), worktrees.refresh(), stash.refresh());
+      run(() => branches.refresh());
+      run(() => worktrees.refresh());
+      run(() => stash.refresh());
+      logPending = true;
     } else if (kinds.has("metadata")) {
-      tasks.push(stash.refresh());
+      run(() => stash.refresh());
+    }
+    if (logPending && !log.loading && !log.locating && !log.loadingMore && !log.loadingPrevious) {
+      logPending = false;
+      run(() => {
+        if (log.loading || log.locating || log.loadingMore || log.loadingPrevious)
+          logPending = true;
+        else return log.load(true, true);
+      });
     }
     if (kinds.has("opState") || kinds.has("index") || kinds.has("refs")) {
-      tasks.push(rewrite.refreshOpState(), conflicts.refresh());
+      run(() => rewrite.refreshOpState());
+      run(() => conflicts.refresh());
     }
     for (const tab of diffs.tabs) {
-      if (tab.kind === "file") tasks.push(diffs.reloadTab(tab.id, { soft: true }));
+      if (kinds.size && tab.kind === "file") run(() => diffs.reloadTab(tab.id, { soft: true }));
     }
     const results = await Promise.allSettled(tasks);
-    if (!disposed) {
+    if (current()) {
       const error = results.find((result) => result.status === "rejected");
       if (error?.status === "rejected") console.append("stderr", formatErrorMessage(error.reason));
     }
-    running = false;
-    if (!disposed && pending.size) schedule([]);
+    if (running === version) running = null;
+    if (current() && (pending.size || logPending)) schedule([]);
   }
 
   function configure() {
     const version = ++generation;
     pending.clear();
+    logPending = false;
+    running = null;
     if (timer) clearTimeout(timer);
     timer = undefined;
-    if (!ready || disposed) return;
+    if (disposed) return;
+    if (!ready) {
+      if (fallback) schedule(allKinds);
+      return;
+    }
+    const roots = ws.isRepo ? ws.roots.map((root) => ({ ...root })) : [];
+    const registration = (lastRegistration = Math.max(lastRegistration + 1, Date.now()));
+    nativeGeneration = registration;
     // Serialize registration so a slower old workspace cannot win the race.
     configureChain = configureChain.then(async () => {
       if (disposed || version !== generation) return;
       try {
-        await getBackend().workspaceWatch(ws.isRepo ? [...ws.roots] : []);
-        if (version === generation) fallback = false;
+        // A runtime failure event can arrive before this IPC acknowledgement.
+        // Only starting a new registration may clear the previous fallback.
+        fallback = false;
+        await getBackend().workspaceWatch(roots, registration);
       } catch (error) {
         if (version === generation && !disposed) {
           fallback = true;
@@ -108,13 +153,16 @@ export function useRepositoryRefresh() {
     if (document.visibilityState !== "hidden") schedule(allKinds);
   }
 
-  watch(() => [ws.repoPath, ws.isRepo, ws.roots] as const, configure, { flush: "post" });
+  watch(() => [ws.repoPath, ws.isRepo, ws.roots] as const, configure, { flush: "sync" });
   onMounted(async () => {
     if (!isTauri()) return;
-    const { listen } = await import("@tauri-apps/api/event");
-    if (disposed) return;
     try {
+      const { listen } = await import("@tauri-apps/api/event");
+      if (disposed) return;
       const cleanup = await listen<ChangedEvent>("repo://changed", ({ payload }) => {
+        if (payload.watchGeneration !== undefined && payload.watchGeneration !== nativeGeneration)
+          return;
+        if (payload.degraded) fallback = true;
         if (payload.repoId === ws.repoId) schedule(payload.kinds);
       });
       if (disposed) {
@@ -128,6 +176,7 @@ export function useRepositoryRefresh() {
       if (disposed) return;
       fallback = true;
       console.append("stderr", formatErrorMessage(error));
+      schedule(allKinds);
     }
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
@@ -144,7 +193,11 @@ export function useRepositoryRefresh() {
     unlisten?.();
     window.removeEventListener("focus", onFocus);
     document.removeEventListener("visibilitychange", onFocus);
-    // The native session is replaced on the next mount and released on window
-    // destruction. No late cleanup command can clear a newly mounted session.
+    if (nativeGeneration !== undefined) {
+      // Backend releases only this registration or an older one, never a newer mount.
+      void getBackend()
+        .workspaceUnwatch(nativeGeneration)
+        .catch(() => {});
+    }
   });
 }

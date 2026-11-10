@@ -1,6 +1,5 @@
 use crate::state::AppState;
 use gitx_core::{AppError, ErrorCode, StashEntry};
-use gitx_git::OpKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -81,23 +80,19 @@ pub async fn stash_create(
     emit_cmd(&app, format!("git stash push -m {:?}", req.message)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.stash_create(
-                &cwd,
-                &req.message,
-                req.keep_index,
-                req.include_untracked,
-                req.paths.as_deref(),
-                &cancel,
-            ),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.stash_create(
+        &cwd,
+        &req.message,
+        req.keep_index,
+        req.include_untracked,
+        req.paths.as_deref(),
+        &cancel,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -111,15 +106,11 @@ pub async fn stash_apply(
     emit_cmd(&app, format!("git stash apply {}", req.stash_ref)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.stash_apply(&cwd, &req.stash_ref, req.reinstate_index, &cancel),
-        )
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.stash_apply(&cwd, &req.stash_ref, req.reinstate_index, &cancel)
         .await
 }
 
@@ -134,15 +125,11 @@ pub async fn stash_pop(
     emit_cmd(&app, format!("git stash pop {}", req.stash_ref)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.stash_pop(&cwd, &req.stash_ref, req.reinstate_index, &cancel),
-        )
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.stash_pop(&cwd, &req.stash_ref, req.reinstate_index, &cancel)
         .await
 }
 
@@ -157,16 +144,11 @@ pub async fn stash_drop(
     emit_cmd(&app, format!("git stash drop {}", req.stash_ref)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.stash_drop(&cwd, &req.stash_ref, &cancel),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.stash_drop(&cwd, &req.stash_ref, &cancel).await
 }
 
 #[tauri::command]
@@ -180,16 +162,11 @@ pub async fn stash_clear(
     emit_cmd(&app, "git stash clear".into()).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.stash_clear(&cwd, &cancel),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.stash_clear(&cwd, &cancel).await
 }
 
 #[tauri::command]
@@ -213,15 +190,11 @@ pub async fn stash_branch(
     .await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.stash_branch(&cwd, &req.branch, &req.stash_ref, &cancel),
-        )
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.stash_branch(&cwd, &req.branch, &req.stash_ref, &cancel)
         .await
 }
 
@@ -236,14 +209,10 @@ pub async fn stash_restore(
     emit_cmd(&app, format!("git stash store {}", req.sha)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.stash_restore_from_backup(&cwd, &req.sha, &req.message, &cancel),
-        )
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.stash_restore_from_backup(&cwd, &req.sha, &req.message, &cancel)
         .await
 }

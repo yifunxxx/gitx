@@ -13,6 +13,7 @@ pub async fn workspace_watch(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     roots: Vec<RepoRoot>,
+    generation: u64,
 ) -> Result<(), AppError> {
     let watcher = Arc::clone(&state.watcher);
     let roots = roots
@@ -28,6 +29,7 @@ pub async fn workspace_watch(
         .collect();
     tauri::async_runtime::spawn_blocking(move || {
         watcher.replace(
+            generation,
             roots,
             Arc::new(move |event| {
                 let _ = app.emit("repo://changed", event);
@@ -37,4 +39,16 @@ pub async fn workspace_watch(
     .await
     .map_err(|e| AppError::new(ErrorCode::Internal, format!("watch worker: {e}")))?
     .map_err(|e| AppError::new(ErrorCode::FsError, format!("watch repository: {e}")))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn workspace_unwatch(
+    state: State<'_, AppState>,
+    generation: u64,
+) -> Result<(), AppError> {
+    let watcher = Arc::clone(&state.watcher);
+    tauri::async_runtime::spawn_blocking(move || watcher.release(generation))
+        .await
+        .map_err(|e| AppError::new(ErrorCode::Internal, format!("release watch: {e}")))
 }

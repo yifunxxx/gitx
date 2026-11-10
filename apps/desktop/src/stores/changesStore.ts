@@ -150,7 +150,10 @@ export const useChangesStore = defineStore("changes", () => {
     const generation = repositoryGeneration;
     const isCurrentRepository = currentRepository();
     const current = () =>
-      generation === repositoryGeneration && request === changelistRequest && !stagingMode.value && isCurrentRepository();
+      generation === repositoryGeneration &&
+      request === changelistRequest &&
+      !stagingMode.value &&
+      isCurrentRepository();
     try {
       const backend = getBackend();
       const result = await backend.changelistList({ path });

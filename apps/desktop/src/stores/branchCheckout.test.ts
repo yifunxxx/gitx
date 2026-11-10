@@ -181,32 +181,39 @@ it("reports a rejected single-root checkout and releases the busy guard", async 
   const store = useBranchesStore();
   expect(await store.checkout(entry)).toBe(false);
   expect(store.checkingOut).toBe(false);
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-    title: "branches.checkoutFailed",
-    description: "local edits would be overwritten",
-    persistent: true,
-  }));
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "branches.checkoutFailed",
+      description: "local edits would be overwritten",
+      persistent: true,
+    }),
+  );
   mocks.backend.branchCheckout.mockResolvedValueOnce(undefined);
   expect(await store.checkout(entry)).toBe(true);
   expect(mocks.backend.branchCheckout).toHaveBeenCalledTimes(2);
 });
 
-it.each([true, false])("warns about skipped roots and requires one checkout for success (all skipped: %s)", async (allSkipped) => {
-  mocks.backend.multiRootCheckout.mockResolvedValue({
-    ok: true,
-    rolledBack: false,
-    steps: [
-      { path: "A", ok: true, skipped: true, error: "shared is absent" },
-      { path: "B", ok: true, skipped: allSkipped, error: null },
-    ],
-  });
-  expect(await useBranchesStore().checkout(entry)).toBe(!allSkipped);
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-    title: "branches.multiRootSkipped",
-    description: expect.stringContaining("A: shared is absent"),
-    persistent: true,
-  }));
-});
+it.each([true, false])(
+  "warns about skipped roots and requires one checkout for success (all skipped: %s)",
+  async (allSkipped) => {
+    mocks.backend.multiRootCheckout.mockResolvedValue({
+      ok: true,
+      rolledBack: false,
+      steps: [
+        { path: "A", ok: true, skipped: true, error: "shared is absent" },
+        { path: "B", ok: true, skipped: allSkipped, error: null },
+      ],
+    });
+    expect(await useBranchesStore().checkout(entry)).toBe(!allSkipped);
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "branches.multiRootSkipped",
+        description: expect.stringContaining("A: shared is absent"),
+        persistent: true,
+      }),
+    );
+  },
+);
 
 it("ignores stale reference data when navigation changes during refresh", async () => {
   mocks.backend.multiRootCheckout.mockResolvedValue({ ok: true, rolledBack: false, steps: [] });
@@ -228,10 +235,12 @@ it("reports a refresh failure separately after a successful checkout", async () 
   mocks.backend.refsList.mockRejectedValue(new Error("cannot read references"));
   const store = useBranchesStore();
   expect(await store.checkout(entry)).toBe(true);
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-    title: "branches.refreshFailed",
-    description: "cannot read references",
-    persistent: true,
-  }));
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "branches.refreshFailed",
+      description: "cannot read references",
+      persistent: true,
+    }),
+  );
   expect(store.checkingOut).toBe(false);
 });

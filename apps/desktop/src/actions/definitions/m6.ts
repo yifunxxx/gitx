@@ -20,7 +20,7 @@ export function registerM6Actions() {
     description: "Stash local changes",
     icon: Archive,
     scope: "global",
-    enabled: () => hasRepo(),
+    enabled: () => hasRepo() && !useStashShelfStore().busy,
     async run() {
       await useStashShelfStore().promptStash();
     },
@@ -94,10 +94,27 @@ export function registerM6Actions() {
     description: "Shelve selected paths",
     icon: Package,
     scope: "changes",
-    enabled: () => hasRepo() && useChangesStore().selectedPaths.length > 0,
+    enabled: () =>
+      hasRepo() && useChangesStore().selectedPaths.length > 0 && !useStashShelfStore().busy,
     async run() {
-      const changes = useChangesStore();
-      await useStashShelfStore().promptShelf(changes.selectedPaths);
+      await useStashShelfStore().promptShelf(useChangesStore().selectedPaths);
+    },
+  });
+
+  registerAction({
+    id: "Git.Shelf.ImportPatch",
+    title: "Import Patch…",
+    description: "Save a patch in Shelf",
+    icon: FilePlus2,
+    scope: "global",
+    enabled: () => hasRepo() && !useStashShelfStore().busy,
+    async run() {
+      const shelf = useStashShelfStore();
+      if (await shelf.promptImportShelf()) {
+        const layout = useLayoutStore();
+        layout.bottomOpen = true;
+        layout.activeBottomTab = shelf.combineTab ? "stashesShelves" : "shelf";
+      }
     },
   });
 

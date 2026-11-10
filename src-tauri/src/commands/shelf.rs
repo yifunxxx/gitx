@@ -1,6 +1,5 @@
 use crate::state::AppState;
 use gitx_core::{AppError, ErrorCode, ShelfEntry};
-use gitx_git::OpKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -117,24 +116,20 @@ pub async fn shelf_create(
     emit_cmd(&app, format!("# shelve {} paths", req.paths.len())).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.shelve_changes(
-                &cwd,
-                &req.message,
-                &req.paths,
-                req.keep_changes,
-                req.source_changelist.as_deref(),
-                req.system,
-                &cancel,
-            ),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.shelve_changes(
+        &cwd,
+        &req.message,
+        &req.paths,
+        req.keep_changes,
+        req.source_changelist.as_deref(),
+        req.system,
+        &cancel,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -148,15 +143,12 @@ pub async fn shelf_unshelve(
     emit_cmd(&app, format!("# unshelve {}", req.id)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    let (applied, failed) = state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.unshelve(&cwd, &req.id, req.remove_applied, &cancel),
-        )
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    let (applied, failed) = git
+        .unshelve(&cwd, &req.id, req.remove_applied, &cancel)
         .await?;
     Ok(ShelfUnshelveResult { applied, failed })
 }
@@ -172,16 +164,11 @@ pub async fn shelf_delete(
     emit_cmd(&app, format!("# delete shelf {}", req.id)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.shelf_delete(&cwd, &req.id, &cancel),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.shelf_delete(&cwd, &req.id, &cancel).await
 }
 
 #[tauri::command]
@@ -195,16 +182,11 @@ pub async fn shelf_restore(
     emit_cmd(&app, format!("# restore shelf {}", req.id)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.shelf_restore(&cwd, &req.id, &cancel),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.shelf_restore(&cwd, &req.id, &cancel).await
 }
 
 #[tauri::command]
@@ -216,16 +198,11 @@ pub async fn shelf_rename(
     let cwd = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.shelf_rename(&cwd, &req.id, &req.message, &cancel),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.shelf_rename(&cwd, &req.id, &req.message, &cancel).await
 }
 
 #[tauri::command]
@@ -239,19 +216,15 @@ pub async fn shelf_import(
     emit_cmd(&app, format!("# import patch {}", req.patch_file)).await;
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
-    state
+    let _permits = state
         .scheduler
-        .with_repo_permit(
-            &git,
-            &req.path,
-            OpKind::Write,
-            &cancel,
-            git.shelf_import_patch(
-                &cwd,
-                PathBuf::from(&req.patch_file).as_path(),
-                &req.message,
-                &cancel,
-            ),
-        )
-        .await
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.shelf_import_patch(
+        &cwd,
+        PathBuf::from(&req.patch_file).as_path(),
+        &req.message,
+        &cancel,
+    )
+    .await
 }

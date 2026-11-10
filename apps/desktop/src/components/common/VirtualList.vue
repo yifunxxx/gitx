@@ -49,6 +49,7 @@ const offsetY = computed(() => start.value * props.itemHeight);
 let ro: ResizeObserver | null = null;
 let raf = 0;
 let pendingScroll: Event | null = null;
+let scrollGeneration = 0;
 
 function flushScroll() {
   raf = 0;
@@ -62,6 +63,7 @@ function flushScroll() {
 }
 
 function onScroll(e: Event) {
+  ++scrollGeneration;
   pendingScroll = e;
   if (raf) return;
   raf = requestAnimationFrame(flushScroll);
@@ -107,40 +109,40 @@ onUnmounted(() => {
   pendingScroll = null;
 });
 
-watch(
-  () => props.items,
-  async (items, previous) => {
-    // Keep scrollTop valid when the list shrinks (e.g. filter reset).
-    // Skip while the user is dragging the scrollbar — clamping mid-drag
-    // fights the native thumb and feels like a "stick"/jam.
-    if (pointerDown.value) return;
-    const previousTop = root.value?.scrollTop ?? scrollTop.value;
-    const oldIndex = Math.floor(previousTop / props.itemHeight);
-    const oldItem = previous[oldIndex];
-    const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
-    const newIndex =
-      props.preserveScrollAnchor && key !== null
-        ? items.findIndex((item, index) => props.getKey(item, index) === key)
-        : -1;
-    await nextTick();
-    if (pointerDown.value || props.items !== items || !root.value) return;
-    if (newIndex >= 0 && newIndex !== oldIndex) {
-      root.value.scrollTop = previousTop + (newIndex - oldIndex) * props.itemHeight;
-      scrollTop.value = root.value.scrollTop;
-    }
-    const max = Math.max(0, totalH.value - viewportH.value);
-    if (scrollTop.value > max && root.value) {
-      root.value.scrollTop = max;
-      scrollTop.value = max;
-    }
-  },
-);
+watch([() => props.items, () => props.items.length], async ([items], [previous]) => {
+  // Keep scrollTop valid when the list shrinks (e.g. filter reset).
+  // Skip while the user is dragging the scrollbar — clamping mid-drag
+  // fights the native thumb and feels like a "stick"/jam.
+  if (pointerDown.value) return;
+  const previousTop = root.value?.scrollTop ?? scrollTop.value;
+  const generation = scrollGeneration;
+  const oldIndex = Math.floor(previousTop / props.itemHeight);
+  const oldItem = previous[oldIndex];
+  const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
+  const newIndex =
+    props.preserveScrollAnchor && key !== null
+      ? items.findIndex((item, index) => props.getKey(item, index) === key)
+      : -1;
+  await nextTick();
+  if (pointerDown.value || props.items !== items || !root.value || generation !== scrollGeneration)
+    return;
+  if (newIndex >= 0 && newIndex !== oldIndex) {
+    root.value.scrollTop = previousTop + (newIndex - oldIndex) * props.itemHeight;
+    scrollTop.value = root.value.scrollTop;
+  }
+  const max = Math.max(0, totalH.value - viewportH.value);
+  if (scrollTop.value > max && root.value) {
+    root.value.scrollTop = max;
+    scrollTop.value = max;
+  }
+});
 
 defineExpose({
   el: root,
   pointerDown,
   scrollToIndex(index: number, align: "nearest" | "center" = "nearest") {
     if (!root.value) return;
+    ++scrollGeneration;
     const top = Math.max(0, index * props.itemHeight);
     const bottom = top + props.itemHeight;
     if (align === "center")

@@ -340,6 +340,10 @@ pub async fn log_index_rebuild(
     let cwd = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
     let git_dir = git.git_common_dir(&cwd, &cancel).await?;
     let (raw, _) = git
         .log_page(&cwd, 0, 5000, &LogFilters::default(), &cancel)

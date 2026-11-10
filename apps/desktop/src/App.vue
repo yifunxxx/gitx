@@ -19,30 +19,24 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useConsoleStore } from "@/stores/consoleStore";
-import { useJobsStore } from "@/stores/jobsStore";
 import { findActionIdByEvent, runAction, setKeymapOverridesProvider } from "@/actions";
-import { isTauri } from "@/lib/utils";
 import { formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
+
+import { useAppEvents } from "@/composables/useAppEvents";
 import { useRepositoryRefresh } from "@/composables/useRepositoryRefresh";
 
+useRepositoryRefresh();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const consoleStore = useConsoleStore();
-const jobs = useJobsStore();
-useRepositoryRefresh();
+useAppEvents();
 
 setKeymapOverridesProvider(() => settings.settings?.keymapOverrides);
 
-const unlisteners: Array<() => void> = [];
 let disposed = false;
-
-function keepListener(unlisten: () => void) {
-  if (disposed) unlisten();
-  else unlisteners.push(unlisten);
-}
 
 function onKeydown(e: KeyboardEvent) {
   // Don't steal keys while typing in inputs / dialogs (except Find Action).
@@ -73,35 +67,8 @@ function onKeydown(e: KeyboardEvent) {
   });
 }
 
-function onConsoleLine(payload: { stream: string; line: string }) {
-  const stream = payload.stream as "cmd" | "stdout" | "stderr";
-  consoleStore.append(stream, payload.line);
-}
-
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
-  if (isTauri()) {
-    const { listen } = await import("@tauri-apps/api/event");
-    if (disposed) return;
-    // Register each cleanup as soon as it resolves: unmount may happen while
-    // another native subscription is still being established.
-    await Promise.all([
-      listen<{ stream: string; line: string }>("console://line", (e) => {
-        if (!disposed) onConsoleLine(e.payload);
-      }).then(keepListener),
-      listen<{ id: string; title?: string }>("job://started", (e) => {
-        if (!disposed) jobs.started({ id: e.payload.id, title: e.payload.title ?? "job" });
-      }).then(keepListener),
-      listen<{ id: string }>("job://finished", (e) => {
-        if (!disposed) jobs.finished(e.payload.id);
-      }).then(keepListener),
-    ]).catch((err) => consoleStore.append("stderr", String(err)));
-  } else {
-    const handler = (e: Event) => onConsoleLine((e as CustomEvent).detail);
-    window.addEventListener("console://line", handler);
-    keepListener(() => window.removeEventListener("console://line", handler));
-  }
-  if (disposed) return;
   await settings.load();
   if (disposed) return;
   await workspace.loadRecent();
@@ -137,7 +104,6 @@ onMounted(async () => {
 onUnmounted(() => {
   disposed = true;
   window.removeEventListener("keydown", onKeydown);
-  unlisteners.splice(0).forEach((u) => u());
 });
 </script>
 
@@ -149,11 +115,7 @@ onUnmounted(() => {
         <ToolWindowStripe />
         <div class="min-h-0 min-w-0 flex-1">
           <Splitpanes class="default-theme h-full" horizontal>
-            <Pane
-              v-if="!layout.bottomOpen || !layout.bottomMaximized"
-              :size="layout.bottomOpen ? 100 - layout.bottomSize : 100"
-              min-size="20"
-            >
+            <Pane :size="layout.bottomOpen ? 100 - layout.bottomSize : 100" min-size="30">
               <Splitpanes class="h-full">
                 <Pane
                   v-if="layout.leftOpen && layout.commitTwMode !== 'float'"
@@ -173,12 +135,7 @@ onUnmounted(() => {
                 </Pane>
               </Splitpanes>
             </Pane>
-            <Pane
-              v-if="layout.bottomOpen"
-              :size="layout.bottomMaximized ? 100 : layout.bottomSize"
-              min-size="15"
-              :max-size="layout.bottomMaximized ? 100 : 80"
-            >
+            <Pane v-if="layout.bottomOpen" :size="layout.bottomSize" min-size="15" max-size="60">
               <GitToolWindow />
             </Pane>
           </Splitpanes>

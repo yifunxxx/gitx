@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, shallowMount } from "@vue/test-utils";
-import { reactive } from "vue";
+import { reactive, ref } from "vue";
 import LogView from "./LogView.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
 import VirtualList from "@/components/common/VirtualList.vue";
@@ -10,6 +10,9 @@ vi.mock("@/stores/logStore", () => ({ useLogStore: () => mocks.log }));
 vi.mock("@/stores/workspaceStore", () => ({
   useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo", isRepo: true }),
 }));
+vi.mock("@/stores/branchesStore", () => ({
+  useBranchesStore: () => ({ refs: { local: [], remote: [], tags: [] }, remotes: [] }),
+}));
 vi.mock("@/stores/compareStore", () => ({ useCompareStore: () => ({}) }));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({}) }));
 vi.mock("@/stores/repoAtRevStore", () => ({ useRepoAtRevStore: () => ({}) }));
@@ -17,8 +20,12 @@ vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({}) }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => ({}) }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({}) }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
-vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key, locale: ref("en") }) }));
 vi.mock("@/composables/useToast", () => ({ toast: vi.fn() }));
+vi.mock("@/composables/useConfirm", () => ({
+  confirmDialog: vi.fn(),
+  promptDialog: vi.fn(),
+}));
 
 class Observer {
   static instances: Observer[] = [];

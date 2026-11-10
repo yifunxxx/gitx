@@ -19,6 +19,14 @@ function focusable(panel: HTMLElement) {
   ).filter((el) => !el.closest("[hidden], [inert]") && getComputedStyle(el).display !== "none");
 }
 
+function focusDialog(id: number) {
+  if (disposed || stack.value.at(-1)?.id !== id) return;
+  const panel = topPanel();
+  if (panel && !panel.contains(document.activeElement)) {
+    (panel.querySelector<HTMLElement>("[autofocus]") ?? focusable(panel)[0])?.focus();
+  }
+}
+
 watch(
   stack,
   async (dialogs, old) => {
@@ -32,10 +40,7 @@ watch(
     await nextTick();
     if (disposed) return;
     if (restore?.isConnected) restore.focus({ preventScroll: true });
-    const panel = topPanel();
-    if (panel && !panel.contains(document.activeElement)) {
-      (panel.querySelector<HTMLElement>("[autofocus]") ?? focusable(panel)[0])?.focus();
-    }
+    if (top) focusDialog(top.id);
   },
   { flush: "pre" },
 );
@@ -86,6 +91,6 @@ onUnmounted(() => {
     @keydown.tab="onTab"
     @keydown.esc="onEscape($event, dialog.id)"
   >
-    <component :is="dialog.component" v-bind="dialog.props" />
+    <component :is="dialog.component" v-bind="dialog.props" @vue:mounted="focusDialog(dialog.id)" />
   </div>
 </template>

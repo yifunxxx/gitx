@@ -47,6 +47,7 @@ export const ACTION_TITLE_KEYS: Record<string, string> = {
   "ChangesView.NewChangeList": "changelist.new",
   "Git.Ignore.File": "actions.ignoreFile",
   "Git.Shelve": "shelf.create",
+  "Git.Shelf.ImportPatch": "shelf.importPatch",
   "Git.Stash": "stash.create",
   "Git.Show.Stash": "actions.showStashes",
   "Git.ChangesView.AcceptYours": "merge.acceptYours",

@@ -27,6 +27,8 @@ pub struct RepoChangedEvent {
     pub repo_id: RepoId,
     pub kinds: Vec<ChangeKind>,
     pub version: u64,
+    pub watch_generation: u64,
+    pub degraded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,15 +104,16 @@ impl WatchRoot {
 type OnChange = Arc<dyn Fn(RepoChangedEvent) + Send + Sync>;
 
 struct Session {
-    roots: Vec<WatchRoot>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
+    wake: mpsc::SyncSender<Option<Event>>,
     _watcher: RecommendedWatcher,
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        let _ = self.wake.try_send(None);
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
@@ -120,34 +123,53 @@ impl Drop for Session {
 /// Owns only the currently displayed workspace's handles and worker thread.
 #[derive(Default)]
 pub struct RepoWatcher {
-    session: Mutex<Option<Session>>,
+    state: Mutex<WatchState>,
+}
+
+#[derive(Default)]
+struct WatchState {
+    generation: u64,
+    closed: bool,
+    session: Option<Session>,
 }
 
 impl RepoWatcher {
-    pub fn replace(&self, roots: Vec<WatchRoot>, on_change: OnChange) -> Result<(), notify::Error> {
-        let mut session = self.session.lock().unwrap_or_else(|p| p.into_inner());
-        if session.as_ref().is_some_and(|old| old.roots == roots) {
+    pub fn replace(
+        &self,
+        generation: u64,
+        roots: Vec<WatchRoot>,
+        on_change: OnChange,
+    ) -> Result<(), notify::Error> {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        // Also rejects a registration whose matching release arrived first.
+        if state.closed || generation <= state.generation {
             return Ok(());
         }
+        state.generation = generation;
         // Release the old session even if registering the new one fails.
-        *session = None;
+        state.session = None;
         if roots.is_empty() {
             return Ok(());
         }
 
-        let (tx, rx) = mpsc::sync_channel::<Event>(1024);
+        let (tx, rx) = mpsc::sync_channel::<Option<Event>>(1024);
+        let wake = tx.clone();
         let overflow = Arc::new(AtomicBool::new(false));
         let callback_overflow = Arc::clone(&overflow);
+        let degraded = Arc::new(AtomicBool::new(false));
+        let callback_degraded = Arc::clone(&degraded);
         let mut watcher =
             notify::recommended_watcher(move |result: notify::Result<Event>| match result {
                 Ok(event) if !matches!(event.kind, EventKind::Access(_)) => {
-                    if tx.try_send(event).is_err() {
+                    if tx.try_send(Some(event)).is_err() {
                         callback_overflow.store(true, Ordering::Release);
                     }
                 }
                 Err(error) => {
                     tracing::warn!(%error, "repository watch event failed");
                     callback_overflow.store(true, Ordering::Release);
+                    callback_degraded.store(true, Ordering::Release);
+                    let _ = tx.try_send(None);
                 }
                 _ => {}
             })?;
@@ -170,23 +192,49 @@ impl RepoWatcher {
         let worker_roots = roots.clone();
         let worker = thread::Builder::new()
             .name("gitx-watch".into())
-            .spawn(move || observe(rx, worker_roots, overflow, worker_stop, on_change))
+            .spawn(move || {
+                observe(
+                    rx,
+                    worker_roots,
+                    overflow,
+                    degraded,
+                    worker_stop,
+                    generation,
+                    on_change,
+                )
+            })
             .map_err(notify::Error::io)?;
-        *session = Some(Session {
-            roots,
+        state.session = Some(Session {
             stop,
             worker: Some(worker),
+            wake,
             _watcher: watcher,
         });
         Ok(())
     }
+
+    pub fn release(&self, generation: u64) {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if generation >= state.generation {
+            state.generation = generation;
+            state.session = None;
+        }
+    }
+
+    pub fn shutdown(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.closed = true;
+        state.session = None;
+    }
 }
 
 fn observe(
-    rx: mpsc::Receiver<Event>,
+    rx: mpsc::Receiver<Option<Event>>,
     roots: Vec<WatchRoot>,
     overflow: Arc<AtomicBool>,
+    degraded: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
+    generation: u64,
     on_change: OnChange,
 ) {
     let mut pending = HashMap::<usize, BTreeSet<ChangeKind>>::new();
@@ -196,8 +244,14 @@ fn observe(
     while !stop.load(Ordering::Acquire) {
         let was_empty = pending.is_empty();
         let mut received = false;
-        match rx.recv_timeout(Duration::from_millis(50)) {
-            Ok(event) => {
+        // Shutdown sends a wake message; idle sessions do not wake 20 times/sec.
+        let event = if pending.is_empty() {
+            rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+        } else {
+            rx.recv_timeout(Duration::from_millis(50))
+        };
+        match event {
+            Ok(Some(event)) => {
                 if event.need_rescan() {
                     overflow.store(true, Ordering::Release);
                 }
@@ -210,6 +264,7 @@ fn observe(
                     }
                 }
             }
+            Ok(None) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
@@ -221,6 +276,7 @@ fn observe(
                     ChangeKind::Refs,
                     ChangeKind::OpState,
                     ChangeKind::Metadata,
+                    ChangeKind::Ignore,
                 ]);
             }
             received = true;
@@ -244,6 +300,8 @@ fn observe(
                     repo_id: roots[index].repo_id.clone(),
                     kinds: kinds.into_iter().collect(),
                     version,
+                    watch_generation: generation,
+                    degraded: degraded.load(Ordering::Acquire),
                 });
             }
         }
@@ -351,6 +409,7 @@ mod tests {
         let watcher = RepoWatcher::default();
         watcher
             .replace(
+                1,
                 vec![root.clone()],
                 Arc::new(move |event| {
                     let _ = tx.send(event);
@@ -368,10 +427,177 @@ mod tests {
         assert!(event.kinds.contains(&ChangeKind::Worktree));
         assert!(event.kinds.contains(&ChangeKind::Index));
         assert!(event.kinds.contains(&ChangeKind::Refs));
-        watcher.replace(vec![], Arc::new(|_| {})).unwrap();
-        assert!(watcher.session.lock().unwrap().is_none());
+        watcher.release(1);
+        assert!(watcher.state.lock().unwrap().session.is_none());
         while rx.try_recv().is_ok() {}
         std::fs::write(dir.path().join("after-close.txt"), "closed").unwrap();
         assert!(rx.recv_timeout(Duration::from_millis(500)).is_err());
+    }
+
+    #[test]
+    fn stale_registrations_and_releases_cannot_replace_a_new_session() {
+        let (_dir, root) = fixture();
+        let watcher = RepoWatcher::default();
+        watcher
+            .replace(2, vec![root.clone()], Arc::new(|_| {}))
+            .unwrap();
+        watcher.replace(1, vec![], Arc::new(|_| {})).unwrap();
+        watcher.release(1);
+        assert!(watcher.state.lock().unwrap().session.is_some());
+        watcher.release(3);
+        watcher
+            .replace(3, vec![root.clone()], Arc::new(|_| {}))
+            .unwrap();
+        assert!(watcher.state.lock().unwrap().session.is_none());
+        watcher.shutdown();
+        watcher.replace(4, vec![root], Arc::new(|_| {})).unwrap();
+        assert!(watcher.state.lock().unwrap().session.is_none());
+    }
+
+    #[test]
+    fn idle_shutdown_wakes_worker_and_same_roots_use_the_new_callback() {
+        let (dir, root) = fixture();
+        let watcher = RepoWatcher::default();
+        let (old_tx, old_rx) = mpsc::channel();
+        watcher
+            .replace(
+                1,
+                vec![root.clone()],
+                Arc::new(move |e| {
+                    let _ = old_tx.send(e);
+                }),
+            )
+            .unwrap();
+        let (tx, rx) = mpsc::channel();
+        watcher
+            .replace(
+                2,
+                vec![root],
+                Arc::new(move |e| {
+                    let _ = tx.send(e);
+                }),
+            )
+            .unwrap();
+        std::fs::write(dir.path().join("new-session.txt"), "change").unwrap();
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .watch_generation,
+            2
+        );
+        assert!(old_rx.try_recv().is_err());
+        let start = Instant::now();
+        watcher.shutdown();
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "idle worker was not woken"
+        );
+    }
+
+    #[test]
+    fn continuous_changes_publish_within_the_maximum_debounce_window() {
+        let (_dir, root) = fixture();
+        let (tx, rx) = mpsc::sync_channel(1024);
+        let (output, events) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let path = root.worktree.join("busy.txt");
+        let worker = thread::spawn(move || {
+            observe(
+                rx,
+                vec![root],
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(AtomicBool::new(false)),
+                worker_stop,
+                1,
+                Arc::new(move |e| {
+                    let _ = output.send(e);
+                }),
+            )
+        });
+        let sender = tx.clone();
+        let producer = thread::spawn(move || {
+            for _ in 0..35 {
+                let _ = sender.send(Some(Event::new(EventKind::Any).add_path(path.clone())));
+                thread::sleep(Duration::from_millis(50));
+            }
+        });
+        let event = events.recv_timeout(Duration::from_millis(1600));
+        stop.store(true, Ordering::Release);
+        let _ = tx.send(None);
+        worker.join().unwrap();
+        producer.join().unwrap();
+        assert!(event.unwrap().kinds.contains(&ChangeKind::Worktree));
+    }
+
+    #[test]
+    fn overflow_and_runtime_errors_request_a_full_refresh_and_fallback() {
+        let (_dir, root) = fixture();
+        let (tx, rx) = mpsc::sync_channel(1);
+        let (output, events) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = thread::spawn(move || {
+            observe(
+                rx,
+                vec![root],
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(AtomicBool::new(true)),
+                worker_stop,
+                9,
+                Arc::new(move |e| {
+                    let _ = output.send(e);
+                }),
+            )
+        });
+        tx.send(None).unwrap();
+        let result = events.recv_timeout(Duration::from_secs(3));
+        stop.store(true, Ordering::Release);
+        let _ = tx.send(None);
+        worker.join().unwrap();
+        let event = result.unwrap();
+        assert!(event.degraded);
+        assert_eq!(event.watch_generation, 9);
+        assert_eq!(event.kinds.len(), 6);
+    }
+
+    #[test]
+    fn real_linked_worktree_observes_private_index_and_common_refs() {
+        let dir = tempfile::tempdir().unwrap();
+        let common = dir.path().join("main/.git");
+        let private = common.join("worktrees/linked");
+        let worktree = dir.path().join("linked");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::create_dir_all(common.join("refs/heads")).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let watcher = RepoWatcher::default();
+        watcher
+            .replace(
+                1,
+                vec![WatchRoot::new(
+                    RepoId::new("linked"),
+                    &worktree,
+                    &private,
+                    &common,
+                )],
+                Arc::new(move |e| {
+                    let _ = tx.send(e);
+                }),
+            )
+            .unwrap();
+        std::fs::write(private.join("index"), "new index").unwrap();
+        std::fs::write(common.join("refs/heads/main"), "new ref").unwrap();
+        let event = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(event.kinds.contains(&ChangeKind::Index));
+        assert!(event.kinds.contains(&ChangeKind::Refs));
+        let missing = WatchRoot::new(
+            RepoId::new("missing"),
+            &dir.path().join("missing"),
+            &private,
+            &common,
+        );
+        assert!(watcher.replace(2, vec![missing], Arc::new(|_| {})).is_err());
+        assert!(watcher.state.lock().unwrap().session.is_none());
     }
 }

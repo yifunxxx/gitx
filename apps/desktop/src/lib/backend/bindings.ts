@@ -44,8 +44,11 @@ export const commands = {
    * Called after the frontend accepts an open result, so stale workspace probes
    * cannot replace the current repository's watches.
    */
-  async workspaceWatch(roots: RepoRoot[]): Promise<null> {
-    return await TAURI_INVOKE("workspace_watch", { roots });
+  async workspaceWatch(roots: RepoRoot[], generation: number): Promise<null> {
+    return await TAURI_INVOKE("workspace_watch", { roots, generation });
+  },
+  async workspaceUnwatch(generation: number): Promise<null> {
+    return await TAURI_INVOKE("workspace_unwatch", { generation });
   },
   async workspaceRecent(): Promise<WorkspaceRecentRes> {
     return await TAURI_INVOKE("workspace_recent");

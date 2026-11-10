@@ -3,12 +3,10 @@
 #![allow(clippy::result_large_err)]
 
 mod changelists;
-mod recent;
 mod shelf;
 mod transaction;
 
 pub use changelists::*;
-pub use recent::deduplicate_recent_workspaces;
 pub use shelf::*;
 
 use gitx_core::{AppError, AppSettings, ErrorCode};
@@ -42,7 +40,6 @@ pub fn load_app_settings(path: &Path) -> Result<AppSettings, AppError> {
         if settings.schema_version < gitx_core::SETTINGS_SCHEMA_VERSION {
             settings = migrate_settings(settings);
         }
-        deduplicate_recent_workspaces(&mut settings.recent_workspaces);
         Ok(settings)
     })
 }

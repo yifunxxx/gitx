@@ -109,15 +109,13 @@ async function stageAll() {
 }
 
 async function newChangelist() {
-  const navigation = workspace.navigationToken();
   const name = await promptDialog({
     title: t("changelist.new"),
     placeholder: t("changelist.namePlaceholder"),
     allowEmpty: false,
   });
-  if (!name?.trim() || navigation !== workspace.navigationToken()) return;
-  const created = await changes.createChangelist(name.trim(), true);
-  if (!created || navigation !== workspace.navigationToken()) return;
+  if (!name?.trim()) return;
+  await changes.createChangelist(name.trim(), true);
   toast({ title: t("changelist.new"), description: name.trim() });
 }
 
@@ -146,12 +144,11 @@ async function stopTrackingSelected() {
 }
 
 async function stashSelected() {
-  if (!workspace.repoPath) return;
-  const created = await stashShelf.promptStash({
+  const ok = await stashShelf.promptStash({
     paths: changes.selectedPaths.length ? [...changes.selectedPaths] : undefined,
     includeUntracked: changes.selectedSection === "unversioned",
   });
-  if (!created) return;
+  if (!ok) return;
   layout.bottomOpen = true;
   layout.activeBottomTab = stashShelf.combineTab ? "stashesShelves" : "stash";
 }
@@ -195,25 +192,22 @@ async function rollbackSelected() {
 }
 
 async function moveToChangelistSelected() {
-  const paths = [...changes.selectedPaths];
+  const paths = changes.selectedPaths;
   if (!paths.length) return;
-  const navigation = workspace.navigationToken();
   const name = await promptDialog({
     title: t("commitTw.moveToChangelistTitle"),
     placeholder: t("commitTw.moveToChangelistPrompt"),
     allowEmpty: false,
   });
-  if (!name?.trim() || navigation !== workspace.navigationToken()) return;
+  if (!name?.trim()) return;
   const target = name.trim();
   let list = changes.changelists?.lists.find((l) => l.name === target);
   if (!list) {
-    const created = await changes.createChangelist(target, false);
-    if (!created || navigation !== workspace.navigationToken()) return;
-    list = created.lists.find((l) => l.name === target);
+    await changes.createChangelist(target, false);
+    list = changes.changelists?.lists.find((l) => l.name === target);
   }
   if (!list) return;
-  const moved = await changes.moveToChangelist(paths, list.id);
-  if (!moved || navigation !== workspace.navigationToken()) return;
+  await changes.moveToChangelist(paths, list.id);
   toast({ title: t("commitTw.moveToChangelist"), description: target });
 }
 
@@ -487,6 +481,7 @@ async function runCtx(action: string) {
       <button
         v-if="!ctxIsUnversioned"
         type="button"
+        :disabled="stashShelf.busy"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('shelve')"
       >

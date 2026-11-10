@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Basic presence check. Explicit export is available by running the debug
- * executable with GITX_EXPORT_BINDINGS pointing to a destination .ts file.
- * This check does not prove that the checked-in signatures match Rust.
+ * Presence check only; this does not prove that signatures match Rust.
+ * For explicit generation, run a debug executable with GITX_EXPORT_BINDINGS
+ * naming the output .ts file. Normal builds and app startup do not export.
  */
 import { access } from "node:fs/promises";
 import path from "node:path";
@@ -15,6 +15,6 @@ try {
   await access(bindings);
   console.log("bindings.ts present:", bindings);
 } catch {
-  console.error("missing bindings.ts — build the debug app, then run it with GITX_EXPORT_BINDINGS set to the destination");
+  console.error("missing bindings.ts — build the debug app, then run it with GITX_EXPORT_BINDINGS naming the output .ts file (see README)");
   process.exit(1);
 }

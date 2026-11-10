@@ -79,8 +79,13 @@ pub async fn clone_run(
         "job://started",
         serde_json::json!({ "id": job.info.id, "title": job.info.title }),
     );
-    let git = state.git.read().await;
     let result = async {
+        let git = tokio::select! {
+            _ = job.cancel.cancelled() => {
+                return Err(AppError::new(ErrorCode::Cancelled, "clone cancelled"));
+            }
+            git = state.git.read() => git,
+        };
         let _permits = state
             .scheduler
             .acquire_repo_writes(&git, &[], std::slice::from_ref(&dir), &job.cancel)
@@ -106,7 +111,6 @@ pub async fn clone_run(
         .await;
     let _ = app.emit("job://finished", serde_json::json!({ "id": job.info.id }));
     let result = result?;
-    drop(git);
     if req.open_after {
         remember_recent_path(&state, &result.path).await;
     }

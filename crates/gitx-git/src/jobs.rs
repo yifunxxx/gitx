@@ -2,7 +2,7 @@ use gitx_core::{AppError, ErrorCode, JobId, JobInfo, JobKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,8 +43,6 @@ pub struct JobState {
 pub struct JobManager {
     jobs: RwLock<HashMap<String, Arc<JobState>>>,
     tx: broadcast::Sender<JobEvent>,
-    /// Holds unfinished async tasks so cancel can find tokens.
-    _running: Mutex<()>,
 }
 
 impl Default for JobManager {
@@ -53,7 +51,6 @@ impl Default for JobManager {
         Self {
             jobs: RwLock::new(HashMap::new()),
             tx,
-            _running: Mutex::new(()),
         }
     }
 }
@@ -133,13 +130,14 @@ impl JobManager {
         error: Option<gitx_core::AppError>,
         summary: Option<serde_json::Value>,
     ) {
+        let mut jobs = self.jobs.write().await;
+        jobs.remove(&id.0);
         let _ = self.tx.send(JobEvent::Finished {
             id: id.clone(),
             ok,
             error,
             summary,
         });
-        self.jobs.write().await.remove(&id.0);
     }
 
     pub async fn cancel(&self, id: &JobId) -> bool {

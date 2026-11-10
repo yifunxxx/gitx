@@ -775,6 +775,9 @@ export const mockBackend: Backend = {
   async workspaceWatch() {
     return null;
   },
+  async workspaceUnwatch() {
+    return null;
+  },
   async statusProbe(req): Promise<JobHandle> {
     const jobId = crypto.randomUUID();
     emitConsole(

@@ -210,3 +210,14 @@ fn settings_readers_observe_one_complete_saved_version() {
         writer.join().unwrap();
     });
 }
+
+#[test]
+fn failed_favorite_replace_preserves_target_and_cleans_temporary_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let metadata = gitx_meta::ensure_meta_dir(dir.path()).unwrap();
+    let target = metadata.join("favorites.json");
+    std::fs::create_dir(&target).unwrap();
+    assert!(save_favorites(dir.path(), &["refs/heads/main".into()]).is_err());
+    assert!(target.is_dir());
+    assert_eq!(std::fs::read_dir(&metadata).unwrap().count(), 1);
+}

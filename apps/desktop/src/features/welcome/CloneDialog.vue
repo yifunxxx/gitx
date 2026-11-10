@@ -28,6 +28,7 @@ const urlOk = ref<boolean | null>(null);
 let timer: ReturnType<typeof setTimeout> | null = null;
 let cancelTimer: ReturnType<typeof setTimeout> | null = null;
 let activeJobId: string | null = null;
+let cancelRetryDelay = 50;
 
 function suggestDirectory() {
   if (!home || (dir.value && dir.value !== suggested)) return;
@@ -41,9 +42,13 @@ function suggestDirectory() {
 }
 onMounted(async () => {
   if (isTauri()) {
-    const { homeDir } = await import("@tauri-apps/api/path");
-    home = await homeDir();
-    if (alive) suggestDirectory();
+    try {
+      const { homeDir } = await import("@tauri-apps/api/path");
+      home = await homeDir();
+      if (alive) suggestDirectory();
+    } catch {
+      // The destination remains editable if the home directory is unavailable.
+    }
   }
 });
 onUnmounted(() => {
@@ -76,14 +81,14 @@ async function browse() {
   if (isTauri()) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") dir.value = selected;
+    if (alive && !busy.value && typeof selected === "string") dir.value = selected;
   } else {
     const p = await promptDialog({
       title: t("clone.directory"),
       defaultValue: dir.value,
       allowEmpty: false,
     });
-    if (p) dir.value = p;
+    if (alive && !busy.value && p) dir.value = p;
   }
 }
 
@@ -93,15 +98,24 @@ async function cancel() {
     return;
   }
   if (cancelling.value) return;
+  error.value = null;
+  cancelRetryDelay = 50;
   cancelling.value = true;
   if (activeJobId) await requestCancellation(activeJobId);
+}
+
+function onEscape(event: KeyboardEvent) {
+  if (event.isComposing || event.defaultPrevented) return;
+  event.preventDefault();
+  void cancel();
 }
 
 async function requestCancellation(jobId: string) {
   if (activeJobId !== jobId || !cancelling.value) return;
   const retry = () => {
     if (activeJobId !== jobId || !cancelling.value) return;
-    cancelTimer = setTimeout(() => void requestCancellation(jobId), 50);
+    cancelTimer = setTimeout(() => void requestCancellation(jobId), cancelRetryDelay);
+    cancelRetryDelay = Math.min(cancelRetryDelay * 2, 1000);
   };
   try {
     if (!(await getBackend().jobCancel(jobId))) retry();
@@ -137,6 +151,7 @@ async function ok() {
   };
   const run = async () => {
     const jobId = crypto.randomUUID();
+    cancelRetryDelay = 50;
     activeJobId = jobId;
     try {
       return await getBackend().cloneRun({ ...request, jobId });
@@ -155,8 +170,12 @@ async function ok() {
         if (alive) closeDialog(null, dialogId);
         return;
       }
-      if (!(await handleAuthFailure(err, { url: request.url }))) throw err;
-      if (cancelling.value || !alive) return;
+      const retry = await handleAuthFailure(err, { url: request.url });
+      if (cancelling.value || !alive) {
+        if (alive) closeDialog(null, dialogId);
+        return;
+      }
+      if (!retry) throw err;
       result = await run();
     }
     if (!alive) return;
@@ -180,7 +199,7 @@ async function ok() {
 <template>
   <div
     class="fixed inset-0 z-[50] flex items-center justify-center bg-black/40 p-4"
-    @keydown.esc.stop="cancel"
+    @keydown.esc.stop="onEscape"
   >
     <form
       class="w-full max-w-lg rounded-lg border bg-popover p-4 shadow-lg"

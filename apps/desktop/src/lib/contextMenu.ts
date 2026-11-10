@@ -92,7 +92,10 @@ export function refineMenuPlacement(
 ): MenuPlacement {
   const prevMax = el.style.maxHeight;
   el.style.maxHeight = "none";
-  const height = el.scrollHeight;
+  // maxHeight uses border-box in ContextMenuSurface. scrollHeight excludes
+  // borders, so using it alone clips a short menu by two pixels and adds a
+  // needless scrollbar (also affecting flip placement near the bottom edge).
+  const height = Math.ceil(el.scrollHeight + el.offsetHeight - el.clientHeight);
   const width = Math.max(el.offsetWidth, el.scrollWidth);
   el.style.maxHeight = prevMax;
   return placeContextMenu(anchorX, anchorY, {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { placeContextMenu } from "./contextMenu";
+import { placeContextMenu, refineMenuPlacement } from "./contextMenu";
 
 describe("placeContextMenu", () => {
   afterEach(() => {
@@ -33,5 +33,19 @@ describe("placeContextMenu", () => {
     const p = placeContextMenu(40, 100, { width: 200, estimatedHeight: 200, margin: 10 });
     expect(p.y).toBe(100);
     expect(p.maxHeight).toBe(200);
+  });
+
+  it("includes the menu border in its natural height before choosing a side", () => {
+    vi.stubGlobal("window", { innerWidth: 800, innerHeight: 400 });
+    const panel = document.createElement("div");
+    panel.style.maxHeight = "120px";
+    Object.defineProperties(panel, {
+      scrollHeight: { value: 92 }, clientHeight: { value: 92 },
+      offsetHeight: { value: 94 }, offsetWidth: { value: 194 }, scrollWidth: { value: 192 },
+    });
+    const placement = refineMenuPlacement(panel, 20, 297);
+    expect(placement.maxHeight).toBe(94);
+    expect(placement.y).toBe(203);
+    expect(panel.style.maxHeight).toBe("120px");
   });
 });

@@ -450,14 +450,6 @@ async fn kill_process_tree(pid: Option<u32>) {
             libc::kill(-pgid, libc::SIGKILL);
         }
     }
-    #[cfg(windows)]
-    {
-        // M0 stub: taskkill /T. Full Job Object integration lands with Windows CI.
-        let mut kill = tokio::process::Command::new("taskkill");
-        kill.args(["/PID", &pid.to_string(), "/T", "/F"]);
-        crate::process_win::hide_console_tokio(&mut kill);
-        let _ = kill.status().await;
-    }
     let _ = pid;
     warn!(pid, "cancelled git process tree");
 }
