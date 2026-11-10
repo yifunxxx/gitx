@@ -12,7 +12,7 @@ export const useLayoutStore = defineStore("layout", () => {
   const leftSize = ref(28);
   const bottomSize = ref(32);
   const activeBottomTab = ref<
-    "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves" | "worktrees"
+    "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves" | "worktrees" | "terminal"
   >("log");
   const activeEditorKind = ref<
     "welcome" | "diff" | "history" | "compare" | "repoAtRev" | "blame" | "merge" | "file"

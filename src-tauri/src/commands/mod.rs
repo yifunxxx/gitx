@@ -19,6 +19,7 @@ pub mod shelf;
 pub mod stash;
 pub mod status;
 pub mod sync;
+pub mod terminal;
 pub mod watch;
 pub mod workspace;
 pub mod worktree;

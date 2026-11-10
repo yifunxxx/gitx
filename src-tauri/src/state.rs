@@ -13,6 +13,7 @@ pub struct AppState {
     pub jobs: Arc<JobManager>,
     pub scheduler: Arc<RepoScheduler>,
     pub watcher: Arc<RepoWatcher>,
+    pub terminals: Arc<crate::terminal::TerminalManager>,
     // A global monotonic stamp preserves ordering within every repository
     // without retaining a map entry for every folder ever opened.
     pub versions: AtomicU64,
@@ -58,6 +59,7 @@ impl AppState {
             jobs: Arc::new(JobManager::new()),
             scheduler: Arc::new(RepoScheduler::new()),
             watcher: Arc::new(RepoWatcher::default()),
+            terminals: Arc::new(crate::terminal::TerminalManager::default()),
             versions: AtomicU64::new(0),
         }
     }

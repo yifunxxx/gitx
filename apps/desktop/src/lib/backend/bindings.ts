@@ -28,6 +28,21 @@ export const commands = {
   async logFrontend(level: string, message: string): Promise<null> {
     return await TAURI_INVOKE("log_frontend", { level, message });
   },
+  async terminalOpen(req: TerminalOpenReq): Promise<TerminalInfo> {
+    return await TAURI_INVOKE("terminal_open", { req });
+  },
+  async terminalRead(id: string): Promise<TerminalOutput> {
+    return await TAURI_INVOKE("terminal_read", { id });
+  },
+  async terminalWrite(req: TerminalWriteReq): Promise<null> {
+    return await TAURI_INVOKE("terminal_write", { req });
+  },
+  async terminalResize(req: TerminalResizeReq): Promise<null> {
+    return await TAURI_INVOKE("terminal_resize", { req });
+  },
+  async terminalClose(id: string): Promise<null> {
+    return await TAURI_INVOKE("terminal_close", { id });
+  },
   async jobList(): Promise<JobInfo[]> {
     return await TAURI_INVOKE("job_list");
   },
@@ -1537,6 +1552,17 @@ export type UndoRewriteReq = {
   restoreWorktree: boolean;
   expectedHead: RewriteHead;
 };
+export type TerminalInfo = { id: string; cwd: string; shell: string };
+export type TerminalOpenReq = { cwd: string; shell: TerminalShell; cols: number; rows: number };
+export type TerminalOutput = {
+  data: number[];
+  exited: boolean;
+  exitCode: number | null;
+  error: string | null;
+};
+export type TerminalResizeReq = { id: string; cols: number; rows: number };
+export type TerminalShell = "default" | "powershell" | "cmd";
+export type TerminalWriteReq = { id: string; data: string };
 export type UnshallowReq = { path: string; remote: string | null };
 export type UpdateInfo = {
   oldHead: string;

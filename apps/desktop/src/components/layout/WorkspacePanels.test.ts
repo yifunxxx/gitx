@@ -39,6 +39,12 @@ it("maximizes and restores real panes repeatedly without recreating their conten
     expect(sizes()).toEqual(["56%", "44%"]);
   }
   expect(mounts).toBe(2);
+  layout.bottomOpen = false;
+  await flushPromises();
+  expect(wrapper.findAll(".splitpanes__pane")[1]!.attributes("inert")).toBeDefined();
+  layout.bottomOpen = true;
+  await flushPromises();
+  expect(mounts).toBe(2);
   expect(layout.bottomSize).toBe(44);
   wrapper.unmount();
 });
