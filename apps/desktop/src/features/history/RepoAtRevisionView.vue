@@ -8,6 +8,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { Button } from "@/components/ui/button";
+import VirtualList from "@/components/common/VirtualList.vue";
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
 import { toast } from "@/composables/useToast";
 
@@ -63,30 +64,35 @@ async function compareLocal() {
     <div v-if="tab.error" class="p-4 text-xs text-destructive">{{ tab.error }}</div>
     <Splitpanes v-else class="min-h-0 flex-1">
       <Pane :size="36" min-size="20">
-        <div class="h-full overflow-auto text-[12px]">
-          <button
-            v-for="e in tab.entries"
-            :key="e.path"
-            type="button"
-            class="flex w-full cursor-pointer items-center gap-1 px-2 py-0.5 text-left hover:bg-accent/50"
-            :class="tab.selectedPath === e.path ? 'bg-accent' : ''"
-            @click="store.openEntry(tab, e)"
-            @dblclick="store.openEntry(tab, e)"
-          >
-            <FileTypeIcon
-              :name="e.name"
-              :kind="e.kind === 'tree' ? 'folder' : 'file'"
-            />
-            <span class="truncate">{{ e.name }}</span>
-          </button>
-        </div>
+        <VirtualList
+          :key="tab.dir"
+          class="h-full text-[12px]"
+          :items="tab.entries"
+          :item-height="24"
+          :get-key="(e) => e.path"
+        >
+          <template #default="{ item: e }">
+            <button
+              type="button"
+              class="flex h-full w-full cursor-pointer items-center gap-1 px-2 text-left hover:bg-accent/50"
+              :class="tab.selectedPath === e.path ? 'bg-accent' : ''"
+              @click="store.openEntry(tab, e)"
+              @dblclick="store.openEntry(tab, e)"
+            >
+              <FileTypeIcon :name="e.name" :kind="e.kind === 'tree' ? 'folder' : 'file'" />
+              <span class="truncate">{{ e.name }}</span>
+            </button>
+          </template>
+        </VirtualList>
       </Pane>
       <Pane :size="64">
         <pre
           v-if="tab.blob?.text"
           class="h-full overflow-auto p-3 font-mono text-[12px] leading-5"
-        >{{ tab.blob.text }}</pre>
-        <div v-else-if="tab.blob?.binary" class="p-4 text-xs">Binary file ({{ tab.blob.size }} bytes)</div>
+          >{{ tab.blob.text }}</pre>
+        <div v-else-if="tab.blob?.binary" class="p-4 text-xs">
+          Binary file ({{ tab.blob.size }} bytes)
+        </div>
         <div v-else-if="tab.blob?.tooLarge" class="p-4 text-xs">File too large</div>
         <div v-else class="p-4 text-xs text-muted-foreground">Select a file</div>
       </Pane>

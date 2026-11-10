@@ -10,6 +10,7 @@ import LogView from "@/features/log/LogView.vue";
 import UpdateInfoView from "@/features/sync/UpdateInfoView.vue";
 import StashShelfView from "@/features/stash/StashShelfView.vue";
 import WorktreesView from "@/features/worktrees/WorktreesView.vue";
+import ConsoleView from "./ConsoleView.vue";
 
 const layout = useLayoutStore();
 const consoleStore = useConsoleStore();
@@ -42,7 +43,6 @@ const tabs = computed(() => {
   base.push({ id: "console", label: t("toolWindows.console") });
   return base;
 });
-const lines = computed(() => consoleStore.lines);
 </script>
 
 <template>
@@ -84,26 +84,7 @@ const lines = computed(() => consoleStore.lines);
       </button>
     </div>
 
-    <div
-      v-if="layout.activeBottomTab === 'console'"
-      class="min-h-0 flex-1 overflow-auto p-2 font-mono text-[11px]"
-    >
-      <div v-if="!lines.length" class="text-muted-foreground">
-        Console is empty. Git commands appear here as you work.
-      </div>
-      <div
-        v-for="line in lines"
-        :key="line.id"
-        class="whitespace-pre-wrap break-all"
-        :class="{
-          'text-info': line.stream === 'cmd',
-          'text-foreground': line.stream === 'stdout',
-          'text-destructive': line.stream === 'stderr',
-        }"
-      >
-        <span class="mr-2 opacity-50">{{ line.stream }}</span>{{ line.line }}
-      </div>
-    </div>
+    <ConsoleView v-if="layout.activeBottomTab === 'console'" />
     <div v-else-if="layout.activeBottomTab === 'update'" class="min-h-0 flex-1">
       <UpdateInfoView />
     </div>

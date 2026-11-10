@@ -5,7 +5,8 @@ import { useCompareStore } from "@/stores/compareStore";
 import { Button } from "@/components/ui/button";
 import { statusClass } from "@/features/commit/statusColor";
 import type { ChangedFile, FileChangeKind } from "@/lib/backend";
-import CodeMirrorDiff from "@/features/diff/CodeMirrorDiff.vue";
+import ViewportDiff from "@/features/diff/ViewportDiff.vue";
+import VirtualList from "@/components/common/VirtualList.vue";
 import PathTreeList from "@/components/files/PathTreeList.vue";
 
 const props = defineProps<{ tabId: string }>();
@@ -53,25 +54,43 @@ function openCompareFile(f: ChangedFile) {
           <div class="border-b px-2 py-1 text-[11px] font-medium">
             In {{ tab.right }} not in {{ tab.left }}
           </div>
-          <div class="min-h-0 flex-1 overflow-auto border-b">
-            <div v-for="c in tab.rightOnly" :key="c.sha" class="truncate px-2 py-0.5">
-              {{ c.shortSha }} {{ c.subject }}
-            </div>
-            <div v-if="!tab.rightOnly.length" class="px-2 py-3 text-muted-foreground">
-              No unique commits
-            </div>
-          </div>
+          <VirtualList
+            class="min-h-0 flex-1 border-b"
+            :items="tab.rightOnly"
+            :item-height="24"
+            :get-key="(c) => c.sha"
+          >
+            <template #default="{ item: c }"
+              ><div class="flex h-full min-w-0 items-center px-2" :title="c.subject">
+                <span class="truncate">{{ c.shortSha }} {{ c.subject }}</span>
+              </div></template
+            >
+            <template #footer
+              ><div v-if="!tab.rightOnly.length" class="px-2 py-3 text-muted-foreground">
+                No unique commits
+              </div></template
+            >
+          </VirtualList>
           <div class="border-b px-2 py-1 text-[11px] font-medium">
             In {{ tab.left }} not in {{ tab.right }}
           </div>
-          <div class="min-h-0 flex-1 overflow-auto">
-            <div v-for="c in tab.leftOnly" :key="c.sha" class="truncate px-2 py-0.5">
-              {{ c.shortSha }} {{ c.subject }}
-            </div>
-            <div v-if="!tab.leftOnly.length" class="px-2 py-3 text-muted-foreground">
-              No unique commits
-            </div>
-          </div>
+          <VirtualList
+            class="min-h-0 flex-1 border-b"
+            :items="tab.leftOnly"
+            :item-height="24"
+            :get-key="(c) => c.sha"
+          >
+            <template #default="{ item: c }"
+              ><div class="flex h-full min-w-0 items-center px-2" :title="c.subject">
+                <span class="truncate">{{ c.shortSha }} {{ c.subject }}</span>
+              </div></template
+            >
+            <template #footer
+              ><div v-if="!tab.leftOnly.length" class="px-2 py-3 text-muted-foreground">
+                No unique commits
+              </div></template
+            >
+          </VirtualList>
         </div>
       </Pane>
       <Pane :size="tab.mode === 'refs' ? 28 : 40" min-size="20">
@@ -87,15 +106,13 @@ function openCompareFile(f: ChangedFile) {
         </div>
       </Pane>
       <Pane v-if="tab.combined" :size="tab.mode === 'refs' ? 36 : 60">
-        <div class="h-full overflow-auto">
+        <div data-diff-scrollport class="h-full overflow-auto">
           <div v-for="f in tab.combined.files" :key="f.path" class="border-b">
             <div class="sticky top-0 bg-muted/80 px-2 py-1 text-[11px] font-medium">
               {{ f.path }}
             </div>
             <div v-if="f.binary" class="px-2 py-1 text-[11px] text-muted-foreground">Binary</div>
-            <div v-else-if="f.hunks.length" class="h-48">
-              <CodeMirrorDiff side="unified" unified :text="''" :hunks="f.hunks" />
-            </div>
+            <ViewportDiff v-else-if="f.hunks.length" :hunks="f.hunks" />
           </div>
         </div>
       </Pane>

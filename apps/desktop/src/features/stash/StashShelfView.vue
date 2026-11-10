@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useI18n } from "vue-i18n";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import { markContextHandled } from "@/lib/contextMenu";
+import VirtualList from "@/components/common/VirtualList.vue";
 import ShelfList from "./ShelfList.vue";
 
 const props = defineProps<{
@@ -17,6 +18,17 @@ const store = useStashShelfStore();
 const workspace = useWorkspaceStore();
 const reinstateIndex = ref(false);
 const stashRows = ref<HTMLElement | null>(null);
+const stashList = ref<{ scrollToIndex: (index: number) => void } | null>(null);
+async function focusStash(index: number) {
+  const sha = store.stashes[index]?.sha;
+  if (!sha) return;
+  stashList.value?.scrollToIndex(index);
+  await nextTick();
+  const row = Array.from(
+    stashRows.value?.querySelectorAll<HTMLButtonElement>("[data-stash-sha]") ?? [],
+  ).find((element) => element.dataset.stashSha === sha);
+  row?.focus({ preventScroll: true });
+}
 const menu = ref<{
   sha: string;
   x: number;
@@ -31,7 +43,7 @@ function closeMenu(restoreFocus = true) {
   menu.value = null;
   if (restoreFocus && sha) {
     const index = store.stashes.findIndex((entry) => entry.sha === sha);
-    stashRows.value?.querySelectorAll<HTMLButtonElement>('[data-entry="stash"]')[index]?.focus();
+    void focusStash(index);
   }
 }
 
@@ -137,7 +149,7 @@ function stashKey(event: KeyboardEvent, index: number) {
   if (next == null) return;
   event.preventDefault();
   store.selectedStashSha = store.stashes[next]!.sha;
-  stashRows.value?.querySelectorAll<HTMLButtonElement>('[data-entry="stash"]')[next]?.focus();
+  void focusStash(next);
 }
 
 const showStashes = computed(() => props.mode === "combined" || props.mode === "stash");
@@ -210,25 +222,39 @@ async function newStash() {
     <div ref="stashRows" class="min-h-0 flex-1 overflow-auto">
       <template v-if="showStashes">
         <div class="px-2 py-1 font-medium text-muted-foreground">{{ t("stash.section") }}</div>
-        <button
-          v-for="(s, index) in store.stashes"
-          :key="s.sha"
-          type="button"
-          data-entry="stash"
-          :tabindex="
-            store.selectedStashSha === s.sha || (!store.selectedStash && index === 0) ? 0 : -1
-          "
-          :title="s.message"
-          :aria-pressed="store.selectedStashSha === s.sha"
-          class="flex w-full cursor-pointer items-center gap-2 px-2 py-1 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
-          :class="store.selectedStashSha === s.sha ? 'bg-accent' : ''"
-          @click="store.selectedStashSha = s.sha"
-          @contextmenu="openMenu(s.sha, $event)"
-          @keydown="stashKey($event, index)"
+        <VirtualList
+          v-if="store.stashes.length"
+          ref="stashList"
+          :items="store.stashes"
+          :item-height="28"
+          :get-key="(s) => s.sha"
+          :style="{
+            height: `${Math.min(store.stashes.length, props.mode === 'combined' ? 8 : 18) * 28}px`,
+          }"
+          class="flex-none"
+          preserve-scroll-anchor
         >
-          <span class="font-mono text-muted-foreground">{{ store.stashRefOf(s) }}</span>
-          <span class="truncate">{{ s.message }}</span>
-        </button>
+          <template #default="{ item: s, index }">
+            <button
+              :data-stash-sha="s.sha"
+              type="button"
+              data-entry="stash"
+              :tabindex="
+                store.selectedStashSha === s.sha || (!store.selectedStash && index === 0) ? 0 : -1
+              "
+              :title="s.message"
+              :aria-pressed="store.selectedStashSha === s.sha"
+              class="flex h-full w-full cursor-pointer items-center gap-2 px-2 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
+              :class="store.selectedStashSha === s.sha ? 'bg-accent' : ''"
+              @click="store.selectedStashSha = s.sha"
+              @contextmenu="openMenu(s.sha, $event)"
+              @keydown="stashKey($event, index)"
+            >
+              <span class="font-mono text-muted-foreground">{{ store.stashRefOf(s) }}</span>
+              <span class="truncate">{{ s.message }}</span>
+            </button>
+          </template>
+        </VirtualList>
         <div v-if="!store.stashes.length" class="px-3 py-2 text-muted-foreground">
           {{ t("stash.empty") }}
         </div>

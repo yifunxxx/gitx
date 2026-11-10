@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatCommitTime as formatTime } from "@/lib/commitTime";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
@@ -67,17 +68,6 @@ watch(
     if (workspace.isRepo) void log.load(true);
   },
 );
-
-function formatTime(ts: number) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(ts * 1000));
-  } catch {
-    return String(ts);
-  }
-}
 
 function mapStatus(s: string): FileChangeKind {
   switch (s) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import VirtualList from "@/components/common/VirtualList.vue";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -104,15 +105,23 @@ async function ok() {
       <div v-if="preview && !preview.hasRemote" class="mt-3 rounded border border-dashed p-3">
         <div class="text-xs font-medium">Define remote</div>
         <div class="mt-2 flex gap-2">
-          <input v-model="defineName" class="h-8 w-24 rounded-md border bg-background px-2 text-sm" />
-          <input v-model="defineUrl" class="h-8 flex-1 rounded-md border bg-background px-2 text-sm font-mono" placeholder="URL" />
+          <input
+            v-model="defineName"
+            class="h-8 w-24 rounded-md border bg-background px-2 text-sm"
+          />
+          <input
+            v-model="defineUrl"
+            class="h-8 flex-1 rounded-md border bg-background px-2 text-sm font-mono"
+            placeholder="URL"
+          />
         </div>
         <Button class="mt-2" size="xs" @click="defineRemote">Add & use</Button>
       </div>
 
       <template v-else>
         <div class="mt-3 grid grid-cols-2 gap-2">
-          <label class="text-[11px] text-muted-foreground">Remote
+          <label class="text-[11px] text-muted-foreground"
+            >Remote
             <Select v-model="remote">
               <SelectTrigger class="mt-1">
                 <SelectValue />
@@ -124,17 +133,38 @@ async function ok() {
               </SelectContent>
             </Select>
           </label>
-          <label class="text-[11px] text-muted-foreground">Branch
-            <input v-model="branch" class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm" />
+          <label class="text-[11px] text-muted-foreground"
+            >Branch
+            <input
+              v-model="branch"
+              class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm"
+            />
           </label>
         </div>
-        <div class="mt-3 max-h-32 overflow-auto rounded border p-2 font-mono text-[11px]">
+        <div
+          class="mt-3 flex h-32 flex-col overflow-hidden rounded border p-2 font-mono text-[11px]"
+        >
           <div v-if="!preview?.commits.length" class="text-muted-foreground">Nothing to push</div>
-          <div v-for="c in preview?.commits ?? []" :key="c">{{ c }}</div>
+          <VirtualList
+            :items="preview?.commits ?? []"
+            :item-height="22"
+            :get-key="(_c, index) => index"
+            ><template #default="{ item: c }"
+              ><div class="flex h-full min-w-0 items-center" :title="c">
+                <span class="truncate">{{ c }}</span>
+              </div></template
+            ></VirtualList
+          >
         </div>
-        <label class="mt-3 flex items-center gap-2 text-xs"><input v-model="setUpstream" type="checkbox" /> Set upstream</label>
-        <label class="mt-1 flex items-center gap-2 text-xs"><input v-model="forceWithLease" type="checkbox" /> Force with lease (blocked on protected)</label>
-        <label class="mt-1 block text-[11px] text-muted-foreground">Push tags
+        <label class="mt-3 flex items-center gap-2 text-xs"
+          ><input v-model="setUpstream" type="checkbox" /> Set upstream</label
+        >
+        <label class="mt-1 flex items-center gap-2 text-xs"
+          ><input v-model="forceWithLease" type="checkbox" /> Force with lease (blocked on
+          protected)</label
+        >
+        <label class="mt-1 block text-[11px] text-muted-foreground"
+          >Push tags
           <Select v-model="pushTags">
             <SelectTrigger class="mt-1">
               <SelectValue />

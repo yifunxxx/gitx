@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { EditorState, RangeSetBuilder } from "@codemirror/state";
-import { EditorView, lineNumbers, Decoration, type DecorationSet } from "@codemirror/view";
-import type { DiffHunk } from "@/lib/backend";
+import { EditorState } from "@codemirror/state";
+import { EditorView, lineNumbers } from "@codemirror/view";
+import { fileChangeHighlights } from "./fileChangeHighlights";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 
 const props = defineProps<{ tabId: string }>();
@@ -11,43 +11,6 @@ const store = useFileViewerStore();
 const tab = computed(() => store.tabs.find((t) => t.id === props.tabId));
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
-
-const insertMark = Decoration.line({ class: "cm-diff-insert" });
-const modifyMark = Decoration.line({ class: "cm-file-modified" });
-
-function changedLines(hunks: DiffHunk[]): { added: Set<number>; modified: Set<number> } {
-  const added = new Set<number>();
-  const modified = new Set<number>();
-  for (const h of hunks) {
-    let n = h.newStart;
-    for (const line of h.lines) {
-      if (line.startsWith("-")) continue;
-      if (line.startsWith("+")) {
-        // Pure adds vs replacements: if hunk also has deletes nearby, treat as modified.
-        const hasDelete = h.lines.some((l) => l.startsWith("-"));
-        if (hasDelete) modified.add(n);
-        else added.add(n);
-      }
-      n += 1;
-    }
-  }
-  return { added, modified };
-}
-
-function buildDecorations(doc: string, hunks: DiffHunk[]): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>();
-  if (!doc) return builder.finish();
-  const { added, modified } = changedLines(hunks);
-  const lines = doc.split("\n");
-  let pos = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const lineNo = i + 1;
-    if (added.has(lineNo)) builder.add(pos, pos, insertMark);
-    else if (modified.has(lineNo)) builder.add(pos, pos, modifyMark);
-    pos += (lines[i]?.length ?? 0) + 1;
-  }
-  return builder.finish();
-}
 
 function mount() {
   if (!host.value || !tab.value) return;
@@ -67,7 +30,7 @@ function mount() {
           ".cm-diff-insert": { backgroundColor: "color-mix(in oklab, var(--color-success, #16a34a) 22%, transparent)" },
           ".cm-file-modified": { backgroundColor: "color-mix(in oklab, var(--color-warning, #ca8a04) 22%, transparent)" },
         }),
-        EditorView.decorations.of((v) => buildDecorations(v.state.doc.toString(), hunks)),
+        fileChangeHighlights(hunks),
       ],
     }),
   });
