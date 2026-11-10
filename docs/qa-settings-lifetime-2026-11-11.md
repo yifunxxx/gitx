@@ -51,4 +51,4 @@ SHA256：`3832960940E800B032E138427FAA61C7D6F1384F59FBBF4AD57D01137184753E`。
 
 集成目录只同步本项内容，保留其 Keymap 类型、可选 locale 和 WSL 解析差异；同步前备份位于 `E:/IDEAproject/gitx/test-results/settings-sync-backup`。
 
-功能提交与远端核对状态在统一台账更新。未替换 `D:/gitx/gitx.exe`。QA-009 的 Keymap、菜单和缩放组合，QA-007/008/010 及 QA-023 继续。
+功能提交 `abe4794e985d6bb847ddfaa90c85b7fa69c3044e` 已推送至 `codex/checkout-target-safety`，经 ls-remote 核对一致。未替换 `D:/gitx/gitx.exe`。QA-009 的 Keymap、菜单和缩放组合，QA-007/008/010 及 QA-023 继续。
