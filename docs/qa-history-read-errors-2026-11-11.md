@@ -48,4 +48,4 @@ QA-022 单独登记历史 name-status 路径引号/分隔及 literal pathspec �
 
 ## 交付
 
-QA-021 代码、自动验证及原生复查完成；功能提交与远端核对结果待本次交付后补记。
+QA-021 代码、自动验证及原生复查完成；功能提交 `83f1dcc9e4d6213201a13abecd664aa1120d722a` 已推送至 `origin/codex/checkout-target-safety`，ls-remote 与本地提交一致。整体目标继续。
