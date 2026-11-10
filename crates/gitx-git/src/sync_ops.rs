@@ -129,8 +129,11 @@ impl GitRunner {
             None
         };
         let mut args = vec!["pull".to_string(), "--progress".into(), "--no-edit".into()];
+        // Newer Git refuses divergent pulls unless rebase vs merge is explicit.
         if rebase {
             args.push("--rebase".into());
+        } else {
+            args.push("--no-rebase".into());
         }
         if ff_only {
             args.push("--ff-only".into());

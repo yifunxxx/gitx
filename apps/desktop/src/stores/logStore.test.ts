@@ -59,6 +59,7 @@ describe("log request lifetime and selection", () => {
     const rows = Array.from({ length: 1200 }, (_, i) => commit(String(i)));
     log.commits = rows;
     await log.select("1150");
+    mocks.backend.logLocate.mockResolvedValue({ sha: "0", offset: 0 });
     mocks.backend.logQuery.mockImplementation(async ({ offset, limit }) => ({
       commits: rows.slice(offset, offset + limit),
       nextOffset: Math.min(rows.length, offset + limit),
@@ -79,6 +80,7 @@ describe("log request lifetime and selection", () => {
     await log.select("123", false, true);
     const selected = [...log.selectedShas];
     const oldDetails = log.details;
+    mocks.backend.logLocate.mockResolvedValue({ sha: "0", offset: 0 });
     mocks.backend.logQuery.mockResolvedValue({ commits: rows, truncated: false, nextOffset: 150 });
     const request = log.load(true, true);
     expect(log.loading).toBe(false);
@@ -163,6 +165,10 @@ describe("log request lifetime and selection", () => {
     expect(log.filters).toEqual(filters);
     expect(log.selectedSha).toBe("10000");
     expect(log.commits).toHaveLength(150);
+    mocks.backend.logLocate.mockImplementation(async ({ revision }) => ({
+      sha: revision,
+      offset: Number(revision),
+    }));
     await log.loadPrevious();
     expect(log.startOffset).toBe(9850);
     expect(log.commits[0]!.sha).toBe("9850");

@@ -94,6 +94,11 @@ export const useBranchesStore = defineStore("branches", () => {
     if (!ws.repoPath || !refs.value) return;
     const path = ws.repoPath;
     const generation = repositoryGeneration;
+    const navigation = ws.navigationToken();
+    const isCurrent = () =>
+      generation === repositoryGeneration &&
+      ws.repoPath === path &&
+      ws.navigationToken() === navigation;
     const fullName = entry.fullName;
     const current = [...refs.value.local, ...refs.value.remote, ...refs.value.tags].find(
       (ref) => ref.fullName === fullName,
@@ -108,7 +113,7 @@ export const useBranchesStore = defineStore("branches", () => {
     try {
       await getBackend().favoritesToggle({ path, fullName });
     } catch (error) {
-      if (generation === repositoryGeneration) {
+      if (isCurrent()) {
         current.isFavorite = !current.isFavorite;
         toast({
           title: i18n.global.t("branches.favoriteFailed"),
@@ -119,7 +124,7 @@ export const useBranchesStore = defineStore("branches", () => {
     } finally {
       if (generation === repositoryGeneration) {
         --favoriteWrites;
-        if (!favoriteWrites) await refresh();
+        if (!favoriteWrites && isCurrent()) await refresh();
       }
     }
   }

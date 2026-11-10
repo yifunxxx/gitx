@@ -20,8 +20,10 @@ import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
-import { confirmDialog, promptDialog } from "@/composables/useConfirm";
+import { confirmDialog } from "@/composables/useConfirm";
 import { markContextHandled } from "@/lib/contextMenu";
+import { captureRewriteContext } from "@/features/merge/rewriteContext";
+import { formatErrorMessage } from "@/lib/errors";
 import {
   Select,
   SelectContent,
@@ -34,7 +36,6 @@ import type { ChangedFile } from "@/lib/backend";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
 import { layoutCommitGraph } from "./graphLayout";
-import { formatErrorMessage } from "@/lib/errors";
 
 const { t } = useI18n();
 const log = useLogStore();
@@ -342,27 +343,33 @@ async function ctxCherryPick() {
 
 async function ctxReword() {
   if (!log.selectedSha) return;
+  const sha = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const RewordDialog = (await import("@/features/merge/RewordDialog.vue")).default;
-  await openDialog(RewordDialog, { sha: log.selectedSha });
+  if (current()) await openDialog(RewordDialog, { sha });
 }
 
 async function ctxInteractive() {
   if (!log.selectedSha) return;
+  const fromSha = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const InteractiveRebaseEditor = (await import("@/features/merge/InteractiveRebaseEditor.vue"))
     .default;
-  await openDialog(InteractiveRebaseEditor, { fromSha: log.selectedSha });
+  if (current()) await openDialog(InteractiveRebaseEditor, { fromSha });
 }
 
 async function ctxReset() {
   if (!log.selectedSha) return;
+  const target = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const ResetDialog = (await import("@/features/merge/ResetDialog.vue")).default;
-  await openDialog(ResetDialog, { target: log.selectedSha });
+  if (current()) await openDialog(ResetDialog, { target });
 }
 
 async function ctxRevert() {
@@ -377,6 +384,7 @@ async function ctxRevert() {
 }
 
 async function ctxDrop() {
+  const current = captureRewriteContext();
   const shas = log.selectedShas.length
     ? [...log.selectedShas]
     : log.selectedSha
@@ -389,11 +397,12 @@ async function ctxDrop() {
     message: t("log.dropConfirm", { count: shas.length }),
     destructive: true,
   });
-  if (!ok) return;
+  if (!ok || !current()) return;
   await rewrite.drop(shas);
 }
 
 async function ctxSquash() {
+  const current = captureRewriteContext();
   const shas = log.selectedShas.length ? [...log.selectedShas] : [];
   if (shas.length < 2) {
     toast({ title: t("log.selectTwoOrMore") });
@@ -402,7 +411,7 @@ async function ctxSquash() {
   closeCtx();
   const { openDialog } = await import("@/composables/useDialog");
   const SquashDialog = (await import("@/features/merge/SquashDialog.vue")).default;
-  await openDialog(SquashDialog, { shas });
+  if (current()) await openDialog(SquashDialog, { shas });
 }
 
 async function ctxUncommit() {
@@ -410,16 +419,24 @@ async function ctxUncommit() {
   await rewrite.uncommit();
 }
 
-async function ctxExtract() {
-  if (!log.selectedSha || !log.changedFiles.length) return;
+async function ctxPartialChanges(mode: "extract" | "drop", initialPaths?: string[]) {
+  if (!log.selectedSha) return;
+  const commit = log.selectedSha;
+  const current = captureRewriteContext();
   closeCtx();
-  const paths = log.changedFiles.map((f) => f.path);
-  const msg = await promptDialog({
-    title: t("actions.extractSelected"),
-    defaultValue: t("log.extractedDefault"),
-  });
-  if (msg == null) return;
-  await rewrite.extractChanges(log.selectedSha, paths, msg || t("log.extractedDefault"));
+  const { openDialog } = await import("@/composables/useDialog");
+  const PartialChangesDialog = (await import("@/features/merge/PartialChangesDialog.vue")).default;
+  if (current()) await openDialog(PartialChangesDialog, { commit, mode, initialPaths });
+}
+
+async function runRewriteAction(action: () => Promise<void>) {
+  if (rewrite.busy) return;
+  const current = captureRewriteContext();
+  try {
+    await action();
+  } catch (error) {
+    if (current()) toast({ title: formatErrorMessage(error) });
+  }
 }
 </script>
 
@@ -818,65 +835,72 @@ async function ctxExtract() {
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxCherryPick"
+        @click="runRewriteAction(ctxCherryPick)"
       >
         {{ t("actions.cherryPick") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxReword"
+        @click="runRewriteAction(ctxReword)"
       >
         {{ t("actions.reword") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxInteractive"
+        @click="runRewriteAction(ctxInteractive)"
       >
         {{ t("actions.interactiveRebase") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxSquash"
+        @click="runRewriteAction(ctxSquash)"
       >
         {{ t("actions.squash") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxDrop"
+        @click="runRewriteAction(ctxDrop)"
       >
         {{ t("actions.dropCommits") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxUncommit"
+        @click="runRewriteAction(ctxUncommit)"
       >
         {{ t("actions.uncommit") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxRevert"
+        @click="runRewriteAction(ctxRevert)"
       >
         {{ t("actions.revert") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxReset"
+        @click="runRewriteAction(ctxReset)"
       >
         {{ t("actions.reset") }}
       </button>
       <button
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxExtract"
+        @click="runRewriteAction(() => ctxPartialChanges('extract'))"
       >
         {{ t("actions.extractSelected") }}
+      </button>
+      <button
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        @click="runRewriteAction(() => ctxPartialChanges('drop'))"
+      >
+        {{ t("actions.dropSelected") }}
       </button>
       <button
         type="button"

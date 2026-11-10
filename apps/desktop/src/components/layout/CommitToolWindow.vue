@@ -109,13 +109,15 @@ async function stageAll() {
 }
 
 async function newChangelist() {
+  const navigation = workspace.navigationToken();
   const name = await promptDialog({
     title: t("changelist.new"),
     placeholder: t("changelist.namePlaceholder"),
     allowEmpty: false,
   });
-  if (!name?.trim()) return;
-  await changes.createChangelist(name.trim(), true);
+  if (!name?.trim() || navigation !== workspace.navigationToken()) return;
+  const created = await changes.createChangelist(name.trim(), true);
+  if (!created || navigation !== workspace.navigationToken()) return;
   toast({ title: t("changelist.new"), description: name.trim() });
 }
 
@@ -192,22 +194,25 @@ async function rollbackSelected() {
 }
 
 async function moveToChangelistSelected() {
-  const paths = changes.selectedPaths;
+  const paths = [...changes.selectedPaths];
   if (!paths.length) return;
+  const navigation = workspace.navigationToken();
   const name = await promptDialog({
     title: t("commitTw.moveToChangelistTitle"),
     placeholder: t("commitTw.moveToChangelistPrompt"),
     allowEmpty: false,
   });
-  if (!name?.trim()) return;
+  if (!name?.trim() || navigation !== workspace.navigationToken()) return;
   const target = name.trim();
   let list = changes.changelists?.lists.find((l) => l.name === target);
   if (!list) {
-    await changes.createChangelist(target, false);
-    list = changes.changelists?.lists.find((l) => l.name === target);
+    const created = await changes.createChangelist(target, false);
+    if (!created || navigation !== workspace.navigationToken()) return;
+    list = created.lists.find((l) => l.name === target);
   }
   if (!list) return;
-  await changes.moveToChangelist(paths, list.id);
+  const moved = await changes.moveToChangelist(paths, list.id);
+  if (!moved || navigation !== workspace.navigationToken()) return;
   toast({ title: t("commitTw.moveToChangelist"), description: target });
 }
 

@@ -57,11 +57,12 @@ fn snapshot(path: &Path) -> Snapshot {
     let mut files = Vec::new();
     collect(path, path, &mut files);
     files.sort();
-    let index = git(path, &["rev-parse", "--git-path", "index"]);
     Snapshot {
         head: git(path, &["rev-parse", "HEAD"]),
         symbolic_head: git(path, &["symbolic-ref", "HEAD"]),
-        index: fs::read(path.join(index)).unwrap(),
+        // Compare the staged identity, not raw index bytes — newer Git may rewrite
+        // volatile extensions such as FSMN without changing staged content.
+        index: git(path, &["ls-files", "-s"]).into_bytes(),
         files,
     }
 }
