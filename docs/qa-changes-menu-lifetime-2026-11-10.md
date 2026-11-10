@@ -38,4 +38,4 @@
 
 隔离仓库 `E:/IDEAproject/gitx/test-results/repos/changes-keyboard-gui-20261110` 的前后快照为 `test-results/changes-menu-gui-{before,after}.json`；Git 状态、索引以及 86 个文件哈希完全一致。测试程序已关闭，`D:/gitx/gitx.exe` 未替换。
 
-QA-014 已关闭；QA-004 的 Changes 部分完成，功能提交/推送待落库补记。Log 菜单和重写对话框的目标保护另有未完成路径：QA-004 保留 Log 菜单跟进，新增 QA-015 记录独立分支重写对话框内部缺少仓库/卸载校验，集成目录已有部分保护。不能以本轮 Changes 测试代替 Log 验收。
+QA-014 已关闭；QA-004 的 Changes 部分完成，功能提交 `95775e0` 已推送，`ls-remote` 核对远端为 `95775e0a6500ea5100bdd4a1d26e3b74cf4ef7b8`。Log 菜单和重写对话框的目标保护另有未完成路径：QA-004 保留 Log 菜单跟进，新增 QA-015 记录独立分支重写对话框内部缺少仓库/卸载校验，集成目录已有部分保护。不能以本轮 Changes 测试代替 Log 验收。
