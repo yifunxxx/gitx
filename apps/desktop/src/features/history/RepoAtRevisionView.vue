@@ -9,6 +9,7 @@ import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { Button } from "@/components/ui/button";
 import VirtualList from "@/components/common/VirtualList.vue";
+import TextViewport from "@/components/common/TextViewport.vue";
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
 import { toast } from "@/composables/useToast";
 
@@ -86,10 +87,13 @@ async function compareLocal() {
         </VirtualList>
       </Pane>
       <Pane :size="64">
-        <pre
-          v-if="tab.blob?.text"
-          class="h-full overflow-auto p-3 font-mono text-[12px] leading-5"
-          >{{ tab.blob.text }}</pre>
+        <TextViewport
+          v-if="typeof tab.blob?.text === 'string'"
+          :key="`${tab.id}:${tab.rev}:${tab.selectedPath}`"
+          :text="tab.blob.text"
+          :label="tab.selectedPath || tab.title"
+          class="h-full"
+        />
         <div v-else-if="tab.blob?.binary" class="p-4 text-xs">
           Binary file ({{ tab.blob.size }} bytes)
         </div>

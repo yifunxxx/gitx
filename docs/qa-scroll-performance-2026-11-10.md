@@ -13,7 +13,7 @@
 
 The existing VirtualList already coalesces passive scroll events with requestAnimationFrame, keeps a stable phantom height, preserves anchors on ref refresh, skips clamp changes during thumb dragging and disconnects observers/listeners. No global wheel handler, smooth-scroll override, disabled GPU flag or confirmed repository-refresh storm was found. No blanket GPU/CSS workaround was added.
 
-Small menus/settings, merge editor and blob text previews remain separate profiling surfaces. The Shelf follow-up is recorded below. This change does not claim that every possible repository and view is free of frame spikes.
+Small menus/settings remain separate profiling surfaces. The Shelf and long-text follow-ups are recorded below. This change does not claim that every possible repository and view is free of frame spikes.
 
 ## Shelf follow-up
 
@@ -63,3 +63,26 @@ Final combined build: `E:/IDEAproject/gitx/test-results/isolated-target/debug/gi
 Update Project and panel maximize/restore were checked in the earlier combined build; see their separate QA documents. The final build includes the additional fast-pass Diff behavior. Native interaction checks use disposable fixtures, never the user's project-teamwork repository.
 
 Final native build: the 6,001-reference fixture rendered the branch pane correctly; wheel scrolling advanced rows and dragging the thumb to the end showed v/1999 with no blank viewport. Console opened with readable wrapped command/output text. These are interaction observations, not a native frame-rate measurement.
+
+## Revision text and merge editor follow-up
+
+Revision blob previews and all three merge panes now share a CodeMirror text viewport. This replaces the whole-file `pre`/`textarea` layout and adds line numbers. Scrolling and selection never serialize the document. Left/right merge text is computed separately so typing in the result does not rebuild it. The block list uses fixed 32px virtual rows in its existing 128px section. Empty revision files open as empty documents instead of showing the file-selection prompt.
+
+The editable result emits its complete current text when content changes, including before a subsequent save click. Source line separators are stored in a mapped range set; CRLF, LF, lone CR, blank lines and absent final newlines survive edits and undo/redo. History stores separator information for deleted ranges rather than a full extra source copy on every keystroke. External conflict resolution remains undoable; switching merge files creates independent editors. Unmount destroys editors and disconnects resize observers. Integration-only i18n, exact merge token concatenation and save guards were preserved. Tab, arrows and Home/End mount an offscreen conflict action before focusing it; keyboard navigation can therefore reach the final block too.
+
+Controlled headless Chrome test, development Vite build, GPU disabled, 1,280 × 800 window and 120 animation-frame-driven scroll steps. The text fixture has 50,000 lines; the merge fixture has 5,000 blocks with ten lines on each side. Before/after text scrollport heights and extents match (700px standalone, 515px merge, 1,000,016px content extent):
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| Standalone text initial mount + two frames | 225.4 ms | 66.2 ms |
+| Standalone text scroll p95 | 16.7 ms | 16.8 ms |
+| Merge initial mount + two frames | 2,652 ms | 143 ms |
+| Merge DOM elements at end | 25,020 | 378 |
+| Merge mounted buttons at end | 10,004 | 32 |
+| Merge scroll p95 frame interval | 33.4 ms | 16.8 ms |
+| Merge slowest frame | 283.4 ms | 16.8 ms |
+| Merge frames over 33.4 ms | 10 | 0 |
+
+All variants reached the final text line; both merge versions reached the final block. The new merge view mounted 124 text line elements across its three panes at the sampled positions. A `pre` has few DOM nodes even when it lays out all text, so DOM counts are not a useful standalone-text comparison. Standalone scroll frame timing was essentially unchanged in this run; its improvement is initial rendering and bounded layout. These results do not measure native wheel latency or guarantee identical frame timing on every machine.
+
+Evidence: `test-results/scroll-text-benchmark.json`; harness sources archived in `test-results/scroll-benchmark-sources`, removed from the application tree. New tests cover mixed-EOL edits and grouped undo/redo, source preservation through external replacement, a 50,000-line viewport, save-time read-only behavior, 5,000 merge blocks with correct final-block actions, and cleanup when changing files. Full frontend suites passed: worktree 60 files / 429 tests; integration 85 files / 596 tests. Both production builds/typechecks passed. The final keyboard-navigation adjustment passed focused merge tests and production builds in both checkouts. Changed-file Oxlint passed.
