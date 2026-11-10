@@ -828,12 +828,20 @@ impl GitRunner {
         let skip = offset.to_string();
         let max = (limit + 1).to_string();
         let mut args: Vec<String> = vec![
+            "--literal-pathspecs".into(),
             "log".into(),
             format!("--skip={skip}"),
             format!("--max-count={max}"),
             "--follow".into(),
             "--name-status".into(),
-            "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x1e".into(),
+            "-z".into(),
+            "--root".into(),
+            "--no-color".into(),
+            "--no-notes".into(),
+            "--no-show-signature".into(),
+            "--no-decorate".into(),
+            "--encoding=UTF-8".into(),
+            "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%s".into(),
         ];
         if all_branches {
             args.push("--all".into());
@@ -861,80 +869,8 @@ impl GitRunner {
             Err(err) => return Err(err),
         };
 
-        let text = String::from_utf8_lossy(&out.stdout);
-        // git prints: <format…\x1e>\n\n<name-status>\n<format…\x1e>\n\n…
-        // so name-status for commit i sits at the start of split-part i+1.
-        let parts: Vec<&str> = text.split('\x1e').collect();
-        let mut commits = Vec::new();
-        for i in 0..parts.len() {
-            let header_src = parts[i];
-            // First part is pure header; later parts start with name-status for previous commit.
-            let header_line = if i == 0 {
-                header_src.trim_matches('\n')
-            } else {
-                // Skip leading status lines; header is the first line containing NULs.
-                header_src
-                    .lines()
-                    .find(|l| l.contains('\0'))
-                    .unwrap_or("")
-                    .trim()
-            };
-            if header_line.is_empty() {
-                continue;
-            }
-            let fields: Vec<&str> = header_line.split('\0').collect();
-            if fields.len() < 6 {
-                continue;
-            }
-            let mut status = None;
-            let mut path_at = path.to_string();
-            let mut orig_path = None;
-            if let Some(next) = parts.get(i + 1) {
-                for line in next.lines() {
-                    let line = line.trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    if line.contains('\0') {
-                        break; // hit next header
-                    }
-                    let cols: Vec<&str> = line.split('\t').collect();
-                    if cols.is_empty() {
-                        continue;
-                    }
-                    let st = cols[0].chars().next().unwrap_or('M').to_string();
-                    status = Some(st.clone());
-                    if (st.starts_with('R') || st.starts_with('C')) && cols.len() >= 3 {
-                        orig_path = Some(cols[1].to_string());
-                        path_at = cols[2].to_string();
-                    } else if cols.len() >= 2 {
-                        path_at = cols[1].to_string();
-                    }
-                }
-            }
-            let sha = fields[0].to_string();
-            let short_sha: String = sha.chars().take(7).collect();
-            let parents = if fields[1].is_empty() {
-                Vec::new()
-            } else {
-                fields[1]
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect()
-            };
-            commits.push(HistoryCommit {
-                sha,
-                short_sha,
-                parents,
-                subject: fields[5].to_string(),
-                author: fields[2].to_string(),
-                author_email: fields[3].to_string(),
-                author_time: fields[4].parse().unwrap_or(0),
-                path_at_commit: path_at,
-                status,
-                orig_path,
-            });
-        }
+        let mut commits = parse_file_history_z(&out.stdout, path)
+            .map_err(|error| error.with_command(out.command))?;
 
         let truncated = commits.len() as u32 > limit;
         if truncated {
@@ -1324,6 +1260,83 @@ fn parse_ls_tree_z(stdout: &[u8], prefix: &str) -> Vec<TreeEntry> {
         });
     }
     out
+}
+
+fn parse_file_history_z(stdout: &[u8], path: &str) -> Result<Vec<HistoryCommit>, AppError> {
+    let invalid = || {
+        AppError::new(
+            ErrorCode::GitCommandFailed,
+            "invalid file history output from Git",
+        )
+    };
+    if !stdout.is_empty() && stdout.last() != Some(&0) {
+        return Err(invalid());
+    }
+    let text = String::from_utf8_lossy(stdout);
+    let fields = text.split('\0').collect::<Vec<_>>();
+    let mut commits = Vec::new();
+    let mut i = 0;
+    // Each record starts with NUL and six header fields. Status records have
+    // one path, or two for a rename/copy. Consume that arity before looking for
+    // the next header; filenames may contain newlines, tabs and record separators.
+    while i < fields.len() {
+        while fields.get(i) == Some(&"") {
+            i += 1;
+        }
+        if i == fields.len() {
+            break;
+        }
+        let header = fields.get(i..i + 6).ok_or_else(invalid)?;
+        if !matches!(header[0].len(), 40 | 64) || !header[0].bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err(invalid());
+        }
+        let mut commit = HistoryCommit {
+            sha: header[0].to_string(),
+            short_sha: header[0].chars().take(7).collect(),
+            parents: header[1].split_whitespace().map(str::to_string).collect(),
+            author: header[2].to_string(),
+            author_email: header[3].to_string(),
+            author_time: header[4].parse().map_err(|_| invalid())?,
+            subject: header[5].to_string(),
+            path_at_commit: path.to_string(),
+            status: None,
+            orig_path: None,
+        };
+        i += 6;
+        while let Some(raw) = fields.get(i).filter(|field| !field.is_empty()) {
+            // The pretty-format/name-status boundary adds a newline. Only the
+            // status token is trimmed; path and metadata bytes stay untouched.
+            let status = raw.trim_start_matches('\n');
+            let code = status.as_bytes().first().copied().ok_or_else(invalid)?;
+            if !b"ACDMRTUXB".contains(&code)
+                || !status.as_bytes()[1..].iter().all(u8::is_ascii_digit)
+            {
+                return Err(invalid());
+            }
+            i += 1;
+            let first = fields
+                .get(i)
+                .filter(|path| !path.is_empty())
+                .ok_or_else(invalid)?;
+            i += 1;
+            let (original, current) = if matches!(code, b'R' | b'C') {
+                let second = fields
+                    .get(i)
+                    .filter(|path| !path.is_empty())
+                    .ok_or_else(invalid)?;
+                i += 1;
+                (Some((*first).to_string()), *second)
+            } else {
+                (None, *first)
+            };
+            commit.status = Some(char::from(code).to_string());
+            commit.path_at_commit = current.to_string();
+            commit.orig_path = original;
+        }
+        commits.push(commit);
+    }
+    Ok(commits)
 }
 
 fn parse_name_status_z(stdout: &[u8]) -> Vec<ChangedFile> {
