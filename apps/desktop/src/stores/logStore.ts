@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type {
   ChangedFile,
@@ -13,6 +13,31 @@ import { useWorkspaceStore } from "./workspaceStore";
 import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
+import { timedAsync } from "@/lib/longTaskLog";
+
+/**
+ * Background-refresh equality without JSON.stringify of the whole page
+ * (that was multi-second on large loaded windows).
+ */
+function sameCommitWindow(a: readonly LogCommit[], b: readonly LogCommit[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.sha !== right.sha ||
+      left.subject !== right.subject ||
+      left.authorTime !== right.authorTime ||
+      left.refs.length !== right.refs.length
+    )
+      return false;
+    for (let r = 0; r < left.refs.length; r++) {
+      if (left.refs[r] !== right.refs[r]) return false;
+    }
+  }
+  return true;
+}
 
 const emptyFilters = (): LogFilters => ({
   text: null,
@@ -36,7 +61,8 @@ const copyFilters = (value: LogFilters): LogFilters => ({
 });
 
 export const useLogStore = defineStore("log", () => {
-  const commits = ref<LogCommit[]>([]);
+  // Huge arrays must stay shallow — deep `ref` proxies every commit on replace/append.
+  const commits = shallowRef<LogCommit[]>([]);
   const loading = ref(false);
   const loadingMore = ref(false);
   const loadingPrevious = ref(false);
@@ -147,6 +173,11 @@ export const useLogStore = defineStore("log", () => {
   );
 
   async function load(reset = true, background = false) {
+    const label = reset ? (background ? "log.load:refresh" : "log.load:reset") : "log.loadMore";
+    return timedAsync(label, () => loadInner(reset, background), background || !reset ? 50 : 100);
+  }
+
+  async function loadInner(reset = true, background = false) {
     const isCurrentRepository = currentRepository();
     if (!workspace.repoPath || !workspace.repoId || !workspace.isRepo) {
       ++loadGen;
@@ -256,8 +287,7 @@ export const useLogStore = defineStore("log", () => {
 
       if (reset) {
         startOffset.value = offset;
-        if (JSON.stringify(commits.value) !== JSON.stringify(page.commits))
-          commits.value = page.commits;
+        if (!sameCommitWindow(commits.value, page.commits)) commits.value = page.commits;
         truncated.value = page.truncated;
         nextOffset.value = page.nextOffset;
         if (!background || !page.commits.some((c) => c.sha === selectedSha.value)) {

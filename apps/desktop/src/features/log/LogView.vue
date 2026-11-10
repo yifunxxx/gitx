@@ -44,6 +44,7 @@ import {
   type GraphLayoutResult,
 } from "./graphLayout";
 import { buildLogTreeRows, logTreeRowKey, type LogTreeRow } from "./buildLogTreeRows";
+import { timedSync } from "@/lib/longTaskLog";
 
 const { t } = useI18n();
 const log = useLogStore();
@@ -129,10 +130,9 @@ watch(
     // Yield past the IPC/Pinia turn so scroll input can be processed first.
     graphRaf = requestAnimationFrame(() => {
       graphRaf = 0;
-      const { layout: next, cursor } = layoutCommitGraphIncremental(
-        log.commits,
-        graphOptions(),
-        graphCursor.value,
+      const { layout: next, cursor } = timedSync(
+        `log.graphLayout n=${log.commits.length}`,
+        () => layoutCommitGraphIncremental(log.commits, graphOptions(), graphCursor.value),
       );
       graphCursor.value = cursor;
       graphLayout.value = next;
@@ -155,7 +155,9 @@ watch(
     }
     treeRaf = requestAnimationFrame(() => {
       treeRaf = 0;
-      treeRows.value = buildLogTreeRows(commits, String(other));
+      treeRows.value = timedSync(`log.treeRows n=${commits.length}`, () =>
+        buildLogTreeRows(commits, String(other)),
+      );
     });
   },
   { immediate: true },

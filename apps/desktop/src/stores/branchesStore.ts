@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, ref, shallowRef, triggerRef, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { MultiRootOpResult, RefEntry, RefsList, RemoteInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -13,8 +13,9 @@ import { useChangesStore } from "./changesStore";
 import { useLogStore } from "./logStore";
 
 export const useBranchesStore = defineStore("branches", () => {
-  const refs = ref<RefsList | null>(null);
-  const remotes = ref<RemoteInfo[]>([]);
+  // Shallow: thousands of refs must not be deep-proxied on every refresh.
+  const refs = shallowRef<RefsList | null>(null);
+  const remotes = shallowRef<RemoteInfo[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
   const popupOpen = ref(false);
@@ -107,6 +108,7 @@ export const useBranchesStore = defineStore("branches", () => {
     // Give immediate feedback, but let the backend toggle the persisted value
     // so overlapping clicks never replace the entire list with a stale copy.
     current.isFavorite = !current.isFavorite;
+    triggerRef(refs);
     ++favoriteWrites;
     ++refreshGeneration;
     loading.value = false;
@@ -115,6 +117,7 @@ export const useBranchesStore = defineStore("branches", () => {
     } catch (error) {
       if (isCurrent()) {
         current.isFavorite = !current.isFavorite;
+        triggerRef(refs);
         toast({
           title: i18n.global.t("branches.favoriteFailed"),
           description: formatErrorMessage(error),

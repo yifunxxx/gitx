@@ -138,11 +138,13 @@ function canResume(commits: readonly Commit[], cursor: GraphLayoutCursor, key: s
  * A pending parent has exactly one lane. Reserve parents immediately so an
  * octopus merge cannot assign several parents to the same empty lane.
  */
+const emptyVisible = new Set<string>();
+
 export function layoutCommitGraph(
   commits: readonly Commit[],
   options: GraphLayoutOptions = {},
 ): GraphLayoutResult {
-  const visible = new Set(commits.map((commit) => commit.sha));
+  const visible = options.filtered ? new Set(commits.map((commit) => commit.sha)) : emptyVisible;
   const { rows, maxLane } = layoutRange(commits, 0, options, [], 0, 0, visible);
   return { rows, maxLane, colPx: colPxFor(maxLane) };
 }
@@ -157,7 +159,6 @@ export function layoutCommitGraphIncremental(
   previous: GraphLayoutCursor | null = null,
 ): { layout: GraphLayoutResult; cursor: GraphLayoutCursor } {
   const key = optionsKey(options);
-  const visible = new Set(commits.map((commit) => commit.sha));
 
   if (previous && canResume(commits, previous, key) && commits.length >= previous.length) {
     if (commits.length === previous.length) {
@@ -166,6 +167,7 @@ export function layoutCommitGraphIncremental(
         cursor: previous,
       };
     }
+    // canResume rejects filtered layouts, so `visible` is unused on this path.
     const resumed = layoutRange(
       commits,
       previous.length,
@@ -173,7 +175,7 @@ export function layoutCommitGraphIncremental(
       cloneLanes(previous.lanes),
       previous.nextColor,
       previous.maxLane,
-      visible,
+      emptyVisible,
     );
     const rows = previous.rows.concat(resumed.rows);
     const cursor: GraphLayoutCursor = {
@@ -189,6 +191,8 @@ export function layoutCommitGraphIncremental(
     return { layout: { rows, maxLane: resumed.maxLane, colPx: colPxFor(resumed.maxLane) }, cursor };
   }
 
+  // Only filtered layouts consult membership; skip the O(n) Set otherwise.
+  const visible = options.filtered ? new Set(commits.map((commit) => commit.sha)) : emptyVisible;
   const full = layoutRange(commits, 0, options, [], 0, 0, visible);
   const cursor: GraphLayoutCursor = {
     optionsKey: key,
