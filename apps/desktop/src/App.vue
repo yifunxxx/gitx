@@ -27,6 +27,7 @@ import { i18n } from "@/i18n";
 
 import { useAppEvents } from "@/composables/useAppEvents";
 import { useRepositoryRefresh } from "@/composables/useRepositoryRefresh";
+import { isTerminalToggle } from "@/features/terminal/terminalShortcut";
 
 useRepositoryRefresh();
 const layout = useLayoutStore();
@@ -43,6 +44,12 @@ function onKeydown(e: KeyboardEvent) {
   // Don't steal keys while typing in inputs / dialogs (except Find Action).
   const target = e.target as HTMLElement | null;
   const tag = target?.tagName?.toLowerCase();
+  if (isTerminalToggle(e) && !target?.closest("[role='dialog']")) {
+    e.preventDefault();
+    layout.bottomOpen = !(layout.bottomOpen && layout.activeBottomTab === "terminal");
+    layout.activeBottomTab = "terminal";
+    return;
+  }
   const editing =
     tag === "input" ||
     tag === "textarea" ||

@@ -1,4 +1,20 @@
 {
+  "terminal": {
+    "selectAll": "Select all",
+    "sessions": "Terminal sessions",
+    "profile": "Shell for new terminal",
+    "new": "New terminal",
+    "copy": "Copy selection (Ctrl+Shift+C)",
+    "paste": "Paste (Ctrl+Shift+V)",
+    "clear": "Clear terminal",
+    "close": "Close terminal and stop its process",
+    "exited": "exit {code}",
+    "failed": "failed",
+    "startedIn": "Started in:",
+    "desktopOnly": "Interactive terminals are available in the desktop app.",
+    "openFolder": "Open a folder or repository to start a terminal.",
+    "empty": "Use + to start a terminal."
+  },
   "app": {
     "name": "gitx",
     "welcome": "Welcome to gitx"
@@ -138,6 +154,7 @@
     "commit": "Commit",
     "git": "Git",
     "console": "Console",
+    "terminal": "Terminal",
     "log": "Log",
     "updateInfo": "Update Info",
     "stash": "Stash",

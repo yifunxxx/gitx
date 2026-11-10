@@ -922,7 +922,20 @@ export type CredentialSessionRes = {
 }
 
 
+export type TerminalInfo = { id: string; cwd: string; shell: string }
+export type TerminalOpenReq = { cwd: string; shell: TerminalShell; cols: number; rows: number }
+export type TerminalOutput = { data: number[]; exited: boolean; exitCode: number | null; error: string | null }
+export type TerminalResizeReq = { id: string; cols: number; rows: number }
+export type TerminalShell = "default" | "powershell" | "cmd"
+export type TerminalWriteReq = { id: string; data: string }
+
 export const commands = {
+  terminalOpen(req: TerminalOpenReq): Promise<TerminalInfo> { return invoke("terminal_open", { req }) },
+  terminalRead(id: string): Promise<TerminalOutput> { return invoke("terminal_read", { id }) },
+  terminalWrite(req: TerminalWriteReq): Promise<null> { return invoke("terminal_write", { req }) },
+  terminalResize(req: TerminalResizeReq): Promise<null> { return invoke("terminal_resize", { req }) },
+  terminalClose(id: string): Promise<null> { return invoke("terminal_close", { id }) },
+
   async appInfo(): Promise<AppInfo> {
     return invoke("app_info")
   },

@@ -4,6 +4,7 @@
 mod bindings_export;
 mod commands;
 mod state;
+mod terminal;
 
 use commands::app::{
     app_info, git_detect, git_test_executable, log_frontend, settings_get, settings_reload,
@@ -65,6 +66,7 @@ use commands::sync::{
     update_project_run,
 };
 use commands::watch::{workspace_unwatch, workspace_watch};
+use commands::terminal::{terminal_open, terminal_read, terminal_write, terminal_resize, terminal_close};
 use commands::workspace::{init_run, status_probe, vcs_enable, workspace_open, workspace_recent};
 use commands::worktree::{
     worktree_add, worktree_default_path, worktree_list, worktree_lock, worktree_open_ref,
@@ -94,6 +96,11 @@ pub fn run() {
             log_frontend,
             job_list,
             job_cancel,
+            terminal_open,
+            terminal_read,
+            terminal_write,
+            terminal_resize,
+            terminal_close,
             workspace_open,
             workspace_watch,
             workspace_unwatch,
@@ -275,6 +282,8 @@ pub fn run() {
                 // The event callback owns an AppHandle. Drop it before the app
                 // manager shuts down, and reject late watch registrations.
                 window.state::<AppState>().watcher.shutdown();
+                let terminals = window.state::<AppState>().terminals.clone();
+                tauri::async_runtime::spawn_blocking(move || terminals.shutdown());
             }
         })
         .setup(move |app| {

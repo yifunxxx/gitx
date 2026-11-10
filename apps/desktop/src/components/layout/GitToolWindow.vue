@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { Maximize2, Minimize2 } from "@lucide/vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useConsoleStore } from "@/stores/consoleStore";
@@ -11,6 +11,7 @@ import UpdateInfoView from "@/features/sync/UpdateInfoView.vue";
 import StashShelfView from "@/features/stash/StashShelfView.vue";
 import WorktreesView from "@/features/worktrees/WorktreesView.vue";
 import ConsoleView from "./ConsoleView.vue";
+const TerminalView = defineAsyncComponent(() => import("@/features/terminal/TerminalView.vue"));
 
 const layout = useLayoutStore();
 const consoleStore = useConsoleStore();
@@ -22,7 +23,23 @@ const combineStashesShelves = computed(
   () => settings.settings?.git?.combineStashesAndShelves !== false,
 );
 
-type BottomTab = "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves" | "worktrees";
+type BottomTab =
+  | "console"
+  | "log"
+  | "update"
+  | "stash"
+  | "shelf"
+  | "stashesShelves"
+  | "worktrees"
+  | "terminal";
+const terminalOpened = ref(false);
+watch(
+  () => layout.activeBottomTab,
+  (tab) => {
+    if (tab === "terminal") terminalOpened.value = true;
+  },
+  { immediate: true },
+);
 
 const showWorktreesTab = computed(() => worktrees.userOpened || worktrees.items.length > 1);
 
@@ -41,6 +58,7 @@ const tabs = computed(() => {
     base.push({ id: "worktrees", label: t("toolWindows.worktrees") });
   }
   base.push({ id: "console", label: t("toolWindows.console") });
+  base.push({ id: "terminal", label: t("toolWindows.terminal") });
   return base;
 });
 </script>
@@ -84,6 +102,12 @@ const tabs = computed(() => {
       </button>
     </div>
 
+    <TerminalView
+      v-if="terminalOpened"
+      v-show="layout.activeBottomTab === 'terminal'"
+      class="min-h-0 flex-1"
+      :visible="layout.bottomOpen && layout.activeBottomTab === 'terminal'"
+    />
     <ConsoleView v-if="layout.activeBottomTab === 'console'" />
     <div v-else-if="layout.activeBottomTab === 'update'" class="min-h-0 flex-1">
       <UpdateInfoView />
@@ -100,7 +124,7 @@ const tabs = computed(() => {
     <div v-else-if="layout.activeBottomTab === 'worktrees'" class="min-h-0 flex-1">
       <WorktreesView />
     </div>
-    <div v-else class="min-h-0 flex-1">
+    <div v-else-if="layout.activeBottomTab === 'log'" class="min-h-0 flex-1">
       <LogView />
     </div>
   </div>

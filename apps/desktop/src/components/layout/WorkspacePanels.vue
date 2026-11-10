@@ -38,8 +38,10 @@ function resized(payload: { event?: Event; panes: { size: number }[] }) {
       :size="layout.bottomOpen ? (maximized ? 100 : bottomSize) : 0"
       :min-size="layout.bottomOpen ? 15 : 0"
       :max-size="layout.bottomOpen ? (maximized ? 100 : 80) : 0"
-      ><slot v-if="layout.bottomOpen" name="git"
-    /></Pane>
+      :inert="!layout.bottomOpen || undefined"
+      :aria-hidden="!layout.bottomOpen || undefined"
+      ><div v-show="layout.bottomOpen" class="h-full min-h-0"><slot name="git" /></div
+    ></Pane>
   </Splitpanes>
 </template>
 

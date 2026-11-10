@@ -13,6 +13,7 @@ pub struct AppState {
     pub jobs: Arc<JobManager>,
     pub scheduler: Arc<RepoScheduler>,
     pub watcher: Arc<RepoWatcher>,
+    pub terminals: Arc<crate::terminal::TerminalManager>,
     pub versions: AtomicU64,
 }
 
@@ -46,6 +47,7 @@ impl AppState {
             jobs: Arc::new(JobManager::new()),
             scheduler: Arc::new(RepoScheduler::new()),
             watcher: Arc::new(RepoWatcher::default()),
+            terminals: Arc::new(crate::terminal::TerminalManager::default()),
             versions: AtomicU64::new(0),
         }
     }

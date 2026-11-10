@@ -1,4 +1,20 @@
 {
+  "terminal": {
+    "selectAll": "全选",
+    "sessions": "终端会话",
+    "profile": "新终端使用的 Shell",
+    "new": "新建终端",
+    "copy": "复制选中内容（Ctrl+Shift+C）",
+    "paste": "粘贴（Ctrl+Shift+V）",
+    "clear": "清空终端",
+    "close": "关闭终端并结束进程",
+    "exited": "已退出 {code}",
+    "failed": "启动失败",
+    "startedIn": "启动目录：",
+    "desktopOnly": "交互式终端仅在桌面应用中可用。",
+    "openFolder": "打开文件夹或仓库后即可启动终端。",
+    "empty": "点击 + 新建终端。"
+  },
   "app": {
     "name": "gitx",
     "welcome": "欢迎使用 gitx"
@@ -138,6 +154,7 @@
     "commit": "提交",
     "git": "Git",
     "console": "控制台",
+    "terminal": "终端",
     "log": "日志",
     "updateInfo": "更新信息",
     "stash": "Stash",
