@@ -29,7 +29,9 @@ The actual-xterm parser regression verifies split UTF-8 Chinese/emoji, ANSI pars
 
 The first native QA build displayed the Terminal tab beside Console, opened two real PowerShell sessions in the disposable branch QA repository, and expanded correctly when the panel was maximized. Closing its window removed app PID 33616 and shell PIDs 28152/26472. That run exposed a missing reactive session-status update; it was fixed and protected with a regression test before the final builds.
 
-The final executable launched and exposed the expected UI through accessibility, but Windows was locked before interactive verification. No attempt was made to bypass the lock screen. Final native confirmation of the ready controls, context menu and hide/reopen behavior remains pending an unlocked desktop. Shell commands were exercised through the Rust PTY tests, not through GUI automation. Native Ctrl+C/paste behavior and terminal wheel frame timing are not claimed as manually verified.
+After the user unlocked Windows, the final executable opened two PowerShell sessions in the disposable repository. The ready controls updated without another interaction, the right-click menu displayed correctly, Escape dismissed it, hiding/reopening the Git panel retained the original session, and maximize filled the available area. Closing the final app removed PID 12452 and shell PIDs 15416/13348; their PTY console hosts 27632/32536 also disappeared.
+
+The injected Ctrl+backquote chord did not visibly toggle the native panel in this QA run. Shortcut detection/propagation passes component tests, but native keyboard verification remains incomplete; the visible Git stripe successfully hides/reopens the panel. Shell commands were exercised through the Rust PTY tests, not through GUI automation. Native Ctrl+C/paste behavior and terminal wheel frame timing are not claimed as manually verified.
 
 Final integration QA executable:
 
