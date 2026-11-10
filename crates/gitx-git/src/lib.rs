@@ -23,6 +23,7 @@ mod rewrite_ops;
 mod runner;
 mod scheduler;
 mod shelf_export;
+mod shelf_maintenance;
 mod shelf_ops;
 mod smart_ops;
 mod stash_ops;
@@ -41,6 +42,7 @@ pub use ops::RawLogCommit;
 pub use progress::ProgressParser;
 pub use runner::{helper_bin, GitInvocation, GitOutput, GitRunner, OpKind};
 pub use scheduler::RepoScheduler;
+pub use shelf_maintenance::ShelfMaintenanceReport;
 pub use status::parse_status_porcelain_v2;
 pub use stderr::StderrClassifier;
 

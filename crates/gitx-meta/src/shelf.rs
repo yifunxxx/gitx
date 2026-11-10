@@ -10,6 +10,9 @@ use uuid::Uuid;
 
 use crate::{gitx_dir, transaction};
 
+mod maintenance;
+pub use maintenance::*;
+
 pub fn shelf_root(git_common_dir: &Path) -> PathBuf {
     gitx_dir(git_common_dir).join("shelf")
 }
@@ -106,6 +109,12 @@ struct ShelfRecord {
     meta: ShelfEntry,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     patch_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    deleted_at: Option<i64>,
+    /// Objects anchored before publication, including imported preimages.
+    /// Kept across partial consumption so older patch generations stay usable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    retained_objects: Option<Vec<String>>,
 }
 
 impl ShelfRecord {
@@ -217,6 +226,31 @@ pub fn create_shelf_entry(
     binary: bool,
     system: bool,
 ) -> Result<ShelfEntry, AppError> {
+    create_shelf_entry_with_objects(
+        common,
+        message,
+        base_sha,
+        paths,
+        patch,
+        source_changelist,
+        binary,
+        system,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_shelf_entry_with_objects(
+    common: &Path,
+    message: &str,
+    base_sha: &str,
+    paths: &[String],
+    patch: &[u8],
+    source_changelist: Option<&str>,
+    binary: bool,
+    system: bool,
+    retained_objects: Option<Vec<String>>,
+) -> Result<ShelfEntry, AppError> {
     transaction::with_metadata_access(common, || {
         let root = checked_root(common, false, true)?;
         let id = Uuid::new_v4().to_string();
@@ -235,7 +269,13 @@ pub fn create_shelf_entry(
             .tempdir_in(&root)
             .map_err(|e| fs_error("create Shelf staging directory", e))?;
         write_synced(&staging.path().join("changes.patch"), patch)?;
-        let raw = serde_json::to_vec_pretty(&meta).map_err(|e| {
+        let record = ShelfRecord {
+            meta: meta.clone(),
+            patch_file: None,
+            deleted_at: None,
+            retained_objects,
+        };
+        let raw = serde_json::to_vec_pretty(&record).map_err(|e| {
             AppError::new(
                 ErrorCode::Internal,
                 format!("serialize Shelf metadata: {e}"),
@@ -343,7 +383,7 @@ pub fn consume_shelf_patch(
         if remaining_patch.is_empty() {
             let deleted = checked_root(common, true, true)?.join(id);
             require_absent(&deleted)?;
-            return fs::rename(dir, deleted).map_err(|e| fs_error("move Shelf to deleted", e));
+            return move_to_deleted(&dir, &deleted, &mut record);
         }
         let name = format!("changes-{}.patch", Uuid::new_v4());
         let target = dir.join(&name);
@@ -394,10 +434,10 @@ pub fn soft_delete_shelf(common: &Path, id: &str) -> Result<(), AppError> {
     validate_id(id)?;
     transaction::with_metadata_access(common, || {
         let root = checked_root(common, false, false)?;
-        load_entry(&root, id)?;
+        let mut record = load_record(&root, id)?;
         let deleted = checked_root(common, true, true)?.join(id);
         require_absent(&deleted)?;
-        fs::rename(root.join(id), deleted).map_err(|e| fs_error("move Shelf to deleted", e))
+        move_to_deleted(&root.join(id), &deleted, &mut record)
     })
 }
 
@@ -405,10 +445,22 @@ pub fn restore_shelf(common: &Path, id: &str) -> Result<ShelfEntry, AppError> {
     validate_id(id)?;
     transaction::with_metadata_access(common, || {
         let deleted = checked_root(common, true, false)?;
-        let meta = load_entry(&deleted, id)?;
+        let mut record = load_record(&deleted, id)?;
         let dest = checked_root(common, false, true)?.join(id);
         require_absent(&dest)?;
+        // Clear before moving. A failed move only extends deleted retention;
+        // it cannot expire an entry that has just been restored.
+        record.deleted_at = None;
+        transaction::write_json(&deleted.join(id).join("meta.json"), &record)?;
         fs::rename(deleted.join(id), dest).map_err(|e| fs_error("restore Shelf", e))?;
-        Ok(meta)
+        Ok(record.meta)
     })
+}
+
+fn move_to_deleted(dir: &Path, deleted: &Path, record: &mut ShelfRecord) -> Result<(), AppError> {
+    // Timestamp and payload travel together. Failure leaves an active entry,
+    // which maintenance never expires; the next deletion restarts the clock.
+    record.deleted_at = Some(now_secs());
+    transaction::write_json(&dir.join("meta.json"), record)?;
+    fs::rename(dir, deleted).map_err(|e| fs_error("move Shelf to deleted", e))
 }

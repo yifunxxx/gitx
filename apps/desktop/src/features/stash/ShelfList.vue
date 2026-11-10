@@ -266,6 +266,9 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
           {{ t("shelf.showDeleted") }}
         </Button>
       </div>
+      <p v-if="section.kind === 'deleted-shelf'" class="px-3 py-1 text-[11px] text-muted-foreground">
+        {{ t("shelf.retentionHint") }}
+      </p>
       <VirtualList
         v-if="section.entries.length"
         :ref="(value) => setList(section.kind, value)"
@@ -328,6 +331,7 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
             >
               <span class="flex w-full min-w-0 items-center gap-2">
                 <span class="truncate">{{ s.message }}</span>
+                <span v-if="s.system" class="shrink-0 text-[10px] text-muted-foreground">{{ t("shelf.systemBackup") }}</span>
                 <span class="shrink-0 text-muted-foreground">({{ s.paths.length }})</span>
               </span>
               <time

@@ -54,7 +54,13 @@ async fn reads_exact_saved_patch_without_touching_work_index_refs_or_storage() {
     fs::write(cwd.join("README.md"), "later local content\n").unwrap();
     let index = fs::read(common.join("index")).unwrap();
     let refs = git(&runner, cwd, &["show-ref"]).await;
-    let status = git(&runner, cwd, &["status", "--porcelain=v1", "-z"]).await;
+    // The observer must not refresh cached index stats between snapshots.
+    let status = git(
+        &runner,
+        cwd,
+        &["--no-optional-locks", "status", "--porcelain=v1", "-z"],
+    )
+    .await;
     let meta_path = gitx_meta::shelf_dir(&common, &id).join("meta.json");
     let metadata = fs::read(&meta_path).unwrap();
     let preview = runner
@@ -70,7 +76,12 @@ async fn reads_exact_saved_patch_without_touching_work_index_refs_or_storage() {
     assert_eq!(fs::read(meta_path).unwrap(), metadata);
     assert_eq!(git(&runner, cwd, &["show-ref"]).await, refs);
     assert_eq!(
-        git(&runner, cwd, &["status", "--porcelain=v1", "-z"]).await,
+        git(
+            &runner,
+            cwd,
+            &["--no-optional-locks", "status", "--porcelain=v1", "-z"]
+        )
+        .await,
         status
     );
     assert_eq!(
