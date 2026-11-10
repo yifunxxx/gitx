@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
 import { useDiffStore } from "./diffStore";
 import { formatErrorMessage } from "@/lib/errors";
+import { useRepositoryAction } from "@/composables/useRepositoryAction";
 
 export type CompareTab = {
   id: string;
@@ -24,10 +25,27 @@ export type CompareTab = {
 export const useCompareStore = defineStore("compare", () => {
   const tabs = ref<CompareTab[]>([]);
   const activeId = ref<string | null>(null);
+  const capture = useRepositoryAction(() => {
+    tabs.value = [];
+    activeId.value = null;
+  });
+  const requests = new WeakMap<CompareTab, { load: number; combined: number }>();
+  function live(tab: CompareTab) {
+    return tabs.value.includes(tab) && capture().current();
+  }
+  function begin(tab: CompareTab) {
+    if (!live(tab)) return;
+    const state = requests.get(tab) ?? { load: 0, combined: 0 };
+    requests.set(tab, state);
+    const generation = ++state.load;
+    ++state.combined;
+    const source = capture();
+    return { ...source, current: () => source.current() && live(tab) && generation === state.load };
+  }
 
   async function compareVersions(a: string, b: string) {
     const workspace = useWorkspaceStore();
-    if (!workspace.repoPath || !workspace.repoId) return;
+    if (!workspace.repoPath || !workspace.repoId || !capture().current()) return;
     const id = `compare:${a}:${b}`;
     let tab = tabs.value.find((t) => t.id === id);
     if (!tab) {
@@ -46,23 +64,24 @@ export const useCompareStore = defineStore("compare", () => {
       };
       tabs.value = [...tabs.value, tab];
     }
+    tab = tabs.value.find((t) => t.id === id)!;
     activeId.value = id;
     useLayoutStore().activeEditorKind = "compare";
-    await reload(tab);
+    return await reload(tab);
   }
 
   async function compareWithLocal(rev: string) {
-    await compareVersions(rev, "WORKTREE");
-    const tab = tabs.value.find((t) => t.id === `compare:${rev}:WORKTREE`);
+    const tab = await compareVersions(rev, "WORKTREE");
     if (tab) {
       tab.mode = "local";
       tab.title = `Compare ${rev.slice(0, 7)} with Local`;
     }
+    return tab;
   }
 
   async function compareRefs(left: string, right: string) {
     const workspace = useWorkspaceStore();
-    if (!workspace.repoPath || !workspace.repoId) return;
+    if (!workspace.repoPath || !workspace.repoId || !capture().current()) return;
     const id = `compare-refs:${left}:${right}`;
     let tab = tabs.value.find((t) => t.id === id);
     if (!tab) {
@@ -81,95 +100,101 @@ export const useCompareStore = defineStore("compare", () => {
       };
       tabs.value = [...tabs.value, tab];
     }
+    tab = tabs.value.find((t) => t.id === id)!;
     activeId.value = id;
     useLayoutStore().activeEditorKind = "compare";
+    return await reload(tab);
+  }
+
+  async function reload(tab: CompareTab) {
+    const source = begin(tab);
+    if (!source || !source.path || !source.repoId) return;
+    const { left, right } = tab;
     tab.loading = true;
+    tab.error = null;
+    tab.combined = null;
     try {
       const backend = getBackend();
       const [leftPage, rightPage, files] = await Promise.all([
-        backend.logQuery({
-          repoId: workspace.repoId,
-          path: workspace.repoPath,
-          limit: 200,
-          filters: { revisions: [`${left}..${right}`] },
-        }),
-        backend.logQuery({
-          repoId: workspace.repoId,
-          path: workspace.repoPath,
-          limit: 200,
-          filters: { revisions: [`${right}..${left}`] },
-        }),
+        tab.mode === "refs"
+          ? backend.logQuery({
+              repoId: source.repoId,
+              path: source.path,
+              limit: 200,
+              filters: { revisions: [`${left}..${right}`] },
+            })
+          : undefined,
+        tab.mode === "refs"
+          ? backend.logQuery({
+              repoId: source.repoId,
+              path: source.path,
+              limit: 200,
+              filters: { revisions: [`${right}..${left}`] },
+            })
+          : undefined,
         backend.diffRefs({
-          repoId: workspace.repoId,
-          path: workspace.repoPath,
+          repoId: source.repoId,
+          path: source.path,
           left,
           right,
         }),
       ]);
-      tab.rightOnly = leftPage.commits; // commits in right not in left
-      tab.leftOnly = rightPage.commits;
+      if (!source.current()) return;
+      tab.rightOnly = leftPage?.commits ?? []; // commits in right not in left
+      tab.leftOnly = rightPage?.commits ?? [];
       tab.files = files.files;
       tab.left = files.left;
       tab.right = files.right;
+      return tab;
     } catch (e) {
-      tab.error = formatErrorMessage(e);
+      if (source.current()) tab.error = formatErrorMessage(e);
     } finally {
-      tab.loading = false;
-    }
-  }
-
-  async function reload(tab: CompareTab) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath || !workspace.repoId) return;
-    tab.loading = true;
-    tab.error = null;
-    try {
-      const backend = getBackend();
-      const result = await backend.diffRefs({
-        repoId: workspace.repoId,
-        path: workspace.repoPath,
-        left: tab.left,
-        right: tab.right,
-      });
-      tab.left = result.left;
-      tab.right = result.right;
-      tab.files = result.files;
-    } catch (e) {
-      tab.error = formatErrorMessage(e);
-    } finally {
-      tab.loading = false;
+      if (source.current()) tab.loading = false;
     }
   }
 
   async function swap(id: string) {
     const tab = tabs.value.find((t) => t.id === id);
-    if (!tab) return;
+    if (!tab || !live(tab)) return;
     const left = tab.left;
     tab.left = tab.right;
     tab.right = left;
-    if (tab.mode === "refs") {
-      await compareRefs(tab.left, tab.right);
-    } else {
-      await reload(tab);
-    }
+    await reload(tab);
   }
 
   async function openFile(tab: CompareTab, filePath: string, origPath?: string | null) {
+    if (!live(tab)) return;
     const diffs = useDiffStore();
     await diffs.openRevDiff(filePath, tab.left, tab.right, origPath ?? undefined);
-    useLayoutStore().activeEditorKind = "diff";
   }
 
   async function showCombined(tab: CompareTab) {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath || !workspace.repoId) return;
-    tab.combined = await getBackend().diffCombined({
-      repoId: workspace.repoId,
-      path: workspace.repoPath,
-      left: tab.right === "WORKTREE" ? tab.left : tab.right,
-      right: tab.right === "WORKTREE" ? undefined : tab.left,
-      limit: 50,
-    });
+    const source = capture();
+    if (!source.current() || !source.path || !source.repoId || !live(tab) || tab.loading) return;
+    const state = requests.get(tab);
+    if (!state) return;
+    const generation = ++state.combined;
+    const { left, right } = tab;
+    const current = () =>
+      source.current() &&
+      live(tab) &&
+      generation === state.combined &&
+      tab.left === left &&
+      tab.right === right;
+    tab.error = null;
+    try {
+      // The combined endpoint takes the destination first, including WORKTREE.
+      const result = await getBackend().diffCombined({
+        repoId: source.repoId,
+        path: source.path,
+        left: right,
+        right: left,
+        limit: 50,
+      });
+      if (current()) tab.combined = result;
+    } catch (e) {
+      if (current()) tab.error = formatErrorMessage(e);
+    }
   }
 
   function closeTab(id: string) {

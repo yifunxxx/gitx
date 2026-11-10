@@ -669,6 +669,21 @@ impl GitRunner {
         right: &str,
         cancel: &CancellationToken,
     ) -> Result<Vec<ChangedFile>, AppError> {
+        let empty_tree = if left == "EMPTY" || right == "EMPTY" {
+            Some(self.empty_tree(cwd, cancel).await?)
+        } else {
+            None
+        };
+        let left = if left == "EMPTY" {
+            empty_tree.as_deref().unwrap()
+        } else {
+            left
+        };
+        let right = if right == "EMPTY" {
+            empty_tree.as_deref().unwrap()
+        } else {
+            right
+        };
         // right empty / WORKTREE → diff against working tree
         let mut args = vec![
             "diff".to_string(),
@@ -689,6 +704,22 @@ impl GitRunner {
         Ok(parse_name_status_z(&out.stdout))
     }
 
+    pub async fn empty_tree(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<String, AppError> {
+        let out = self
+            .run(
+                GitInvocation::new(cwd, ["hash-object", "-w", "-t", "tree", "--stdin"])
+                    .git_bin(self.git_bin.clone())
+                    .stdin(Vec::<u8>::new()),
+                cancel,
+            )
+            .await?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
     pub async fn read_blob_at(
         &self,
         cwd: &Path,
@@ -696,6 +727,9 @@ impl GitRunner {
         path: &str,
         cancel: &CancellationToken,
     ) -> Result<Option<Vec<u8>>, AppError> {
+        if rev == "EMPTY" {
+            return Ok(None);
+        }
         if rev.eq_ignore_ascii_case("WORKTREE") || rev.is_empty() {
             return self
                 .read_blob_side(cwd, path, DiffSide::Worktree, cancel)
@@ -1078,22 +1112,17 @@ impl GitRunner {
         sha: &str,
         cancel: &CancellationToken,
     ) -> Result<Vec<ChangedFile>, AppError> {
-        let inv = GitInvocation::new(
-            cwd,
-            [
-                "diff-tree",
-                "--no-commit-id",
-                "--name-status",
-                "-r",
-                "-z",
-                "-M",
-                sha,
-            ],
-        )
-        .kind(OpKind::Read)
-        .git_bin(self.git_bin.clone());
-        let out = self.run(inv, cancel).await?;
-        Ok(parse_name_status_z(&out.stdout))
+        let commit = self.log_commit_details(cwd, sha, cancel).await?;
+        // Match the Log's file diff: merges compare against their first parent,
+        // and root commits compare against the empty tree. Plain diff-tree omits
+        // both kinds; -m would instead duplicate files across all merge parents.
+        let base = commit
+            .parents
+            .first()
+            .map(String::as_str)
+            .unwrap_or("EMPTY");
+        self.diff_refs_name_status(cwd, base, &commit.sha, cancel)
+            .await
     }
 
     pub async fn head_message(
