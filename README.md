@@ -98,6 +98,9 @@ Publish a release by pushing a version tag (after the workflow is on `master`):
 
 ```bash
 git checkout master && git pull
+# Bump workspace version in Cargo.toml / package.json / tauri.conf.json / README.
+# In Cargo.lock, only rewrite [[package]] blocks named gitx / gitx-* — never
+# sed the whole file (that can retarget third-party crates like serde_repr).
 git tag -a v0.1.22 -m "gitx v0.1.22"
 git push origin v0.1.22
 # Watch: Actions → Release Windows; then https://github.com/yifunxxx/gitx/releases
