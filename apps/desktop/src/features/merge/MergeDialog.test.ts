@@ -21,11 +21,14 @@ vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 
 let wrapper: ReturnType<typeof mount> | undefined;
 const submit = () => wrapper!.findAll("button").at(-1)!;
-const checkbox = (name: string) =>
+const optionCheckbox = (name: string) =>
   wrapper!
     .findAll("label")
     .find((l) => l.text() === name)!
     .get<HTMLInputElement>("input");
+const branchRow = (name: string) =>
+  wrapper!.findAll("button").find((b) => b.find(`span[title="${name}"]`).exists())!;
+const branchCheckbox = (name: string) => branchRow(name).get<HTMLInputElement>("input");
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -35,6 +38,13 @@ function deferred<T>() {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   mocks.workspace = reactive({ repoPath: "A", navigationToken: () => 1, branch: { head: "main" } });
   mocks.dialog = shallowRef({ id: 42 });
   mocks.rewrite = reactive({ busy: false, merge: vi.fn() });
@@ -48,7 +58,10 @@ beforeEach(() => {
     },
   });
 });
-afterEach(() => wrapper?.unmount());
+afterEach(() => {
+  wrapper?.unmount();
+  vi.unstubAllGlobals();
+});
 
 it("waits for branch loading and blocks writes after loading fails", async () => {
   mocks.branches.refresh.mockRejectedValueOnce(new Error("cannot read refs"));
@@ -63,13 +76,13 @@ it("waits for branch loading and blocks writes after loading fails", async () =>
 it("selects branches with one checkbox interaction and rejects incompatible merge options", async () => {
   wrapper = mount(MergeDialog);
   await flushPromises();
-  expect(checkbox("topic").element.checked).toBe(true);
-  await checkbox("topic").setValue(false);
+  expect(branchCheckbox("topic").element.checked).toBe(true);
+  await branchRow("topic").trigger("click");
   expect(submit().attributes("disabled")).toBeDefined();
-  await checkbox("topic").setValue(true);
-  await checkbox("merge.squashChanges").setValue(true);
-  expect(checkbox("merge.noFastForward").element.disabled).toBe(true);
-  expect(checkbox("merge.fastForwardOnly").element.disabled).toBe(true);
+  await branchRow("topic").trigger("click");
+  await optionCheckbox("merge.squashChanges").setValue(true);
+  expect(optionCheckbox("merge.noFastForward").element.disabled).toBe(true);
+  expect(optionCheckbox("merge.fastForwardOnly").element.disabled).toBe(true);
   await submit().trigger("click");
   expect(mocks.rewrite.merge).toHaveBeenCalledWith(
     expect.objectContaining({ branches: ["topic"], squash: true, noFf: false, ffOnly: false }),
@@ -83,7 +96,7 @@ it("retains input after failure and cancellation, and retries only on request", 
     .mockResolvedValueOnce({ outcome: "success" });
   wrapper = mount(MergeDialog);
   await flushPromises();
-  await checkbox("merge.customMessage").setValue(true);
+  await optionCheckbox("merge.customMessage").setValue(true);
   expect(submit().attributes("disabled")).toBeDefined();
   await wrapper.get('[aria-label="merge.commitMessage"]').setValue("keep 中文 message");
   await submit().trigger("click");

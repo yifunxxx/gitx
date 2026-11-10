@@ -11,6 +11,7 @@ import { useJobsStore } from "./jobsStore";
 import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
 import { handleAuthFailure } from "@/composables/useCredentials";
+import { isAuthError } from "@/lib/auth";
 import { i18n } from "@/i18n";
 import { submoduleFeedback } from "@/lib/submoduleFeedback";
 import { useConflictsStore } from "./conflictsStore";
@@ -59,17 +60,19 @@ export const useSyncStore = defineStore("sync", () => {
       title,
       description: formatErrorMessage(e),
       persistent: true,
-      action: {
-        label: String(i18n.global.t("auth.enterCredentials")),
-        onClick: () => {
-          if (request !== generation) return;
-          void handleAuthFailure(e, { title: i18n.global.t("auth.title"), url })
-            .then(async (ok) => {
-              if (ok && request === generation) await retry();
-            })
-            .catch((error) => toast({ title, description: formatErrorMessage(error) }));
-        },
-      },
+      action: isAuthError(e)
+        ? {
+            label: String(i18n.global.t("auth.enterCredentials")),
+            onClick: () => {
+              if (request !== generation) return;
+              void handleAuthFailure(e, { title: i18n.global.t("auth.title"), url })
+                .then(async (ok) => {
+                  if (ok && request === generation) await retry();
+                })
+                .catch((error) => toast({ title, description: formatErrorMessage(error) }));
+            },
+          }
+        : undefined,
     });
     throw e;
   }

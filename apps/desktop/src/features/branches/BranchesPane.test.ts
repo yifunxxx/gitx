@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { shallowMount, flushPromises } from "@vue/test-utils";
 import BranchesPane from "./BranchesPane.vue";
 
@@ -25,10 +25,24 @@ vi.mock("@/stores/syncStore", () => ({ useSyncStore: () => ({}) }));
 vi.mock("@/actions", () => ({ runAction: vi.fn() }));
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
+
+function mountPane() {
+  return shallowMount(BranchesPane, { global: { stubs: { VirtualList: false } } });
+}
 
 it("keeps favorite clicks separate from branch selection and checkout", async () => {
-  const wrapper = shallowMount(BranchesPane);
+  const wrapper = mountPane();
   const favorite = wrapper.get('button[aria-label="branches.toggleFavorite"]');
   expect(wrapper.find("button button").exists()).toBe(false);
   await favorite.trigger("click");
@@ -36,7 +50,7 @@ it("keeps favorite clicks separate from branch selection and checkout", async ()
   expect(mocks.branches.toggleFavorite).toHaveBeenCalledTimes(1);
   expect(mocks.log.setRevisions).not.toHaveBeenCalled();
   expect(mocks.branches.checkout).not.toHaveBeenCalled();
-  const branch = wrapper.findAll("button").find((b) => b.text() === "main")!;
+  const branch = wrapper.findAll("button").find((b) => b.text().includes("main"))!;
   await branch.trigger("click");
   expect(mocks.log.setRevisions).toHaveBeenCalledWith(["main"]);
   await branch.trigger("dblclick");
@@ -47,10 +61,10 @@ it("keeps favorite clicks separate from branch selection and checkout", async ()
 
 it("does not show a successful checkout toast after a multi-root failure", async () => {
   mocks.branches.checkout.mockResolvedValueOnce(false);
-  const wrapper = shallowMount(BranchesPane);
+  const wrapper = mountPane();
   await wrapper
     .findAll("button")
-    .find((button) => button.text() === "main")!
+    .find((button) => button.text().includes("main"))!
     .trigger("dblclick");
   await flushPromises();
   expect(mocks.toast).not.toHaveBeenCalled();
