@@ -46,4 +46,4 @@
 
 日志目录：`E:/IDEAproject/gitx/test-results/`。自动验证见 `commit-lifetime-baseline-*.log`、`commit-lifetime-full-*.log`、`commit-lifetime-*-final.log`、`commit-lifetime-build-*.log`、`commit-lifetime-native-build*.log`、`commit-head-baseline.log`、`commit-head-rust-*.log`。夹具初始状态与核对见 `commit-lifetime-gui-before.json`、`commit-lifetime-gui-failure.json`、`commit-lifetime-gui-amend.json`、`commit-lifetime-gui-verified.json`、`commit-lifetime-gui-retry-{head,verified}.json`。
 
-QA-020 已完成代码、自动回归和原生验证，功能提交待推送。整体目标仍在进行，原安装版 `D:/gitx/gitx.exe` 未替换。
+QA-020 已完成代码、自动回归和原生验证，功能提交 `bd7606f` 已推送并经 ls-remote 核对远端一致。整体目标仍在进行，原安装版 `D:/gitx/gitx.exe` 未替换。
