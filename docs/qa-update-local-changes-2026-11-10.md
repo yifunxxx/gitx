@@ -13,4 +13,4 @@ The frontend refreshes status, refs/log, operation state, conflicts and Stash af
 - Existing m2_branches_sync suite: three tests passed.
 - Two frontend recovery tests passed in both checkouts; typecheck passed in both; changed-file Oxlint passed.
 - Tests use temporary local bare repositories. No update was run against the user's project-teamwork repository.
-- Native end-to-end update verification is pending the combined QA executable; no frame-rate or native UI validation is claimed here.
+- Native end-to-end Rebase update passed in the combined desktop build (gitx-scroll-qa-20261110.exe, SHA256 7c2179476827b0d16a191f04a81232105d13c406d2f335efdf75b6c2e031974f). The disposable update-scroll-gui-20261110/work fixture advanced to its remote commit; byte checks confirmed staged, unstaged and untracked binary contents survived. The pre-existing stash SHA remained the only stash. The UI closed the update dialog and displayed the two updated files and new commit. Evidence: test-results/repos/update-scroll-gui-20261110/verified.json.
