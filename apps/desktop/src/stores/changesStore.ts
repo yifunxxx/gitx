@@ -240,8 +240,11 @@ export const useChangesStore = defineStore("changes", () => {
   }
 
   function select(path: string, section: ChangesSection, multi = false) {
+    // A selection has one section; paths from another section are different rows,
+    // even when the same file has both staged and unstaged changes.
+    const extend = multi && selectedSection.value === section;
     selectedSection.value = section;
-    if (multi) {
+    if (extend) {
       if (selectedPaths.value.includes(path)) {
         selectedPaths.value = selectedPaths.value.filter((p) => p !== path);
       } else {
