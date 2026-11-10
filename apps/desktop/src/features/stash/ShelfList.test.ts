@@ -11,6 +11,13 @@ vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 const shelf = (id: string) => ({ id, message: id, paths: [`${id}.txt`] });
 enableAutoUnmount(afterEach);
 beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   mocks.workspace = reactive({ isRepo: true, repoPath: "A", navigationToken: () => 0 });
   mocks.store = reactive({
     shelves: [shelf("first"), shelf("second"), shelf("third")],
@@ -28,6 +35,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });
 const create = () => mount(ShelfList, { attachTo: document.body });
@@ -205,4 +213,67 @@ it("toggles the deleted list with the store action", async () => {
   expect(toggle.attributes("aria-pressed")).toBe("true");
   await toggle.trigger("click");
   expect(mocks.store.setShowDeleted).toHaveBeenCalledExactlyOnceWith(false);
+});
+
+it.each(["shelf", "deleted-shelf"])(
+  "expands %s files without applying changes",
+  async (section) => {
+    const wrapper = create();
+    const row = wrapper.findAll(`[data-entry="${section}"]`)[0]!;
+    expect(row.attributes("aria-expanded")).toBe("false");
+    await row.trigger("keydown", { key: "ArrowRight" });
+    expect(row.attributes("aria-expanded")).toBe("true");
+    const list = wrapper.get('[role="list"]');
+    expect(list.attributes("id")).toBe(row.attributes("aria-controls"));
+    expect(list.get('[role="listitem"]').attributes("title")).toBe(
+      section === "shelf" ? "first.txt" : "deleted.txt",
+    );
+    await row.trigger("keydown", { key: "ArrowRight" });
+    expect(wrapper.findAll('[role="list"]')).toHaveLength(1);
+    await list.trigger("keydown", { key: "ArrowLeft" });
+    expect(wrapper.find('[role="list"]').exists()).toBe(false);
+    expect(document.activeElement).toBe(row.element);
+    expect(mocks.store.unshelve).not.toHaveBeenCalled();
+    expect(mocks.store.restoreShelf).not.toHaveBeenCalled();
+  },
+);
+
+it("expands by mouse and keeps paths synchronized after partial application", async () => {
+  const wrapper = create();
+  const disclosure = wrapper.findAll("[data-shelf-disclosure]")[0]!;
+  await disclosure.trigger("click");
+  expect(mocks.store.selectedShelfId).toBe("first");
+  expect(document.activeElement).toBe(wrapper.get('[data-entry="shelf"]').element);
+  mocks.store.shelves[0].paths = ["目录/剩余 文件.txt"];
+  await flushPromises();
+  expect(wrapper.get('[role="listitem"]').attributes("title")).toBe("目录/剩余 文件.txt");
+  await disclosure.trigger("click");
+  expect(wrapper.find('[role="list"]').exists()).toBe(false);
+});
+
+it("clears expanded state after navigation and removal, including reused IDs", async () => {
+  const wrapper = create();
+  await wrapper.get('[data-entry="shelf"]').trigger("keydown", { key: "ArrowRight" });
+  mocks.workspace.repoPath = "B";
+  await flushPromises();
+  expect(wrapper.find('[role="list"]').exists()).toBe(false);
+  await wrapper.get('[data-entry="shelf"]').trigger("keydown", { key: "ArrowRight" });
+  mocks.store.shelves.splice(0, 1);
+  await flushPromises();
+  mocks.store.shelves.unshift(shelf("first"));
+  await flushPromises();
+  expect(wrapper.get('[data-entry="shelf"]').attributes("aria-expanded")).toBe("false");
+});
+
+it("shows valid saved times and safely omits invalid dates", () => {
+  mocks.store.shelves = [
+    { ...shelf("dated"), createdAt: 1_704_100_000 },
+    { ...shelf("invalid"), createdAt: NaN },
+  ];
+  const wrapper = create();
+  const rows = wrapper.findAll('[data-entry="shelf"]');
+  expect(rows[0]!.get("time").attributes("datetime")).toBe(
+    new Date(1_704_100_000_000).toISOString(),
+  );
+  expect(rows[1]!.find("time").exists()).toBe(false);
 });

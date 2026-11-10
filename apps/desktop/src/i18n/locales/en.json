@@ -387,6 +387,10 @@
     "clearConfirm": "Clear all {count} stashes without applying them?"
   },
   "shelf": {
+    "expandFiles": "Expand files in {name}",
+    "collapseFiles": "Collapse files in {name}",
+    "files": "Files in {name}",
+    "createdAt": "Created",
     "showDeleted": "Show recently deleted",
     "recentlyDeleted": "Recently deleted",
     "deletedEmpty": "No deleted shelves",
