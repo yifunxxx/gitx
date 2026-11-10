@@ -252,6 +252,20 @@ export const SETTINGS_PAGES: SettingPage[] = [
         control: { kind: "boolean" },
         scope: "app",
       },
+      {
+        id: "logListMode",
+        titleKey: "settings.fields.logListMode",
+        keywords: ["log", "flat", "tree", "列表", "树"],
+        path: "git.logListMode",
+        control: {
+          kind: "select",
+          options: [
+            { value: "flat", labelKey: "log.listModeFlat" },
+            { value: "tree", labelKey: "log.listModeTree" },
+          ],
+        },
+        scope: "app",
+      },
     ],
   },
   {

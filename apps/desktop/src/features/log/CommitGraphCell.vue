@@ -77,85 +77,44 @@ function curvePath(from: number, to: number) {
   const midY = (y1 + y2) / 2;
   return `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
 }
+
+const tip = computed(() => props.nodeLabel || tipForLane(props.graph.lane) || "");
 </script>
 
 <template>
+  <!-- Single SVG per recycled row; no duplicate transparent hit strokes (halves node count). -->
   <svg
-    class="block shrink-0 overflow-visible"
+    class="block shrink-0 overflow-hidden [contain:strict]"
     :width="width"
     :height="height"
     :viewBox="`0 0 ${width} ${height}`"
     role="img"
-    :aria-label="nodeLabel || tipForLane(graph.lane) || undefined"
+    :aria-label="tip || undefined"
   >
-    <g
-      v-for="(s, i) in segments"
-      :key="i"
-      fill="none"
-      stroke-width="2"
-      stroke-linecap="round"
-      :stroke="laneColor(s.color)"
-    >
-      <title v-if="s.kind !== 'curve' && tipForLane(s.lane)">{{ tipForLane(s.lane) }}</title>
-      <title v-else-if="s.kind === 'curve' && (tipForLane(s.from) || tipForLane(s.to))">
-        {{ tipForLane(s.from) || tipForLane(s.to) }}
-      </title>
-      <line v-if="s.kind === 'through'" :x1="cx(s.lane)" y1="0" :x2="cx(s.lane)" :y2="height" />
-      <line
-        v-else-if="s.kind === 'down'"
-        :x1="cx(s.lane)"
-        :y1="cy()"
-        :x2="cx(s.lane)"
-        :y2="height"
+    <title v-if="tip">{{ tip }}</title>
+    <g fill="none" stroke-width="2" stroke-linecap="round">
+      <path
+        v-for="(s, i) in segments"
+        :key="i"
+        :stroke="laneColor(s.color)"
+        :d="
+          s.kind === 'curve'
+            ? curvePath(s.from, s.to)
+            : s.kind === 'down'
+              ? `M ${cx(s.lane)} ${cy()} L ${cx(s.lane)} ${height}`
+              : `M ${cx(s.lane)} 0 L ${cx(s.lane)} ${height}`
+        "
       />
-      <path v-else :d="curvePath(s.from, s.to)" />
-      <!-- Wider invisible hit target for hover tip -->
-      <line
-        v-if="s.kind === 'through' || s.kind === 'down'"
-        :x1="cx(s.lane)"
-        :y1="s.kind === 'down' ? cy() : 0"
-        :x2="cx(s.lane)"
-        :y2="height"
-        stroke="transparent"
-        stroke-width="10"
-      >
-        <title v-if="tipForLane(s.lane)">{{ tipForLane(s.lane) }}</title>
-      </line>
-    </g>
-    <g v-if="incoming">
-      <line
-        :x1="cx(graph.lane)"
-        y1="0"
-        :x2="cx(graph.lane)"
-        :y2="cy()"
-        fill="none"
-        stroke-width="2"
-        stroke-linecap="round"
+      <path
+        v-if="incoming"
         :stroke="laneColor(graph.color)"
+        :d="`M ${cx(graph.lane)} 0 L ${cx(graph.lane)} ${cy()}`"
       />
-      <line
-        :x1="cx(graph.lane)"
-        y1="0"
-        :x2="cx(graph.lane)"
-        :y2="cy()"
-        stroke="transparent"
-        stroke-width="10"
-      >
-        <title v-if="tipForLane(graph.lane) || nodeLabel">
-          {{ nodeLabel || tipForLane(graph.lane) }}
-        </title>
-      </line>
-    </g>
-    <g>
-      <line
+      <path
         v-if="hiddenParents?.length"
-        :x1="cx(graph.lane)"
-        :x2="cx(graph.lane)"
-        :y1="cy() + 4"
-        :y2="height - 3"
         :stroke="laneColor(graph.color)"
-        stroke-width="2"
         stroke-dasharray="2 2"
+        :d="`M ${cx(graph.lane)} ${cy() + 4} L ${cx(graph.lane)} ${height - 3}`"
       >
         <title>
           {{
@@ -164,20 +123,15 @@ function curvePath(from: number, to: number) {
             })
           }}
         </title>
-      </line>
-      <circle
-        :cx="cx(graph.lane)"
-        :cy="cy()"
-        r="3.5"
-        :fill="laneColor(graph.color)"
-        class="stroke-background"
-        stroke-width="1.5"
-      />
-      <circle :cx="cx(graph.lane)" :cy="cy()" r="7" fill="transparent">
-        <title v-if="nodeLabel || tipForLane(graph.lane)">
-          {{ nodeLabel || tipForLane(graph.lane) }}
-        </title>
-      </circle>
+      </path>
     </g>
+    <circle
+      :cx="cx(graph.lane)"
+      :cy="cy()"
+      r="3.5"
+      :fill="laneColor(graph.color)"
+      class="stroke-background"
+      stroke-width="1.5"
+    />
   </svg>
 </template>

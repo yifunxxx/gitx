@@ -30,6 +30,13 @@ vi.mock("@/stores/repoAtRevStore", () => ({ useRepoAtRevStore: () => ({}) }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({}) }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => ({}) }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => mocks.rewrite }));
+vi.mock("@/stores/settingsStore", () => ({
+  useSettingsStore: () => ({
+    settings: { git: { logListMode: "flat" } },
+    emptySettings: () => ({ git: { logListMode: "flat" } }),
+    save: vi.fn(),
+  }),
+}));
 vi.mock("@/composables/useConfirm", () => ({
   confirmDialog: mocks.confirm,
   promptDialog: mocks.prompt,

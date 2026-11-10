@@ -696,6 +696,7 @@ export type CommitResult = { sha: string; subject: string; amended: boolean };
  * Commit tool window presentation (#69). Modal is deferred (#139).
  */
 export type CommitTwMode = "docked" | "window" | "float";
+export type LogListMode = "flat" | "tree";
 export type CompareRange = { left: string; right: string; leftOnly: string[]; rightOnly: string[] };
 export type CompareReq = { path: string; left: string; right: string };
 export type ConflictAcceptReq = { path: string; paths: string[]; side: ConflictSide };
@@ -978,6 +979,10 @@ export type GitSettings = {
    * Close Commit TW after successful commit (#69 Advanced).
    */
   closeCommitTwAfterCommit?: boolean;
+  /**
+   * Log list: chronological flat or branch-oriented tree.
+   */
+  logListMode?: LogListMode;
 };
 export type GraphEdge = { fromLane: number; toLane: number };
 export type GraphRow = { lane: number; edges: GraphEdge[]; color: number };

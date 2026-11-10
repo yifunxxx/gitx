@@ -50,6 +50,7 @@ const defaultSettings: AppSettings = {
     commitTwMode: "docked",
     commitControlsHidden: false,
     closeCommitTwAfterCommit: false,
+    logListMode: "flat",
   },
 };
 

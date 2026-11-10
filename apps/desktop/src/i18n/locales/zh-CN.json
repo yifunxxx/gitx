@@ -203,7 +203,11 @@
     "clearTip": "清除全部筛选",
     "maximizePanel": "最大化 Git 面板",
     "restorePanel": "恢复 Git 面板",
-    "refreshFailed": "刷新提交历史失败"
+    "refreshFailed": "刷新提交历史失败",
+    "listModeFlat": "平铺列表",
+    "listModeTree": "树形列表",
+    "listModeTip": "在按时间排序的平铺列表与按分支组织的树形列表之间切换",
+    "treeOther": "其他提交"
   },
   "merge": {
     "conflicts": "冲突",
@@ -494,6 +498,7 @@
       "forkParentRemote": "Fork 父 Remote 名",
       "commitTwMode": "Commit 工具窗模式",
       "logIndexing": "启用 Log 索引",
+      "logListMode": "Log 列表模式",
       "closeCommitTwAfterCommit": "提交成功后关闭 Commit 工具窗",
       "commitControlsHidden": "默认隐藏提交控件（Ctrl+K 显示）",
       "groupBranchesByDirectory": "按目录分组分支",

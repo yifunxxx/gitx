@@ -48,6 +48,7 @@ export const useSettingsStore = defineStore("settings", () => {
         commitTwMode: "docked",
         commitControlsHidden: false,
         closeCommitTwAfterCommit: false,
+        logListMode: "flat",
       },
     };
   }

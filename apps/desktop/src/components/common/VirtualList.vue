@@ -8,9 +8,11 @@ const props = withDefaults(
     getItemHeight?: (item: T, index: number) => number;
     overscan?: number;
     preserveScrollAnchor?: boolean;
+    /** Reuse slot VNodes by window index instead of item identity (cuts SVG remount thrash). */
+    recycleKeys?: boolean;
     getKey: (item: T, index: number) => string | number;
   }>(),
-  { overscan: 10 },
+  { overscan: 10, recycleKeys: false },
 );
 
 const emit = defineEmits<{
@@ -206,8 +208,9 @@ defineExpose({
           :style="{ transform: `translate3d(0, ${offsetY}px, 0)` }"
         >
           <div
-            v-for="row in visible"
-            :key="getKey(row.item, row.index)"
+            v-for="(row, slot) in visible"
+            :key="recycleKeys ? slot : getKey(row.item, row.index)"
+            class="[contain:layout_paint]"
             :style="{ height: `${rowHeight(row.index)}px` }"
           >
             <slot :item="row.item" :index="row.index" />

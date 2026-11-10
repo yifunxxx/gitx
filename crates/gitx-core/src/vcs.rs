@@ -805,6 +805,15 @@ pub enum CommitTwMode {
     Float,
 }
 
+/// Log commit list presentation: chronological flat vs branch-oriented tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LogListMode {
+    #[default]
+    Flat,
+    Tree,
+}
+
 /// Submodule update policy after Update Project (#81).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]

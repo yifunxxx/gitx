@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layoutCommitGraph } from "./graphLayout";
+import { layoutCommitGraph, layoutCommitGraphIncremental } from "./graphLayout";
 
 const c = (sha: string, ...parents: string[]) => ({ sha, shortSha: sha, parents, refs: [] });
 
@@ -145,5 +145,25 @@ describe("commit graph topology", () => {
     expect(result.maxLane).toBe(0);
     expect(result.rows).toHaveLength(10000);
     expect(result.rows.at(-1)!.graph.edges).toEqual([]);
+  });
+
+  it("resumes layout on append without rebuilding the prefix", () => {
+    const commits = Array.from({ length: 250 }, (_, i) =>
+      c(`n${i}`, ...(i < 249 ? [`n${i + 1}`] : [])),
+    );
+    const first = layoutCommitGraphIncremental(commits.slice(0, 100));
+    const second = layoutCommitGraphIncremental(commits.slice(0, 200), {}, first.cursor);
+    const full = layoutCommitGraph(commits.slice(0, 200));
+    expect(second.layout.rows).toEqual(full.rows);
+    expect(second.cursor.length).toBe(200);
+    expect(second.layout.rows.slice(0, 100)).toEqual(first.layout.rows);
+  });
+
+  it("does not resume a filtered layout after append", () => {
+    const commits = [c("a", "hidden-a"), c("b", "hidden-b"), c("c", "hidden-c")];
+    const first = layoutCommitGraphIncremental(commits.slice(0, 2), { filtered: true });
+    const second = layoutCommitGraphIncremental(commits, { filtered: true }, first.cursor);
+    expect(second.layout.rows).toEqual(layoutCommitGraph(commits, { filtered: true }).rows);
+    expect(second.cursor).not.toBe(first.cursor);
   });
 });

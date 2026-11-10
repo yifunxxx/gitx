@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { GitBranch, RefreshCw, Search, Settings2, Star, Tag } from "@lucide/vue";
+import { RefreshCw, Search, Settings2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import RefGlyph from "@/components/common/RefGlyph.vue";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -293,6 +294,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
         :item-height="28"
         :get-key="rowKey"
         :preserve-scroll-anchor="true"
+        recycle-keys
         class="branch-list min-w-0 text-sm"
         :style="{ height: `${Math.min(rows.length * 28, 480)}px`, maxHeight: 'calc(70vh - 112px)' }"
       >
@@ -326,10 +328,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
               :aria-pressed="row.entry.isFavorite"
               @click.stop="$event.detail < 2 && branches.toggleFavorite(row.entry)"
             >
-              <Star
-                class="h-3 w-3"
-                :class="row.entry.isFavorite ? 'fill-current text-warning' : ''"
-              />
+              <RefGlyph kind="star" :active="row.entry.isFavorite" />
             </button>
             <button
               type="button"
@@ -338,11 +337,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
               :title="row.entry.name"
               @click="$event.detail < 2 && onCheckout(row.entry)"
             >
-              <Tag
-                v-if="row.entry.kind === 'tag'"
-                class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-              />
-              <GitBranch v-else class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <RefGlyph :kind="row.entry.kind === 'tag' ? 'tag' : 'branch'" />
               <span class="min-w-0 flex-1 truncate">{{ row.label }}</span>
               <span
                 v-if="row.entry.isHead && row.section === 'local'"

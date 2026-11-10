@@ -94,6 +94,44 @@ it("bounds variable rows and reaches the final entry after expansion and collaps
   wrapper.unmount();
 });
 
+it("reuses window slots when recycleKeys is enabled", async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const items = Array.from({ length: 200 }, (_, i) => `row-${i}`);
+  const wrapper = mount(VirtualList, {
+    props: {
+      items,
+      itemHeight: 22,
+      getKey: String,
+      recycleKeys: true,
+      overscan: 2,
+    },
+    slots: { default: `<span class="cell">{{ params.item }}</span>` },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  Object.defineProperty(port, "clientHeight", { configurable: true, value: 220 });
+  port.scrollTop = 0;
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  const firstKeys = wrapper.findAll(".cell").map((node) => node.text());
+  expect(firstKeys[0]).toBe("row-0");
+  expect(firstKeys.length).toBeLessThan(30);
+  port.scrollTop = 440;
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  const secondKeys = wrapper.findAll(".cell").map((node) => node.text());
+  expect(secondKeys[0]).not.toBe("row-0");
+  expect(secondKeys.length).toBeLessThan(30);
+  // Slot keys are window indices, so the mounted cell count stays a small pool.
+  expect(Math.abs(secondKeys.length - firstKeys.length)).toBeLessThanOrEqual(4);
+  wrapper.unmount();
+});
+
 it("preserves the visible anchor when an expanded row above it changes height", async () => {
   const items = Array.from({ length: 100 }, (_, id) => ({ id, height: 44 }));
   const wrapper = mount(VirtualList, {

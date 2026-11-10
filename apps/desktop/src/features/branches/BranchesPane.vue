@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Check, GitBranch, Search, Star, Tag } from "@lucide/vue";
+import { Search } from "@lucide/vue";
+import RefGlyph from "@/components/common/RefGlyph.vue";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -248,6 +249,7 @@ function rowClass(entry: RefEntry | undefined) {
       :item-height="28"
       :get-key="rowKey"
       :preserve-scroll-anchor="true"
+      recycle-keys
       class="branch-list min-w-0"
     >
       <template #default="{ item: row }">
@@ -280,10 +282,7 @@ function rowClass(entry: RefEntry | undefined) {
             :aria-pressed="row.entry.isFavorite"
             @click.stop="$event.detail < 2 && branches.toggleFavorite(row.entry)"
           >
-            <Star
-              class="h-3 w-3"
-              :class="row.entry.isFavorite ? 'fill-current text-warning' : ''"
-            />
+            <RefGlyph kind="star" :active="row.entry.isFavorite" />
           </button>
           <button
             type="button"
@@ -293,13 +292,9 @@ function rowClass(entry: RefEntry | undefined) {
             @click="$event.detail < 2 && onSelect(row.entry)"
             @dblclick="onCheckout(row.entry)"
           >
-            <Tag
-              v-if="row.entry.kind === 'tag'"
-              class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-            />
-            <GitBranch v-else class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <RefGlyph :kind="row.entry.kind === 'tag' ? 'tag' : 'branch'" />
             <span class="min-w-0 flex-1 truncate">{{ row.label }}</span>
-            <Check v-if="row.entry.isHead" class="h-3 w-3 shrink-0 text-primary" />
+            <RefGlyph v-if="row.entry.isHead" kind="check" />
             <span v-if="row.section === 'local'" class="shrink-0 text-[10px] text-muted-foreground">
               <template v-if="row.entry.behind">↓{{ row.entry.behind }}</template>
               <template v-if="row.entry.ahead">↑{{ row.entry.ahead }}</template>

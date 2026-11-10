@@ -203,7 +203,11 @@
     "clearTip": "Clear all filters",
     "maximizePanel": "Maximize Git panel",
     "restorePanel": "Restore Git panel",
-    "refreshFailed": "Could not refresh history"
+    "refreshFailed": "Could not refresh history",
+    "listModeFlat": "Flat list",
+    "listModeTree": "Tree list",
+    "listModeTip": "Switch between chronological flat list and branch-oriented tree",
+    "treeOther": "Other commits"
   },
   "merge": {
     "conflicts": "Conflicts",
@@ -494,6 +498,7 @@
       "forkParentRemote": "Fork parent remote name",
       "commitTwMode": "Commit tool window mode",
       "logIndexing": "Enable Log indexing",
+      "logListMode": "Log list mode",
       "closeCommitTwAfterCommit": "Close Commit TW after successful commit",
       "commitControlsHidden": "Hide commit controls until Ctrl+K",
       "groupBranchesByDirectory": "Group branches by directory",

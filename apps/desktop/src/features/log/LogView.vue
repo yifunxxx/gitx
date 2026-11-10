@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { formatCommitTime as formatTime } from "@/lib/commitTime";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
-import { Eye, Filter, Search } from "@lucide/vue";
+import { Eye, Filter, List, ListTree, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useCompareStore } from "@/stores/compareStore";
@@ -12,6 +12,7 @@ import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
 import { useDiffStore } from "@/stores/diffStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
@@ -19,12 +20,13 @@ import VirtualList from "@/components/common/VirtualList.vue";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
-import type { FileChangeKind } from "@/lib/backend";
+import type { FileChangeKind, LogListMode } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { confirmDialog } from "@/composables/useConfirm";
 import { markContextHandled } from "@/lib/contextMenu";
 import { captureRewriteContext } from "@/features/merge/rewriteContext";
 import { formatErrorMessage } from "@/lib/errors";
+import { cloneJson } from "@/lib/clone";
 import {
   Select,
   SelectContent,
@@ -36,7 +38,12 @@ import PathTreeList from "@/components/files/PathTreeList.vue";
 import type { ChangedFile } from "@/lib/backend";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
 import CommitGraphCell from "./CommitGraphCell.vue";
-import { layoutCommitGraph } from "./graphLayout";
+import {
+  layoutCommitGraphIncremental,
+  type GraphLayoutCursor,
+  type GraphLayoutResult,
+} from "./graphLayout";
+import { buildLogTreeRows, logTreeRowKey, type LogTreeRow } from "./buildLogTreeRows";
 
 const { t } = useI18n();
 const log = useLogStore();
@@ -47,6 +54,7 @@ const repoAtRev = useRepoAtRevStore();
 const diffs = useDiffStore();
 const layout = useLayoutStore();
 const rewrite = useRewriteStore();
+const settings = useSettingsStore();
 
 const ROW_H = 22;
 const textDraft = ref("");
@@ -85,8 +93,12 @@ function mapStatus(s: string): FileChangeKind {
   }
 }
 
-const graphLayout = computed(() =>
-  layoutCommitGraph(log.commits, {
+const listMode = computed<LogListMode>(() => settings.settings?.git?.logListMode ?? "flat");
+const graphCursor = shallowRef<GraphLayoutCursor | null>(null);
+const graphLayout = shallowRef<GraphLayoutResult>({ rows: [], maxLane: 0, colPx: 48 });
+
+function graphOptions() {
+  return {
     filtered: !!(
       log.filters.text ||
       log.filters.authors?.length ||
@@ -96,15 +108,72 @@ const graphLayout = computed(() =>
       log.filters.noMerges
     ),
     firstParent: !!log.filters.firstParent,
-  }),
+  };
+}
+
+watch(
+  () =>
+    [
+      log.commits,
+      log.filters.text,
+      log.filters.authors,
+      log.filters.paths,
+      log.filters.since,
+      log.filters.until,
+      log.filters.noMerges,
+      log.filters.firstParent,
+    ] as const,
+  () => {
+    const { layout: next, cursor } = layoutCommitGraphIncremental(
+      log.commits,
+      graphOptions(),
+      graphCursor.value,
+    );
+    graphCursor.value = cursor;
+    graphLayout.value = next;
+  },
+  { immediate: true },
 );
+
+const treeRows = computed(() =>
+  listMode.value === "tree"
+    ? buildLogTreeRows(log.commits, String(t("log.treeOther")))
+    : ([] as LogTreeRow[]),
+);
+
+async function setListMode(mode: LogListMode) {
+  if (listMode.value === mode) return;
+  const base = cloneJson(settings.settings ?? settings.emptySettings());
+  await settings.save({
+    ...base,
+    git: { ...base.git, logListMode: mode },
+  });
+  await nextTick();
+  commitListRef.value?.scrollToIndex?.(0);
+}
+
+let loadMoreTimer = 0;
+function scheduleLoadMore() {
+  if (loadMoreTimer) return;
+  loadMoreTimer = window.setTimeout(() => {
+    loadMoreTimer = 0;
+    void log.loadMore();
+  }, 120);
+}
+onUnmounted(() => {
+  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
+});
+
 const scrollLeft = ref(0);
 const graphPanel = ref<HTMLElement | null>(null);
 const panelWidth = ref(720);
 const graphOffset = ref(0);
 // Reserve space for the message while preserving the graph's lane spacing.
+const showGraphColumn = computed(() => listMode.value === "flat");
 const graphColumnWidth = computed(() =>
-  Math.min(graphLayout.value.colPx, Math.max(100, Math.floor(panelWidth.value * 0.35))),
+  showGraphColumn.value
+    ? Math.min(graphLayout.value.colPx, Math.max(100, Math.floor(panelWidth.value * 0.35)))
+    : 0,
 );
 const graphMaxOffset = computed(() =>
   Math.max(0, graphLayout.value.colPx - graphColumnWidth.value),
@@ -132,7 +201,11 @@ watch(
     graphOffset.value = Math.max(0, Math.min(maximum, offset));
   },
 );
-const gridColumns = computed(() => `${graphColumnWidth.value}px minmax(140px, 1fr) 90px 126px`);
+const gridColumns = computed(() =>
+  showGraphColumn.value
+    ? `${graphColumnWidth.value}px minmax(140px, 1fr) 90px 126px`
+    : `minmax(160px, 1fr) 90px 126px`,
+);
 
 const indexLabel = computed(() => {
   const st = log.indexStatus;
@@ -253,7 +326,7 @@ function onListScroll(e: Event) {
   // rows mid-drag changes scrollHeight and makes the thumb jam (GIT-40).
   if (commitListRef.value?.pointerDown) return;
   const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
-  if (remaining < 80) void log.loadMore();
+  if (remaining < 80) scheduleLoadMore();
 }
 
 function onCommitClick(sha: string, e: MouseEvent) {
@@ -501,6 +574,34 @@ async function runRewriteAction(action: () => Promise<void>) {
           </Button>
         </Tip>
         <div class="mx-1 h-4 w-px bg-border" />
+        <Tip :text="t('log.listModeTip')">
+          <div class="flex items-center rounded-md border">
+            <Button
+              size="xs"
+              variant="ghost"
+              class="rounded-r-none"
+              :class="listMode === 'flat' ? 'bg-accent' : ''"
+              :aria-pressed="listMode === 'flat'"
+              :aria-label="t('log.listModeFlat')"
+              @click="setListMode('flat')"
+            >
+              <List class="mr-1 h-3 w-3" />
+              {{ t("log.listModeFlat") }}
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              class="rounded-l-none border-l"
+              :class="listMode === 'tree' ? 'bg-accent' : ''"
+              :aria-pressed="listMode === 'tree'"
+              :aria-label="t('log.listModeTree')"
+              @click="setListMode('tree')"
+            >
+              <ListTree class="mr-1 h-3 w-3" />
+              {{ t("log.listModeTree") }}
+            </Button>
+          </div>
+        </Tip>
         <Tip :text="t('log.graphTip')">
           <Button
             size="xs"
@@ -641,10 +742,10 @@ async function runRewriteAction(action: () => Promise<void>) {
                     :style="{
                       gridTemplateColumns: gridColumns,
                       transform: `translateX(${-scrollLeft}px)`,
-                      minWidth: `${graphColumnWidth + 372}px`,
+                      minWidth: `${(showGraphColumn ? graphColumnWidth : 0) + 372}px`,
                     }"
                   >
-                    <span class="flex min-w-0 items-center gap-2 pr-3">
+                    <span v-if="showGraphColumn" class="flex min-w-0 items-center gap-2 pr-3">
                       <span>{{ t("log.colGraph") }}</span>
                       <input
                         v-if="graphMaxOffset > 0"
@@ -682,11 +783,13 @@ async function runRewriteAction(action: () => Promise<void>) {
                   </button>
                 </div>
                 <VirtualList
+                  v-if="listMode === 'flat'"
                   ref="commitListRef"
                   :items="log.commits"
                   :item-height="ROW_H"
                   :get-key="(c) => c.sha"
                   preserve-scroll-anchor
+                  recycle-keys
                   role="listbox"
                   aria-multiselectable="true"
                   :aria-label="t('toolWindows.log')"
@@ -695,7 +798,7 @@ async function runRewriteAction(action: () => Promise<void>) {
                   <template #default="{ item: c, index: idx }">
                     <button
                       type="button"
-                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring [contain:layout_paint]"
                       role="option"
                       :aria-selected="selectedSet.has(c.sha)"
                       :tabindex="
@@ -716,6 +819,7 @@ async function runRewriteAction(action: () => Promise<void>) {
                     >
                       <span class="flex h-full min-w-0 items-center justify-start overflow-hidden">
                         <CommitGraphCell
+                          v-if="graphLayout.rows[idx]"
                           :graph="graphLayout.rows[idx]!.graph"
                           :edge-colors="graphLayout.rows[idx]!.edgeColors"
                           :incoming="graphLayout.rows[idx]!.incoming"
@@ -745,6 +849,87 @@ async function runRewriteAction(action: () => Promise<void>) {
                         class="truncate text-muted-foreground"
                         :title="formatTime(c.authorTime)"
                         >{{ formatTime(c.authorTime) }}</span
+                      >
+                    </button>
+                  </template>
+                  <template #footer>
+                    <div
+                      v-if="log.truncated || log.loadingMore"
+                      class="flex w-full items-center justify-center py-2 text-xs text-muted-foreground"
+                    >
+                      <span v-if="log.loadingMore">{{ t("log.loadingMore") }}</span>
+                      <button
+                        v-else
+                        type="button"
+                        class="hover:text-foreground"
+                        @click="log.loadMore()"
+                      >
+                        {{ t("log.loadMore") }}
+                      </button>
+                    </div>
+                  </template>
+                </VirtualList>
+                <VirtualList
+                  v-else
+                  ref="commitListRef"
+                  :items="treeRows"
+                  :item-height="ROW_H"
+                  :get-key="logTreeRowKey"
+                  preserve-scroll-anchor
+                  recycle-keys
+                  role="listbox"
+                  aria-multiselectable="true"
+                  :aria-label="t('toolWindows.log')"
+                  @scroll="onListScroll"
+                >
+                  <template #default="{ item: row }">
+                    <div
+                      v-if="row.kind === 'branch'"
+                      class="flex h-[22px] items-center px-2 text-[11px] font-medium text-primary [contain:layout_paint]"
+                    >
+                      {{ row.name }}
+                    </div>
+                    <button
+                      v-else
+                      type="button"
+                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring [contain:layout_paint]"
+                      role="option"
+                      :aria-selected="selectedSet.has(row.commit.sha)"
+                      :tabindex="log.selectedSha === row.commit.sha ? 0 : -1"
+                      @keydown="onCommitKeydown(row.commit.sha, $event)"
+                      :style="{
+                        gridTemplateColumns: gridColumns,
+                        minWidth: '372px',
+                        paddingLeft: `${8 + row.depth * 12}px`,
+                      }"
+                      :class="
+                        selectedSet.has(row.commit.sha)
+                          ? 'bg-selection text-selection-foreground'
+                          : 'hover:bg-hover-surface'
+                      "
+                      @click="onCommitClick(row.commit.sha, $event)"
+                      @contextmenu="onCommitContext(row.commit.sha, $event)"
+                    >
+                      <span class="flex min-w-0 items-center gap-1 truncate">
+                        <span
+                          v-for="refName in visibleRefs(row.commit.refs)"
+                          :key="refName"
+                          class="max-w-28 shrink-0 truncate rounded-sm bg-muted px-1 text-[10px] text-foreground"
+                          :title="refName"
+                        >
+                          {{ refName }}
+                        </span>
+                        <span class="truncate">{{ row.commit.subject }}</span>
+                      </span>
+                      <span
+                        class="truncate pr-2 text-muted-foreground"
+                        :title="row.commit.author"
+                        >{{ row.commit.author }}</span
+                      >
+                      <span
+                        class="truncate text-muted-foreground"
+                        :title="formatTime(row.commit.authorTime)"
+                        >{{ formatTime(row.commit.authorTime) }}</span
                       >
                     </button>
                   </template>

@@ -1,4 +1,4 @@
-use crate::{CleanTreeMethod, CommitTwMode, SubmoduleUpdatePolicy};
+use crate::{CleanTreeMethod, CommitTwMode, LogListMode, SubmoduleUpdatePolicy};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -109,6 +109,9 @@ pub struct GitSettings {
     /// Close Commit TW after successful commit (#69 Advanced).
     #[serde(default)]
     pub close_commit_tw_after_commit: bool,
+    /// Log list: chronological flat or branch-oriented tree.
+    #[serde(default)]
+    pub log_list_mode: LogListMode,
 }
 
 fn default_fork_parent() -> String {
@@ -152,6 +155,7 @@ impl Default for GitSettings {
             commit_tw_mode: CommitTwMode::Docked,
             commit_controls_hidden: false,
             close_commit_tw_after_commit: false,
+            log_list_mode: LogListMode::Flat,
         }
     }
 }
