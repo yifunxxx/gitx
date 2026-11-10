@@ -36,6 +36,6 @@
 
 ## 交付范围
 
-目标分支 `codex/checkout-target-safety`；功能及相关文档单独提交推送，实际提交号与远端结果在回合交付中报告。集成目录只同步本功能相关改动。
+目标分支 `codex/checkout-target-safety`；功能及相关文档已随 `93916cd` 单独提交推送。`ls-remote` 验证远端为 `93916cd319907d32ab5c74af7b60a0777a79634e`，与本地一致。集成目录只同步本功能相关改动。
 
 最终原生 QA 程序为 `E:/IDEAproject/gitx/test-results/isolated-target/debug/gitx-inline-merge-redo-20261110.exe`，SHA256 为 `BCDA79872C8B4AE9563113A01542D8B07890E1801470978C6BC4A86FC412F142`。程序保留打开供复查，未做进程退出验收。安装版 `D:/gitx/gitx.exe` 未替换，因此不能把本次代码提交表述为安装版已升级。
