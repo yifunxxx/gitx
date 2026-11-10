@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
+import WorkspacePanels from "@/components/layout/WorkspacePanels.vue";
 import "splitpanes/dist/splitpanes.css";
 import TitleBar from "@/components/layout/TitleBar.vue";
 import ToolWindowStripe from "@/components/layout/ToolWindowStripe.vue";
@@ -114,8 +115,8 @@ onUnmounted(() => {
       <div class="flex min-h-0 flex-1">
         <ToolWindowStripe />
         <div class="min-h-0 min-w-0 flex-1">
-          <Splitpanes class="default-theme h-full" horizontal>
-            <Pane :size="layout.bottomOpen ? 100 - layout.bottomSize : 100" min-size="30">
+          <WorkspacePanels>
+            <template #editor>
               <Splitpanes class="h-full">
                 <Pane
                   v-if="layout.leftOpen && layout.commitTwMode !== 'float'"
@@ -134,11 +135,9 @@ onUnmounted(() => {
                   <EditorTabs />
                 </Pane>
               </Splitpanes>
-            </Pane>
-            <Pane v-if="layout.bottomOpen" :size="layout.bottomSize" min-size="15" max-size="60">
-              <GitToolWindow />
-            </Pane>
-          </Splitpanes>
+            </template>
+            <template #git><GitToolWindow /></template>
+          </WorkspacePanels>
         </div>
       </div>
       <!-- Float mode: in-app panel only — never a second OS / Webview window. -->

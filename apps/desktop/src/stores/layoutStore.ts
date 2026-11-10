@@ -8,6 +8,7 @@ const KEY = "gitx.layout.v1";
 export const useLayoutStore = defineStore("layout", () => {
   const leftOpen = ref(true);
   const bottomOpen = ref(true);
+  const bottomMaximized = ref(false);
   const leftSize = ref(28);
   const bottomSize = ref(32);
   const activeBottomTab = ref<
@@ -100,6 +101,7 @@ export const useLayoutStore = defineStore("layout", () => {
   return {
     leftOpen,
     bottomOpen,
+    bottomMaximized,
     leftSize,
     bottomSize,
     activeBottomTab,

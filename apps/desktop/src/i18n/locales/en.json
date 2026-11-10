@@ -59,6 +59,8 @@
     "settings": "Settings…"
   },
   "log": {
+    "maximizePanel": "Maximize Git panel",
+    "restorePanel": "Restore Git panel",
     "copyRevision": "Copy Revision Number",
     "copiedRevision": "Copied revision",
     "selectTwoCommits": "Select two commits (Ctrl/Cmd-click)",

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { Maximize2, Minimize2 } from "@lucide/vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -20,18 +21,9 @@ const combineStashesShelves = computed(
   () => settings.settings?.git?.combineStashesAndShelves !== false,
 );
 
-type BottomTab =
-  | "console"
-  | "log"
-  | "update"
-  | "stash"
-  | "shelf"
-  | "stashesShelves"
-  | "worktrees";
+type BottomTab = "console" | "log" | "update" | "stash" | "shelf" | "stashesShelves" | "worktrees";
 
-const showWorktreesTab = computed(
-  () => worktrees.userOpened || worktrees.items.length > 1,
-);
+const showWorktreesTab = computed(() => worktrees.userOpened || worktrees.items.length > 1);
 
 const tabs = computed(() => {
   const base: { id: BottomTab; label: string }[] = [
@@ -50,7 +42,6 @@ const tabs = computed(() => {
   base.push({ id: "console", label: t("toolWindows.console") });
   return base;
 });
-
 const lines = computed(() => consoleStore.lines);
 </script>
 
@@ -68,10 +59,21 @@ const lines = computed(() => consoleStore.lines);
             : 'text-muted-foreground hover:bg-accent'
         "
         @click="layout.activeBottomTab = tab.id"
+        @dblclick="layout.bottomMaximized = !layout.bottomMaximized"
       >
         {{ tab.label }}
       </button>
       <div class="flex-1" />
+      <button
+        type="button"
+        class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+        :title="t(layout.bottomMaximized ? 'log.restorePanel' : 'log.maximizePanel')"
+        :aria-label="t(layout.bottomMaximized ? 'log.restorePanel' : 'log.maximizePanel')"
+        @click="layout.bottomMaximized = !layout.bottomMaximized"
+      >
+        <Minimize2 v-if="layout.bottomMaximized" class="h-3.5 w-3.5" />
+        <Maximize2 v-else class="h-3.5 w-3.5" />
+      </button>
       <button
         v-if="layout.activeBottomTab === 'console'"
         type="button"

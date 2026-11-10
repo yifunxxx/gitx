@@ -59,6 +59,8 @@
     "settings": "设置…"
   },
   "log": {
+    "maximizePanel": "最大化 Git 面板",
+    "restorePanel": "恢复 Git 面板",
     "copyRevision": "复制修订号",
     "copiedRevision": "已复制修订号",
     "selectTwoCommits": "请选择两个提交（Ctrl/Cmd-点击）",
