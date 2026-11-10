@@ -44,4 +44,4 @@ SHA256：`808B8929DCA1BA28CE1EA4E6DBD614A307FD57E56883E1F50BAA45BDD352FED9`。
 
 没有重新进行后端回归（本轮未改后端），自动解决提示的单位依据后端代码确认，没有在 GUI 中执行自动解决。英文文案经过资源完整性测试和构建，未切换英文原生逐屏验证。
 
-当前功能代码和证据待本轮提交推送；用户安装版 `D:/gitx/gitx.exe` 未替换。总体台账仍有 5 项未关闭事项：QA-007、QA-008、QA-009、QA-010、QA-023。
+功能提交 `1f4a8ff1d584a845c064ad1374c3fd14688ab9ee` 已推送至 `origin/codex/checkout-target-safety`，并经 ls-remote 核对远端一致。用户安装版 `D:/gitx/gitx.exe` 未替换。总体台账仍有 5 项未关闭事项：QA-007、QA-008、QA-009、QA-010、QA-023。
