@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import ShelfList from "./ShelfList.vue";
+import VirtualList from "@/components/common/VirtualList.vue";
 
 const mocks = vi.hoisted(() => ({ store: {} as any, workspace: {} as any }));
 vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => mocks.store }));
@@ -110,7 +111,9 @@ it("exports through the toolbar and a context menu with a stable target", async 
   mocks.store.shelves.reverse();
   mocks.store.selectedShelfId = "third";
   await flushPromises();
-  menuItems().find((b) => b.textContent?.trim() === "shelf.exportPatch")!.click();
+  menuItems()
+    .find((b) => b.textContent?.trim() === "shelf.exportPatch")!
+    .click();
   await flushPromises();
   expect(mocks.store.promptExportShelf).toHaveBeenCalledTimes(2);
   expect(mocks.store.promptExportShelf).toHaveBeenLastCalledWith("second");
@@ -298,4 +301,37 @@ it("shows valid saved times and safely omits invalid dates", () => {
     new Date(1_704_100_000_000).toISOString(),
   );
   expect(rows[1]!.find("time").exists()).toBe(false);
+});
+
+it("bounds thousands of shelves and keeps offscreen navigation, expansion and menu targeting", async () => {
+  mocks.store.shelves = Array.from({ length: 5000 }, (_, i) => ({
+    ...shelf(`entry-${i}`),
+    paths: Array.from({ length: 1000 }, (_, n) => `${i}/file-${n}`),
+  }));
+  const wrapper = create();
+  const port = wrapper.findComponent(VirtualList).get(".overflow-auto").element;
+  Object.defineProperty(port, "clientHeight", { configurable: true, value: 440 });
+  expect(wrapper.findAll('[data-entry="shelf"]').length).toBeLessThan(25);
+  await wrapper.get('[data-entry="shelf"]').trigger("keydown", { key: "End" });
+  await flushPromises();
+  const last = wrapper.get('[data-shelf-id="entry-4999"]');
+  expect(document.activeElement).toBe(last.element);
+  await last.trigger("keydown", { key: "ArrowRight" });
+  await flushPromises();
+  expect(last.attributes("aria-expanded")).toBe("true");
+  expect(wrapper.findAll('[role="listitem"]').length).toBeLessThan(30);
+  await last.trigger("keydown", { key: "ContextMenu" });
+  await flushPromises();
+  menuItems()
+    .find((item) => item.textContent?.trim() === "shelf.exportPatch")!
+    .click();
+  await flushPromises();
+  expect(mocks.store.promptExportShelf).toHaveBeenCalledWith("entry-4999");
+  await last.trigger("keydown", { key: "Home" });
+  await flushPromises();
+  expect(document.activeElement).toBe(wrapper.get('[data-shelf-id="entry-0"]').element);
+  expect(wrapper.find('[data-shelf-id="entry-4999"]').exists()).toBe(false);
+  await wrapper.get('[data-shelf-id="entry-0"]').trigger("keydown", { key: "End" });
+  await flushPromises();
+  expect(wrapper.get('[data-shelf-id="entry-4999"]').attributes("aria-expanded")).toBe("true");
 });

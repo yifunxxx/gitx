@@ -5,6 +5,7 @@ const props = withDefaults(
   defineProps<{
     items: T[];
     itemHeight: number;
+    getItemHeight?: (item: T, index: number) => number;
     overscan?: number;
     preserveScrollAnchor?: boolean;
     getKey: (item: T, index: number) => string | number;
@@ -22,17 +23,36 @@ const viewportH = ref(400);
 /** True while the primary mouse button is held (native scrollbar thumb drag). */
 const pointerDown = ref(false);
 
-const totalH = computed(() => props.items.length * props.itemHeight);
+// Optional known heights let expandable rows share the same bounded scrollport.
+// Build offsets only when data/heights change; scrolling uses a binary lookup.
+const offsets = computed(() => {
+  if (!props.getItemHeight) return null;
+  const result = [0];
+  props.items.forEach((item, index) => {
+    result.push(result[index]! + Math.max(1, props.getItemHeight!(item, index)));
+  });
+  return result;
+});
+function rowAt(top: number, positions = offsets.value, height = props.itemHeight) {
+  if (!positions) return Math.max(0, Math.floor(top / height));
+  let low = 0;
+  let high = positions.length - 1;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (positions[mid]! <= top) low = mid;
+    else high = mid - 1;
+  }
+  return Math.min(low, Math.max(0, positions.length - 2));
+}
+const rowTop = (index: number) => offsets.value?.[index] ?? index * props.itemHeight;
+const rowHeight = (index: number) =>
+  offsets.value ? offsets.value[index + 1]! - offsets.value[index]! : props.itemHeight;
+const totalH = computed(() => offsets.value?.at(-1) ?? props.items.length * props.itemHeight);
 
-const start = computed(() =>
-  Math.max(0, Math.floor(scrollTop.value / props.itemHeight) - props.overscan),
-);
+const start = computed(() => Math.max(0, rowAt(scrollTop.value) - props.overscan));
 
 const end = computed(() =>
-  Math.min(
-    props.items.length,
-    Math.ceil((scrollTop.value + viewportH.value) / props.itemHeight) + props.overscan,
-  ),
+  Math.min(props.items.length, rowAt(scrollTop.value + viewportH.value) + 1 + props.overscan),
 );
 
 const visible = computed(() => {
@@ -44,7 +64,7 @@ const visible = computed(() => {
   return out;
 });
 
-const offsetY = computed(() => start.value * props.itemHeight);
+const offsetY = computed(() => rowTop(start.value));
 
 let ro: ResizeObserver | null = null;
 let raf = 0;
@@ -109,42 +129,53 @@ onUnmounted(() => {
   pendingScroll = null;
 });
 
-watch([() => props.items, () => props.items.length], async ([items], [previous]) => {
-  // Keep scrollTop valid when the list shrinks (e.g. filter reset).
-  // Skip while the user is dragging the scrollbar — clamping mid-drag
-  // fights the native thumb and feels like a "stick"/jam.
-  if (pointerDown.value) return;
-  const previousTop = root.value?.scrollTop ?? scrollTop.value;
-  const generation = scrollGeneration;
-  const oldIndex = Math.floor(previousTop / props.itemHeight);
-  const oldItem = previous[oldIndex];
-  const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
-  const newIndex =
-    props.preserveScrollAnchor && key !== null
-      ? items.findIndex((item, index) => props.getKey(item, index) === key)
-      : -1;
-  await nextTick();
-  if (pointerDown.value || props.items !== items || !root.value || generation !== scrollGeneration)
-    return;
-  if (newIndex >= 0 && newIndex !== oldIndex) {
-    root.value.scrollTop = previousTop + (newIndex - oldIndex) * props.itemHeight;
-    scrollTop.value = root.value.scrollTop;
-  }
-  const max = Math.max(0, totalH.value - viewportH.value);
-  if (scrollTop.value > max && root.value) {
-    root.value.scrollTop = max;
-    scrollTop.value = max;
-  }
-});
+watch(
+  [() => props.items, () => props.items.length, offsets, () => props.itemHeight],
+  async ([items], [previous, , oldOffsets, oldHeight]) => {
+    // Keep scrollTop valid when the list shrinks (e.g. filter reset).
+    // Skip while the user is dragging the scrollbar — clamping mid-drag
+    // fights the native thumb and feels like a "stick"/jam.
+    if (pointerDown.value) return;
+    const previousTop = root.value?.scrollTop ?? scrollTop.value;
+    const generation = scrollGeneration;
+    const oldIndex = rowAt(previousTop, oldOffsets, oldHeight);
+    const oldItem = previous[oldIndex];
+    const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
+    const newIndex =
+      props.preserveScrollAnchor && key !== null
+        ? items.findIndex((item, index) => props.getKey(item, index) === key)
+        : -1;
+    await nextTick();
+    if (
+      pointerDown.value ||
+      props.items !== items ||
+      !root.value ||
+      generation !== scrollGeneration
+    )
+      return;
+    if (newIndex >= 0) {
+      const oldTop = oldOffsets?.[oldIndex] ?? oldIndex * oldHeight;
+      root.value.scrollTop =
+        rowTop(newIndex) + Math.min(previousTop - oldTop, rowHeight(newIndex) - 1);
+      scrollTop.value = root.value.scrollTop;
+    }
+    const max = Math.max(0, totalH.value - viewportH.value);
+    if (scrollTop.value > max && root.value) {
+      root.value.scrollTop = max;
+      scrollTop.value = max;
+    }
+  },
+);
 
 defineExpose({
   el: root,
   pointerDown,
   scrollToIndex(index: number, align: "nearest" | "center" = "nearest") {
-    if (!root.value) return;
+    if (!root.value || !props.items.length) return;
     ++scrollGeneration;
-    const top = Math.max(0, index * props.itemHeight);
-    const bottom = top + props.itemHeight;
+    index = Math.max(0, Math.min(index, props.items.length - 1));
+    const top = rowTop(index);
+    const bottom = top + rowHeight(index);
     if (align === "center")
       root.value.scrollTop = Math.max(0, top - (root.value.clientHeight - props.itemHeight) / 2);
     else if (top < root.value.scrollTop) root.value.scrollTop = top;
@@ -177,7 +208,7 @@ defineExpose({
           <div
             v-for="row in visible"
             :key="getKey(row.item, row.index)"
-            :style="{ height: `${itemHeight}px` }"
+            :style="{ height: `${rowHeight(row.index)}px` }"
           >
             <slot :item="row.item" :index="row.index" />
           </div>
