@@ -1,11 +1,22 @@
+import type { EditorState } from "@codemirror/state";
+import { sourceText } from "@/components/common/preservedText";
+import {
+  createMergeState,
+  decideMergeSide,
+  hasMergeDecisions,
+  pendingMergeCount,
+  syncMergeText,
+} from "@/features/merge/mergeDocument";
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, markRaw, ref, watch, type Raw } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { ConflictEntry, ConflictsList, ConflictSide, Merge3Result } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { useLayoutStore } from "./layoutStore";
 import { toast } from "@/composables/useToast";
+import { i18n } from "@/i18n";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type MergeTab = {
   id: string;
@@ -13,8 +24,11 @@ export type MergeTab = {
   title: string;
   merge3: Merge3Result | null;
   resultText: string;
+  mergeState: Raw<EditorState>;
   yoursLabel: string;
   theirsLabel: string;
+  saving: boolean;
+  error: string | null;
 };
 
 export const useConflictsStore = defineStore("conflicts", () => {
@@ -26,11 +40,16 @@ export const useConflictsStore = defineStore("conflicts", () => {
   const initialMergeResults = new Map<string, string>();
 
   let refreshGeneration = 0;
+  let mergeGeneration = 0;
+  let nextMergeId = 0;
+  const pendingMerges = new Set<string>();
   const workspace = useWorkspaceStore();
   watch(
     () => workspace.repoPath,
     () => {
       ++refreshGeneration;
+      ++mergeGeneration;
+      pendingMerges.clear();
       list.value = null;
       selected.value = [];
       loading.value = false;
@@ -111,29 +130,27 @@ export const useConflictsStore = defineStore("conflicts", () => {
       useLayoutStore().activeEditorKind = "merge";
       return;
     }
-    const merge3 = await getBackend().conflictMerge3({
-      path: ws.repoPath,
-      filePath: entry.path,
-    });
-    const resultLines: string[] = [];
-    for (const b of merge3.blocks) {
-      if (b.kind === "conflict") {
-        resultLines.push("<<<<<<< Yours");
-        resultLines.push(...b.oursLines);
-        resultLines.push("=======");
-        resultLines.push(...b.theirsLines);
-        resultLines.push(">>>>>>> Theirs");
-      } else {
-        resultLines.push(...b.resultLines);
-      }
+    if (pendingMerges.has(entry.path)) return;
+    const generation = mergeGeneration;
+    pendingMerges.add(entry.path);
+    let merge3: Merge3Result;
+    try {
+      merge3 = await getBackend().conflictMerge3({ path: ws.repoPath, filePath: entry.path });
+    } finally {
+      if (generation === mergeGeneration) pendingMerges.delete(entry.path);
     }
-    const id = `merge:${entry.path}:${Date.now()}`;
+    if (generation !== mergeGeneration) return;
+    const mergeState = markRaw(createMergeState(merge3));
+    const id = `merge:${entry.path}:${++nextMergeId}`;
     mergeTabs.value.push({
       id,
       path: entry.path,
-      title: `Merge: ${entry.path}`,
+      title: String(i18n.global.t("merge.editorTitle", { path: entry.path })),
       merge3,
-      resultText: resultLines.join("\n") + (resultLines.length ? "\n" : ""),
+      resultText: sourceText(mergeState),
+      mergeState,
+      saving: false,
+      error: null,
       yoursLabel: list.value?.yoursLabel ?? "Yours",
       theirsLabel: list.value?.theirsLabel ?? "Theirs",
     });
@@ -153,57 +170,60 @@ export const useConflictsStore = defineStore("conflicts", () => {
 
   function hasUnsavedMergeResult(id: string) {
     const tab = mergeTabs.value.find((item) => item.id === id);
-    return !!tab && tab.resultText !== initialMergeResults.get(id);
+    return (
+      !!tab && (tab.resultText !== initialMergeResults.get(id) || hasMergeDecisions(tab.mergeState))
+    );
   }
 
   async function applyMergeResult(id: string) {
     const ws = useWorkspaceStore();
     const tab = mergeTabs.value.find((t) => t.id === id);
-    if (!ws.repoPath || !tab) return;
-    await getBackend().conflictSaveResult({
-      path: ws.repoPath,
-      filePath: tab.path,
-      content: tab.resultText,
-    });
-    toast({ title: `Resolved ${tab.path}` });
-    closeMergeTab(id);
-    await refresh();
-    await useChangesStore().refresh();
+    if (!ws.repoPath || !tab || tab.saving) return false;
+    const state = syncMergeText(tab.mergeState, tab.resultText);
+    if (pendingMergeCount(state) || /^([<>]{7})(?: |\r?$)/m.test(tab.resultText)) {
+      tab.error = String(i18n.global.t("merge.unresolvedMarkers"));
+      return false;
+    }
+    const path = ws.repoPath;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      path === ws.repoPath && navigation === ws.navigationToken() && mergeTabs.value.includes(tab);
+    tab.saving = true;
+    tab.error = null;
+    try {
+      await getBackend().conflictSaveResult({ path, filePath: tab.path, content: tab.resultText });
+      if (!current()) return false;
+      toast({ title: String(i18n.global.t("merge.resolvedFile", { path: tab.path })) });
+      closeMergeTab(id);
+      await refresh();
+      await useChangesStore().refresh();
+      return true;
+    } catch (error) {
+      if (current()) tab.error = formatErrorMessage(error);
+      return false;
+    } finally {
+      tab.saving = false;
+    }
+  }
+
+  function updateMergeState(id: string, state: EditorState) {
+    const tab = mergeTabs.value.find((t) => t.id === id);
+    if (!tab || tab.saving) return;
+    tab.mergeState = markRaw(state);
+    tab.resultText = sourceText(state);
+    tab.error = null;
   }
 
   function acceptBlock(tabId: string, blockIndex: number, side: "ours" | "theirs" | "result") {
     const tab = mergeTabs.value.find((t) => t.id === tabId);
-    if (!tab?.merge3) return;
-    const blocks = tab.merge3.blocks.map((b, i) => {
-      if (i !== blockIndex) return b;
-      if (side === "ours") {
-        return { ...b, kind: "onlyOurs" as const, resultLines: [...b.oursLines], isSimple: true };
-      }
-      if (side === "theirs") {
-        return {
-          ...b,
-          kind: "onlyTheirs" as const,
-          resultLines: [...b.theirsLines],
-          isSimple: true,
-        };
-      }
-      return b;
-    });
-    tab.merge3 = {
-      blocks,
-      conflictCount: blocks.filter((b) => b.kind === "conflict").length,
-    };
-    tab.resultText =
-      blocks
-        .map((b) =>
-          b.kind === "conflict"
-            ? ["<<<<<<< Yours", ...b.oursLines, "=======", ...b.theirsLines, ">>>>>>> Theirs"].join(
-                "\n",
-              )
-            : b.resultLines.join("\n"),
-        )
-        .filter((s) => s.length)
-        .join("\n") + "\n";
+    if (!tab?.merge3 || tab.saving || side === "result") return;
+    const state = syncMergeText(tab.mergeState, tab.resultText);
+    const spec = decideMergeSide(state, tab.merge3, blockIndex, side, "accept", true);
+    if (!spec) {
+      tab.error = String(i18n.global.t("merge.manuallyEdited"));
+      return;
+    }
+    updateMergeState(tabId, state.update(spec).state);
   }
 
   return {
@@ -223,5 +243,6 @@ export const useConflictsStore = defineStore("conflicts", () => {
     hasUnsavedMergeResult,
     applyMergeResult,
     acceptBlock,
+    updateMergeState,
   };
 });

@@ -581,7 +581,8 @@ fn select_new_lines(base: &str, worktree: &str, selected: &[u32], revert: bool) 
     output
 }
 
-/// Three-way merge (line-based). Non-overlapping edits auto-merge; overlaps → Conflict.
+/// Three-way merge over complete line tokens, including their original terminators.
+/// Each side can be reconstructed exactly by concatenating its block lines.
 pub fn merge3(
     base: Option<&str>,
     ours: Option<&str>,
@@ -589,199 +590,95 @@ pub fn merge3(
 ) -> gitx_core::Merge3Result {
     use gitx_core::{Merge3Block, Merge3BlockKind, Merge3Result};
 
-    let strip = |s: &str| s.trim_end_matches('\n').to_string();
-    let base: Vec<String> = split_lines(base.unwrap_or(""))
-        .into_iter()
-        .map(strip)
-        .collect();
-    let ours: Vec<String> = split_lines(ours.unwrap_or(""))
-        .into_iter()
-        .map(strip)
-        .collect();
-    let theirs: Vec<String> = split_lines(theirs.unwrap_or(""))
-        .into_iter()
-        .map(strip)
-        .collect();
-
-    if ours == theirs {
-        return Merge3Result {
-            blocks: vec![Merge3Block {
-                kind: if ours == base {
-                    Merge3BlockKind::Equal
-                } else {
-                    Merge3BlockKind::BothSame
-                },
-                base_lines: base,
-                ours_lines: ours.clone(),
-                theirs_lines: theirs,
-                result_lines: ours,
-                is_simple: true,
-            }],
-            conflict_count: 0,
-        };
-    }
-    if ours == base {
-        return Merge3Result {
-            blocks: vec![Merge3Block {
-                kind: Merge3BlockKind::OnlyTheirs,
-                base_lines: base,
-                ours_lines: ours,
-                theirs_lines: theirs.clone(),
-                result_lines: theirs,
-                is_simple: true,
-            }],
-            conflict_count: 0,
-        };
-    }
-    if theirs == base {
-        return Merge3Result {
-            blocks: vec![Merge3Block {
-                kind: Merge3BlockKind::OnlyOurs,
-                base_lines: base,
-                ours_lines: ours.clone(),
-                theirs_lines: theirs,
-                result_lines: ours,
-                is_simple: true,
-            }],
-            conflict_count: 0,
-        };
-    }
-
+    let tokens = |text: &str| {
+        split_lines(text)
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let base = tokens(base.unwrap_or(""));
+    let ours = tokens(ours.unwrap_or(""));
+    let theirs = tokens(theirs.unwrap_or(""));
     let o_hunks = change_hunks(&base, &ours);
     let t_hunks = change_hunks(&base, &theirs);
-
-    // Cleaner second pass: walk with original hunk lists.
     let mut blocks = Vec::new();
-    let mut bi = 0usize;
-    let mut oh = 0usize;
-    let mut th = 0usize;
-    // Reconstruct side indices via applying hunks in order is hard; emit from hunks + equal gaps.
-    // Build result by reconstructing ours/theirs from hunks relative to base.
+    let (mut cursor, mut oh, mut th) = (0, 0, 0);
 
-    while bi <= base.len() {
-        let o_here = o_hunks.get(oh).filter(|h| h.base_start == bi);
-        let t_here = t_hunks.get(th).filter(|h| h.base_start == bi);
-
-        if o_here.is_none() && t_here.is_none() {
-            if bi == base.len() {
+    while oh < o_hunks.len() || th < t_hunks.len() {
+        let start = o_hunks
+            .get(oh)
+            .map(|h| h.base_start)
+            .unwrap_or(usize::MAX)
+            .min(t_hunks.get(th).map(|h| h.base_start).unwrap_or(usize::MAX));
+        if cursor < start {
+            let lines = base[cursor..start].to_vec();
+            blocks.push(Merge3Block {
+                kind: Merge3BlockKind::Equal,
+                base_lines: lines.clone(),
+                ours_lines: lines.clone(),
+                theirs_lines: lines.clone(),
+                result_lines: lines,
+                is_simple: true,
+            });
+        }
+        let (o_start, t_start) = (oh, th);
+        let mut end = start;
+        // Consume all touching-at-start or overlapping edits, including chains
+        // where one side's longer edit overlaps several edits on the other side.
+        // Every iteration consumes a hunk, even for two insertions at EOF.
+        loop {
+            let previous = (oh, th);
+            while let Some(h) = o_hunks.get(oh) {
+                if h.base_start != start && h.base_start >= end {
+                    break;
+                }
+                end = end.max(h.base_start + h.base_count);
+                oh += 1;
+            }
+            while let Some(h) = t_hunks.get(th) {
+                if h.base_start != start && h.base_start >= end {
+                    break;
+                }
+                end = end.max(h.base_start + h.base_count);
+                th += 1;
+            }
+            if previous == (oh, th) {
                 break;
             }
-            // Find next hunk.
-            let next = match (
-                o_hunks.get(oh).map(|h| h.base_start),
-                t_hunks.get(th).map(|h| h.base_start),
-            ) {
-                (Some(a), Some(b)) => a.min(b),
-                (Some(a), None) => a,
-                (None, Some(b)) => b,
-                (None, None) => base.len(),
-            };
-            if next > bi {
-                let slice = base[bi..next].to_vec();
-                blocks.push(Merge3Block {
-                    kind: Merge3BlockKind::Equal,
-                    base_lines: slice.clone(),
-                    ours_lines: slice.clone(),
-                    theirs_lines: slice.clone(),
-                    result_lines: slice,
-                    is_simple: true,
-                });
-                bi = next;
-                continue;
-            }
-            bi += 1;
-            continue;
         }
-
-        let o = o_here.cloned();
-        let t = t_here.cloned();
-        if o.is_some() {
-            oh += 1;
-        }
-        if t.is_some() {
-            th += 1;
-        }
-
-        match (o, t) {
-            (Some(ohk), None) => {
-                let end = (ohk.base_start + ohk.base_count).min(base.len());
-                let start = ohk.base_start.min(base.len());
-                let base_slice = base[start..end].to_vec();
-                blocks.push(Merge3Block {
-                    kind: Merge3BlockKind::OnlyOurs,
-                    base_lines: base_slice.clone(),
-                    ours_lines: ohk.inserted.clone(),
-                    theirs_lines: base_slice,
-                    result_lines: ohk.inserted,
-                    is_simple: true,
-                });
-                bi = end.max(bi + (ohk.base_count == 0) as usize);
-                if ohk.base_count == 0 {
-                    // insert-only: stay/advance past point
-                    bi = ohk.base_start;
-                    // prevent infinite loop: move past by treating as consumed at this index once
-                    // Advance bi only when no further hunks share this index.
-                    if o_hunks.get(oh).map(|h| h.base_start) != Some(ohk.base_start)
-                        && t_hunks.get(th).map(|h| h.base_start) != Some(ohk.base_start)
-                    {
-                        // keep bi; next loop looks for hunks at same bi or equals
-                    }
-                    // Force progress when only inserts remain at EOF
-                    if bi == base.len() && oh >= o_hunks.len() && th >= t_hunks.len() {
-                        break;
-                    }
-                    // For insert-only mid-file, do not advance bi; equal pass will not re-fire
-                    // because oh already advanced. Emit and continue with same bi.
-                }
-            }
-            (None, Some(thk)) => {
-                let end = (thk.base_start + thk.base_count).min(base.len());
-                let start = thk.base_start.min(base.len());
-                let base_slice = base[start..end].to_vec();
-                blocks.push(Merge3Block {
-                    kind: Merge3BlockKind::OnlyTheirs,
-                    base_lines: base_slice.clone(),
-                    ours_lines: base_slice,
-                    theirs_lines: thk.inserted.clone(),
-                    result_lines: thk.inserted,
-                    is_simple: true,
-                });
-                bi = if thk.base_count == 0 {
-                    thk.base_start
-                } else {
-                    end
-                };
-            }
-            (Some(ohk), Some(thk)) => {
-                let end = (ohk.base_start + ohk.base_count)
-                    .max(thk.base_start + thk.base_count)
-                    .min(base.len());
-                let base_slice = base[bi.min(base.len())..end].to_vec();
-                if ohk.inserted == thk.inserted && ohk.base_count == thk.base_count {
-                    blocks.push(Merge3Block {
-                        kind: Merge3BlockKind::BothSame,
-                        base_lines: base_slice,
-                        ours_lines: ohk.inserted.clone(),
-                        theirs_lines: thk.inserted.clone(),
-                        result_lines: ohk.inserted,
-                        is_simple: true,
-                    });
-                } else {
-                    blocks.push(Merge3Block {
-                        kind: Merge3BlockKind::Conflict,
-                        base_lines: base_slice,
-                        ours_lines: ohk.inserted,
-                        theirs_lines: thk.inserted,
-                        result_lines: Vec::new(),
-                        is_simple: false,
-                    });
-                }
-                bi = if end > bi { end } else { bi + 1 };
-            }
-            (None, None) => break,
-        }
+        let original = base[start..end].to_vec();
+        let left = merge_region(&base, start, end, &o_hunks[o_start..oh]);
+        let right = merge_region(&base, start, end, &t_hunks[t_start..th]);
+        let (kind, result) = if left == right {
+            (Merge3BlockKind::BothSame, left.clone())
+        } else if left == original {
+            (Merge3BlockKind::OnlyTheirs, right.clone())
+        } else if right == original {
+            (Merge3BlockKind::OnlyOurs, left.clone())
+        } else {
+            (Merge3BlockKind::Conflict, Vec::new())
+        };
+        blocks.push(Merge3Block {
+            kind,
+            base_lines: original,
+            ours_lines: left,
+            theirs_lines: right,
+            result_lines: result,
+            is_simple: kind != Merge3BlockKind::Conflict,
+        });
+        cursor = end;
     }
-
+    if cursor < base.len() {
+        let lines = base[cursor..].to_vec();
+        blocks.push(Merge3Block {
+            kind: Merge3BlockKind::Equal,
+            base_lines: lines.clone(),
+            ours_lines: lines.clone(),
+            theirs_lines: lines.clone(),
+            result_lines: lines,
+            is_simple: true,
+        });
+    }
     let conflict_count = blocks
         .iter()
         .filter(|b| b.kind == Merge3BlockKind::Conflict)
@@ -792,6 +689,18 @@ pub fn merge3(
     }
 }
 
+fn merge_region(base: &[String], start: usize, end: usize, hunks: &[ChangeHunk]) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut cursor = start;
+    for h in hunks {
+        lines.extend_from_slice(&base[cursor..h.base_start]);
+        lines.extend_from_slice(&h.inserted);
+        cursor = h.base_start + h.base_count;
+    }
+    lines.extend_from_slice(&base[cursor..end]);
+    lines
+}
+
 #[derive(Clone, Debug)]
 struct ChangeHunk {
     base_start: usize,
@@ -800,11 +709,9 @@ struct ChangeHunk {
 }
 
 fn change_hunks(base: &[String], side: &[String]) -> Vec<ChangeHunk> {
-    let left = base.join("\n");
-    let right = side.join("\n");
-    let diff = TextDiff::configure()
-        .algorithm(Algorithm::Myers)
-        .diff_lines(&left, &right);
+    let left = base.concat();
+    let right = side.concat();
+    let diff = configure_diff(base.len().max(side.len())).diff_lines(&left, &right);
     let mut hunks = Vec::new();
     let mut bi = 0usize;
     let mut pending_start = 0usize;
@@ -845,8 +752,7 @@ fn change_hunks(base: &[String], side: &[String]) -> Vec<ChangeHunk> {
                     pending_start = bi;
                     in_hunk = true;
                 }
-                let line = change.to_string();
-                pending_ins.push(line.trim_end_matches('\n').to_string());
+                pending_ins.push(change.value().to_string());
             }
         }
     }
@@ -860,6 +766,85 @@ fn change_hunks(base: &[String], side: &[String]) -> Vec<ChangeHunk> {
 mod tests {
     use super::*;
     use gitx_core::Merge3BlockKind;
+
+    #[test]
+    fn merge3_never_loses_source_lines() {
+        let variants = [
+            "",
+            "a\nb\nc\nd\n",
+            "a\nx\nd\n",
+            "a\nb\ny\n",
+            "a\nd\n",
+            "a\nb\nd\n",
+            "ours\na\nb\nc\nd\n",
+            "theirs\na\nb\nc\nd\n",
+            "a\nb\nc\nd\nlast",
+            "a\n\nb\nc\nd\n",
+            "a\nb\nc\nd",
+            "a\r\nb\r\nc\r\nd\r\n",
+            "\n",
+            "\n\n",
+        ];
+        let base = "a\nb\nc\nd\n";
+        for ours in variants {
+            for theirs in variants {
+                let merged = merge3(Some(base), Some(ours), Some(theirs));
+                let base_again: String = merged
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.base_lines.iter().cloned())
+                    .collect();
+                let ours_again: String = merged
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.ours_lines.iter().cloned())
+                    .collect();
+                let theirs_again: String = merged
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.theirs_lines.iter().cloned())
+                    .collect();
+                assert_eq!(base_again, base, "base lost with {ours:?} / {theirs:?}");
+                assert_eq!(ours_again, ours, "ours lost with {ours:?} / {theirs:?}");
+                assert_eq!(
+                    theirs_again, theirs,
+                    "theirs lost with {ours:?} / {theirs:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn merge3_detects_overlapping_changes_with_different_starts() {
+        let merged = merge3(
+            Some("a\nb\nc\nd\ne\n"),
+            Some("a\nours\nd\ne\n"),
+            Some("a\nb\ntheirs\ne\n"),
+        );
+        assert_eq!(merged.conflict_count, 1, "{merged:?}");
+        let conflict = merged
+            .blocks
+            .iter()
+            .find(|b| b.kind == Merge3BlockKind::Conflict)
+            .unwrap();
+        assert_eq!(conflict.base_lines.concat(), "b\nc\nd\n");
+        assert_eq!(conflict.ours_lines.concat(), "ours\nd\n");
+        assert_eq!(conflict.theirs_lines.concat(), "b\ntheirs\n");
+    }
+
+    #[test]
+    fn merge3_preserves_empty_lines_and_eof_when_auto_merging() {
+        let merged = merge3(Some("a\n\nc"), Some("A\n\nc"), Some("a\n\nC"));
+        assert_eq!(merged.conflict_count, 0);
+        assert_eq!(
+            merged
+                .blocks
+                .iter()
+                .flat_map(|b| b.result_lines.iter().cloned())
+                .collect::<String>(),
+            "A\n\nC"
+        );
+    }
 
     #[test]
     fn basic_hunk() {
@@ -1008,6 +993,6 @@ mod tests {
             .iter()
             .flat_map(|b| b.result_lines.clone())
             .collect();
-        assert_eq!(result, vec!["A", "b", "c", "D"]);
+        assert_eq!(result, vec!["A\n", "b\n", "c\n", "D\n"]);
     }
 }

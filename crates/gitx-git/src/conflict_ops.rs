@@ -249,12 +249,7 @@ impl GitRunner {
                 .iter()
                 .flat_map(|b| b.result_lines.iter().cloned())
                 .collect::<Vec<_>>()
-                .join("\n");
-            let content = if content.is_empty() {
-                content
-            } else {
-                format!("{content}\n")
-            };
+                .concat();
             self.conflict_save_result(cwd, &entry.path, &content, cancel)
                 .await?;
             resolved += 1;
