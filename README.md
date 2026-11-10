@@ -89,21 +89,21 @@ Tagged builds (`v*`) publish a [GitHub Release](https://github.com/yifunxxx/gitx
 | `*.msi`            | MSI installer       |
 
 1. Open **[Releases](https://github.com/yifunxxx/gitx/releases)**.
-2. Pick the latest `v*` release (e.g. `v0.1.19`).
+2. Pick the latest `v*` release (e.g. `v0.1.20`).
 3. Download the NSIS `.exe` (most users) or the `.msi`, then run it — direct installer files, not zip packages.
 
-App / package versions are `0.1.19`, matching tag `v0.1.19`. Builds are unsigned — SmartScreen may warn; choose **More info** → **Run anyway**.
+App / package versions are `0.1.20`, matching tag `v0.1.20`. Builds are unsigned — SmartScreen may warn; choose **More info** → **Run anyway**.
 
 Publish a release by pushing a version tag (after the workflow is on `master`):
 
 ```bash
 git checkout master && git pull
-git tag -a v0.1.19 -m "gitx v0.1.19"
-git push origin v0.1.19
+git tag -a v0.1.20 -m "gitx v0.1.20"
+git push origin v0.1.20
 # Watch: Actions → Release Windows; then https://github.com/yifunxxx/gitx/releases
 ```
 
-Optional: **Actions → Release Windows → Run workflow** with a `version` input (`0.1.19` or `v0.1.19`) to create the same Release without a local tag push.
+Optional: **Actions → Release Windows → Run workflow** with a `version` input (`0.1.20` or `v0.1.20`) to create the same Release without a local tag push.
 
 ### CI Artifacts (master / debugging)
 
