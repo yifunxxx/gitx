@@ -70,10 +70,10 @@ const rightText = computed(() => {
 
 const enableInline = computed(() => countHunkLines(visibleHunks.value) <= 900);
 
-/** Forces CodeMirror remount when IPC result lands or selection changes (GIT-34). */
+/** Rebuild panes only for this tab's content or display mode. */
 const paintKey = computed(
   () =>
-    `${props.tabId}|e${diffs.paintEpoch}|${tab.value?.contentKey ?? ""}|${tab.value?.path ?? ""}|${tab.value?.collapseUnchanged ? "c" : "e"}|${tab.value?.unified ? "u" : "s"}`,
+    `${props.tabId}|${tab.value?.contentVersion ?? 0}|${tab.value?.collapseUnchanged ? "c" : "e"}|${tab.value?.unified ? "u" : "s"}`,
 );
 
 function localizeSideLabel(label: string | undefined): string {
