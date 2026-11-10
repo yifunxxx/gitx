@@ -1,4 +1,15 @@
 {
+  "editorTabs": {
+    "menu": "标签操作",
+    "closeCurrent": "关闭当前",
+    "closeOthers": "关闭其他",
+    "closeRight": "关闭右侧",
+    "closeAll": "关闭全部",
+    "closeNamed": "关闭 {title}",
+    "unsavedTitle": "关闭未应用的合并结果",
+    "unsavedMessage": "有 {count} 个合并标签包含尚未应用的修改。关闭会丢弃这些编辑，是否继续？",
+    "discardAndClose": "丢弃编辑并关闭"
+  },
   "terminal": {
     "selectAll": "全选",
     "sessions": "终端会话",

@@ -23,6 +23,7 @@ export const useConflictsStore = defineStore("conflicts", () => {
   const selected = ref<string[]>([]);
   const mergeTabs = ref<MergeTab[]>([]);
   const activeMergeId = ref<string | null>(null);
+  const initialMergeResults = new Map<string, string>();
 
   let refreshGeneration = 0;
   const workspace = useWorkspaceStore();
@@ -34,6 +35,7 @@ export const useConflictsStore = defineStore("conflicts", () => {
       selected.value = [];
       loading.value = false;
       mergeTabs.value = [];
+      initialMergeResults.clear();
       activeMergeId.value = null;
     },
     { flush: "sync" },
@@ -135,16 +137,23 @@ export const useConflictsStore = defineStore("conflicts", () => {
       yoursLabel: list.value?.yoursLabel ?? "Yours",
       theirsLabel: list.value?.theirsLabel ?? "Theirs",
     });
+    initialMergeResults.set(id, mergeTabs.value.find((tab) => tab.id === id)!.resultText);
     activeMergeId.value = id;
     useLayoutStore().activeEditorKind = "merge";
   }
 
   function closeMergeTab(id: string) {
+    initialMergeResults.delete(id);
     mergeTabs.value = mergeTabs.value.filter((t) => t.id !== id);
     if (activeMergeId.value === id) {
       activeMergeId.value = mergeTabs.value[0]?.id ?? null;
       if (!activeMergeId.value) useLayoutStore().activeEditorKind = "welcome";
     }
+  }
+
+  function hasUnsavedMergeResult(id: string) {
+    const tab = mergeTabs.value.find((item) => item.id === id);
+    return !!tab && tab.resultText !== initialMergeResults.get(id);
   }
 
   async function applyMergeResult(id: string) {
@@ -211,6 +220,7 @@ export const useConflictsStore = defineStore("conflicts", () => {
     resolveSimple,
     openMerge,
     closeMergeTab,
+    hasUnsavedMergeResult,
     applyMergeResult,
     acceptBlock,
   };

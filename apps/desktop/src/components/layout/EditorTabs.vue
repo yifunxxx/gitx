@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { X } from "@lucide/vue";
+import EditorTabButton from "./EditorTabButton.vue";
+import { confirmDialog } from "@/composables/useConfirm";
 import WelcomeView from "@/features/welcome/WelcomeView.vue";
 import DiffViewer from "@/features/diff/DiffViewer.vue";
 import FileHistoryView from "@/features/history/FileHistoryView.vue";
@@ -45,12 +46,112 @@ const activeFile = computed(() =>
   fileViewer.activeId ? fileViewer.tabs.find((t) => t.id === fileViewer.activeId) : null,
 );
 
+type EditorKind = "diff" | "history" | "compare" | "repoAtRev" | "merge" | "file";
+type EditorTab = { kind: EditorKind; id: string; title: string };
+type CloseScope = "current" | "others" | "right" | "all";
+const tabBar = ref<HTMLElement | null>(null);
+const closing = ref(false);
+const menuEpoch = ref(0);
+const tabKey = (tab: EditorTab) => JSON.stringify([tab.kind, tab.id]);
+const tabEntries = (kind: EditorKind, items: { id: string; title: string }[] = []) =>
+  items.map(({ id, title }) => ({ kind, id, title }));
+// This order is also the visible order used by Close Tabs to the Right.
+const editorTabs = computed(() => [
+  ...tabEntries("diff", diffs.tabs),
+  ...tabEntries("history", history.tabs),
+  ...tabEntries("compare", compare.tabs),
+  ...tabEntries("repoAtRev", repoAtRev.tabs),
+  ...tabEntries("merge", conflicts.mergeTabs),
+  ...tabEntries("file", fileViewer.tabs),
+]);
+
+function storeFor(kind: Exclude<EditorKind, "merge">) {
+  return { diff: diffs, history, compare, repoAtRev, file: fileViewer }[kind];
+}
+function isActive(tab: EditorTab) {
+  const id = tab.kind === "merge" ? conflicts.activeMergeId : storeFor(tab.kind).activeId;
+  return layout.activeEditorKind === tab.kind && id === tab.id;
+}
+function activateTab(tab: EditorTab) {
+  if (tab.kind === "merge") conflicts.activeMergeId = tab.id;
+  else storeFor(tab.kind).activeId = tab.id;
+  layout.activeEditorKind = tab.kind;
+}
+
 watch(
-  () => diffs.activeId,
-  (id) => {
-    if (id) layout.activeEditorKind = "diff";
+  () => [workspace.repoPath, workspace.folderPath],
+  () => {
+    ++menuEpoch.value;
   },
+  { flush: "sync" },
 );
+onBeforeUnmount(() => {
+  ++menuEpoch.value;
+});
+
+async function closeTabs(target: EditorTab | null, scope: CloseScope) {
+  if (closing.value) return;
+  const before = editorTabs.value;
+  const targetKey = target ? tabKey(target) : null;
+  const index = target ? before.findIndex((tab) => tabKey(tab) === targetKey) : -1;
+  if (target && index < 0) return;
+  const targets = before.filter((tab, i) => {
+    if (scope === "all") return true;
+    if (scope === "current") return tabKey(tab) === targetKey;
+    if (scope === "others") return tabKey(tab) !== targetKey;
+    return i > index;
+  });
+  if (!targets.length) return;
+  closing.value = true;
+  const epoch = menuEpoch.value;
+  try {
+    const dirty = targets.filter(
+      (tab) => tab.kind === "merge" && conflicts.hasUnsavedMergeResult(tab.id),
+    );
+    if (
+      dirty.length &&
+      !(await confirmDialog({
+        title: t("editorTabs.unsavedTitle"),
+        message: t("editorTabs.unsavedMessage", { count: dirty.length }),
+        confirmLabel: t("editorTabs.discardAndClose"),
+        destructive: true,
+      }))
+    )
+      return;
+    if (epoch !== menuEpoch.value) return;
+    const keys = new Set(targets.map(tabKey));
+    const active = editorTabs.value.find(isActive);
+    const activeIndex = active ? before.findIndex((tab) => tabKey(tab) === tabKey(active)) : -1;
+    const remaining = editorTabs.value.filter((tab) => !keys.has(tabKey(tab)));
+    let next = active && !keys.has(tabKey(active)) ? active : undefined;
+    if (scope === "others") next = target ?? undefined;
+    else if (active && !next) {
+      next =
+        before.slice(activeIndex + 1).find((tab) => !keys.has(tabKey(tab))) ??
+        before
+          .slice(0, activeIndex)
+          .reverse()
+          .find((tab) => !keys.has(tabKey(tab))) ??
+        remaining[0];
+    }
+    for (const tab of targets) {
+      if (tab.kind === "merge") conflicts.closeMergeTab(tab.id);
+      else storeFor(tab.kind).closeTab(tab.id);
+    }
+    if (next) activateTab(next);
+    else showWorkspace();
+    await nextTick();
+    if (epoch !== menuEpoch.value) return;
+    const focusKey = next ? tabKey(next) : "workspace";
+    const activeKey = editorTabs.value.find(isActive);
+    if ((activeKey ? tabKey(activeKey) : "workspace") !== focusKey) return;
+    Array.from(tabBar.value?.querySelectorAll<HTMLButtonElement>("[data-editor-key]") ?? [])
+      .find((button) => button.dataset.editorKey === focusKey)
+      ?.focus({ preventScroll: true });
+  } finally {
+    closing.value = false;
+  }
+}
 
 function showWorkspace() {
   diffs.activeId = null;
@@ -65,141 +166,38 @@ function showWorkspace() {
 
 <template>
   <section class="flex h-full min-h-0 flex-col bg-dbx-content">
-    <div class="flex h-8 items-center gap-1 overflow-x-auto border-b bg-dbx-chrome px-1 text-xs">
-      <button
-        type="button"
-        class="rounded-sm px-2 py-0.5"
-        :class="
-          layout.activeEditorKind === 'welcome'
-            ? 'bg-background text-foreground ring-1 ring-border'
-            : 'text-muted-foreground hover:bg-accent'
-        "
-        @click="showWorkspace"
-      >
-        {{
-          workspace.folderPath ? t("chrome.workspaceTab") : t("chrome.welcomeTab")
-        }}
-      </button>
-      <button
-        v-for="tab in diffs.tabs"
-        :key="tab.id"
-        type="button"
-        class="group flex items-center gap-1 rounded-sm px-2 py-0.5"
-        :class="
-          layout.activeEditorKind === 'diff' && diffs.activeId === tab.id
-            ? 'bg-background text-foreground ring-1 ring-border'
-            : 'text-muted-foreground hover:bg-accent'
-        "
-        @click="diffs.activeId = tab.id; layout.activeEditorKind = 'diff'"
-      >
-        <span class="max-w-[140px] truncate">{{ tab.title }}</span>
-        <span
-          class="rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-100"
-          @click.stop="diffs.closeTab(tab.id)"
-        >
-          <X class="h-3 w-3" />
-        </span>
-      </button>
-      <button
-        v-for="tab in history.tabs"
-        :key="tab.id"
-        type="button"
-        class="group flex items-center gap-1 rounded-sm px-2 py-0.5"
-        :class="
-          layout.activeEditorKind === 'history' && history.activeId === tab.id
-            ? 'bg-background text-foreground ring-1 ring-border'
-            : 'text-muted-foreground hover:bg-accent'
-        "
-        @click="history.activeId = tab.id; layout.activeEditorKind = 'history'"
-      >
-        <span class="max-w-[160px] truncate">{{ tab.title }}</span>
-        <span
-          class="rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-100"
-          @click.stop="history.closeTab(tab.id)"
-        >
-          <X class="h-3 w-3" />
-        </span>
-      </button>
-      <button
-        v-for="tab in compare.tabs"
-        :key="tab.id"
-        type="button"
-        class="group flex items-center gap-1 rounded-sm px-2 py-0.5"
-        :class="
-          layout.activeEditorKind === 'compare' && compare.activeId === tab.id
-            ? 'bg-background text-foreground ring-1 ring-border'
-            : 'text-muted-foreground hover:bg-accent'
-        "
-        @click="compare.activeId = tab.id; layout.activeEditorKind = 'compare'"
-      >
-        <span class="max-w-[160px] truncate">{{ tab.title }}</span>
-        <span
-          class="rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-100"
-          @click.stop="compare.closeTab(tab.id)"
-        >
-          <X class="h-3 w-3" />
-        </span>
-      </button>
-      <button
-        v-for="tab in repoAtRev.tabs"
-        :key="tab.id"
-        type="button"
-        class="group flex items-center gap-1 rounded-sm px-2 py-0.5"
-        :class="
-          layout.activeEditorKind === 'repoAtRev' && repoAtRev.activeId === tab.id
-            ? 'bg-background text-foreground ring-1 ring-border'
-            : 'text-muted-foreground hover:bg-accent'
-        "
-        @click="repoAtRev.activeId = tab.id; layout.activeEditorKind = 'repoAtRev'"
-      >
-        <span class="max-w-[160px] truncate">{{ tab.title }}</span>
-        <span
-          class="rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-100"
-          @click.stop="repoAtRev.closeTab(tab.id)"
-        >
-          <X class="h-3 w-3" />
-        </span>
-      </button>
-      <button
-        v-for="tab in conflicts.mergeTabs"
-        :key="tab.id"
-        type="button"
-        class="group flex items-center gap-1 rounded-sm px-2 py-0.5"
-        :class="
-          layout.activeEditorKind === 'merge' && conflicts.activeMergeId === tab.id
-            ? 'bg-background text-foreground ring-1 ring-border'
-            : 'text-muted-foreground hover:bg-accent'
-        "
-        @click="conflicts.activeMergeId = tab.id; layout.activeEditorKind = 'merge'"
-      >
-        <span class="max-w-[160px] truncate">{{ tab.title }}</span>
-        <span
-          class="rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-100"
-          @click.stop="conflicts.closeMergeTab(tab.id)"
-        >
-          <X class="h-3 w-3" />
-        </span>
-      </button>
-      <button
-        v-for="tab in fileViewer.tabs"
-        :key="tab.id"
-        type="button"
-        class="group flex items-center gap-1 rounded-sm px-2 py-0.5"
-        :class="
-          layout.activeEditorKind === 'file' && fileViewer.activeId === tab.id
-            ? 'bg-background text-foreground ring-1 ring-border'
-            : 'text-muted-foreground hover:bg-accent'
-        "
-        @click="fileViewer.activeId = tab.id; layout.activeEditorKind = 'file'"
-      >
-        <span class="max-w-[160px] truncate">{{ tab.title }}</span>
-        <span
-          class="rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-100"
-          @click.stop="fileViewer.closeTab(tab.id)"
-        >
-          <X class="h-3 w-3" />
-        </span>
-      </button>
+    <div
+      ref="tabBar"
+      class="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b bg-dbx-chrome px-1 text-xs"
+    >
+      <EditorTabButton
+        tab-key="workspace"
+        :title="workspace.folderPath ? t('chrome.workspaceTab') : t('chrome.welcomeTab')"
+        :active="layout.activeEditorKind === 'welcome'"
+        :closable="false"
+        :has-others="editorTabs.length > 0"
+        :has-right="editorTabs.length > 0"
+        :has-tabs="editorTabs.length > 0"
+        :busy="closing"
+        :menu-epoch="menuEpoch"
+        @activate="showWorkspace"
+        @close="closeTabs(null, $event)"
+      />
+      <EditorTabButton
+        v-for="(tab, index) in editorTabs"
+        :key="tabKey(tab)"
+        :tab-key="tabKey(tab)"
+        :title="tab.title"
+        :active="isActive(tab)"
+        :closable="true"
+        :has-others="editorTabs.length > 1"
+        :has-right="index < editorTabs.length - 1"
+        :has-tabs="true"
+        :busy="closing"
+        :menu-epoch="menuEpoch"
+        @activate="activateTab(tab)"
+        @close="closeTabs(tab, $event)"
+      />
     </div>
 
     <div class="min-h-0 flex-1">
