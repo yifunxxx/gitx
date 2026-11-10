@@ -211,6 +211,61 @@ it("guards busy actions and limits F2/Delete to active entries", async () => {
   expect(mocks.store.deleteShelf).toHaveBeenCalledExactlyOnceWith("first");
 });
 
+it.each(["ctrlKey", "altKey", "metaKey", "shiftKey", "isComposing"])(
+  "does not consume shelf row shortcuts with %s",
+  async (modifier) => {
+    const wrapper = create();
+    for (const section of ["shelf", "deleted-shelf"]) {
+      const row = wrapper.findAll(`[data-entry="${section}"]`)[0]!;
+      await row.trigger("click");
+      const selection = [mocks.store.selectedShelfId, mocks.store.selectedDeletedShelfId];
+      for (const key of [
+        "Delete",
+        "F2",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Home",
+        "End",
+        "ContextMenu",
+      ]) {
+        const event = new KeyboardEvent("keydown", {
+          key,
+          [modifier]: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        row.element.dispatchEvent(event);
+        await flushPromises();
+        expect(mocks.store.deleteShelf).not.toHaveBeenCalled();
+        expect(mocks.store.promptRenameShelf).not.toHaveBeenCalled();
+        expect([mocks.store.selectedShelfId, mocks.store.selectedDeletedShelfId]).toEqual(
+          selection,
+        );
+        expect(row.attributes("aria-expanded")).toBe("false");
+        expect(menuItems()).toHaveLength(0);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      if (modifier !== "shiftKey") {
+        await row.trigger("keydown", { key: "F10", shiftKey: true, [modifier]: true });
+        await flushPromises();
+        expect(menuItems()).toHaveLength(0);
+      }
+    }
+  },
+);
+
+it("does not repeatedly open the shelf context menu", async () => {
+  const wrapper = create();
+  const row = wrapper.findAll('[data-entry="shelf"]')[0]!;
+  for (const shortcut of [{ key: "ContextMenu" }, { key: "F10", shiftKey: true }]) {
+    await row.trigger("keydown", { ...shortcut, repeat: true });
+    await flushPromises();
+    expect(menuItems()).toHaveLength(0);
+  }
+});
+
 it("focuses the restored active entry", async () => {
   mocks.store.restoreShelf.mockImplementation(async (id: string) => {
     const entry = mocks.store.deletedShelves.find((s: any) => s.id === id);

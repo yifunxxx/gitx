@@ -112,18 +112,77 @@ it("right click selects its target and keeps that SHA if the list is renumbered"
   expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
-it("opens the menu with Shift+F10 and restores focus on Escape", async () => {
+it.each([{ key: "F10", shiftKey: true }, { key: "ContextMenu" }])(
+  "opens the context menu with %j and restores focus on Escape",
+  async (shortcut) => {
+    const wrapper = create();
+    const row = wrapper.findAll('[data-entry="stash"]')[1]!;
+    await row.trigger("keydown", shortcut);
+    await flushPromises();
+    const buttons = document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    buttons[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(document.activeElement).toBe(buttons[1]);
+    buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await flushPromises();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(row.element);
+  },
+);
+
+it.each(["ctrlKey", "altKey", "metaKey", "shiftKey", "isComposing"])(
+  "does not consume stash row shortcuts with %s",
+  async (modifier) => {
+    const wrapper = create();
+    const row = wrapper.findAll('[data-entry="stash"]')[1]!;
+    await row.trigger("click");
+    for (const key of ["Delete", "ArrowUp", "ArrowDown", "Home", "End", "ContextMenu"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        [modifier]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      row.element.dispatchEvent(event);
+      await flushPromises();
+      expect(mocks.store.dropStash).not.toHaveBeenCalled();
+      expect(mocks.store.selectedStashSha).toBe("second");
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+      expect(event.defaultPrevented).toBe(false);
+    }
+    if (modifier !== "shiftKey") {
+      await row.trigger("keydown", { key: "F10", shiftKey: true, [modifier]: true });
+      await flushPromises();
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+    }
+  },
+);
+
+it("does not repeat destructive or menu actions and keeps handled keys local", async () => {
   const wrapper = create();
-  const row = wrapper.findAll('[data-entry="stash"]')[1]!;
-  await row.trigger("keydown", { key: "F10", shiftKey: true });
-  await flushPromises();
-  const buttons = document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
-  buttons[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-  expect(document.activeElement).toBe(buttons[1]);
-  buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  await flushPromises();
-  expect(document.querySelector('[role="menu"]')).toBeNull();
-  expect(document.activeElement).toBe(row.element);
+  const row = wrapper.findAll('[data-entry="stash"]')[0]!;
+  for (const shortcut of [
+    { key: "Delete" },
+    { key: "ContextMenu" },
+    { key: "F10", shiftKey: true },
+  ]) {
+    await row.trigger("keydown", { ...shortcut, repeat: true });
+    await flushPromises();
+    expect(mocks.store.dropStash).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  }
+  const globalKey = vi.fn();
+  window.addEventListener("keydown", globalKey);
+  try {
+    await row.trigger("keydown", { key: "ArrowDown" });
+    expect(mocks.store.selectedStashSha).toBe("second");
+    await row.trigger("keydown", { key: "Delete" });
+    expect(mocks.store.dropStash).toHaveBeenCalledExactlyOnceWith("first");
+    expect(globalKey).not.toHaveBeenCalled();
+    await row.trigger("keydown", { key: "`", ctrlKey: true });
+    expect(globalKey).toHaveBeenCalledOnce();
+  } finally {
+    window.removeEventListener("keydown", globalKey);
+  }
 });
 
 it("passes the explicit index option and guards busy destructive actions", async () => {

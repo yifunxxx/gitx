@@ -124,15 +124,19 @@ function menuKey(event: KeyboardEvent) {
 }
 
 function stashKey(event: KeyboardEvent, index: number) {
-  if (event.isComposing) return;
+  if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
   const entry = store.stashes[index];
   if (!entry) return;
-  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-    void openMenu(entry.sha, event);
+  if ((!event.shiftKey && event.key === "ContextMenu") || (event.shiftKey && event.key === "F10")) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void openMenu(entry.sha, event);
     return;
   }
+  if (event.shiftKey) return;
   if (event.key === "Delete") {
     event.preventDefault();
+    event.stopPropagation();
     if (!event.repeat && !store.busy) void store.dropStash(entry.sha);
     return;
   }
@@ -148,6 +152,7 @@ function stashKey(event: KeyboardEvent, index: number) {
             : null;
   if (next == null) return;
   event.preventDefault();
+  event.stopPropagation();
   store.selectedStashSha = store.stashes[next]!.sha;
   void focusStash(next);
 }

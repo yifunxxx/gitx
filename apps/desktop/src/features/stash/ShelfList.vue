@@ -198,18 +198,21 @@ function runMenu(action: Action) {
   if (action === "delete") void store.deleteShelf(target.id);
 }
 function rowKey(event: KeyboardEvent, section: Section, index: number) {
-  if (event.isComposing) return;
+  if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
   const list = entries(section);
   const entry = list[index];
   if (!entry) return;
+  if ((!event.shiftKey && event.key === "ContextMenu") || (event.shiftKey && event.key === "F10")) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void openMenu(section, entry.id, event);
+    return;
+  }
+  if (event.shiftKey) return;
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     event.stopPropagation();
     if (entry.paths.length) setExpanded(section, entry.id, event.key === "ArrowRight");
-    return;
-  }
-  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-    void openMenu(section, entry.id, event);
     return;
   }
   if (event.key === "Delete" || event.key === "F2") {
