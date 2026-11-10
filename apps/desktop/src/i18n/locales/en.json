@@ -153,6 +153,34 @@
     "clearTip": "Clear all filters"
   },
   "merge": {
+    "retryLoad": "Retry loading",
+    "loadInterrupted": "Loading was interrupted. Please retry.",
+    "file": "File",
+    "yours": "Yours",
+    "theirs": "Theirs",
+    "type": "Type",
+    "sideLabels": "Yours: {ours} · Theirs: {theirs}",
+    "selectFile": "Select {path}",
+    "status": {
+      "modified": "Modified",
+      "added": "Added",
+      "deleted": "Deleted",
+      "none": "Absent"
+    },
+    "kinds": {
+      "content": "Content",
+      "deleteModify": "Delete / modify",
+      "addAdd": "Both added",
+      "rename": "Rename",
+      "binary": "Binary",
+      "submodule": "Gitlink / symlink"
+    },
+    "allResolved": "All conflicts resolved",
+    "openEditor": "Merge…",
+    "resolveSimple": "Resolve simple conflicts",
+    "acceptedYours": "Accepted yours",
+    "acceptedTheirs": "Accepted theirs",
+    "resolvedSimple": "Resolved {count} simple conflict(s)",
     "operations": {
       "merge": "Merging {theirs} into {ours}",
       "rebase": "Rebasing {theirs} onto {ours}",

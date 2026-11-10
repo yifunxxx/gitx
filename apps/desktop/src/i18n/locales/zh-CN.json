@@ -153,6 +153,34 @@
     "clearTip": "清除全部筛选"
   },
   "merge": {
+    "retryLoad": "重试加载",
+    "loadInterrupted": "加载已中断，请重试。",
+    "file": "文件",
+    "yours": "己方",
+    "theirs": "对方",
+    "type": "类型",
+    "sideLabels": "己方：{ours} · 对方：{theirs}",
+    "selectFile": "选择 {path}",
+    "status": {
+      "modified": "已修改",
+      "added": "已添加",
+      "deleted": "已删除",
+      "none": "不存在"
+    },
+    "kinds": {
+      "content": "内容",
+      "deleteModify": "删除 / 修改",
+      "addAdd": "双方添加",
+      "rename": "重命名",
+      "binary": "二进制",
+      "submodule": "子模块 / 符号链接"
+    },
+    "allResolved": "所有冲突均已解决",
+    "openEditor": "合并…",
+    "resolveSimple": "解决简单冲突",
+    "acceptedYours": "已接受己方版本",
+    "acceptedTheirs": "已接受对方版本",
+    "resolvedSimple": "已解决 {count} 处简单冲突",
     "operations": {
       "merge": "正在将 {theirs} 合并到 {ours}",
       "rebase": "正在将 {theirs} 变基到 {ours}",

@@ -11,7 +11,7 @@ import {
 } from "@/features/merge/mergeDocument";
 
 const mocks = vi.hoisted(() => ({
-  ws: {} as { repoPath: string; navigationToken: () => number },
+  ws: {} as { repoPath: string; repoId: string; isRepo: boolean; navigationToken: () => number },
   backend: { conflictMerge3: vi.fn(), conflictSaveResult: vi.fn(), conflictsList: vi.fn() },
   changes: { refresh: vi.fn() },
   rewrite: { refreshOpState: vi.fn() },
@@ -80,7 +80,7 @@ const deferred = <T>() => {
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  mocks.ws = reactive({ repoPath: "A", navigationToken: () => 0 });
+  mocks.ws = reactive({ repoPath: "A", repoId: "A", isRepo: true, navigationToken: () => 0 });
   mocks.backend.conflictMerge3.mockImplementation(async () => structuredClone(merge));
   mocks.backend.conflictsList.mockResolvedValue({ entries: [] });
 });
@@ -153,12 +153,21 @@ it("ignores a completed save from an earlier A → B → A repository session", 
   const saved = store.applyMergeResult(tab.id);
   mocks.ws.repoPath = "B";
   mocks.ws.repoPath = "A";
-  await store.openMerge(entry);
-  store.mergeTabs[0]!.resultText = "new draft";
+  expect(store.busy).toBe(true);
+  expect(await store.openMerge(entry)).toBe(false);
+  mocks.backend.conflictsList.mockResolvedValueOnce({ entries: [entry] });
+  await store.refresh();
+  const currentList = store.list;
+  store.selected = [entry.path];
   pending.resolve(null);
-  await saved;
-  expect(store.mergeTabs[0]?.resultText).toBe("new draft");
-  expect(mocks.backend.conflictsList).not.toHaveBeenCalled();
+  expect(await saved).toBe(false);
+  expect(store.list).toBe(currentList);
+  expect(store.selected).toEqual([entry.path]);
+  expect(store.busy).toBe(false);
+  expect(mocks.backend.conflictsList).toHaveBeenCalledOnce();
+  await store.openMerge(entry);
+  expect(store.mergeTabs).toHaveLength(1);
+  expect(store.mergeTabs[0]?.saving).toBe(false);
 });
 
 it("deduplicates opening and rejects stale merge results after A to B to A navigation", async () => {

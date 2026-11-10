@@ -243,7 +243,7 @@ function historyAction(forward: boolean) {
         >
         <Button
           size="xs"
-          :disabled="tab.saving || remaining > 0"
+          :disabled="tab.saving || conflicts.busy || remaining > 0"
           @click="conflicts.applyMergeResult(tab.id)"
           >{{ t(tab.saving ? "merge.saving" : "merge.saveResolved") }}</Button
         >

@@ -11,7 +11,12 @@ vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({}) }));
 
 beforeEach(() => {
   setActivePinia(createPinia());
-  mocks.workspace = reactive({ repoPath: "fixture" });
+  mocks.workspace = reactive({
+    repoPath: "fixture",
+    repoId: "fixture",
+    isRepo: true,
+    navigationToken: () => 0,
+  });
   mocks.layout = reactive({ activeEditorKind: "welcome" });
   mocks.merge.mockResolvedValue({ blocks: [], conflictCount: 0 });
 });
