@@ -35,7 +35,7 @@ mod worktree_ops;
 
 pub use detect::{
     detect_git, ensure_windows_git_path, parse_wsl_unc_path, resolve_git_bin_for_path,
-    wsl_translate_path, GitDetectResult, MIN_GIT_VERSION,
+    test_git_executable, wsl_translate_path, GitDetectResult, MIN_GIT_VERSION,
 };
 pub use jobs::{JobEvent, JobManager, JobProgress, JobState};
 pub use ops::RawLogCommit;

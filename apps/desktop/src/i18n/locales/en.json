@@ -360,6 +360,9 @@
     "title": "Settings",
     "search": "Search settings…",
     "applied": "Settings applied",
+    "saving": "Saving settings…",
+    "saveFailed": "Could not save settings",
+    "invalidNumber": "Enter a whole number between {min} and {max}",
     "test": "Test",
     "on": "On",
     "off": "Off",
@@ -370,7 +373,7 @@
     "gitNotFound": "Git not found. Install Git for Windows, or enter the full path to git.exe below.",
     "pages": {
       "appearance": "Appearance",
-      "git": "Version Control | Git",
+      "git": "Version Control · Git",
       "confirmation": "Confirmation & Display",
       "keymap": "Keymap"
     },

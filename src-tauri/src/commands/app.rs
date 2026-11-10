@@ -58,25 +58,9 @@ pub async fn git_detect(state: State<'_, AppState>) -> Result<GitDetectDto, AppE
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_test_executable(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<GitDetectDto, AppError> {
-    let preferred = path.trim();
-    let preferred = if preferred.is_empty() {
-        None
-    } else {
-        Some(preferred)
-    };
-    let result = detect_git(preferred)?;
-    // Testing an explicit path should also rebind the runner when it succeeds.
-    if let Some(p) = preferred {
-        let mut git = state.git.write().await;
-        *git = gitx_git::GitRunner::new(p.to_string());
-    } else {
-        let mut git = state.git.write().await;
-        *git = gitx_git::GitRunner::new(result.path.clone());
-    }
+pub async fn git_test_executable(path: String) -> Result<GitDetectDto, AppError> {
+    let result = gitx_git::test_git_executable(&path)?;
+    // Testing a draft must not change the runner; settings_set applies the choice.
     Ok(GitDetectDto {
         path: result.path,
         version: result.version,

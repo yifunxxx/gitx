@@ -360,6 +360,9 @@
     "title": "设置",
     "search": "搜索设置…",
     "applied": "设置已应用",
+    "saving": "正在保存设置…",
+    "saveFailed": "设置保存失败",
+    "invalidNumber": "请输入 {min} 到 {max} 之间的整数",
     "test": "测试",
     "on": "开",
     "off": "关",
@@ -370,7 +373,7 @@
     "gitNotFound": "未找到 git，请安装 Git for Windows 或在下方填写 git.exe 完整路径",
     "pages": {
       "appearance": "外观",
-      "git": "Version Control | Git",
+      "git": "版本控制 · Git",
       "confirmation": "确认与显示",
       "keymap": "Keymap"
     },

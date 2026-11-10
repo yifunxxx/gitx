@@ -7,6 +7,7 @@ import type { AppSettings } from "@/lib/backend";
 
 const props = defineProps<{
   draft: AppSettings;
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -60,7 +61,7 @@ function chordFromEvent(e: KeyboardEvent): string | null {
 }
 
 function onRecordKey(e: KeyboardEvent) {
-  if (!recordingId.value) return;
+  if (props.disabled || !recordingId.value) return;
   e.preventDefault();
   e.stopPropagation();
   if (e.key === "Escape") {
@@ -76,18 +77,20 @@ function onRecordKey(e: KeyboardEvent) {
 }
 
 function resetOne(id: string) {
+  if (props.disabled) return;
   const next = { ...(props.draft.keymapOverrides ?? {}) };
   delete next[id];
   emit("patch", next);
 }
 
 function resetAll() {
+  if (props.disabled) return;
   emit("patch", {});
 }
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-2" @keydown.capture="onRecordKey">
+  <div class="flex min-h-0 flex-1 flex-col gap-2" @keydown.capture="onRecordKey">
     <div class="flex items-center gap-2">
       <input
         v-model="filter"
@@ -95,7 +98,7 @@ function resetAll() {
         class="h-8 flex-1 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         :placeholder="t('settings.keymap.search')"
       />
-      <Button size="sm" variant="outline" @click="resetAll">
+      <Button size="sm" variant="outline" :disabled="disabled" @click="resetAll">
         {{ t("settings.keymap.resetAll") }}
       </Button>
     </div>
@@ -131,13 +134,14 @@ function resetAll() {
               <span v-else class="text-muted-foreground">—</span>
             </td>
             <td class="px-2 py-1 text-right">
-              <Button size="xs" variant="ghost" @click="recordingId = row.id">
+              <Button size="xs" variant="ghost" :disabled="disabled" @click="recordingId = row.id">
                 {{ t("settings.keymap.rebind") }}
               </Button>
               <Button
                 v-if="(draft.keymapOverrides ?? {})[row.id]"
                 size="xs"
                 variant="ghost"
+                :disabled="disabled"
                 @click="resetOne(row.id)"
               >
                 {{ t("settings.keymap.reset") }}

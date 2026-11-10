@@ -77,6 +77,17 @@ pub fn ensure_windows_git_path() {
     }
 }
 
+/// Validate the exact draft executable. Only an empty draft requests discovery.
+pub fn test_git_executable(path: &str) -> Result<GitDetectResult, AppError> {
+    let path = path.trim();
+    if path.is_empty() {
+        detect_git(None)
+    } else {
+        ensure_windows_git_path();
+        probe(path)
+    }
+}
+
 pub fn detect_git(preferred: Option<&str>) -> Result<GitDetectResult, AppError> {
     ensure_windows_git_path();
 
