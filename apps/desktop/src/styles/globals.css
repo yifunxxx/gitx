@@ -62,14 +62,20 @@ body {
 
 [data-tauri-drag-region] {
   app-region: drag;
+  -webkit-app-region: drag;
 }
 
 button,
 a,
 input,
 textarea,
-[role="button"] {
+[role="button"],
+[role="option"],
+[role="listbox"],
+.overflow-auto,
+.app-no-drag {
   app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 /* Clickable chrome: pointer cursor (GIT-29). */

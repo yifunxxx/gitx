@@ -111,6 +111,7 @@ function graphOptions() {
   };
 }
 
+let graphRaf = 0;
 watch(
   () =>
     [
@@ -124,23 +125,41 @@ watch(
       log.filters.firstParent,
     ] as const,
   () => {
-    const { layout: next, cursor } = layoutCommitGraphIncremental(
-      log.commits,
-      graphOptions(),
-      graphCursor.value,
-    );
-    graphCursor.value = cursor;
-    graphLayout.value = next;
+    if (graphRaf) cancelAnimationFrame(graphRaf);
+    // Yield past the IPC/Pinia turn so scroll input can be processed first.
+    graphRaf = requestAnimationFrame(() => {
+      graphRaf = 0;
+      const { layout: next, cursor } = layoutCommitGraphIncremental(
+        log.commits,
+        graphOptions(),
+        graphCursor.value,
+      );
+      graphCursor.value = cursor;
+      graphLayout.value = next;
+    });
   },
   { immediate: true },
 );
 
-const treeRows = computed(() =>
-  listMode.value === "tree"
-    ? buildLogTreeRows(log.commits, String(t("log.treeOther")))
-    : ([] as LogTreeRow[]),
+/** Tree rows are rebuilt off the scroll hot path (rAF) so loadMore appends
+ * do not synchronously walk the whole history inside the scroll callback. */
+const treeRows = shallowRef<LogTreeRow[]>([]);
+let treeRaf = 0;
+watch(
+  () => [listMode.value, log.commits, t("log.treeOther")] as const,
+  ([mode, commits, other]) => {
+    if (treeRaf) cancelAnimationFrame(treeRaf);
+    if (mode !== "tree") {
+      treeRows.value = [];
+      return;
+    }
+    treeRaf = requestAnimationFrame(() => {
+      treeRaf = 0;
+      treeRows.value = buildLogTreeRows(commits, String(other));
+    });
+  },
+  { immediate: true },
 );
-
 async function setListMode(mode: LogListMode) {
   if (listMode.value === mode) return;
   const base = cloneJson(settings.settings ?? settings.emptySettings());
@@ -153,14 +172,19 @@ async function setListMode(mode: LogListMode) {
 }
 
 let loadMoreTimer = 0;
+/** Trailing debounce: only fetch after scroll settles so loadMore IPC + layout
+ * do not collide with an in-flight wheel/thumb gesture. */
 function scheduleLoadMore() {
-  if (loadMoreTimer) return;
+  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
   loadMoreTimer = window.setTimeout(() => {
     loadMoreTimer = 0;
+    if (commitListRef.value?.pointerDown) return;
     void log.loadMore();
-  }, 120);
+  }, 180);
 }
 onUnmounted(() => {
+  if (treeRaf) cancelAnimationFrame(treeRaf);
+  if (graphRaf) cancelAnimationFrame(graphRaf);
   if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
 });
 

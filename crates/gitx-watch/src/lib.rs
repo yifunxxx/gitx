@@ -287,8 +287,10 @@ fn observe(
                 first = last;
             }
         }
+        // Slightly longer quiet window reduces refresh storms while the UI is
+        // already busy (e.g. scrolling a virtual list after loadMore).
         if !pending.is_empty()
-            && (last.elapsed() >= Duration::from_millis(300)
+            && (last.elapsed() >= Duration::from_millis(450)
                 || first.elapsed() >= Duration::from_secs(1))
         {
             if stop.load(Ordering::Acquire) {

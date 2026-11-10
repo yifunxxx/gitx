@@ -28,8 +28,10 @@ import { i18n } from "@/i18n";
 import { useAppEvents } from "@/composables/useAppEvents";
 import { useRepositoryRefresh } from "@/composables/useRepositoryRefresh";
 import { isTerminalToggle } from "@/features/terminal/terminalShortcut";
+import { installLongTaskLogging } from "@/lib/longTaskLog";
 
 useRepositoryRefresh();
+const stopLongTaskLog = installLongTaskLogging();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
@@ -111,17 +113,18 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disposed = true;
+  stopLongTaskLog();
   window.removeEventListener("keydown", onKeydown);
 });
 </script>
 
 <template>
   <TooltipProvider :delay-duration="350" :skip-delay-duration="200">
-    <div class="flex h-full min-h-0 flex-col overflow-hidden">
+    <div class="app-no-drag flex h-full min-h-0 flex-col overflow-hidden">
       <TitleBar />
-      <div class="flex min-h-0 flex-1">
+      <div class="app-no-drag flex min-h-0 flex-1">
         <ToolWindowStripe />
-        <div class="min-h-0 min-w-0 flex-1">
+        <div class="app-no-drag min-h-0 min-w-0 flex-1">
           <WorkspacePanels>
             <template #editor>
               <Splitpanes class="h-full">

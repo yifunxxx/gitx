@@ -67,6 +67,37 @@ it("emits the scrollport as the trailing scroll target when dragging ends outsid
   wrapper.unmount();
 });
 
+it("defers reactive windowing while the scrollbar thumb is held", async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const items = Array.from({ length: 200 }, (_, i) => `row-${i}`);
+  const wrapper = mount(VirtualList, {
+    props: { items, itemHeight: 22, getKey: String, recycleKeys: true, overscan: 2 },
+    slots: { default: `<span class="cell">{{ params.item }}</span>` },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  Object.defineProperty(port, "clientHeight", { configurable: true, value: 220 });
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  await wrapper.get(".overflow-auto").trigger("pointerdown", { button: 0 });
+  port.scrollTop = 880;
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  // Still showing the pre-drag window — no remount storm under pointer capture.
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  window.dispatchEvent(new Event("pointerup"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).not.toBe("row-0");
+  wrapper.unmount();
+});
+
 it("bounds variable rows and reaches the final entry after expansion and collapse", async () => {
   const items = Array.from({ length: 10000 }, (_, id) => ({ id, height: id % 2 ? 44 : 244 }));
   const wrapper = mount(VirtualList, {

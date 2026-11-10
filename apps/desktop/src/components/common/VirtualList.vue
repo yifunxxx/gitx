@@ -72,6 +72,13 @@ let ro: ResizeObserver | null = null;
 let raf = 0;
 let pendingScroll: Event | null = null;
 let scrollGeneration = 0;
+/** Latest native scrollTop while the thumb is held — applied once on release. */
+let heldScrollTop: number | null = null;
+
+function applyScrollTop(top: number, ev: Event | null) {
+  scrollTop.value = top;
+  if (ev) emit("scroll", ev);
+}
 
 function flushScroll() {
   raf = 0;
@@ -79,9 +86,16 @@ function flushScroll() {
   const ev = pendingScroll;
   pendingScroll = null;
   if (!el) return;
-  // Read from the element so we stay in sync with native thumb drag.
-  scrollTop.value = el.scrollTop;
-  if (ev) emit("scroll", ev);
+  const top = el.scrollTop;
+  // While the primary button is down (native scrollbar thumb on Windows), the
+  // WebView HWND typically owns mouse interaction for this window. Remounting
+  // virtual rows every frame blocks the window's input pump → clicks ignored
+  // until the long task ends. Defer reactive windowing until pointerup.
+  if (pointerDown.value) {
+    heldScrollTop = top;
+    return;
+  }
+  applyScrollTop(top, ev);
 }
 
 function onScroll(e: Event) {
@@ -95,15 +109,15 @@ function onPointerDown(e: PointerEvent) {
   if (e.button === 0) pointerDown.value = true;
 }
 
-function onPointerUp() {
+function endPointerGesture() {
   const wasDown = pointerDown.value;
   pointerDown.value = false;
-  // Emit a trailing scroll after thumb release so parents (e.g. Log load-more)
-  // can react without fighting the drag.
-  if (wasDown && root.value) {
-    // Dispatch from the scrollport so event.target remains usable by consumers.
-    root.value.dispatchEvent(new Event("scroll"));
-  }
+  if (!wasDown || !root.value) return;
+  const top = heldScrollTop ?? root.value.scrollTop;
+  heldScrollTop = null;
+  // One reactive apply after the OS releases the thumb interaction.
+  applyScrollTop(top, null);
+  root.value.dispatchEvent(new Event("scroll"));
 }
 
 onMounted(() => {
@@ -116,19 +130,22 @@ onMounted(() => {
   ro.observe(el);
   // Track mouse-up globally so scrollbar thumb drag end is detected even
   // when the pointer leaves the list (Windows native scrollbar).
-  window.addEventListener("pointerup", onPointerUp);
-  window.addEventListener("pointercancel", onPointerUp);
-  window.addEventListener("blur", onPointerUp);
+  window.addEventListener("pointerup", endPointerGesture);
+  window.addEventListener("pointercancel", endPointerGesture);
+  window.addEventListener("lostpointercapture", endPointerGesture);
+  window.addEventListener("blur", endPointerGesture);
 });
 
 onUnmounted(() => {
   ro?.disconnect();
   ro = null;
   if (raf) cancelAnimationFrame(raf);
-  window.removeEventListener("pointerup", onPointerUp);
-  window.removeEventListener("pointercancel", onPointerUp);
-  window.removeEventListener("blur", onPointerUp);
+  window.removeEventListener("pointerup", endPointerGesture);
+  window.removeEventListener("pointercancel", endPointerGesture);
+  window.removeEventListener("lostpointercapture", endPointerGesture);
+  window.removeEventListener("blur", endPointerGesture);
   pendingScroll = null;
+  heldScrollTop = null;
 });
 
 watch(
@@ -140,11 +157,18 @@ watch(
     if (pointerDown.value) return;
     const previousTop = root.value?.scrollTop ?? scrollTop.value;
     const generation = scrollGeneration;
-    const oldIndex = rowAt(previousTop, oldOffsets, oldHeight);
-    const oldItem = previous[oldIndex];
+    const headSame =
+      previous.length > 0 &&
+      items.length > 0 &&
+      props.getKey(previous[0] as T, 0) === props.getKey(items[0] as T, 0);
+    // Append-only growth (loadMore): pixel scrollTop stays valid — skip O(n) findIndex.
+    // Same-length replacements (variable row height) must still re-anchor.
+    const appendOnly = headSame && items.length > previous.length;
+    const oldIndex = appendOnly ? -1 : rowAt(previousTop, oldOffsets, oldHeight);
+    const oldItem = oldIndex >= 0 ? previous[oldIndex] : undefined;
     const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
     const newIndex =
-      props.preserveScrollAnchor && key !== null
+      !appendOnly && props.preserveScrollAnchor && key !== null
         ? items.findIndex((item, index) => props.getKey(item, index) === key)
         : -1;
     await nextTick();
@@ -185,15 +209,16 @@ defineExpose({
       root.value.scrollTop = bottom - root.value.clientHeight;
     }
     scrollTop.value = root.value.scrollTop;
+    heldScrollTop = null;
   },
 });
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col [app-region:no-drag]">
     <div
       ref="root"
-      class="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
+      class="min-h-0 flex-1 overflow-auto [overflow-anchor:none] [app-region:no-drag]"
       @scroll.passive="onScroll"
       @pointerdown="onPointerDown"
     >
