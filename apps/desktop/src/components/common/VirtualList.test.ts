@@ -67,6 +67,38 @@ it("emits the scrollport as the trailing scroll target when dragging ends outsid
   wrapper.unmount();
 });
 
+it("gates wheel reactive updates so row props are not patched every frame", async () => {
+  vi.useFakeTimers();
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const items = Array.from({ length: 200 }, (_, i) => `row-${i}`);
+  const wrapper = mount(VirtualList, {
+    props: { items, itemHeight: 22, getKey: String, recycleKeys: true, overscan: 2 },
+    slots: { default: `<span class="cell">{{ params.item }}</span>` },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  Object.defineProperty(port, "clientHeight", { configurable: true, value: 220 });
+  port.scrollTop = 0;
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  // Immediate second wheel tick is gated; window stays put until the timeout.
+  port.scrollTop = 880;
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  await vi.advanceTimersByTimeAsync(55);
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).not.toBe("row-0");
+  wrapper.unmount();
+  vi.useRealTimers();
+});
+
 it("defers reactive windowing while the scrollbar thumb is held", async () => {
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -153,6 +185,8 @@ it("reuses window slots when recycleKeys is enabled", async () => {
   expect(firstKeys.length).toBeLessThan(30);
   port.scrollTop = 440;
   port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await new Promise((resolve) => setTimeout(resolve, 55));
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
   const secondKeys = wrapper.findAll(".cell").map((node) => node.text());

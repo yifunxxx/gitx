@@ -74,10 +74,37 @@ let pendingScroll: Event | null = null;
 let scrollGeneration = 0;
 /** Latest native scrollTop while the thumb is held — applied once on release. */
 let heldScrollTop: number | null = null;
+/** Wheel/trackpad: latest top waiting for the gated apply. */
+let queuedWheelTop: number | null = null;
+let wheelGate = 0;
+let lastApplyMs = 0;
+const WHEEL_APPLY_MS = 50;
+
+/** Parents (load-more) read metrics from event.target — must be the scrollport. */
+function emitScrollFromPort() {
+  if (!root.value) return;
+  const ev = new Event("scroll");
+  Object.defineProperty(ev, "target", { configurable: true, value: root.value });
+  emit("scroll", ev);
+}
 
 function applyScrollTop(top: number, ev: Event | null) {
   scrollTop.value = top;
+  lastApplyMs = performance.now();
   if (ev) emit("scroll", ev);
+  else emitScrollFromPort();
+}
+
+function flushQueuedWheel() {
+  wheelGate = 0;
+  if (pointerDown.value || !root.value) {
+    queuedWheelTop = null;
+    return;
+  }
+  const top = queuedWheelTop ?? root.value.scrollTop;
+  queuedWheelTop = null;
+  // Emit directly — do not dispatchEvent("scroll") or the wheel gate re-enters.
+  applyScrollTop(top, null);
 }
 
 function flushScroll() {
@@ -93,6 +120,17 @@ function flushScroll() {
   // until the long task ends. Defer reactive windowing until pointerup.
   if (pointerDown.value) {
     heldScrollTop = top;
+    return;
+  }
+  // Wheel/trackpad path (no pointerDown): recycleKeys still patches every
+  // visible row's props each frame (CommitGraphCell SVG recomputes). Gate
+  // reactive applies to ~20Hz so the WebView input pump stays responsive.
+  const now = performance.now();
+  if (now - lastApplyMs < WHEEL_APPLY_MS) {
+    queuedWheelTop = top;
+    if (!wheelGate) {
+      wheelGate = window.setTimeout(flushQueuedWheel, WHEEL_APPLY_MS - (now - lastApplyMs));
+    }
     return;
   }
   applyScrollTop(top, ev);
@@ -115,9 +153,13 @@ function endPointerGesture() {
   if (!wasDown || !root.value) return;
   const top = heldScrollTop ?? root.value.scrollTop;
   heldScrollTop = null;
-  // One reactive apply after the OS releases the thumb interaction.
+  if (wheelGate) {
+    window.clearTimeout(wheelGate);
+    wheelGate = 0;
+  }
+  queuedWheelTop = null;
+  // One reactive apply after the OS releases the thumb; emit without re-entry.
   applyScrollTop(top, null);
-  root.value.dispatchEvent(new Event("scroll"));
 }
 
 onMounted(() => {
@@ -140,12 +182,14 @@ onUnmounted(() => {
   ro?.disconnect();
   ro = null;
   if (raf) cancelAnimationFrame(raf);
+  if (wheelGate) window.clearTimeout(wheelGate);
   window.removeEventListener("pointerup", endPointerGesture);
   window.removeEventListener("pointercancel", endPointerGesture);
   window.removeEventListener("lostpointercapture", endPointerGesture);
   window.removeEventListener("blur", endPointerGesture);
   pendingScroll = null;
   heldScrollTop = null;
+  queuedWheelTop = null;
 });
 
 watch(

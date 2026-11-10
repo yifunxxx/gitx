@@ -238,6 +238,9 @@ describe.each([
       port.element.scrollTop = top;
       await port.trigger("scroll");
       for (const callback of frames.splice(0)) callback(0);
+      // VirtualList gates wheel applies (~50ms); advance past the gate.
+      await new Promise((resolve) => setTimeout(resolve, 55));
+      for (const callback of frames.splice(0)) callback(0);
       await flushPromises();
     };
     expect(wrapper.findAll("button[title]").length).toBeLessThan(40);
