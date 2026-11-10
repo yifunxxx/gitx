@@ -1,9 +1,9 @@
 //! Shelf storage under `<common-dir>/gitx/shelf/<id>/`.
 
-use gitx_core::{AppError, ErrorCode, ShelfEntry};
+use gitx_core::{AppError, ErrorCode, ShelfEntry, ShelfPreview};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -269,6 +269,44 @@ pub fn load_shelf_snapshot(common: &Path, id: &str) -> Result<(ShelfEntry, Vec<u
         let patch = fs::read(root.join(id).join(record.patch_name()?))
             .map_err(|e| fs_error("read Shelf patch", e))?;
         Ok((record.meta, patch))
+    })
+}
+
+/// Bounded, read-only snapshot of the currently referenced patch. Deleted
+/// entries use the same validation and lock as active entries, without restore.
+pub fn preview_shelf(common: &Path, id: &str, deleted: bool) -> Result<ShelfPreview, AppError> {
+    const LIMIT: usize = 2 * 1024 * 1024;
+    validate_id(id)?;
+    transaction::with_metadata_access(common, || {
+        let root = checked_root(common, deleted, false)?;
+        let record = load_record(&root, id)?;
+        let file = fs::File::open(root.join(id).join(record.patch_name()?))
+            .map_err(|e| fs_error("open Shelf preview", e))?;
+        let mut bytes = Vec::new();
+        file.take((LIMIT + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|e| fs_error("read Shelf preview", e))?;
+        let truncated = bytes.len() > LIMIT;
+        if truncated {
+            bytes.truncate(LIMIT);
+            // Prefer a complete patch line; otherwise avoid splitting a valid
+            // UTF-8 character in a long line. Invalid source bytes remain lossy.
+            if let Some(end) = bytes.iter().rposition(|b| *b == b'\n') {
+                bytes.truncate(end + 1);
+            } else if let Err(error) = std::str::from_utf8(&bytes) {
+                if error.error_len().is_none() {
+                    bytes.truncate(error.valid_up_to());
+                }
+            }
+        }
+        let patch = String::from_utf8_lossy(&bytes);
+        let lossy = matches!(patch, std::borrow::Cow::Owned(_));
+        Ok(ShelfPreview {
+            entry: record.meta,
+            patch: patch.into_owned(),
+            truncated,
+            lossy,
+        })
     })
 }
 

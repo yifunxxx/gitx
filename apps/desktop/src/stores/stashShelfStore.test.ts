@@ -714,3 +714,23 @@ it.each([false, true])("does not override selection changed during restore (hide
   expect(store.selectedShelfId).toBeNull();
   expect(store.selectedDeletedShelfId).toBe(hide ? null : "other");
 });
+it('opens a single preview for the captured repository and deleted state without writes', async () => {
+  const store = useStashShelfStore();
+  store.shelves = [shelf('first')]; store.deletedShelves = [shelf('deleted')]; store.showDeleted = true;
+  let navigation = 7; mocks.workspace.navigationToken = () => navigation;
+  const dialog = deferred(); mocks.dialog.mockReturnValue(dialog.promise);
+  const pending = store.previewShelf('deleted', true);
+  await store.previewShelf('first');
+  expect(mocks.dialog).toHaveBeenCalledTimes(1);
+  expect(mocks.dialog.mock.calls[0]![1]).toEqual({ path: 'A', id: 'deleted', deleted: true, message: 'deleted', navigation: 7 });
+  navigation++; mocks.workspace.repoPath = 'B'; dialog.resolve(); await pending;
+  expect(store.busy).toBe(false);
+  expect(mocks.backend.shelfUnshelve).not.toHaveBeenCalled();
+  expect(mocks.backend.shelfRestore).not.toHaveBeenCalled();
+  expect(mocks.refresh).not.toHaveBeenCalled();
+});
+it('rejects preview for absent or hidden deleted entries', async () => {
+  const store = useStashShelfStore(); store.deletedShelves = [shelf('deleted')];
+  await store.previewShelf('missing'); await store.previewShelf('deleted', true);
+  expect(mocks.dialog).not.toHaveBeenCalled();
+});

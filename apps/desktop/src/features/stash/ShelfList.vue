@@ -11,7 +11,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import ShelfFiles from "./ShelfFiles.vue";
 
 type Section = "shelf" | "deleted-shelf";
-type Action = "unshelve" | "exportPatch" | "rename" | "delete" | "restore";
+type Action = "unshelve" | "exportPatch" | "rename" | "delete" | "restore" | "preview";
 const { t } = useI18n();
 const store = useStashShelfStore();
 const workspace = useWorkspaceStore();
@@ -69,8 +69,8 @@ const selectedDeleted = computed(() =>
 );
 const actions = computed<Action[]>(() =>
   menu.value?.section === "deleted-shelf"
-    ? ["restore"]
-    : ["unshelve", "exportPatch", "rename", "delete"],
+    ? ["restore", "preview"]
+    : ["unshelve", "exportPatch", "rename", "delete", "preview"],
 );
 
 function entries(section: Section) {
@@ -185,6 +185,10 @@ function runMenu(action: Action) {
     return;
   }
   closeMenu();
+  if (action === "preview") {
+    void store.previewShelf(target.id, target.section === "deleted-shelf");
+    return;
+  }
   if (target.section === "deleted-shelf") {
     if (action === "restore") void restore(target.id);
     return;
@@ -206,6 +210,12 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
     return;
   }
   if (event.shiftKey) return;
+  if (event.key === "F4") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void store.previewShelf(entry.id, section === "deleted-shelf");
+    return;
+  }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     event.stopPropagation();
@@ -312,6 +322,7 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
               "
               class="flex h-full min-w-0 flex-1 cursor-pointer flex-col justify-center gap-0.5 pr-2 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
               @click="select(section.kind, s.id)"
+              @dblclick="store.previewShelf(s.id, section.kind === 'deleted-shelf')"
               @keydown="rowKey($event, section.kind, index)"
               @contextmenu="openMenu(section.kind, s.id, $event)"
             >
@@ -345,6 +356,9 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
         :disabled="store.busy"
         class="flex flex-wrap items-center gap-1 px-2 py-1"
       >
+        <Button size="xs" variant="outline" @click="store.previewShelf(selectedShelf!.id)">{{
+          t("shelf.preview")
+        }}</Button>
         <Button
           size="xs"
           variant="outline"
@@ -370,6 +384,9 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
         :disabled="store.busy"
         class="flex flex-wrap items-center gap-2 px-2 py-1"
       >
+        <Button size="xs" variant="outline" @click="store.previewShelf(selectedDeleted!.id, true)">{{
+          t("shelf.preview")
+        }}</Button>
         <Button size="xs" variant="outline" @click="restore(selectedDeleted!.id)">{{
           t("shelf.restore")
         }}</Button>

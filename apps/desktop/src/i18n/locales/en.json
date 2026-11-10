@@ -532,6 +532,11 @@
     "clearConfirm": "Clear all {count} stashes without applying them?"
   },
   "shelf": {
+    "preview": "Preview Diff",
+    "previewHint": "Saved patch · Read-only unified view · + added / − removed",
+    "previewTruncated": "Showing only the first 2 MiB of this large patch.",
+    "previewLossy": "This patch contains non-UTF-8 bytes; some characters use replacement symbols. The saved patch is unchanged.",
+    "previewBinary": "Includes binary changes, shown below as patch records.",
     "expandFiles": "Expand files in {name}",
     "collapseFiles": "Collapse files in {name}",
     "files": "Files in {name}",

@@ -1848,6 +1848,12 @@ export const mockBackend: Backend = {
       throw { code: "notFound", message: "shelf not found" };
     throw { code: "invalidArgument", message: "Patch export requires the desktop app" };
   },
+  async shelfPreview(req) {
+    const entry = (req.deleted ? mockDeletedShelves : mockShelves).find((s) => s.id === req.id);
+    if (!entry) throw { code: "notFound", message: "shelf not found" };
+    // Web demo entries contain no saved patch. Do not invent their contents.
+    throw { code: "invalidArgument", message: "Shelf preview requires the desktop app" };
+  },
   async shelfImport(req) {
     const entry: ShelfEntry = {
       id: `shelf-${nextShelfId++}`,

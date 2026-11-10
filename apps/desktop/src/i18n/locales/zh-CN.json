@@ -532,6 +532,11 @@
     "clearConfirm": "清除全部 {count} 条 Stash？本地修改不会被应用。"
   },
   "shelf": {
+    "preview": "预览差异",
+    "previewHint": "已保存的补丁 · 只读统一视图 · + 新增 / − 删除",
+    "previewTruncated": "补丁较大，当前仅预览前 2 MiB。",
+    "previewLossy": "补丁含非 UTF-8 字节，部分字符以替代符显示；已保存的补丁保持原样。",
+    "previewBinary": "包含二进制更改，以下显示其补丁记录。",
     "expandFiles": "展开 {name} 的文件",
     "collapseFiles": "收起 {name} 的文件",
     "files": "{name} 的文件",

@@ -140,6 +140,8 @@ import type {
   ShelfRenameReq,
   ShelfImportReq,
   ShelfExportReq,
+  ShelfPreview,
+  ShelfPreviewReq,
   ShelfEntry,
   IgnoreAddReq,
   IgnoreSuggestReq,
@@ -311,6 +313,7 @@ export type Backend = {
   shelfRename(req: ShelfRenameReq): Promise<ShelfEntry>;
   shelfImport(req: ShelfImportReq): Promise<ShelfEntry>;
   shelfExport(req: ShelfExportReq): Promise<PatchCreateResult>;
+  shelfPreview(req: ShelfPreviewReq): Promise<ShelfPreview>;
   ignoreAdd(req: IgnoreAddReq): Promise<IgnoreAddResult>;
   ignoreSuggestPatterns(req: IgnoreSuggestReq): Promise<string[]>;
   excludeOpen(req: ExcludePathReq): Promise<string>;
@@ -467,6 +470,7 @@ export const tauriBackend: Backend = {
   shelfRename: (req) => commands.shelfRename(req),
   shelfImport: (req) => commands.shelfImport(req),
   shelfExport: (req) => commands.shelfExport(req),
+  shelfPreview: (req) => commands.shelfPreview(req),
   ignoreAdd: (req) => commands.ignoreAdd(req),
   ignoreSuggestPatterns: (req) => commands.ignoreSuggestPatterns(req),
   excludeOpen: (req) => commands.excludeOpen(req),

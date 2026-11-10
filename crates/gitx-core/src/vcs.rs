@@ -922,3 +922,12 @@ pub struct SmartRecovery {
     pub can_restore: bool,
     pub pending_commit: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfPreview {
+    pub entry: ShelfEntry,
+    pub patch: String,
+    pub truncated: bool,
+    pub lossy: bool,
+}

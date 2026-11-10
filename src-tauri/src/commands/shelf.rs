@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use gitx_core::{AppError, ErrorCode, PatchCreateResult, ShelfEntry};
+use gitx_core::{AppError, ErrorCode, PatchCreateResult, ShelfEntry, ShelfPreview};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -74,6 +74,30 @@ pub struct ShelfExportReq {
     pub path: String,
     pub id: String,
     pub output: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfPreviewReq {
+    pub path: String,
+    pub id: String,
+    pub deleted: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn shelf_preview(
+    state: State<'_, AppState>,
+    req: ShelfPreviewReq,
+) -> Result<ShelfPreview, AppError> {
+    let git = state.git.read().await;
+    git.shelf_preview(
+        PathBuf::from(&req.path).as_path(),
+        &req.id,
+        req.deleted,
+        &CancellationToken::new(),
+    )
+    .await
 }
 
 #[tauri::command]
