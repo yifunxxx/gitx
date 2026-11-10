@@ -24,7 +24,12 @@ beforeEach(() => {
   localStorage.clear();
   pinia = createPinia();
   setActivePinia(pinia);
-  mocks.workspace = reactive({ repoPath: "A", repoId: "A" });
+  mocks.workspace = reactive({
+    repoPath: "A",
+    repoId: "A",
+    isRepo: true,
+    navigationToken: () => 1,
+  });
 });
 afterEach(() => disposePinia(pinia));
 

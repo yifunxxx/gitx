@@ -153,7 +153,13 @@
     "clearTip": "Clear all filters"
   },
   "merge": {
-    "operations": {"merge":"Merging {theirs} into {ours}","rebase":"Rebasing {theirs} onto {ours}","cherryPick":"Cherry-pick in progress","revert":"Revert in progress","normal":"Ready"},
+    "operations": {
+      "merge": "Merging {theirs} into {ours}",
+      "rebase": "Rebasing {theirs} onto {ours}",
+      "cherryPick": "Cherry-pick in progress",
+      "revert": "Revert in progress",
+      "normal": "Ready"
+    },
     "stoppedForEdit": "Paused for editing a commit",
     "resolve": "Resolve Conflicts",
     "commitMerge": "Commit Merge",
@@ -565,7 +571,12 @@
     "amendCommit": "Amend Commit…",
     "amendCommitAction": "Amend Commit",
     "fixupOk": "Fixed up into selected commit",
-    "fixupFail": "Fixup failed"
+    "fixupFail": "Fixup failed",
+    "amendLoading": "Loading the latest commit message…",
+    "amendLoadFailed": "Could not load the latest commit message. Retry or uncheck Amend.",
+    "amendRetry": "Retry",
+    "draftStorageFailed": "Draft storage unavailable",
+    "draftStorageHint": "Your draft is kept for this session. Copy it before closing the app."
   },
   "history": {
     "showHistory": "Show History",

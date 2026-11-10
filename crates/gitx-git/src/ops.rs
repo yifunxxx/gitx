@@ -1137,10 +1137,8 @@ impl GitRunner {
         let inv = GitInvocation::new(cwd, ["log", "-1", "--format=%B"])
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone());
-        match self.run(inv, cancel).await {
-            Ok(out) => Ok(String::from_utf8_lossy(&out.stdout).to_string()),
-            Err(_) => Ok(String::new()),
-        }
+        let out = self.run(inv, cancel).await?;
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
     }
 
     pub async fn current_branch(

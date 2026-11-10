@@ -153,7 +153,13 @@
     "clearTip": "清除全部筛选"
   },
   "merge": {
-    "operations": {"merge":"正在将 {theirs} 合并到 {ours}","rebase":"正在将 {theirs} 变基到 {ours}","cherryPick":"正在拣选提交","revert":"正在还原提交","normal":"就绪"},
+    "operations": {
+      "merge": "正在将 {theirs} 合并到 {ours}",
+      "rebase": "正在将 {theirs} 变基到 {ours}",
+      "cherryPick": "正在拣选提交",
+      "revert": "正在还原提交",
+      "normal": "就绪"
+    },
     "stoppedForEdit": "已暂停，等待编辑提交",
     "resolve": "解决冲突",
     "commitMerge": "提交合并",
@@ -565,7 +571,12 @@
     "amendCommit": "Amend Commit…",
     "amendCommitAction": "Amend Commit",
     "fixupOk": "已 Fixup 到所选提交",
-    "fixupFail": "Fixup 失败"
+    "fixupFail": "Fixup 失败",
+    "amendLoading": "正在加载最近一次提交说明…",
+    "amendLoadFailed": "加载最近一次提交说明失败，请重试或取消勾选 Amend。",
+    "amendRetry": "重试",
+    "draftStorageFailed": "草稿无法持久保存",
+    "draftStorageHint": "本次会话仍会保留草稿，请在关闭应用前复制保存。"
   },
   "history": {
     "showHistory": "显示历史",

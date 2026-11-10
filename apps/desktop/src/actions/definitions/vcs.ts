@@ -218,17 +218,33 @@ export function registerVcsActions() {
       const layout = useLayoutStore();
       layout.leftOpen = true;
       const changes = useChangesStore();
-      if (!changes.staged.length && !useCommitStore().amend) {
+      const commit = useCommitStore();
+      const hasCheckedChanges = !changes.stagingMode && changes.checkedPaths.length > 0;
+      if (!changes.staged.length && !hasCheckedChanges && !commit.amend) {
         toast({ title: "Nothing to commit" });
         return;
       }
       // Message box is already visible; committing requires explicit Commit button
       // or a second Ctrl+K when message is non-empty (IDEA focuses first).
-      const commit = useCommitStore();
       if (commit.message.trim()) {
-        await commit.commit();
-        await useLogStore().load(true);
-        useLayoutStore().activeBottomTab = "log";
+        const workspace = useWorkspaceStore();
+        const path = workspace.repoPath;
+        const repoId = workspace.repoId;
+        const navigation = workspace.navigationToken();
+        try {
+          const result = await commit.commit();
+          if (
+            result &&
+            workspace.isRepo &&
+            workspace.repoPath === path &&
+            workspace.repoId === repoId &&
+            workspace.navigationToken() === navigation
+          ) {
+            layout.activeBottomTab = "log";
+          }
+        } catch {
+          // The store already reports the failure for its source session.
+        }
       } else {
         toast({ title: "Enter a commit message" });
       }
