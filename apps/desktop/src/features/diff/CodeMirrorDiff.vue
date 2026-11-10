@@ -222,9 +222,23 @@ function unifiedText(hunks: DiffHunk[]): string {
 
 function theme() {
   return EditorView.theme({
-    "&": { height: "100%", fontSize: "12px" },
+    "&": {
+      height: "100%",
+      fontSize: "12px",
+      backgroundColor: "var(--color-background)",
+      color: "var(--color-foreground)",
+    },
     ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
     ".cm-content": { caretColor: "transparent" },
+    ".cm-gutters": {
+      backgroundColor: "var(--color-background)",
+      color: "var(--color-muted-foreground)",
+      borderRight: "1px solid var(--color-border)",
+    },
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+      backgroundColor: "var(--color-selection)",
+    },
+    "::selection": { color: "var(--color-selection-foreground)" },
     ".cm-diff-insert": {
       backgroundColor: "rgb(var(--diff-insert-bg) / 0.9)",
     },

@@ -86,7 +86,7 @@ function resolve() {
       {{ t("merge.stoppedForEdit") }}
     </span>
     <span v-if="rewrite.opState.conflictCount" class="text-muted-foreground">
-      {{ t("merge.remaining", { count: rewrite.opState.conflictCount }) }}
+      {{ t("merge.remainingFiles", { count: rewrite.opState.conflictCount }) }}
     </span>
     <p v-if="recovery" class="w-full" role="status">{{ recoveryText }}</p>
     <p v-if="error" role="alert" class="w-full text-destructive">{{ error }}</p>

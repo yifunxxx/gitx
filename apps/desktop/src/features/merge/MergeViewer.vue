@@ -185,7 +185,7 @@ function historyAction(forward: boolean) {
     <div class="flex min-h-9 flex-wrap items-center gap-2 border-b bg-dbx-chrome px-2 py-1 text-xs">
       <span class="max-w-48 truncate font-medium" :title="tab.title">{{ tab.title }}</span>
       <span role="status" class="text-muted-foreground">{{
-        t("merge.remaining", { count: remaining })
+        t("merge.remainingBlocks", { count: remaining })
       }}</span>
       <div class="flex items-center gap-0.5">
         <Button

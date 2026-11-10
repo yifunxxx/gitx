@@ -180,7 +180,7 @@
     "resolveSimple": "解决简单冲突",
     "acceptedYours": "已接受己方版本",
     "acceptedTheirs": "已接受对方版本",
-    "resolvedSimple": "已解决 {count} 处简单冲突",
+    "resolvedSimple": "已自动解决 {count} 个文件的冲突",
     "operations": {
       "merge": "正在将 {theirs} 合并到 {ours}",
       "rebase": "正在将 {theirs} 变基到 {ours}",
@@ -211,7 +211,8 @@
     "interactiveRebase": "交互式变基",
     "startRebasing": "开始变基",
     "editorTitle": "合并：{path}",
-    "remaining": "剩余 {count} 处冲突",
+    "remainingFiles": "剩余 {count} 个冲突文件",
+    "remainingBlocks": "剩余 {count} 个冲突块",
     "saving": "保存中…",
     "saveResolved": "保存并标记为已解决",
     "manuallyEdited": "此块已被手动编辑，请在结果编辑区完成解决。",

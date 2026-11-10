@@ -180,7 +180,7 @@
     "resolveSimple": "Resolve simple conflicts",
     "acceptedYours": "Accepted yours",
     "acceptedTheirs": "Accepted theirs",
-    "resolvedSimple": "Resolved {count} simple conflict(s)",
+    "resolvedSimple": "Automatically resolved conflicts in {count} file(s)",
     "operations": {
       "merge": "Merging {theirs} into {ours}",
       "rebase": "Rebasing {theirs} onto {ours}",
@@ -211,7 +211,8 @@
     "interactiveRebase": "Interactive Rebase",
     "startRebasing": "Start Rebasing",
     "editorTitle": "Merge: {path}",
-    "remaining": "{count} unresolved conflict(s)",
+    "remainingFiles": "{count} unresolved file(s)",
+    "remainingBlocks": "{count} unresolved conflict block(s)",
     "saving": "Saving…",
     "saveResolved": "Save and mark resolved",
     "manuallyEdited": "This block was edited manually. Finish resolving it in the result editor.",

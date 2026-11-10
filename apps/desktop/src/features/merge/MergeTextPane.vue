@@ -36,7 +36,12 @@ function config() {
       if (props.editable) emit("change", props.ownerId, update.state, update.docChanged);
     }),
     EditorView.theme({
-      "&": { height: "100%", fontSize: "12px", backgroundColor: "transparent" },
+      "&": {
+        height: "100%",
+        fontSize: "12px",
+        backgroundColor: "var(--color-background)",
+        color: "var(--color-foreground)",
+      },
       ".cm-scroller": {
         overflow: "auto",
         fontFamily: "var(--font-mono, monospace)",
@@ -51,20 +56,21 @@ function config() {
       ".cm-cursor": { borderLeftColor: "var(--color-foreground)" },
       "&.cm-focused": { outline: "none" },
       "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-        backgroundColor: "var(--color-accent)",
+        backgroundColor: "var(--color-selection)",
       },
+      "::selection": { color: "var(--color-selection-foreground)" },
       ".cm-merge-pending": {
-        backgroundColor: "var(--diff-conflict-bg, #c8903026)",
-        boxShadow: "inset 3px 0 #c89030",
+        backgroundColor: "rgb(var(--diff-conflict-bg))",
+        boxShadow: "inset 3px 0 var(--color-warning)",
       },
       ".cm-merge-accepted": {
-        backgroundColor: "var(--diff-added-bg, #40945520)",
-        boxShadow: "inset 3px 0 #409455",
+        backgroundColor: "rgb(var(--diff-insert-bg))",
+        boxShadow: "inset 3px 0 var(--color-success)",
       },
       ".cm-merge-ignored": { opacity: "0.55" },
       ".cm-merge-manual": {
-        backgroundColor: "var(--diff-conflict-bg, #c8903026)",
-        boxShadow: "inset 3px 0 #6c9eff",
+        backgroundColor: "rgb(var(--diff-conflict-bg))",
+        boxShadow: "inset 3px 0 var(--color-info)",
       },
       ".cm-merge-actions": { minWidth: "48px", color: "var(--color-foreground)" },
       ".cm-merge-actions .cm-gutterElement": { padding: "0 2px" },
@@ -89,7 +95,7 @@ function config() {
         outlineOffset: "1px",
       },
       ".merge-action:disabled": { cursor: "default", opacity: "0.45" },
-      ".merge-action[data-decided=accept]": { color: "#409455" },
+      ".merge-action[data-decided=accept]": { color: "var(--color-success)" },
     }),
   ];
 }
