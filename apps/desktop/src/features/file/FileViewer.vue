@@ -30,8 +30,22 @@ function mount() {
         lineNumbers(),
         EditorView.editable.of(!!tab.value.editable),
         EditorView.theme({
-          "&": { height: "100%", fontSize: "12.5px" },
-          ".cm-scroller": { overflow: "auto", fontFamily: "ui-monospace, monospace" },
+          "&": {
+            height: "100%",
+            fontSize: "12.5px",
+            backgroundColor: "var(--color-background)",
+            color: "var(--color-foreground)",
+          },
+          ".cm-scroller": { overflow: "auto", fontFamily: "var(--font-mono, monospace)" },
+          ".cm-gutters": {
+            backgroundColor: "var(--color-background)",
+            color: "var(--color-muted-foreground)",
+            borderRight: "1px solid var(--color-border)",
+          },
+          ".cm-cursor": { borderLeftColor: "var(--color-foreground)" },
+          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+            backgroundColor: "var(--color-accent)",
+          },
           ".cm-diff-insert": {
             backgroundColor: "color-mix(in oklab, var(--color-success, #16a34a) 22%, transparent)",
           },
