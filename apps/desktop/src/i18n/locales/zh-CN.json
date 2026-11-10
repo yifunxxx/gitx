@@ -388,6 +388,7 @@
     "stageAll": "全部 Stage",
     "ignored": "已忽略",
     "untrackTitle": "停止跟踪",
+    "untrackConfirm": "停止跟踪 {count} 个文件？本地文件会保留，此更改需要提交。",
     "untrackAlsoIgnore": "同时写入 .gitignore？",
     "untracked": "已停止跟踪",
     "ignore": "忽略",

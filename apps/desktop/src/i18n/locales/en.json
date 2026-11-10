@@ -388,6 +388,7 @@
     "stageAll": "Stage All",
     "ignored": "Ignored",
     "untrackTitle": "Stop tracking",
+    "untrackConfirm": "Stop tracking {count} files? Local files will be kept. Commit this change to record it.",
     "untrackAlsoIgnore": "Also add to .gitignore?",
     "untracked": "Stopped tracking",
     "ignore": "Ignore",

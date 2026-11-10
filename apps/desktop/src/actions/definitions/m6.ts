@@ -50,13 +50,15 @@ export function registerM6Actions() {
     scope: "changes",
     enabled: () => hasRepo() && !useChangesStore().stagingMode,
     async run() {
-      const name = await promptDialog({
-        title: "New Changelist…",
-        allowEmpty: false,
-      });
-      if (!name?.trim()) return;
-      await useChangesStore().createChangelist(name.trim(), true);
-      toast({ title: "Changelist created", description: name.trim() });
+      const ws = useWorkspaceStore();
+      const path = ws.repoPath;
+      const navigation = ws.navigationToken();
+      const current = () =>
+        ws.isRepo && ws.repoPath === path && ws.navigationToken() === navigation;
+      const name = await promptDialog({ title: "New Changelist…", allowEmpty: false });
+      if (!name?.trim() || !current()) return;
+      const created = await useChangesStore().createChangelist(name.trim(), true);
+      if (created && current()) toast({ title: "Changelist created", description: name.trim() });
     },
   });
 
@@ -125,15 +127,17 @@ export function registerM6Actions() {
     icon: FilePlus2,
     scope: "global",
     enabled: () => hasRepo(),
-    async run() {
+    async run(ctx) {
       const ws = useWorkspaceStore();
       const changes = useChangesStore();
       if (!ws.repoPath) return;
-      const paths = changes.selectedPaths.length
-        ? [...changes.selectedPaths]
-        : changes.checkedPaths.length
-          ? [...changes.checkedPaths]
-          : [];
+      const paths = ctx.selection.files
+        ? [...ctx.selection.files]
+        : changes.selectedPaths.length
+          ? [...changes.selectedPaths]
+          : changes.checkedPaths.length
+            ? [...changes.checkedPaths]
+            : [];
       const result = await getBackend().patchCreate({
         path: ws.repoPath,
         paths,

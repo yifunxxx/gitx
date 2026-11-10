@@ -322,19 +322,14 @@ export const useChangesStore = defineStore("changes", () => {
   }
 
   async function ignore(paths: string[], ignoreFile = ".gitignore") {
-    const workspace = useWorkspaceStore();
-    if (!workspace.repoPath) return;
+    const path = workspace.repoPath;
+    if (!path) return;
+    const current = currentRepository();
     const backend = getBackend();
-    const patterns = await backend.ignoreSuggestPatterns({
-      path: workspace.repoPath,
-      files: paths,
-    });
-    await backend.ignoreAdd({
-      path: workspace.repoPath,
-      ignoreFile,
-      patterns,
-    });
-    await refresh();
+    const patterns = await backend.ignoreSuggestPatterns({ path, files: [...paths] });
+    if (!current()) return;
+    await backend.ignoreAdd({ path, ignoreFile, patterns });
+    if (current()) await refresh();
   }
 
   async function rmCached(paths: string[], addToGitignore = false) {
