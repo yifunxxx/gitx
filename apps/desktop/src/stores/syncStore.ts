@@ -11,6 +11,10 @@ import { useJobsStore } from "./jobsStore";
 import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
 import { handleAuthFailure } from "@/composables/useCredentials";
+import { isAuthError } from "@/lib/auth";
+import { useConflictsStore } from "./conflictsStore";
+import { useRewriteStore } from "./rewriteStore";
+import { useStashShelfStore } from "./stashShelfStore";
 import { i18n } from "@/i18n";
 
 export const useSyncStore = defineStore("sync", () => {
@@ -25,11 +29,7 @@ export const useSyncStore = defineStore("sync", () => {
     await useLogStore().load(true);
   }
 
-  async function onAuthOrToast<T>(
-    title: string,
-    e: unknown,
-    retry: () => Promise<T>,
-  ): Promise<T> {
+  async function onAuthOrToast<T>(title: string, e: unknown, retry: () => Promise<T>): Promise<T> {
     const retryOk = await handleAuthFailure(e, { title: i18n.global.t("auth.title") });
     if (retryOk) {
       return retry();
@@ -38,14 +38,16 @@ export const useSyncStore = defineStore("sync", () => {
       title,
       description: formatErrorMessage(e),
       persistent: true,
-      action: {
-        label: String(i18n.global.t("auth.enterCredentials")),
-        onClick: () => {
-          void handleAuthFailure(e, { title: i18n.global.t("auth.title") }).then((ok) => {
-            if (ok) void retry();
-          });
-        },
-      },
+      action: isAuthError(e)
+        ? {
+            label: String(i18n.global.t("auth.enterCredentials")),
+            onClick: () => {
+              void handleAuthFailure(e, { title: i18n.global.t("auth.title") }).then((ok) => {
+                if (ok) void retry();
+              });
+            },
+          }
+        : undefined,
     });
     throw e;
   }
@@ -116,6 +118,9 @@ export const useSyncStore = defineStore("sync", () => {
       toast({ title: "Update Project failed", description: "No repository open" });
       return;
     }
+    const path = ws.repoPath;
+    const navigation = ws.navigationToken();
+    const current = () => path === ws.repoPath && navigation === ws.navigationToken();
     const jobs = useJobsStore();
     const jobId = `update-project-${Date.now()}`;
     updating.value = true;
@@ -126,10 +131,21 @@ export const useSyncStore = defineStore("sync", () => {
     });
     const run = async () => {
       jobs.progress(jobId, { message: "Fetching & updating…" });
-      const info = await getBackend().updateProjectRun({
-        path: ws.repoPath!,
-        strategy,
-      });
+      const info = await getBackend()
+        .updateProjectRun({ path, strategy })
+        .catch(async (error) => {
+          // An update can stop after changing HEAD, creating conflicts or saving
+          // local work. Publish that state before showing the recovery message.
+          if (current())
+            await Promise.allSettled([
+              afterSync(),
+              useConflictsStore().refresh(),
+              useRewriteStore().refreshOpState(),
+              useStashShelfStore().refresh(),
+            ]);
+          throw error;
+        });
+      if (!current()) return info;
       lastUpdate.value = info;
       if (info.oldHead !== info.newHead) {
         useLayoutStore().activeBottomTab = "update";

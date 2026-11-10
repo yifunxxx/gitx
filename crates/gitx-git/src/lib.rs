@@ -28,6 +28,7 @@ mod stash_ops;
 mod status;
 mod stderr;
 mod sync_ops;
+mod update_local_changes;
 mod worktree_ops;
 
 pub use detect::{

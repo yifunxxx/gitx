@@ -178,6 +178,7 @@ impl GitRunner {
         strategy: UpdateMethod,
         cancel: &CancellationToken,
     ) -> Result<UpdateInfo, AppError> {
+        self.ensure_not_busy(cwd, cancel).await?;
         // Fetch upstream remote first.
         let upstream = self.upstream_ref(cwd, cancel).await.map_err(|e| {
             AppError::new(
@@ -208,16 +209,12 @@ impl GitRunner {
 
         match strategy {
             UpdateMethod::Merge => {
-                let inv = GitInvocation::new(cwd, ["merge", "--no-edit", "@{u}"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                self.run(inv, cancel).await?;
+                self.update_preserving_changes(cwd, &["merge", "--no-edit", "@{u}"], cancel)
+                    .await?;
             }
             UpdateMethod::Rebase => {
-                let inv = GitInvocation::new(cwd, ["rebase", "@{u}"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
-                self.run(inv, cancel).await?;
+                self.update_preserving_changes(cwd, &["rebase", "@{u}"], cancel)
+                    .await?;
             }
             UpdateMethod::Reset => {
                 // Safety backup of HEAD.
@@ -225,11 +222,9 @@ impl GitRunner {
                 let inv = GitInvocation::new(cwd, ["update-ref", &backup, "HEAD"])
                     .kind(OpKind::Write)
                     .git_bin(self.git_bin.clone());
-                let _ = self.run(inv, cancel).await;
-                let inv = GitInvocation::new(cwd, ["reset", "--keep", "@{u}"])
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone());
                 self.run(inv, cancel).await?;
+                self.update_preserving_changes(cwd, &["reset", "--keep", "@{u}"], cancel)
+                    .await?;
             }
         }
 
