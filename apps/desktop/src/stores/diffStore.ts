@@ -6,6 +6,7 @@ import type { DiffFileResult, DiffSide, IgnoreWhitespace } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
 import { sameDiffResult } from "@/features/diff/sameDiffResult";
+import { diffViewKey, type DiffPaneSide, type DiffPaneSnapshot, type DiffPaneViewState } from "@/features/diff/diffViewState";
 
 export type DiffTab = {
   id: string;
@@ -33,6 +34,10 @@ export const useDiffStore = defineStore("diff", () => {
   const tabs = ref<DiffTab[]>([]);
   const activeId = ref<string | null>(null);
   let nextContentVersion = 0;
+  const paneStates = new Map<string, {
+    key: string;
+    panes: Partial<Record<DiffPaneSide, DiffPaneViewState>>;
+  }>();
   /** Per-tab load generation — stale responses are dropped. */
   const loadGen = new Map<string, number>();
   let nextGeneration = 0;
@@ -41,6 +46,7 @@ export const useDiffStore = defineStore("diff", () => {
     () => workspace.repoPath,
     () => {
       loadGen.clear();
+      paneStates.clear();
       tabs.value = [];
       activeId.value = null;
       lastPerf.value = null;
@@ -68,6 +74,24 @@ export const useDiffStore = defineStore("diff", () => {
   /** Always read the reactive proxy from `tabs` — never keep a raw insert object. */
   function liveTab(id: string): DiffTab | undefined {
     return tabs.value.find((t) => t.id === id);
+  }
+
+  function savePaneViewState(id: string, snapshot: DiffPaneSnapshot) {
+    const tab = liveTab(id);
+    // An outgoing pane may finish unmounting after a close, refresh or navigation.
+    if (!tab || diffViewKey(tab) !== snapshot.key) return;
+    let saved = paneStates.get(id);
+    if (!saved || saved.key !== snapshot.key) {
+      saved = { key: snapshot.key, panes: {} };
+      paneStates.set(id, saved);
+    }
+    saved.panes[snapshot.side] = snapshot.state;
+  }
+
+  function getPaneViewState(id: string, side: DiffPaneSide) {
+    const tab = liveTab(id);
+    const saved = paneStates.get(id);
+    return tab && saved?.key === diffViewKey(tab) ? saved.panes[side] : undefined;
   }
 
   /**
@@ -215,6 +239,7 @@ export const useDiffStore = defineStore("diff", () => {
         // Unchanged content — keep paint, skip assign thrash.
         return;
       }
+      paneStates.delete(id);
       patchTab(id, { result, contentVersion: ++nextContentVersion, textsLoaded: includeTexts });
       const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
       lastPerf.value = {
@@ -236,6 +261,7 @@ export const useDiffStore = defineStore("diff", () => {
 
   function closeTab(id: string) {
     bumpGen(id);
+    paneStates.delete(id);
     tabs.value = tabs.value.filter((t) => t.id !== id);
     loadGen.delete(id);
     if (activeId.value === id) {
@@ -244,6 +270,7 @@ export const useDiffStore = defineStore("diff", () => {
   }
 
   function setUnified(id: string, unified: boolean) {
+    if (liveTab(id)?.unified !== unified) paneStates.delete(id);
     patchTab(id, { unified });
   }
 
@@ -259,6 +286,7 @@ export const useDiffStore = defineStore("diff", () => {
   async function setCollapseUnchanged(id: string, value: boolean) {
     const tab = liveTab(id);
     if (!tab) return;
+    if (tab.collapseUnchanged !== value) paneStates.delete(id);
     patchTab(id, { collapseUnchanged: value });
     // Expanding needs full texts; fetch lazily if missing.
     const live = liveTab(id);
@@ -301,6 +329,8 @@ export const useDiffStore = defineStore("diff", () => {
     tabs,
     activeId,
     lastPerf,
+    savePaneViewState,
+    getPaneViewState,
     openFileDiff,
     openRevDiff,
     closeTab,

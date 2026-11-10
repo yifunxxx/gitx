@@ -40,8 +40,9 @@ beforeEach(() => {
     },
   };
   mocks.diffs = reactive({
-    activeId: tab.id, tabs: [tab], paintEpoch: 0,
+    activeId: tab.id, tabs: [tab],
     openFileDiff: vi.fn(), reloadTab: vi.fn(),
+    getPaneViewState: vi.fn(), savePaneViewState: vi.fn(),
   });
   mocks.prompt.mockResolvedValue("2");
   mocks.stageLines.mockResolvedValue(undefined);

@@ -19,4 +19,8 @@ Native QA executable: `E:/IDEAproject/gitx/test-results/isolated-target/debug/gi
 
 SHA256: `1b582341dc10ea555ac867194ed50e401a98fd38e181b4058b7e6dcc0bce8f2d`.
 
-Native interactive verification with actual CodeMirror panes and filesystem watcher events is still pending. The automated component checks above do not substitute for that follow-up. Shelf diff preview is also still pending; this change fixes the shared diff infrastructure only.
+## Native interactive verification
+
+Opened the two-file `diff-isolation-gui-20261110` fixture through the native folder dialog. Double-clicked B, then A, scrolled A to show lines 16–39 and selected text across lines 25–27. Replaced all 200 `modified` strings in B with the equal-length `REFRESH!` marker. A retained exactly the same selected text and visible line positions; activating B showed the refreshed marker. Replacing A's text with equal-length `LIVEEDIT` markers updated the active view without a tab switch. Staged entries remained identical to the baseline. Evidence: `test-results/diff-isolation-gui-before.json` and `test-results/diff-isolation-gui-after.json`.
+
+Switching away and back still reset the reading position in this build; that finding led to the subsequent per-tab position restoration work. The QA process was closed. Shelf diff preview remains pending; this change fixes the shared diff infrastructure only.

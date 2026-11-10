@@ -6,6 +6,9 @@ import type { DiffFileResult } from "@/lib/backend";
 import { useDiffStore } from "@/stores/diffStore";
 import EditorTabs from "./EditorTabs.vue";
 import DiffViewer from "@/features/diff/DiffViewer.vue";
+import { EditorSelection } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { diffViewKey } from "@/features/diff/diffViewState";
 
 const mocks = vi.hoisted(() => ({
   backend: { diffFile: vi.fn(), diffFileAt: vi.fn() },
@@ -30,7 +33,7 @@ vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ tabs: 
 // A selectable editor surface makes unintended remounts observable without
 // relying on CodeMirror's browser layout machinery in happy-dom.
 const EditorSurface = defineComponent({
-  props: ["text", "side"],
+  props: ["text", "side", "initialViewState"],
   template: '<textarea :data-side="side" :value="text" />',
 });
 const result = (path: string, after = "new value"): DiffFileResult => ({
@@ -158,4 +161,35 @@ it("switches cached comparisons to the correct content", async () => {
   expect(wrapper.get<HTMLTextAreaElement>('[data-side="right"]').element.value).toContain(
     "new value",
   );
+});
+
+it("passes the outgoing pane snapshot back to the same tab on reactivation", async () => {
+  const { store, wrapper, id } = await setup();
+  const right = wrapper
+    .findAllComponents(EditorSurface)
+    .find((pane) => pane.props("side") === "right")!;
+  const state = {
+    scroll: EditorView.scrollIntoView(4),
+    selection: EditorSelection.single(1, 6),
+    selectionVisible: true,
+    docLength: 9,
+  };
+  right.vm.$emit("saveViewState", { key: diffViewKey(store.tabs[0]!), side: "right", state });
+  await store.openFileDiff("B.txt");
+  await flushPromises();
+  expect(
+    wrapper
+      .findAllComponents(EditorSurface)
+      .find((pane) => pane.props("side") === "right")!
+      .props("initialViewState"),
+  ).toBeUndefined();
+  await store.openFileDiff("A.txt");
+  await flushPromises();
+  const restored = wrapper
+    .findAllComponents(EditorSurface)
+    .find((pane) => pane.props("side") === "right")!
+    .props("initialViewState");
+  expect(restored.selection.main.anchor).toBe(1);
+  expect(restored.selection.main.head).toBe(6);
+  expect(store.getPaneViewState(id, "right")).toBe(state);
 });
