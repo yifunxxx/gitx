@@ -651,3 +651,26 @@ pub async fn drop_changes(
     git.drop_changes(&path, &req.commit, &req.paths, &cancel)
         .await
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartRestoreReq {
+    pub path: String,
+    pub sha: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn smart_restore_changes(
+    state: State<'_, AppState>,
+    req: SmartRestoreReq,
+) -> Result<(), AppError> {
+    let path = PathBuf::from(&req.path);
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.restore_smart_changes(&path, &req.sha, &cancel).await
+}

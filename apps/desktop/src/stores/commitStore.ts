@@ -4,6 +4,7 @@ import { getBackend } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { toast } from "@/composables/useToast";
+import { useRewriteStore } from "./rewriteStore";
 import { formatErrorMessage } from "@/lib/errors";
 
 export const useCommitStore = defineStore("commit", () => {
@@ -67,9 +68,7 @@ export const useCommitStore = defineStore("commit", () => {
       const backend = getBackend();
       const changes = useChangesStore();
       const paths =
-        !changes.stagingMode && changes.checkedPaths.length
-          ? [...changes.checkedPaths]
-          : null;
+        !changes.stagingMode && changes.checkedPaths.length ? [...changes.checkedPaths] : null;
       const result = await backend.commitCreate({
         repoId: workspace.repoId,
         path: workspace.repoPath,
@@ -80,13 +79,14 @@ export const useCommitStore = defineStore("commit", () => {
       });
       toast({
         title: result.amended ? "Amended" : "Committed",
-        description: `${result.sha.slice(0, 7)} ${result.subject}`,
+        description: result.warning || `${result.sha.slice(0, 7)} ${result.subject}`,
+        persistent: !!result.warning,
       });
       message.value = "";
       amend.value = false;
       localStorage.removeItem(`gitx.commitDraft.${workspace.repoPath}`);
       changes.setChecked([]);
-      await changes.refresh();
+      await Promise.allSettled([changes.refresh(), useRewriteStore().refreshOpState()]);
       return result;
     } catch (e) {
       const err = e as { code?: string; message?: string; gitStderr?: string };

@@ -1340,6 +1340,7 @@ export const mockBackend: Backend = {
   async repoStateGet() {
     return { isShallow: false };
   },
+  async smartRestoreChanges() { return null; },
   async repoOpStateGet() {
     return {
       kind: "normal" as const,

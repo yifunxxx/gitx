@@ -15,6 +15,16 @@ impl GitRunner {
         cwd: &Path,
         cancel: &CancellationToken,
     ) -> Result<RepoOpState, AppError> {
+        let mut state = self.repo_op_state_raw(cwd, cancel).await?;
+        state.smart_recovery = self.smart_recovery_status(cwd, &state, cancel).await?;
+        Ok(state)
+    }
+
+    pub(crate) async fn repo_op_state_raw(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<RepoOpState, AppError> {
         let git_dir = self.git_dir(cwd, cancel).await?;
         let conflict_count = self.unmerged_paths(cwd, cancel).await?.len() as u32;
         let head_branch = self
@@ -38,6 +48,7 @@ impl GitRunner {
                 head_branch.as_deref().unwrap_or("HEAD")
             );
             return Ok(RepoOpState {
+                smart_recovery: None,
                 kind: RepoOpKind::Merge,
                 phase,
                 step: None,
@@ -79,6 +90,7 @@ impl GitRunner {
                 progress
             );
             return Ok(RepoOpState {
+                smart_recovery: None,
                 kind,
                 phase,
                 step,
@@ -135,6 +147,7 @@ impl GitRunner {
                 _ => format!("Rebasing onto '{}'", onto.as_deref().unwrap_or("…")),
             };
             return Ok(RepoOpState {
+                smart_recovery: None,
                 kind: RepoOpKind::Rebase,
                 phase,
                 step,
@@ -149,11 +162,16 @@ impl GitRunner {
         }
 
         Ok(RepoOpState {
+            smart_recovery: None,
             kind: RepoOpKind::Normal,
-            phase: RepoOpPhase::Normal,
+            phase: if conflict_count > 0 {
+                RepoOpPhase::Conflicted
+            } else {
+                RepoOpPhase::Normal
+            },
             step: None,
             total: None,
-            conflict_count: 0,
+            conflict_count,
             yours_label: "Yours".into(),
             theirs_label: "Theirs".into(),
             summary: String::new(),
@@ -226,13 +244,13 @@ impl GitRunner {
             .await;
 
         match result {
-            Ok(()) => {
+            Ok(squash_staged) => {
                 let new = self
                     .rev_parse_public(cwd, "HEAD", cancel)
                     .await
                     .unwrap_or_default();
                 let state = self.repo_op_state(cwd, cancel).await?;
-                if state.conflict_count > 0 || state.kind == RepoOpKind::Merge {
+                if state.conflict_count > 0 || state.kind == RepoOpKind::Merge || squash_staged {
                     let files = self.unmerged_paths(cwd, cancel).await.unwrap_or_default();
                     if !files.is_empty() {
                         return Ok(RewriteResult {
@@ -423,7 +441,7 @@ impl GitRunner {
             .run_rewrite(cwd, args, OpKind::Write, "rebase", smart, cancel)
             .await
         {
-            Ok(()) => {
+            Ok(_) => {
                 let new = self
                     .rev_parse_public(cwd, "HEAD", cancel)
                     .await
@@ -539,7 +557,7 @@ impl GitRunner {
             .run_rewrite(cwd, args, OpKind::Write, "cherry-pick", smart, cancel)
             .await
         {
-            Ok(()) => {
+            Ok(_) => {
                 let new = self
                     .rev_parse_public(cwd, "HEAD", cancel)
                     .await
@@ -716,14 +734,14 @@ impl GitRunner {
         op_name: &str,
         smart: bool,
         cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
+    ) -> Result<bool, AppError> {
         let inv = GitInvocation::new(cwd, args)
             .kind(kind)
             .git_bin(self.git_bin.clone());
         if smart {
             return self.with_clean_tree_inv(cwd, op_name, inv, cancel).await;
         }
-        self.run(inv, cancel).await.map(|_| ())
+        self.run_rewrite_inv(cwd, inv, cancel).await
     }
 
     pub(crate) async fn map_rewrite_err(

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     rebaseInteractivePlan: vi.fn(),
     rewordCommit: vi.fn(),
     repoOpStateGet: vi.fn(),
+    smartRestoreChanges: vi.fn(),
     undoRewrite: vi.fn(),
   },
   changes: { refresh: vi.fn() },
@@ -71,6 +72,46 @@ beforeEach(() => {
   mocks.backend.rewordCommit.mockResolvedValue(success);
 });
 afterEach(() => disposePinia(pinia));
+
+it("restores the displayed saved object once and refreshes after success", async () => {
+  const store = useRewriteStore();
+  store.opState = { kind: "normal", smartRecovery: { sha: "saved-A", canRestore: true } } as any;
+  const pending = deferred<null>();
+  mocks.backend.smartRestoreChanges.mockReturnValue(pending.promise);
+  const operation = store.restoreSmartChanges();
+  await store.restoreSmartChanges();
+  expect(mocks.backend.smartRestoreChanges).toHaveBeenCalledExactlyOnceWith({
+    path: "A",
+    sha: "saved-A",
+  });
+  pending.resolve(null);
+  await operation;
+  expect(store.busy).toBe(false);
+  expect(mocks.backend.repoOpStateGet).toHaveBeenCalledWith({ path: "A" });
+  expect(mocks.changes.refresh).toHaveBeenCalledOnce();
+});
+
+it.each(["navigation", "failure"])("isolates smart recovery after %s", async (mode) => {
+  const store = useRewriteStore();
+  store.opState = { kind: "normal", smartRecovery: { sha: "saved-A", canRestore: true } } as any;
+  const pending = deferred<null>();
+  mocks.backend.smartRestoreChanges.mockReturnValue(pending.promise);
+  const operation = store.restoreSmartChanges();
+  if (mode === "navigation") ++mocks.workspace.navigation;
+  pending.reject(new Error("restore failed"));
+  await expect(operation).rejects.toThrow("restore failed");
+  expect(store.busy).toBe(false);
+  expect(mocks.toast).not.toHaveBeenCalled();
+  if (mode === "navigation") expect(mocks.backend.repoOpStateGet).not.toHaveBeenCalled();
+  else expect(mocks.backend.repoOpStateGet).toHaveBeenCalledWith({ path: "A" });
+});
+
+it("does not restore paused or uncertain saved work", async () => {
+  const store = useRewriteStore();
+  store.opState = { kind: "merge", smartRecovery: { sha: "saved-A", canRestore: false } } as any;
+  await store.restoreSmartChanges();
+  expect(mocks.backend.smartRestoreChanges).not.toHaveBeenCalled();
+});
 
 const invalidations = [
   ["navigation begins", () => ++mocks.workspace.navigation],

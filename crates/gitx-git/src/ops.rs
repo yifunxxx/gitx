@@ -272,9 +272,10 @@ impl GitRunner {
         // Partial line selections → temporary index.
         if let Some(partial) = partial {
             if !partial.is_empty() {
-                return self
+                let result = self
                     .commit_partial(cwd, &msg_path, amend, no_verify, partial, cancel)
-                    .await;
+                    .await?;
+                return Ok(self.restore_after_commit(cwd, result).await);
             }
         }
 
@@ -300,7 +301,8 @@ impl GitRunner {
             }
         }
 
-        self.run_commit_and_result(cwd, args, amend, cancel).await
+        let result = self.run_commit_and_result(cwd, args, amend, cancel).await?;
+        Ok(self.restore_after_commit(cwd, result).await)
     }
 
     async fn commit_partial(
@@ -460,6 +462,7 @@ impl GitRunner {
         }
         if !is_commit {
             return Ok(CommitResult {
+                warning: None,
                 sha: String::new(),
                 subject: String::new(),
                 amended: false,
@@ -531,6 +534,7 @@ impl GitRunner {
             .await?;
         let subject = String::from_utf8_lossy(&subj_out.stdout).trim().to_string();
         Ok(CommitResult {
+            warning: None,
             sha,
             subject,
             amended: amend,

@@ -1,5 +1,5 @@
 use crate::runner::{GitInvocation, GitRunner};
-use gitx_core::{AppError, ErrorCode, RepoOpKind};
+use gitx_core::{AppError, CommitResult, ErrorCode, RepoOpKind, RepoOpState, SmartRecovery};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -14,6 +14,8 @@ struct SmartStash {
     sha: String,
     #[serde(default)]
     restoration: Restoration,
+    #[serde(default)]
+    wait_for_commit: bool,
 }
 
 #[derive(Default, PartialEq, Serialize, Deserialize)]
@@ -38,6 +40,117 @@ fn save_marker(path: &Path, stash: &SmartStash) -> Result<(), AppError> {
 }
 
 impl GitRunner {
+    pub(crate) async fn smart_index_changed(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AppError> {
+        match self
+            .run(
+                GitInvocation::new(cwd, ["diff", "--cached", "--quiet", "HEAD", "--"])
+                    .git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await
+        {
+            Ok(_) => Ok(false),
+            Err(error) if error.exit_code == Some(1) => Ok(true),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(crate) async fn smart_recovery_status(
+        &self,
+        cwd: &Path,
+        state: &RepoOpState,
+        cancel: &CancellationToken,
+    ) -> Result<Option<SmartRecovery>, AppError> {
+        let Some(saved) = self.pending_smart_stash(cwd, cancel).await? else {
+            return Ok(None);
+        };
+        if !self
+            .stash_list(cwd, cancel)
+            .await?
+            .iter()
+            .any(|entry| entry.sha == saved.sha)
+        {
+            return Ok(None);
+        }
+        let pending_commit = saved.restoration == Restoration::Saved
+            && saved.wait_for_commit
+            && self.smart_index_changed(cwd, cancel).await?;
+        let can_restore = state.kind == RepoOpKind::Normal
+            && state.conflict_count == 0
+            && !pending_commit
+            && saved.restoration != Restoration::Applying;
+        Ok(Some(SmartRecovery {
+            sha: saved.sha,
+            operation: saved.operation,
+            phase: match saved.restoration {
+                Restoration::Saved => "saved",
+                Restoration::Applying => "attention",
+                Restoration::Applied => "applied",
+            }
+            .into(),
+            can_restore,
+            pending_commit,
+        }))
+    }
+
+    /// Explicit recovery after another client completes/aborts the operation.
+    /// The expected object prevents a stale banner from recovering newer work.
+    pub async fn restore_smart_changes(
+        &self,
+        cwd: &Path,
+        expected_sha: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "Recovery cancelled"));
+        }
+        let state = self.repo_op_state_raw(cwd, cancel).await?;
+        let pending = self
+            .smart_recovery_status(cwd, &state, cancel)
+            .await?
+            .filter(|saved| saved.sha == expected_sha)
+            .ok_or_else(|| {
+                AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "Saved local changes have changed; refresh before recovery",
+                )
+            })?;
+        if !pending.can_restore {
+            return Err(AppError::new(ErrorCode::OperationInProgress, "Finish the current operation or staged merge, and inspect any restoration conflict before recovering saved changes"));
+        }
+        self.finish_smart_stash(cwd, &pending.operation, cancel)
+            .await
+    }
+
+    pub(crate) async fn restore_after_commit(
+        &self,
+        cwd: &Path,
+        mut result: CommitResult,
+    ) -> CommitResult {
+        let recovery = CancellationToken::new();
+        let restore = async {
+            if let Some(saved) = self.pending_smart_stash(cwd, &recovery).await? {
+                self.finish_smart_stash(cwd, &saved.operation, &recovery)
+                    .await?;
+            }
+            Ok::<(), AppError>(())
+        }
+        .await;
+        if let Err(error) = restore {
+            // The commit already exists. Do not return a commit failure or
+            // encourage another commit because local recovery needs attention.
+            result.warning = Some(format!(
+                "Commit succeeded. Local changes need attention: {}",
+                error.message
+            ));
+        }
+        result
+    }
+
     async fn smart_stash_path(
         &self,
         cwd: &Path,
@@ -96,8 +209,14 @@ impl GitRunner {
         if stash.operation != operation {
             return Ok(());
         }
-        let state = self.repo_op_state(cwd, &recovery).await?;
+        let state = self.repo_op_state_raw(cwd, &recovery).await?;
         if state.kind != RepoOpKind::Normal || state.conflict_count > 0 {
+            return Ok(());
+        }
+        if stash.restoration == Restoration::Saved
+            && stash.wait_for_commit
+            && self.smart_index_changed(cwd, &recovery).await?
+        {
             return Ok(());
         }
         let marker = self.smart_stash_path(cwd, &recovery).await?;
@@ -130,13 +249,48 @@ impl GitRunner {
             .map_err(|error| AppError::new(ErrorCode::FsError, error.to_string()))
     }
 
+    /// Returns whether a squash changed the index before local work is restored.
+    pub(crate) async fn run_rewrite_inv(
+        &self,
+        cwd: &Path,
+        inv: GitInvocation,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AppError> {
+        let squash = inv.args.first().is_some_and(|arg| arg == "merge")
+            && inv.args.iter().any(|arg| arg == "--squash");
+        let before = if squash {
+            Some(self.rev_parse_index_tree(cwd, cancel).await?)
+        } else {
+            None
+        };
+        self.run(inv, cancel).await?;
+        if let Some(before) = before {
+            return Ok(before != self.rev_parse_index_tree(cwd, cancel).await?);
+        }
+        Ok(false)
+    }
+
+    async fn rev_parse_index_tree(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<u8>, AppError> {
+        Ok(self
+            .run(
+                GitInvocation::new(cwd, ["write-tree"]).git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await?
+            .stdout)
+    }
+
     pub(crate) async fn with_clean_tree_inv(
         &self,
         cwd: &Path,
         operation: &str,
         inv: GitInvocation,
         cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
+    ) -> Result<bool, AppError> {
         if cancel.is_cancelled() {
             return Err(AppError::new(
                 ErrorCode::Cancelled,
@@ -172,6 +326,11 @@ impl GitRunner {
         // Save and recovery complete even if the actual operation is cancelled.
         let recovery = CancellationToken::new();
         let message = format!("gitx: {operation} {}", uuid::Uuid::new_v4());
+        let wait_for_commit = operation == "merge"
+            && inv
+                .args
+                .iter()
+                .any(|arg| arg == "--squash" || arg == "--no-commit");
         let stashed = match self
             .stash_create(cwd, &message, false, true, None, &recovery)
             .await
@@ -185,6 +344,7 @@ impl GitRunner {
                     operation: operation.into(),
                     sha,
                     restoration: Restoration::Saved,
+                    wait_for_commit,
                 };
                 save_marker(&marker, &pending).map_err(|error| AppError::new(ErrorCode::FsError,
                     format!("Local changes saved in Stash {}; operation was not started because restoration could not be recorded: {}", pending.sha, error.message)))?;
@@ -196,13 +356,13 @@ impl GitRunner {
                 return Err(error);
             }
         };
-        let result = self.run(inv, cancel).await;
-        if stashed && self.repo_op_state(cwd, &recovery).await?.kind == RepoOpKind::Normal {
+        let result = self.run_rewrite_inv(cwd, inv, cancel).await;
+        if stashed && self.repo_op_state_raw(cwd, &recovery).await?.kind == RepoOpKind::Normal {
             self.finish_smart_stash(cwd, operation, &recovery).await?;
         }
         // Edit/conflict pauses keep the saved work separate from the sequencer's
         // index. Continue/Skip/Abort restore it only once the operation is over.
-        result.map(|_| ())
+        result
     }
 }
 

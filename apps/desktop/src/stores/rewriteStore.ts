@@ -525,7 +525,23 @@ export const useRewriteStore = defineStore("rewrite", () => {
     }
   }
 
+  async function restoreSmartChanges() {
+    const context = captureOperation();
+    const saved = opState.value?.smartRecovery;
+    if (!context.current() || !context.path || busy.value || !saved?.canRestore) return;
+    const sha = saved.sha;
+    busy.value = true;
+    try {
+      await getBackend().smartRestoreChanges({ path: context.path, sha });
+      if (context.current()) toast({ title: i18n.global.t("merge.smartRecovered") });
+    } finally {
+      await refreshAfterSuccess(context);
+      busy.value = false;
+    }
+  }
+
   return {
+    restoreSmartChanges,
     opState,
     busy,
     lastBackupRef,

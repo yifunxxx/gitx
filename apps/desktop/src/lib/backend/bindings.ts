@@ -414,7 +414,7 @@ export type CommitCreateReq = {
   paths?: string[] | null
   partial?: PartialFileSelection[] | null
 }
-export type CommitResult = { sha: string; subject: string; amended: boolean }
+export type CommitResult = { warning?: string | null; sha: string; subject: string; amended: boolean }
 export type HeadMessageReq = { path: string }
 export type LogQueryReq = {
   repoId: string
@@ -617,7 +617,10 @@ export type RepoStateRes = { isShallow: boolean }
 // --- M4 ---
 export type RepoOpKind = "normal" | "merge" | "rebase" | "cherryPick" | "revert"
 export type RepoOpPhase = "normal" | "inProgress" | "conflicted" | "readyToContinue" | "stoppedForEdit"
+export type SmartRecovery = { sha: string; operation: string; phase: string; canRestore: boolean; pendingCommit: boolean }
+export type SmartRestoreReq = { path: string; sha: string }
 export type RepoOpState = {
+  smartRecovery?: SmartRecovery | null
   kind: RepoOpKind
   phase: RepoOpPhase
   step: number | null
@@ -1139,6 +1142,9 @@ export const commands = {
   },
   async repoStateGet(req: RepoStateReq): Promise<RepoStateRes> {
     return invoke("repo_state_get", { req })
+  },
+  async smartRestoreChanges(req: SmartRestoreReq): Promise<null> {
+    return invoke("smart_restore_changes", { req })
   },
   async repoOpStateGet(req: RewritePathReq): Promise<RepoOpState> {
     return invoke("repo_op_state_get", { req })

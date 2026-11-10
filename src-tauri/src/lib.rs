@@ -50,7 +50,7 @@ use commands::rewrite::{
     drop_commits, extract_changes, fixup_into, merge_abort, merge_commit, merge_run, rebase_abort,
     rebase_continue, rebase_interactive_plan, rebase_interactive_start, rebase_run, rebase_skip,
     repo_op_state_get, reset_preview, reset_run, revert_abort, revert_continue, revert_run,
-    reword_commit, squash_commits, uncommit, undo_rewrite,
+    reword_commit, smart_restore_changes, squash_commits, uncommit, undo_rewrite,
 };
 use commands::shelf::{
     shelf_create, shelf_delete, shelf_export, shelf_import, shelf_list, shelf_list_deleted, shelf_rename,
@@ -164,6 +164,7 @@ pub fn run() {
             repo_state_get,
             // M4
             repo_op_state_get,
+            smart_restore_changes,
             merge_run,
             merge_abort,
             merge_commit,

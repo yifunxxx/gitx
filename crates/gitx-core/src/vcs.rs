@@ -321,6 +321,8 @@ pub struct ChangedFile {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitResult {
+    #[serde(default)]
+    pub warning: Option<String>,
     pub sha: String,
     pub subject: String,
     pub amended: bool,
@@ -488,6 +490,8 @@ pub enum RepoOpPhase {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoOpState {
+    #[serde(default)]
+    pub smart_recovery: Option<SmartRecovery>,
     pub kind: RepoOpKind,
     pub phase: RepoOpPhase,
     pub step: Option<u32>,
@@ -907,4 +911,14 @@ pub struct WslPathInfo {
     pub distro: String,
     pub linux_path: String,
     pub suggested_git: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartRecovery {
+    pub sha: String,
+    pub operation: String,
+    pub phase: String,
+    pub can_restore: bool,
+    pub pending_commit: bool,
 }

@@ -90,6 +90,7 @@ import type {
   InitRunReq,
   VcsEnableReq,
   RepoOpState,
+  SmartRestoreReq,
   RewriteResult,
   RewritePathReq,
   MergeRunReq,
@@ -248,6 +249,7 @@ export type Backend = {
   repoStateGet(req: RepoStateReq): Promise<RepoStateRes>;
   // M4
   repoOpStateGet(req: RewritePathReq): Promise<RepoOpState>;
+  smartRestoreChanges(req: SmartRestoreReq): Promise<null>;
   mergeRun(req: MergeRunReq): Promise<RewriteResult>;
   mergeAbort(req: RewritePathReq): Promise<RewriteResult>;
   mergeCommit(req: MergeCommitReq): Promise<RewriteResult>;
@@ -405,6 +407,7 @@ export const tauriBackend: Backend = {
   unshallowRun: (req) => commands.unshallowRun(req),
   repoStateGet: (req) => commands.repoStateGet(req),
   repoOpStateGet: (req) => commands.repoOpStateGet(req),
+  smartRestoreChanges: (req) => commands.smartRestoreChanges(req),
   mergeRun: (req) => commands.mergeRun(req),
   mergeAbort: (req) => commands.mergeAbort(req),
   mergeCommit: (req) => commands.mergeCommit(req),
