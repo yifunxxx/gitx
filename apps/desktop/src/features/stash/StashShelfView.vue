@@ -36,7 +36,6 @@ const menu = ref<{
   repository: number;
   navigation: number;
 } | null>(null);
-const menuPanel = ref<HTMLElement | null>(null);
 
 function closeMenu(restoreFocus = true) {
   const sha = menu.value?.sha;
@@ -59,7 +58,7 @@ watch(
   },
 );
 
-async function openMenu(sha: string, event: MouseEvent | KeyboardEvent) {
+function openMenu(sha: string, event: MouseEvent | KeyboardEvent) {
   if (event instanceof MouseEvent) markContextHandled(event);
   else {
     event.preventDefault();
@@ -77,8 +76,6 @@ async function openMenu(sha: string, event: MouseEvent | KeyboardEvent) {
     repository: store.repositoryToken(),
     navigation: workspace.navigationToken(),
   };
-  await nextTick();
-  menuPanel.value?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
 }
 
 function runMenu(action: "apply" | "pop" | "drop") {
@@ -95,32 +92,6 @@ function runMenu(action: "apply" | "pop" | "drop") {
   if (action === "apply") void store.applyStash(sha, reinstateIndex.value);
   if (action === "pop") void store.popStash(sha, reinstateIndex.value);
   if (action === "drop") void store.dropStash(sha);
-}
-
-function menuKey(event: KeyboardEvent) {
-  if (event.key === "Escape" || event.key === "Tab") {
-    event.preventDefault();
-    event.stopPropagation();
-    closeMenu();
-    return;
-  }
-  const items = Array.from(
-    menuPanel.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
-  );
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? items.length - 1
-        : event.key === "ArrowDown"
-          ? (index + 1) % items.length
-          : event.key === "ArrowUp"
-            ? (index + items.length - 1) % items.length
-            : null;
-  if (next == null) return;
-  event.preventDefault();
-  items[next]?.focus();
 }
 
 function stashKey(event: KeyboardEvent, index: number) {
@@ -299,6 +270,7 @@ async function newStash() {
       <ShelfList v-if="showShelves" />
     </div>
     <ContextMenuSurface
+      :label="t('stash.section')"
       :open="!!menu"
       :anchor-x="menu?.x ?? 0"
       :anchor-y="menu?.y ?? 0"
@@ -306,7 +278,7 @@ async function newStash() {
       :estimated-height="120"
       @close="closeMenu()"
     >
-      <div ref="menuPanel" role="menu" :aria-label="t('stash.section')" @keydown="menuKey">
+      <div>
         <button
           v-for="action in ['apply', 'pop', 'drop'] as const"
           :key="action"

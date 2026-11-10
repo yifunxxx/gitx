@@ -806,6 +806,7 @@ async function ctxExtract() {
       @close="closeCtx"
     >
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxCopy"
@@ -813,6 +814,7 @@ async function ctxExtract() {
         {{ t("log.copyRevision") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxCherryPick"
@@ -820,6 +822,7 @@ async function ctxExtract() {
         {{ t("actions.cherryPick") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxReword"
@@ -827,6 +830,7 @@ async function ctxExtract() {
         {{ t("actions.reword") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxInteractive"
@@ -834,6 +838,7 @@ async function ctxExtract() {
         {{ t("actions.interactiveRebase") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxSquash"
@@ -841,6 +846,7 @@ async function ctxExtract() {
         {{ t("actions.squash") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxDrop"
@@ -848,6 +854,7 @@ async function ctxExtract() {
         {{ t("actions.dropCommits") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxUncommit"
@@ -855,6 +862,7 @@ async function ctxExtract() {
         {{ t("actions.uncommit") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxRevert"
@@ -862,6 +870,7 @@ async function ctxExtract() {
         {{ t("actions.revert") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxReset"
@@ -869,6 +878,7 @@ async function ctxExtract() {
         {{ t("actions.reset") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxExtract"
@@ -876,6 +886,7 @@ async function ctxExtract() {
         {{ t("actions.extractSelected") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxCompareLocal"
@@ -883,6 +894,7 @@ async function ctxExtract() {
         {{ t("history.compareWithLocal") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxCompareVersions"
@@ -890,6 +902,7 @@ async function ctxExtract() {
         {{ t("history.compareVersions") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxCombined"
@@ -897,6 +910,7 @@ async function ctxExtract() {
         {{ t("history.showAllChanges") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
         @click="ctxRepoAtRev"

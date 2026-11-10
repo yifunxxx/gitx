@@ -398,6 +398,7 @@ async function runCtx(action: string) {
       @close="closeCtx"
     >
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('showDiff')"
@@ -405,6 +406,7 @@ async function runCtx(action: string) {
         {{ t("commitTw.showDiff") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('showHistory')"
@@ -412,6 +414,7 @@ async function runCtx(action: string) {
         {{ t("commitTw.showHistory") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('openFile')"
@@ -420,6 +423,7 @@ async function runCtx(action: string) {
       </button>
       <div class="my-1 h-px bg-border" />
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('commit')"
@@ -427,6 +431,7 @@ async function runCtx(action: string) {
         {{ t("commitTw.commitFiles") }}
       </button>
       <button
+        role="menuitem"
         v-if="ctxIsTrackedChange"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
@@ -436,6 +441,7 @@ async function runCtx(action: string) {
       </button>
       <div class="my-1 h-px bg-border" />
       <button
+        role="menuitem"
         v-if="changes.stagingMode && !ctxIsStaged && !ctxIsUnversioned"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
@@ -444,6 +450,7 @@ async function runCtx(action: string) {
         {{ t("actions.stage") }}
       </button>
       <button
+        role="menuitem"
         v-if="changes.stagingMode && ctxIsStaged"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
@@ -452,6 +459,7 @@ async function runCtx(action: string) {
         {{ t("actions.unstage") }}
       </button>
       <button
+        role="menuitem"
         v-if="ctxIsUnversioned"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
@@ -463,6 +471,7 @@ async function runCtx(action: string) {
         v-if="ctxMenu && !changes.stagingMode && !ctxIsUnversioned && ctxMenu.section !== 'ignored'"
       >
         <button
+          role="menuitem"
           type="button"
           class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
           @click="runCtx('moveChangelist')"
@@ -470,6 +479,7 @@ async function runCtx(action: string) {
           {{ t("commitTw.moveToChangelist") }}
         </button>
         <button
+          role="menuitem"
           type="button"
           class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
           @click="runCtx('newChangelist')"
@@ -479,6 +489,7 @@ async function runCtx(action: string) {
       </template>
       <div class="my-1 h-px bg-border" />
       <button
+        role="menuitem"
         v-if="!ctxIsUnversioned"
         type="button"
         :disabled="stashShelf.busy"
@@ -488,6 +499,7 @@ async function runCtx(action: string) {
         {{ t("shelf.create") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('stash')"
@@ -495,6 +507,7 @@ async function runCtx(action: string) {
         {{ t("stash.create") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('patch')"
@@ -503,6 +516,7 @@ async function runCtx(action: string) {
       </button>
       <div class="my-1 h-px bg-border" />
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('ignore')"
@@ -510,6 +524,7 @@ async function runCtx(action: string) {
         {{ t("commitTw.ignore") }}
       </button>
       <button
+        role="menuitem"
         v-if="ctxIsTrackedChange"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-hover-surface"
@@ -519,6 +534,7 @@ async function runCtx(action: string) {
       </button>
       <div class="my-1 h-px bg-border" />
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('copyPath')"
@@ -526,6 +542,7 @@ async function runCtx(action: string) {
         {{ t("commitTw.copyPath") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('copyRelative')"
@@ -534,6 +551,7 @@ async function runCtx(action: string) {
       </button>
       <div class="my-1 h-px bg-border" />
       <button
+        role="menuitem"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('refresh')"

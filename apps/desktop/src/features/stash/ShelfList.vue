@@ -16,7 +16,6 @@ const { t } = useI18n();
 const store = useStashShelfStore();
 const workspace = useWorkspaceStore();
 const rows = ref<HTMLElement | null>(null);
-const menuPanel = ref<HTMLElement | null>(null);
 const removeApplied = ref(false);
 const fileListId = useId();
 const expanded = ref(new Set<string>());
@@ -145,7 +144,7 @@ watch(
     if (!exists) closeMenu(false);
   },
 );
-async function openMenu(section: Section, id: string, event: MouseEvent | KeyboardEvent) {
+function openMenu(section: Section, id: string, event: MouseEvent | KeyboardEvent) {
   if (event instanceof MouseEvent) markContextHandled(event);
   else {
     event.preventDefault();
@@ -164,8 +163,6 @@ async function openMenu(section: Section, id: string, event: MouseEvent | Keyboa
     repository: store.repositoryToken(),
     navigation: workspace.navigationToken(),
   };
-  await nextTick();
-  menuPanel.value?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
 }
 async function restore(id: string) {
   const repository = store.repositoryToken();
@@ -239,33 +236,6 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
   event.stopPropagation();
   select(section, list[next]!.id);
   focusRow(section, list[next]!.id);
-}
-function menuKey(event: KeyboardEvent) {
-  if (event.key === "Escape" || event.key === "Tab") {
-    event.preventDefault();
-    event.stopPropagation();
-    closeMenu();
-    return;
-  }
-  const items = Array.from(
-    menuPanel.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
-  );
-  if (!items.length) return;
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? items.length - 1
-        : event.key === "ArrowDown"
-          ? (index + 1) % items.length
-          : event.key === "ArrowUp"
-            ? (index + items.length - 1) % items.length
-            : null;
-  if (next == null) return;
-  event.preventDefault();
-  event.stopPropagation();
-  items[next]?.focus();
 }
 </script>
 
@@ -407,6 +377,7 @@ function menuKey(event: KeyboardEvent) {
       </fieldset>
     </section>
     <ContextMenuSurface
+      :label="t(menu?.section === 'deleted-shelf' ? 'shelf.recentlyDeleted' : 'shelf.section')"
       :open="!!menu"
       :anchor-x="menu?.x ?? 0"
       :anchor-y="menu?.y ?? 0"
@@ -414,14 +385,7 @@ function menuKey(event: KeyboardEvent) {
       :estimated-height="actions.length * 32 + 8"
       @close="closeMenu()"
     >
-      <div
-        ref="menuPanel"
-        role="menu"
-        :aria-label="
-          t(menu?.section === 'deleted-shelf' ? 'shelf.recentlyDeleted' : 'shelf.section')
-        "
-        @keydown="menuKey"
-      >
+      <div>
         <button
           v-for="action in actions"
           :key="action"

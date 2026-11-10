@@ -334,6 +334,7 @@ function rowClass(entry: RefEntry | undefined) {
     >
       <template v-if="menuFor">
         <button
+          role="menuitem"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
           @click="
@@ -344,6 +345,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.checkout") }}
         </button>
         <button
+          role="menuitem"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
           @click="
@@ -354,6 +356,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.newBranchFrom", { name: menuFor.name }) }}
         </button>
         <button
+          role="menuitem"
           v-if="menuFor.kind === 'localBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -365,6 +368,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.rename") }}
         </button>
         <button
+          role="menuitem"
           v-if="!menuFor.isHead"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -376,6 +380,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.mergeIntoCurrent", { name: menuFor.name }) }}
         </button>
         <button
+          role="menuitem"
           v-if="!menuFor.isHead"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -387,6 +392,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.rebaseOnto", { name: menuFor.name }) }}
         </button>
         <button
+          role="menuitem"
           v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -398,6 +404,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.checkoutAndRebase") }}
         </button>
         <button
+          role="menuitem"
           v-if="menuFor.kind === 'localBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -409,6 +416,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.push") }}
         </button>
         <button
+          role="menuitem"
           v-if="menuFor.kind === 'remoteBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -420,6 +428,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.pullMerge") }}
         </button>
         <button
+          role="menuitem"
           v-if="menuFor.kind === 'remoteBranch'"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -431,6 +440,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.pullRebase") }}
         </button>
         <button
+          role="menuitem"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
           @click="
@@ -441,6 +451,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.compareWithCurrent") }}
         </button>
         <button
+          role="menuitem"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
           @click="
@@ -451,6 +462,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.copyName") }}
         </button>
         <button
+          role="menuitem"
           v-if="
             (menuFor.kind === 'localBranch' && !menuFor.isHead) || menuFor.kind === 'remoteBranch'
           "
@@ -464,6 +476,7 @@ function rowClass(entry: RefEntry | undefined) {
           {{ t("branches.delete") }}
         </button>
         <button
+          role="menuitem"
           type="button"
           class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
           @click="closeMenu()"

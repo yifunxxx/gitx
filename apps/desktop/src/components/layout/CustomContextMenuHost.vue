@@ -85,19 +85,13 @@ async function pick(id: string, enabled: boolean) {
   await runAction(id, actionCtx.value);
 }
 
-function onKey(ev: KeyboardEvent) {
-  if (ev.key === "Escape") onClose();
-}
-
 onMounted(() => {
   window.addEventListener("contextmenu", onContext);
   window.addEventListener("click", onClose);
-  window.addEventListener("keydown", onKey);
 });
 onUnmounted(() => {
   window.removeEventListener("contextmenu", onContext);
   window.removeEventListener("click", onClose);
-  window.removeEventListener("keydown", onKey);
 });
 </script>
 
@@ -112,6 +106,7 @@ onUnmounted(() => {
     @close="onClose"
   >
     <button
+      role="menuitem"
       v-for="a in items"
       :key="a.id"
       type="button"
