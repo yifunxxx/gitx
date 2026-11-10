@@ -36,4 +36,4 @@
 
 测试仓库 `E:/IDEAproject/gitx/test-results/repos/changes-keyboard-gui-20261110` 的前后快照为 `test-results/menu-keyboard-gui-{before,after}.json`；状态、索引和 86 个文件的内容哈希差异均为 0。GUI 检查没有执行 Git 写操作。
 
-QA-003 已完成代码、自动回归与原生复查，功能提交/推送待本轮落库后补记。原安装版 `D:/gitx/gitx.exe` 未替换。菜单目标随仓库切换失效的问题仍按 QA-004 单独处理；本轮菜单主题抽查不等于 QA-009 的全部控件核查完成。
+QA-003 已完成代码、自动回归与原生复查，功能提交 `7eb9c4e` 已推送；`ls-remote` 核对远端分支为完整提交 `7eb9c4e1aa7d023c9668c1df084120d25f8201a1`。原安装版 `D:/gitx/gitx.exe` 未替换。菜单目标随仓库切换失效的问题仍按 QA-004 单独处理；本轮菜单主题抽查不等于 QA-009 的全部控件核查完成。
