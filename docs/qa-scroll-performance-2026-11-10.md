@@ -13,7 +13,25 @@
 
 The existing VirtualList already coalesces passive scroll events with requestAnimationFrame, keeps a stable phantom height, preserves anchors on ref refresh, skips clamp changes during thumb dragging and disconnects observers/listeners. No global wheel handler, smooth-scroll override, disabled GPU flag or confirmed repository-refresh storm was found. No blanket GPU/CSS workaround was added.
 
-Small menus/settings and variable-content Shelf cards, merge editor and blob text previews remain separate profiling surfaces. This change does not claim that every possible repository and view is free of frame spikes.
+Small menus/settings, merge editor and blob text previews remain separate profiling surfaces. The Shelf follow-up is recorded below. This change does not claim that every possible repository and view is free of frame spikes.
+
+## Shelf follow-up
+
+Shelf now uses the shared virtual list with known expandable row heights. Prefix offsets are rebuilt on data/expansion changes, and scrolling finds visible rows by binary search. The fixed-height path remains available for existing lists. Selection, context actions, restored entries and Home/End first mount the target row before focusing it; expanded state survives virtualization. Messages and saved times occupy two bounded lines, with the full message in the title.
+
+Local Chrome headless, 1,280 × 800, GPU disabled for this controlled comparison, actual before/after Shelf components, 5,000 shelves with ten paths each and 120 animation-frame scroll steps:
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| Initial mount + two frames | 1,789.6 ms | 104.9 ms |
+| Mounted Shelf rows at end | 5,000 | 13 |
+| DOM elements | 50,006 | 140 |
+| Scroll p95 frame interval | 33.4 ms | 16.7 ms |
+| Frames over 33.4 ms | 7 | 0 |
+
+Both reached Shelf 4999. Before used the 700px outer scrollport; after uses a 440px bounded section with 44px rows, preserving access to the section toolbar. These measurements are not native wheel-latency measurements. Evidence: `test-results/scroll-shelf-benchmark.json`; source archived in `test-results/scroll-benchmark-sources`.
+
+Validation: main full suite 54 files / 408 tests, production build and typecheck passed. Integration feature-hunk sync preserved existing edits; 55 focused tests and typecheck passed. Tests cover 10,000 variable rows, expansion/collapse anchor preservation, 5,000 Shelf entries, offscreen keyboard focus, expansion persistence and correct context-action targets.
 
 ## Regression coverage
 

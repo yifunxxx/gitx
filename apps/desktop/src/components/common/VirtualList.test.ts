@@ -66,3 +66,51 @@ it("emits the scrollport as the trailing scroll target when dragging ends outsid
   expect((wrapper.vm as unknown as { pointerDown: boolean }).pointerDown).toBe(false);
   wrapper.unmount();
 });
+
+it("bounds variable rows and reaches the final entry after expansion and collapse", async () => {
+  const items = Array.from({ length: 10000 }, (_, id) => ({ id, height: id % 2 ? 44 : 244 }));
+  const wrapper = mount(VirtualList, {
+    props: {
+      items,
+      itemHeight: 44,
+      getItemHeight: (item: any) => item.height,
+      getKey: (item: any) => item.id,
+      preserveScrollAnchor: true,
+    },
+    slots: { default: "<span>{{ params.item.id }}</span>" },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  Object.defineProperty(port, "clientHeight", { configurable: true, value: 400 });
+  const api = wrapper.vm as unknown as { scrollToIndex: (index: number) => void };
+  api.scrollToIndex(9999);
+  await nextTick();
+  expect(wrapper.text()).toContain("9999");
+  expect(wrapper.findAll("span").length).toBeLessThan(30);
+  expect(port.scrollTop).toBe(1_440_000 - 400);
+  await wrapper.setProps({ items: items.map((entry) => ({ ...entry, height: 44 })) });
+  await flushPromises();
+  expect(port.scrollTop).toBe(440_000 - 400);
+  expect(wrapper.text()).toContain("9999");
+  wrapper.unmount();
+});
+
+it("preserves the visible anchor when an expanded row above it changes height", async () => {
+  const items = Array.from({ length: 100 }, (_, id) => ({ id, height: 44 }));
+  const wrapper = mount(VirtualList, {
+    props: {
+      items,
+      itemHeight: 44,
+      getItemHeight: (item: any) => item.height,
+      getKey: (item: any) => item.id,
+      preserveScrollAnchor: true,
+    },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  port.scrollTop = 885;
+  await wrapper.setProps({
+    items: items.map((entry) => (entry.id === 0 ? { ...entry, height: 244 } : entry)),
+  });
+  await flushPromises();
+  expect(port.scrollTop).toBe(1085);
+  wrapper.unmount();
+});

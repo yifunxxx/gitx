@@ -4,6 +4,7 @@ import { ChevronRight } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
+import VirtualList from "@/components/common/VirtualList.vue";
 import { markContextHandled } from "@/lib/contextMenu";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -19,6 +20,27 @@ const menuPanel = ref<HTMLElement | null>(null);
 const removeApplied = ref(false);
 const fileListId = useId();
 const expanded = ref(new Set<string>());
+const lists = new Map<Section, { scrollToIndex: (index: number) => void }>();
+function setList(section: Section, value: unknown) {
+  if (value) lists.set(section, value as { scrollToIndex: (index: number) => void });
+  else lists.delete(section);
+}
+function entryHeight(section: Section, entry: { id: string; paths: string[] }) {
+  return (
+    44 +
+    (expanded.value.has(expansionKey(section, entry.id)) && entry.paths.length
+      ? Math.min(entry.paths.length, 8) * 24 + 8
+      : 0)
+  );
+}
+function listHeight(section: Section) {
+  let height = 0;
+  for (const entry of entries(section)) {
+    height += entryHeight(section, entry);
+    if (height >= 440) return 440;
+  }
+  return height;
+}
 const menu = ref<{
   id: string;
   section: Section;
@@ -96,10 +118,17 @@ function select(section: Section, id: string) {
   store.selectedShelfId = section === "shelf" ? id : null;
   store.selectedDeletedShelfId = section === "deleted-shelf" ? id : null;
 }
-function focusRow(section: Section, id: string) {
+async function focusRow(section: Section, id: string) {
+  const repository = store.repositoryToken();
+  const navigation = workspace.navigationToken();
+  const index = entries(section).findIndex((entry) => entry.id === id);
+  if (index < 0) return;
+  lists.get(section)?.scrollToIndex(index);
+  await nextTick();
+  if (repository !== store.repositoryToken() || navigation !== workspace.navigationToken()) return;
   Array.from(rows.value?.querySelectorAll<HTMLButtonElement>(`[data-entry="${section}"]`) ?? [])
     .find((row) => row.dataset.shelfId === id)
-    ?.focus();
+    ?.focus({ preventScroll: true });
 }
 function closeMenu(restoreFocus = true) {
   const target = menu.value;
@@ -254,74 +283,87 @@ function menuKey(event: KeyboardEvent) {
           {{ t("shelf.showDeleted") }}
         </Button>
       </div>
-      <div v-for="(s, index) in section.entries" :key="s.id">
-        <div
-          class="flex min-w-0 items-start"
-          :class="selected(section.kind) === s.id ? 'bg-accent' : ''"
-        >
-          <button
-            type="button"
-            tabindex="-1"
-            :disabled="!s.paths.length"
-            class="flex size-7 shrink-0 items-center justify-center hover:bg-accent/50 disabled:opacity-30"
-            data-shelf-disclosure
-            :aria-label="
-              t(
-                expanded.has(expansionKey(section.kind, s.id))
-                  ? 'shelf.collapseFiles'
-                  : 'shelf.expandFiles',
-                { name: s.message },
-              )
-            "
-            :aria-expanded="expanded.has(expansionKey(section.kind, s.id))"
-            :aria-controls="filesId(section.kind, s.id)"
-            @click="
-              setExpanded(section.kind, s.id, !expanded.has(expansionKey(section.kind, s.id)))
-            "
+      <VirtualList
+        v-if="section.entries.length"
+        :ref="(value) => setList(section.kind, value)"
+        :items="section.entries"
+        :item-height="44"
+        :get-item-height="(entry) => entryHeight(section.kind, entry)"
+        :get-key="(entry) => entry.id"
+        :overscan="3"
+        :style="{ height: `${listHeight(section.kind)}px` }"
+        class="flex-none"
+        preserve-scroll-anchor
+      >
+        <template #default="{ item: s, index }">
+          <div
+            class="flex h-11 min-w-0 items-center"
+            :class="selected(section.kind) === s.id ? 'bg-accent' : ''"
           >
-            <ChevronRight
-              class="size-3.5"
-              :class="expanded.has(expansionKey(section.kind, s.id)) ? 'rotate-90' : ''"
-              aria-hidden="true"
-            />
-          </button>
-          <button
-            type="button"
-            :data-entry="section.kind"
-            :data-shelf-id="s.id"
-            :title="s.message"
-            :aria-pressed="selected(section.kind) === s.id"
-            :aria-expanded="expanded.has(expansionKey(section.kind, s.id))"
-            :aria-controls="filesId(section.kind, s.id)"
-            :tabindex="
-              selected(section.kind) === s.id || (!selected(section.kind) && index === 0) ? 0 : -1
-            "
-            class="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-2 gap-y-0.5 py-1 pr-2 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
-            @click="select(section.kind, s.id)"
-            @keydown="rowKey($event, section.kind, index)"
-            @contextmenu="openMenu(section.kind, s.id, $event)"
-          >
-            <span class="flex min-w-0 flex-1 items-center gap-2">
-              <span class="truncate">{{ s.message }}</span>
-              <span class="shrink-0 text-muted-foreground">({{ s.paths.length }})</span>
-            </span>
-            <time
-              v-if="createdTime(s.createdAt)"
-              :datetime="createdTime(s.createdAt)!.iso"
-              :title="t('shelf.createdAt')"
-              class="shrink-0 text-[10px] text-muted-foreground"
-              >{{ createdTime(s.createdAt)!.label }}</time
+            <button
+              type="button"
+              tabindex="-1"
+              :disabled="!s.paths.length"
+              class="flex size-7 shrink-0 items-center justify-center hover:bg-accent/50 disabled:opacity-30"
+              data-shelf-disclosure
+              :aria-label="
+                t(
+                  expanded.has(expansionKey(section.kind, s.id))
+                    ? 'shelf.collapseFiles'
+                    : 'shelf.expandFiles',
+                  { name: s.message },
+                )
+              "
+              :aria-expanded="expanded.has(expansionKey(section.kind, s.id))"
+              :aria-controls="filesId(section.kind, s.id)"
+              @click="
+                setExpanded(section.kind, s.id, !expanded.has(expansionKey(section.kind, s.id)))
+              "
             >
-          </button>
-        </div>
-        <ShelfFiles
-          v-if="expanded.has(expansionKey(section.kind, s.id)) && s.paths.length"
-          :id="filesId(section.kind, s.id)"
-          :paths="s.paths"
-          :label="t('shelf.files', { name: s.message })"
-          @collapse="setExpanded(section.kind, s.id, false)"
-        />
-      </div>
+              <ChevronRight
+                class="size-3.5"
+                :class="expanded.has(expansionKey(section.kind, s.id)) ? 'rotate-90' : ''"
+                aria-hidden="true"
+              />
+            </button>
+            <button
+              type="button"
+              :data-entry="section.kind"
+              :data-shelf-id="s.id"
+              :title="s.message"
+              :aria-pressed="selected(section.kind) === s.id"
+              :aria-expanded="expanded.has(expansionKey(section.kind, s.id))"
+              :aria-controls="filesId(section.kind, s.id)"
+              :tabindex="
+                selected(section.kind) === s.id || (!selected(section.kind) && index === 0) ? 0 : -1
+              "
+              class="flex h-full min-w-0 flex-1 cursor-pointer flex-col justify-center gap-0.5 pr-2 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
+              @click="select(section.kind, s.id)"
+              @keydown="rowKey($event, section.kind, index)"
+              @contextmenu="openMenu(section.kind, s.id, $event)"
+            >
+              <span class="flex w-full min-w-0 items-center gap-2">
+                <span class="truncate">{{ s.message }}</span>
+                <span class="shrink-0 text-muted-foreground">({{ s.paths.length }})</span>
+              </span>
+              <time
+                v-if="createdTime(s.createdAt)"
+                :datetime="createdTime(s.createdAt)!.iso"
+                :title="t('shelf.createdAt')"
+                class="shrink-0 text-[10px] text-muted-foreground"
+                >{{ createdTime(s.createdAt)!.label }}</time
+              >
+            </button>
+          </div>
+          <ShelfFiles
+            v-if="expanded.has(expansionKey(section.kind, s.id)) && s.paths.length"
+            :id="filesId(section.kind, s.id)"
+            :paths="s.paths"
+            :label="t('shelf.files', { name: s.message })"
+            @collapse="setExpanded(section.kind, s.id, false)"
+          />
+        </template>
+      </VirtualList>
       <div v-if="!section.entries.length" class="px-3 py-2 text-muted-foreground">
         {{ t(section.empty) }}
       </div>
