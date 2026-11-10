@@ -42,4 +42,4 @@
 - 第一次提交合并故意由隔离仓库 hook 拒绝。原窗口保留，明确显示 `QA intentional merge hook failure`，仍可重试；HEAD、索引、工作文件和合并状态均未改变。移除测试失败标记后重试，窗口关闭，工作区干净，生成且仅生成一次两父提交的合并；最终 HEAD `ea3faae1344fcdf77f0cebe27613b804e2ecec79`，历史条数 4。核对记录见 `conflicts-lifetime-gui-{resolved,failed,complete}.json`。
 - 本轮核查深色下列表、焦点、错误与禁用态；未把这次抽查扩大为全主题验收。专用测试程序正常退出，测试仓库保留。
 
-QA-017 的代码、自动回归与原生验证已完成，功能提交/推送待执行。用户安装版 `D:/gitx/gitx.exe` 未替换，整体目标仍在进行。
+QA-017 的代码、自动回归与原生验证已完成，功能提交 `9e0bb55f4450a8f30727f66fb50ab597a53a704a` 已推送，ls-remote 核对远端一致。用户安装版 `D:/gitx/gitx.exe` 未替换，整体目标仍在进行。
