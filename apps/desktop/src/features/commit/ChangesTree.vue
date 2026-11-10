@@ -181,6 +181,8 @@ function onDblClick(row: FileRow) {
 }
 
 function onKeydown(row: FileRow, e: KeyboardEvent) {
+  // Modified F4 belongs to the window / global shortcuts (notably Alt+F4).
+  if (e.isComposing || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const file = row.node.file?.change;
   if (!file) return;
   if (e.key === "F4") {
@@ -193,7 +195,7 @@ function onContext(row: FileRow, e: MouseEvent) {
   const file = row.node.file?.change;
   if (!file) return;
   markContextHandled(e);
-  if (!changes.selectedPaths.includes(file.path)) {
+  if (changes.selectedSection !== row.section || !changes.selectedPaths.includes(file.path)) {
     changes.select(file.path, row.section, false);
   }
   emit("context", { path: file.path, section: row.section, x: e.clientX, y: e.clientY });
