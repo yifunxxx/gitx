@@ -307,6 +307,7 @@ impl GitRunner {
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
+        self.finish_smart_stash(cwd, "merge", cancel).await?;
         let new = self
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
@@ -342,6 +343,7 @@ impl GitRunner {
             .kind(OpKind::Write)
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await?;
+        self.finish_smart_stash(cwd, "merge", cancel).await?;
         let new = self
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
@@ -434,7 +436,7 @@ impl GitRunner {
                         new_head: new,
                         outcome: RewriteOutcome::Conflicts,
                         message: if files.is_empty() {
-                            "Rebase paused".into()
+                            format!("Rebase paused{}", self.smart_stash_note(cwd, cancel).await?)
                         } else {
                             format!("Conflicts in {} file(s)", files.len())
                         },
@@ -678,7 +680,10 @@ impl GitRunner {
                         new_head: new,
                         outcome: RewriteOutcome::Conflicts,
                         message: if files.is_empty() {
-                            format!("{cmd} {flag} — still in progress")
+                            format!(
+                                "{cmd} {flag} — still in progress{}",
+                                self.smart_stash_note(cwd, cancel).await?
+                            )
                         } else {
                             format!("Conflicts in {} file(s)", files.len())
                         },
@@ -686,6 +691,7 @@ impl GitRunner {
                         backup_ref: backup,
                     });
                 }
+                self.finish_smart_stash(cwd, cmd, cancel).await?;
                 Ok(RewriteResult {
                     old_head: old,
                     new_head: new,
@@ -711,74 +717,13 @@ impl GitRunner {
         smart: bool,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
+        let inv = GitInvocation::new(cwd, args)
+            .kind(kind)
+            .git_bin(self.git_bin.clone());
         if smart {
-            return self.with_clean_tree(cwd, op_name, args, kind, cancel).await;
+            return self.with_clean_tree_inv(cwd, op_name, inv, cancel).await;
         }
-        let inv = GitInvocation::new(cwd, args)
-            .kind(kind)
-            .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await.map(|_| ())
-    }
-
-    /// Stash → run op → stash pop (Smart Merge / #83 / #114 stash path).
-    async fn with_clean_tree(
-        &self,
-        cwd: &Path,
-        op_name: &str,
-        args: Vec<String>,
-        kind: OpKind,
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let msg = format!("gitx: {op_name}");
-        let stash_inv = GitInvocation::new(
-            cwd,
-            [
-                "stash".into(),
-                "push".into(),
-                "--include-untracked".into(),
-                "-m".into(),
-                msg,
-            ],
-        )
-        .kind(OpKind::Write)
-        .git_bin(self.git_bin.clone());
-        let stashed = match self.run(stash_inv, cancel).await {
-            Ok(_) => true,
-            Err(e) => {
-                let m = e.message.to_lowercase();
-                if m.contains("no local changes") || m.contains("no changes") {
-                    false
-                } else {
-                    return Err(e);
-                }
-            }
-        };
-
-        let inv = GitInvocation::new(cwd, args)
-            .kind(kind)
-            .git_bin(self.git_bin.clone());
-        let op_result = self.run(inv, cancel).await;
-
-        if stashed {
-            let pop = GitInvocation::new(cwd, ["stash", "pop", "--index"])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            if let Err(pop_err) = self.run(pop, cancel).await {
-                // Keep stash; surface restore conflict separately if op succeeded.
-                if op_result.is_ok() {
-                    return Err(AppError::new(
-                        ErrorCode::MergeConflict,
-                        format!(
-                            "Conflicts while restoring local changes (stash kept): {}",
-                            pop_err.message
-                        ),
-                    )
-                    .with_stderr(pop_err.git_stderr.unwrap_or_default()));
-                }
-            }
-        }
-
-        op_result.map(|_| ())
     }
 
     pub(crate) async fn map_rewrite_err(
@@ -790,14 +735,40 @@ impl GitRunner {
         op: &str,
         cancel: &CancellationToken,
     ) -> Result<RewriteResult, AppError> {
+        if matches!(
+            e.code,
+            ErrorCode::OperationInProgress
+                | ErrorCode::Cancelled
+                | ErrorCode::FsError
+                | ErrorCode::StashFailed
+        ) {
+            return Err(e);
+        }
         let stderr = e.git_stderr.clone().unwrap_or_else(|| e.message.clone());
         let lower = stderr.to_lowercase();
 
-        if lower.contains("would be overwritten")
-            || lower.contains("your local changes to the following files")
-            || lower.contains("untracked working tree files would be overwritten")
+        // Rebase also refuses unrelated staged/unstaged edits, without the
+        // "would be overwritten" wording used by merge and cherry-pick.
+        let rebase_needs_clean_tree = op == "rebase"
+            && lower.contains("cannot rebase:")
+            && (lower.contains("unstaged changes")
+                || lower.contains("index contains uncommitted changes"));
+        if e.code != ErrorCode::MergeConflict
+            && (lower.contains("would be overwritten")
+                || lower.contains("your local changes to the following files")
+                || lower.contains("untracked working tree files would be overwritten")
+                || rebase_needs_clean_tree)
         {
-            let files = extract_overwritten_files(&stderr);
+            let files = if rebase_needs_clean_tree {
+                self.status_get(cwd, "", 0, cancel)
+                    .await?
+                    .files
+                    .into_iter()
+                    .map(|file| file.path)
+                    .collect()
+            } else {
+                extract_overwritten_files(&stderr)
+            };
             return Err(AppError::new(
                 if lower.contains("untracked") {
                     ErrorCode::UntrackedWouldBeOverwritten
@@ -832,7 +803,11 @@ impl GitRunner {
                 old_head: old.to_string(),
                 new_head: new,
                 outcome: RewriteOutcome::Conflicts,
-                message: format!("Conflicts in {} file(s)", files.len().max(1)),
+                message: format!(
+                    "Conflicts in {} file(s){}",
+                    files.len().max(1),
+                    self.smart_stash_note(cwd, cancel).await?
+                ),
                 conflict_files: files,
                 backup_ref: backup,
             });

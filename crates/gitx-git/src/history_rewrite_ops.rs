@@ -1117,7 +1117,7 @@ impl GitRunner {
                         new_head: new,
                         outcome: RewriteOutcome::Conflicts,
                         message: if files.is_empty() {
-                            "Rebase paused".into()
+                            format!("Rebase paused{}", self.smart_stash_note(cwd, cancel).await?)
                         } else {
                             format!("Conflicts in {} file(s)", files.len())
                         },
@@ -1139,47 +1139,6 @@ impl GitRunner {
                     .await
             }
         }
-    }
-
-    async fn with_clean_tree_inv(
-        &self,
-        cwd: &Path,
-        op_name: &str,
-        inv: GitInvocation,
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let msg = format!("gitx: {op_name}");
-        let stash_inv = GitInvocation::new(
-            cwd,
-            [
-                "stash".into(),
-                "push".into(),
-                "--include-untracked".into(),
-                "-m".into(),
-                msg,
-            ],
-        )
-        .kind(OpKind::Write)
-        .git_bin(self.git_bin.clone());
-        let stashed = match self.run(stash_inv, cancel).await {
-            Ok(_) => true,
-            Err(e) => {
-                let m = e.message.to_lowercase();
-                if m.contains("no local changes") || m.contains("no changes") {
-                    false
-                } else {
-                    return Err(e);
-                }
-            }
-        };
-        let op_result = self.run(inv, cancel).await;
-        if stashed {
-            let pop = GitInvocation::new(cwd, ["stash", "pop", "--index"])
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone());
-            let _ = self.run(pop, cancel).await;
-        }
-        op_result.map(|_| ())
     }
 
     async fn merge_tree_write(

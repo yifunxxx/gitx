@@ -184,7 +184,7 @@
     "acceptRight": "Accept all right",
     "unresolvedMarkers": "Resolve the remaining conflicts or confirm that the manual results should be kept.",
     "commitMessage": "Subject / Message",
-    "smartDescription": "Save local changes, including untracked files, in Stash, run the operation and try to restore them. If restoration conflicts, the stash is kept.",
+    "smartDescription": "Save local changes, including untracked files, in Stash and restore them when the operation finishes. They remain stashed during edit or conflict pauses. If restoration conflicts, the stash is kept; inspect local changes before proceeding.",
     "dirtyFilesUnavailable": "Cancel to review local changes in the Commit panel.",
     "smartAction": "Smart {operation}",
     "planLoadFailed": "Failed to load the rebase plan",

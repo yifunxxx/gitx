@@ -184,7 +184,7 @@
     "acceptRight": "全部采用右侧",
     "unresolvedMarkers": "请先处理剩余冲突，或确认保留手动编辑的结果。",
     "commitMessage": "提交说明",
-    "smartDescription": "将本地修改（包括未跟踪文件）保存到 Stash，执行操作并尝试恢复；恢复发生冲突时会保留 Stash。",
+    "smartDescription": "将本地修改（包括未跟踪文件）保存到 Stash，操作结束后自动恢复；编辑或冲突暂停期间保留在 Stash 中。恢复发生冲突时会保留 Stash，请检查本地修改后再处理。",
     "dirtyFilesUnavailable": "可取消后在提交面板检查本地修改。",
     "smartAction": "Smart {operation}",
     "planLoadFailed": "无法加载变基计划",

@@ -33,6 +33,7 @@ afterEach(() => wrapper?.unmount());
 it("explains local-change protection before accepting Smart", async () => {
   expect(wrapper!.get('[role="dialog"]').text()).toContain("执行变基前需要处理本地修改");
   expect(wrapper!.text()).toContain("恢复发生冲突时会保留 Stash");
+  expect(wrapper!.text()).toContain("编辑或冲突暂停期间保留在 Stash 中");
   expect(wrapper!.findAll("li").map((item) => item.text())).toEqual(["c.txt", "untracked.txt"]);
   await wrapper!
     .findAll("button")
