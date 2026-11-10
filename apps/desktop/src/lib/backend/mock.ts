@@ -1842,6 +1842,11 @@ export const mockBackend: Backend = {
     entry.message = req.message;
     return structuredClone(entry);
   },
+  async shelfExport(req) {
+    if (!mockShelves.some((s) => s.id === req.id))
+      throw { code: "notFound", message: "shelf not found" };
+    throw { code: "invalidArgument", message: "Patch export requires the desktop app" };
+  },
   async shelfImport(req) {
     const entry: ShelfEntry = {
       id: `shelf-${nextShelfId++}`,

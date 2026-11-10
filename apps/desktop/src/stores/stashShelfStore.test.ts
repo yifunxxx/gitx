@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     shelfDelete: vi.fn(),
     shelfRename: vi.fn(),
     shelfImport: vi.fn(),
+    shelfExport: vi.fn(),
   },
   refresh: vi.fn(),
   conflicts: vi.fn(),
@@ -32,9 +33,10 @@ const mocks = vi.hoisted(() => ({
   prompt: vi.fn(),
   isTauri: vi.fn(),
   fileOpen: vi.fn(),
+  fileSave: vi.fn(),
 }));
 vi.mock("@/lib/utils", () => ({ isTauri: mocks.isTauri }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.fileOpen }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.fileOpen, save: mocks.fileSave }));
 vi.mock("./workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("./settingsStore", () => ({ useSettingsStore: () => ({}) }));
 vi.mock("./changesStore", () => ({ useChangesStore: () => ({ refresh: mocks.refresh }) }));
@@ -75,6 +77,99 @@ beforeEach(() => {
   mocks.backend.shelfListDeleted.mockResolvedValue([]);
   mocks.refresh.mockResolvedValue(undefined);
 });
+it("exports the chosen Shelf without refreshing or applying working changes", async () => {
+  const store = useStashShelfStore();
+  store.shelves = [shelf("first"), shelf("second")];
+  store.selectedShelfId = "first";
+  mocks.isTauri.mockReturnValue(true);
+  const dialog = deferred();
+  mocks.fileSave.mockReturnValue(dialog.promise);
+  const pending = store.promptExportShelf("first");
+  await flushPromises();
+  expect(store.busy).toBe(true);
+  expect(await store.promptExportShelf("second")).toBe(false);
+  expect(await store.unshelve("first")).toBe(false);
+  expect(mocks.fileSave).toHaveBeenCalledExactlyOnceWith({
+    title: "shelf.exportPatch", defaultPath: "shelf-first.patch",
+    filters: [{ name: "shelf.patchFiles", extensions: ["patch", "diff"] }],
+  });
+  store.selectedShelfId = "second";
+  dialog.resolve("C:/exports/中文.patch");
+  expect(await pending).toBe(true);
+  expect(mocks.backend.shelfExport).toHaveBeenCalledExactlyOnceWith({ path: "A", id: "first", output: "C:/exports/中文.patch" });
+  expect(mocks.backend.shelfUnshelve).not.toHaveBeenCalled();
+  expect(mocks.refresh).not.toHaveBeenCalled();
+  expect(mocks.backend.shelfList).not.toHaveBeenCalled();
+  expect(store.selectedShelfId).toBe("second");
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.exported" });
+  expect(store.busy).toBe(false);
+});
+
+it.each(["cancel", "navigate", "repository", "removed"])("abandons Shelf export on %s while choosing a file", async (reason) => {
+  const store = useStashShelfStore();
+  store.shelves = [shelf("saved")];
+  let navigation = 0;
+  mocks.workspace.navigationToken = () => navigation;
+  mocks.isTauri.mockReturnValue(true);
+  const dialog = deferred();
+  mocks.fileSave.mockReturnValue(dialog.promise);
+  const pending = store.promptExportShelf("saved");
+  await flushPromises();
+  if (reason === "navigate") navigation++;
+  if (reason === "repository") { mocks.workspace.repoPath = "B"; mocks.workspace.repoPath = "A"; }
+  if (reason === "removed") store.shelves = [];
+  dialog.resolve(reason === "cancel" ? null : "C:/export.patch");
+  expect(await pending).toBe(false);
+  expect(mocks.backend.shelfExport).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalled();
+  expect(store.busy).toBe(false);
+});
+
+it("handles picker and write failures without refreshing working changes", async () => {
+  const store = useStashShelfStore();
+  store.shelves = [shelf("saved")];
+  mocks.isTauri.mockReturnValue(true);
+  mocks.fileSave.mockRejectedValueOnce(new Error("picker unavailable"));
+  expect(await store.promptExportShelf("saved")).toBe(false);
+  expect(store.error).toBe("picker unavailable");
+  expect(store.busy).toBe(false);
+  mocks.fileSave.mockResolvedValue("C:/export.patch");
+  mocks.backend.shelfExport.mockRejectedValue(new Error("destination locked"));
+  expect(await store.promptExportShelf("saved")).toBe(false);
+  expect(store.error).toBe("destination locked");
+  expect(store.busy).toBe(false);
+  expect(mocks.backend.shelfList).not.toHaveBeenCalled();
+  expect(mocks.refresh).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalledWith({ title: "shelf.exported" });
+});
+
+it("suppresses late export feedback after navigation begins", async () => {
+  const store = useStashShelfStore();
+  store.shelves = [shelf("saved")];
+  mocks.isTauri.mockReturnValue(true);
+  mocks.fileSave.mockResolvedValue("C:/export.patch");
+  const write = deferred();
+  mocks.backend.shelfExport.mockReturnValue(write.promise);
+  const pending = store.promptExportShelf("saved");
+  await flushPromises();
+  expect(mocks.backend.shelfExport).toHaveBeenCalledOnce();
+  mocks.workspace.repoPath = "B";
+  write.resolve({ path: "C:/export.patch", bytes: 4 });
+  expect(await pending).toBe(false);
+  expect(mocks.toast).not.toHaveBeenCalled();
+  expect(mocks.refresh).not.toHaveBeenCalled();
+});
+
+it("reports desktop-only export clearly and rejects a missing selection", async () => {
+  const store = useStashShelfStore();
+  expect(await store.promptExportShelf("missing")).toBe(false);
+  store.shelves = [shelf("saved")];
+  expect(await store.promptExportShelf("saved")).toBe(false);
+  expect(store.error).toBe("shelf.exportDesktopOnly");
+  expect(mocks.fileSave).not.toHaveBeenCalled();
+  expect(mocks.backend.shelfExport).not.toHaveBeenCalled();
+});
+
 it("keeps the selected SHA when stash indexes change and clears it after removal", async () => {
   const store = useStashShelfStore();
   mocks.backend.stashList.mockResolvedValue([entry("first", 0)]);

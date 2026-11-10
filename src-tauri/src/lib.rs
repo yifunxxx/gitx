@@ -52,7 +52,7 @@ use commands::rewrite::{
     reword_commit, squash_commits, uncommit, undo_rewrite,
 };
 use commands::shelf::{
-    shelf_create, shelf_delete, shelf_import, shelf_list, shelf_list_deleted, shelf_rename,
+    shelf_create, shelf_delete, shelf_export, shelf_import, shelf_list, shelf_list_deleted, shelf_rename,
     shelf_restore, shelf_unshelve,
 };
 use commands::stash::{
@@ -217,6 +217,7 @@ pub fn run() {
             shelf_restore,
             shelf_rename,
             shelf_import,
+            shelf_export,
             ignore_add,
             ignore_suggest_patterns,
             exclude_open,

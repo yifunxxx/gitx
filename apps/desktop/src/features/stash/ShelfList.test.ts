@@ -31,6 +31,7 @@ beforeEach(() => {
     restoreShelf: vi.fn(),
     unshelve: vi.fn(),
     promptRenameShelf: vi.fn(),
+    promptExportShelf: vi.fn(),
     deleteShelf: vi.fn(),
   });
 });
@@ -85,6 +86,7 @@ it("uses a stable active ID for context actions after reordering", async () => {
   expect(mocks.store.selectedShelfId).toBe("second");
   expect(menuItems().map((b) => b.textContent?.trim())).toEqual([
     "shelf.unshelve",
+    "shelf.exportPatch",
     "shelf.rename",
     "shelf.delete",
   ]);
@@ -94,6 +96,26 @@ it("uses a stable active ID for context actions after reordering", async () => {
   await flushPromises();
   expect(mocks.store.unshelve).toHaveBeenCalledExactlyOnceWith("second", false);
   expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+it("exports through the toolbar and a context menu with a stable target", async () => {
+  const wrapper = create();
+  const row = wrapper.findAll('[data-entry="shelf"]')[1]!;
+  await row.trigger("click");
+  const exportButton = wrapper.findAll("button").find((b) => b.text() === "shelf.exportPatch")!;
+  await exportButton.trigger("click");
+  expect(mocks.store.promptExportShelf).toHaveBeenLastCalledWith("second");
+  await row.trigger("keydown", { key: "F10", shiftKey: true });
+  await flushPromises();
+  mocks.store.shelves.reverse();
+  mocks.store.selectedShelfId = "third";
+  await flushPromises();
+  menuItems().find((b) => b.textContent?.trim() === "shelf.exportPatch")!.click();
+  await flushPromises();
+  expect(mocks.store.promptExportShelf).toHaveBeenCalledTimes(2);
+  expect(mocks.store.promptExportShelf).toHaveBeenLastCalledWith("second");
+  expect(mocks.store.unshelve).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(row.element);
 });
 
 it("offers only restore for deleted entries and restores focus on Escape", async () => {
@@ -122,11 +144,11 @@ it("navigates menu actions and restores focus on Tab", async () => {
   const press = (key: string) =>
     document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
   press("End");
-  expect(document.activeElement).toBe(menuItems()[2]);
+  expect(document.activeElement).toBe(menuItems()[3]);
   press("ArrowDown");
   expect(document.activeElement).toBe(menuItems()[0]);
   press("ArrowUp");
-  expect(document.activeElement).toBe(menuItems()[2]);
+  expect(document.activeElement).toBe(menuItems()[3]);
   press("Home");
   expect(document.activeElement).toBe(menuItems()[0]);
   press("Tab");

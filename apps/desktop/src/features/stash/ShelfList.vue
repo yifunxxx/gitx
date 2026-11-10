@@ -10,7 +10,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import ShelfFiles from "./ShelfFiles.vue";
 
 type Section = "shelf" | "deleted-shelf";
-type Action = "unshelve" | "rename" | "delete" | "restore";
+type Action = "unshelve" | "exportPatch" | "rename" | "delete" | "restore";
 const { t } = useI18n();
 const store = useStashShelfStore();
 const workspace = useWorkspaceStore();
@@ -47,7 +47,9 @@ const selectedDeleted = computed(() =>
     : undefined,
 );
 const actions = computed<Action[]>(() =>
-  menu.value?.section === "deleted-shelf" ? ["restore"] : ["unshelve", "rename", "delete"],
+  menu.value?.section === "deleted-shelf"
+    ? ["restore"]
+    : ["unshelve", "exportPatch", "rename", "delete"],
 );
 
 function entries(section: Section) {
@@ -162,6 +164,7 @@ function runMenu(action: Action) {
     return;
   }
   if (action === "unshelve") void store.unshelve(target.id, removeApplied.value);
+  if (action === "exportPatch") void store.promptExportShelf(target.id);
   if (action === "rename") void store.promptRenameShelf(target.id);
   if (action === "delete") void store.deleteShelf(target.id);
 }
@@ -337,6 +340,9 @@ function menuKey(event: KeyboardEvent) {
         <label class="flex items-center gap-1 text-[11px]">
           <input v-model="removeApplied" type="checkbox" />{{ t("shelf.removeApplied") }}
         </label>
+        <Button size="xs" variant="outline" @click="store.promptExportShelf(selectedShelf!.id)">{{
+          t("shelf.exportPatch")
+        }}</Button>
         <Button size="xs" variant="outline" @click="store.promptRenameShelf(selectedShelf!.id)">{{
           t("shelf.rename")
         }}</Button>

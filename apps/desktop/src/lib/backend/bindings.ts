@@ -867,6 +867,7 @@ export type ShelfUnshelveReq = {
 }
 export type ShelfUnshelveResult = { applied: string[]; failed: string[] }
 export type ShelfRenameReq = { path: string; id: string; message: string }
+export type ShelfExportReq = { path: string; id: string; output: string }
 export type ShelfImportReq = { path: string; patchFile: string; message: string }
 export type IgnoreAddReq = {
   path: string
@@ -1300,6 +1301,9 @@ export const commands = {
   },
   async shelfRename(req: ShelfRenameReq): Promise<ShelfEntry> {
     return invoke("shelf_rename", { req })
+  },
+  async shelfExport(req: ShelfExportReq): Promise<PatchCreateResult> {
+    return invoke("shelf_export", { req })
   },
   async shelfImport(req: ShelfImportReq): Promise<ShelfEntry> {
     return invoke("shelf_import", { req })

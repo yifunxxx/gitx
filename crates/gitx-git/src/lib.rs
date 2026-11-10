@@ -22,6 +22,7 @@ mod remote_ops;
 mod rewrite_ops;
 mod runner;
 mod scheduler;
+mod shelf_export;
 mod shelf_ops;
 mod stash_ops;
 mod status;
