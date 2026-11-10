@@ -152,37 +152,106 @@ impl GitRunner {
         side: DiffSide,
         cancel: &CancellationToken,
     ) -> Result<Option<Vec<u8>>, AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
+        }
         match side {
             DiffSide::Worktree => {
                 let full = cwd.join(path);
-                if !full.exists() {
-                    return Ok(None);
-                }
-                let bytes = std::fs::read(&full).map_err(|e| {
-                    AppError::new(ErrorCode::FsError, format!("read worktree file: {e}"))
-                })?;
-                Ok(Some(bytes))
-            }
-            DiffSide::Index => {
-                let inv = GitInvocation::new(cwd, ["show", &format!(":{path}")])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone());
-                match self.run(inv, cancel).await {
-                    Ok(out) => Ok(Some(out.stdout)),
-                    Err(err) if err.exit_code == Some(128) => Ok(None),
-                    Err(err) => Err(err),
+                match std::fs::read(&full) {
+                    Ok(bytes) => Ok(Some(bytes)),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(error) => Err(AppError::new(
+                        ErrorCode::FsError,
+                        format!("read worktree file: {error}"),
+                    )),
                 }
             }
-            DiffSide::Head => {
-                let inv = GitInvocation::new(cwd, ["show", &format!("HEAD:{path}")])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone());
-                match self.run(inv, cancel).await {
-                    Ok(out) => Ok(Some(out.stdout)),
-                    Err(err) if err.exit_code == Some(128) => Ok(None),
-                    Err(err) => Err(err),
+            DiffSide::Index => self.read_git_blob(cwd, "", path, cancel).await,
+            DiffSide::Head => self.read_git_blob(cwd, "HEAD", path, cancel).await,
+        }
+    }
+
+    // Keep the successful read to one process. Only failed reads need a tree/index
+    // lookup to prove that a file is absent; exit 128 alone is not that proof.
+    async fn read_git_blob(
+        &self,
+        cwd: &Path,
+        rev: &str,
+        path: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<Vec<u8>>, AppError> {
+        let spec = if rev.is_empty() {
+            format!(":0:{path}")
+        } else {
+            format!("{rev}:{path}")
+        };
+        let error = match self
+            .run(
+                GitInvocation::new(cwd, ["cat-file", "blob", "--", &spec]),
+                cancel,
+            )
+            .await
+        {
+            Ok(out) => return Ok(Some(out.stdout)),
+            Err(error) if error.exit_code == Some(128) => error,
+            Err(error) => return Err(error),
+        };
+        let args = if rev.is_empty() {
+            vec![
+                "--literal-pathspecs",
+                "ls-files",
+                "--stage",
+                "-z",
+                "--",
+                path,
+            ]
+        } else {
+            vec!["--literal-pathspecs", "ls-tree", "-z", "--", rev, path]
+        };
+        match self.run(GitInvocation::new(cwd, args), cancel).await {
+            Ok(out) if out.stdout.is_empty() => Ok(None),
+            // Existing entries include unmerged index stages and non-blob
+            // objects. Neither is a deleted file; retain the original error.
+            Ok(_) => Err(error),
+            Err(lookup) if rev == "HEAD" && lookup.exit_code == Some(128) => {
+                if self.head_is_unborn(cwd, cancel).await? {
+                    Ok(None)
+                } else {
+                    Err(lookup)
                 }
             }
+            Err(lookup) => Err(lookup),
+        }
+    }
+
+    async fn head_is_unborn(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AppError> {
+        let symbolic = match self
+            .run(
+                GitInvocation::new(cwd, ["symbolic-ref", "--quiet", "HEAD"]),
+                cancel,
+            )
+            .await
+        {
+            Ok(out) => out,
+            Err(error) if error.exit_code == Some(1) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let name = String::from_utf8_lossy(&symbolic.stdout);
+        match self
+            .run(
+                GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", "--", name.trim()]),
+                cancel,
+            )
+            .await
+        {
+            Ok(_) => Ok(false),
+            Err(error) if error.exit_code == Some(1) => Ok(true),
+            Err(error) => Err(error),
         }
     }
 
@@ -744,15 +813,7 @@ impl GitRunner {
                 .read_blob_side(cwd, path, DiffSide::Index, cancel)
                 .await;
         }
-        let spec = format!("{rev}:{path}");
-        let inv = GitInvocation::new(cwd, ["show", &spec])
-            .kind(OpKind::Read)
-            .git_bin(self.git_bin.clone());
-        match self.run(inv, cancel).await {
-            Ok(out) => Ok(Some(out.stdout)),
-            Err(err) if err.exit_code == Some(128) => Ok(None),
-            Err(err) => Err(err),
-        }
+        self.read_git_blob(cwd, rev, path, cancel).await
     }
 
     pub async fn file_history(
@@ -786,7 +847,11 @@ impl GitRunner {
             .timeout(Some(std::time::Duration::from_secs(120)));
         let out = match self.run(inv, cancel).await {
             Ok(o) => o,
-            Err(err) if err.exit_code == Some(128) => {
+            Err(err)
+                if !all_branches
+                    && err.exit_code == Some(128)
+                    && self.head_is_unborn(cwd, cancel).await? =>
+            {
                 return Ok(HistoryPage {
                     commits: Vec::new(),
                     truncated: false,
@@ -904,17 +969,7 @@ impl GitRunner {
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone())
             .timeout(Some(std::time::Duration::from_secs(120)));
-        let out = match self.run(inv, cancel).await {
-            Ok(o) => o,
-            Err(err) if err.exit_code == Some(128) => {
-                return Ok(BlameResult {
-                    path: path.to_string(),
-                    rev: rev.to_string(),
-                    lines: Vec::new(),
-                });
-            }
-            Err(err) => return Err(err),
-        };
+        let out = self.run(inv, cancel).await?;
 
         Ok(BlameResult {
             path: path.to_string(),
@@ -949,14 +1004,10 @@ impl GitRunner {
             let dir_no_slash = prefix.trim_end_matches('/');
             format!("{rev}:{dir_no_slash}")
         };
-        let inv = GitInvocation::new(cwd, ["ls-tree", "-z", "--long", &spec])
+        let inv = GitInvocation::new(cwd, ["ls-tree", "-z", "--long", "--", &spec])
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone());
-        let out = match self.run(inv, cancel).await {
-            Ok(o) => o,
-            Err(err) if err.exit_code == Some(128) => return Ok(Vec::new()),
-            Err(err) => return Err(err),
-        };
+        let out = self.run(inv, cancel).await?;
         Ok(parse_ls_tree_z(&out.stdout, &prefix))
     }
 
@@ -967,16 +1018,22 @@ impl GitRunner {
         path: &str,
         cancel: &CancellationToken,
     ) -> Result<BlobContent, AppError> {
-        let bytes = self.read_blob_at(cwd, rev, path, cancel).await?;
-        let size = bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
-        let binary = bytes
-            .as_ref()
-            .is_some_and(|b| b.iter().take(8000).any(|&c| c == 0));
+        let bytes = self
+            .read_blob_at(cwd, rev, path, cancel)
+            .await?
+            .ok_or_else(|| {
+                AppError::new(
+                    ErrorCode::NotFound,
+                    format!("file not found at {rev}: {path}"),
+                )
+            })?;
+        let size = bytes.len() as u64;
+        let binary = bytes.iter().take(8000).any(|&c| c == 0);
         let too_large = size > 5 * 1024 * 1024;
-        let text = if binary || too_large || bytes.is_none() {
+        let text = if binary || too_large {
             None
         } else {
-            bytes.map(|b| String::from_utf8_lossy(&b).into_owned())
+            Some(String::from_utf8_lossy(&bytes).into_owned())
         };
         Ok(BlobContent {
             path: path.to_string(),
