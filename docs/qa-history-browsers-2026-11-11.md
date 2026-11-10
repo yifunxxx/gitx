@@ -56,4 +56,4 @@ QA-021：后端 `file_history` / `tree_list` / `read_blob_at` 的部分 Git 退�
 
 ## 交付
 
-QA-018 代码、自动回归、生产/原生构建和本轮原生流程已通过；功能提交与远端验证将在提交后补记。总体目标仍在进行，后端错误分类另见 QA-021。
+QA-018 代码、自动回归、生产/原生构建和本轮原生流程已通过；功能提交 `668bc3d4d5afe8078360c1ab733c8b6f2cee3f30` 已推送到 `origin/codex/checkout-target-safety`，ls-remote 与本地 HEAD 一致。总体目标仍在进行，后端错误分类另见 QA-021。
