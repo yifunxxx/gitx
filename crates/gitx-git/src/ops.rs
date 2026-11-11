@@ -332,8 +332,10 @@ impl GitRunner {
             ));
         }
 
-        let gitx_dir = cwd.join(".git").join("gitx");
-        let _ = std::fs::create_dir_all(&gitx_dir);
+        // Linked worktrees have a `.git` *file*; always resolve the real git dir.
+        let gitx_dir = self.git_dir(cwd, cancel).await?.join("gitx");
+        std::fs::create_dir_all(&gitx_dir)
+            .map_err(|e| AppError::new(ErrorCode::FsError, format!("create gitx dir: {e}")))?;
         let msg_path = gitx_dir.join("COMMIT_EDITMSG");
         std::fs::write(&msg_path, format!("{trimmed}\n"))
             .map_err(|e| AppError::new(ErrorCode::FsError, format!("write commit message: {e}")))?;
@@ -372,8 +374,9 @@ impl GitRunner {
             }
         }
 
-        let result = self.run_commit_and_result(cwd, args, amend, cancel).await?;
-        Ok(self.restore_after_commit(cwd, result).await)
+        let result = self.run_commit_and_result(cwd, args, amend, cancel).await;
+        let _ = std::fs::remove_file(&msg_path);
+        Ok(self.restore_after_commit(cwd, result?).await)
     }
 
     async fn commit_partial(
