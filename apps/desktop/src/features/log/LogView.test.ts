@@ -53,58 +53,8 @@ beforeEach(() => {
   mocks.backend.logChangedFiles.mockResolvedValue([]);
 });
 
-function mountMenu() {
-  const log = useLogStore();
-  vi.spyOn(log, "load").mockResolvedValue();
-  log.selectedSha = "commit-a";
-  log.selectedShas = ["commit-a"];
-  log.changedFiles = [{ path: "a.txt", status: "M", origPath: null }];
-  const wrapper = shallowMount(LogView, {
-    global: {
-      stubs: {
-        ContextMenuSurface: { template: "<div><slot /></div>" },
-      },
-    },
-  });
-  return { log, wrapper };
-}
-
-it("does not drop commits after the confirmation outlives its repository", async () => {
-  let resolve!: (value: boolean) => void;
-  mocks.confirm.mockReturnValue(
-    new Promise<boolean>((done) => {
-      resolve = done;
-    }),
-  );
-  const { wrapper } = mountMenu();
-  await wrapper
-    .findAll("button")
-    .find((b) => b.text() === "actions.dropCommits")!
-    .trigger("click");
-  mocks.ws.repoPath = "B";
-  resolve(true);
-  await flushPromises();
-  expect(mocks.rewrite.drop).not.toHaveBeenCalled();
-  wrapper.unmount();
-});
-
-it("captures the commit before asynchronously opening file selection", async () => {
-  const { log, wrapper } = mountMenu();
-  await wrapper
-    .findAll("button")
-    .find((b) => b.text() === "actions.extractSelected")!
-    .trigger("click");
-  log.selectedSha = "commit-b";
-  log.changedFiles = [{ path: "b.txt", status: "M", origPath: null }];
-  await flushPromises();
-  expect(mocks.open).toHaveBeenCalledWith(expect.anything(), {
-    commit: "commit-a",
-    mode: "extract",
-    initialPaths: undefined,
-  });
-  expect(mocks.rewrite.extractChanges).not.toHaveBeenCalled();
-  wrapper.unmount();
-});
+// Menu lifetime / drop / extract coverage lives in LogMenus.test.ts
+// (context menus are opened via useLogContextMenus, not always-mounted buttons).
 
 const mountView = () =>
   shallowMount(LogView, {

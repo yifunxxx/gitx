@@ -152,37 +152,106 @@ impl GitRunner {
         side: DiffSide,
         cancel: &CancellationToken,
     ) -> Result<Option<Vec<u8>>, AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
+        }
         match side {
             DiffSide::Worktree => {
                 let full = cwd.join(path);
-                if !full.exists() {
-                    return Ok(None);
-                }
-                let bytes = std::fs::read(&full).map_err(|e| {
-                    AppError::new(ErrorCode::FsError, format!("read worktree file: {e}"))
-                })?;
-                Ok(Some(bytes))
-            }
-            DiffSide::Index => {
-                let inv = GitInvocation::new(cwd, ["show", &format!(":{path}")])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone());
-                match self.run(inv, cancel).await {
-                    Ok(out) => Ok(Some(out.stdout)),
-                    Err(err) if err.exit_code == Some(128) => Ok(None),
-                    Err(err) => Err(err),
+                match std::fs::read(&full) {
+                    Ok(bytes) => Ok(Some(bytes)),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(error) => Err(AppError::new(
+                        ErrorCode::FsError,
+                        format!("read worktree file: {error}"),
+                    )),
                 }
             }
-            DiffSide::Head => {
-                let inv = GitInvocation::new(cwd, ["show", &format!("HEAD:{path}")])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone());
-                match self.run(inv, cancel).await {
-                    Ok(out) => Ok(Some(out.stdout)),
-                    Err(err) if err.exit_code == Some(128) => Ok(None),
-                    Err(err) => Err(err),
+            DiffSide::Index => self.read_git_blob(cwd, "", path, cancel).await,
+            DiffSide::Head => self.read_git_blob(cwd, "HEAD", path, cancel).await,
+        }
+    }
+
+    // Keep the successful read to one process. Only failed reads need a tree/index
+    // lookup to prove that a file is absent; exit 128 alone is not that proof.
+    async fn read_git_blob(
+        &self,
+        cwd: &Path,
+        rev: &str,
+        path: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<Vec<u8>>, AppError> {
+        let spec = if rev.is_empty() {
+            format!(":0:{path}")
+        } else {
+            format!("{rev}:{path}")
+        };
+        let error = match self
+            .run(
+                GitInvocation::new(cwd, ["cat-file", "blob", "--", &spec]),
+                cancel,
+            )
+            .await
+        {
+            Ok(out) => return Ok(Some(out.stdout)),
+            Err(error) if error.exit_code == Some(128) => error,
+            Err(error) => return Err(error),
+        };
+        let args = if rev.is_empty() {
+            vec![
+                "--literal-pathspecs",
+                "ls-files",
+                "--stage",
+                "-z",
+                "--",
+                path,
+            ]
+        } else {
+            vec!["--literal-pathspecs", "ls-tree", "-z", "--", rev, path]
+        };
+        match self.run(GitInvocation::new(cwd, args), cancel).await {
+            Ok(out) if out.stdout.is_empty() => Ok(None),
+            // Existing entries include unmerged index stages and non-blob
+            // objects. Neither is a deleted file; retain the original error.
+            Ok(_) => Err(error),
+            Err(lookup) if rev == "HEAD" && lookup.exit_code == Some(128) => {
+                if self.head_is_unborn(cwd, cancel).await? {
+                    Ok(None)
+                } else {
+                    Err(lookup)
                 }
             }
+            Err(lookup) => Err(lookup),
+        }
+    }
+
+    async fn head_is_unborn(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AppError> {
+        let symbolic = match self
+            .run(
+                GitInvocation::new(cwd, ["symbolic-ref", "--quiet", "HEAD"]),
+                cancel,
+            )
+            .await
+        {
+            Ok(out) => out,
+            Err(error) if error.exit_code == Some(1) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let name = String::from_utf8_lossy(&symbolic.stdout);
+        match self
+            .run(
+                GitInvocation::new(cwd, ["show-ref", "--verify", "--quiet", "--", name.trim()]),
+                cancel,
+            )
+            .await
+        {
+            Ok(_) => Ok(false),
+            Err(error) if error.exit_code == Some(1) => Ok(true),
+            Err(error) => Err(error),
         }
     }
 
@@ -263,27 +332,19 @@ impl GitRunner {
             ));
         }
 
-        let gitx_dir = self.git_dir(cwd, cancel).await?.join("gitx");
-        std::fs::create_dir_all(&gitx_dir).map_err(|e| {
-            AppError::new(ErrorCode::FsError, format!("create commit directory: {e}"))
-        })?;
-        let mut message_file = tempfile::Builder::new()
-            .prefix("commit-message-")
-            .tempfile_in(&gitx_dir)
-            .map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("create commit message: {e}"))
-            })?;
-        use std::io::Write;
-        writeln!(message_file, "{trimmed}")
+        let gitx_dir = cwd.join(".git").join("gitx");
+        let _ = std::fs::create_dir_all(&gitx_dir);
+        let msg_path = gitx_dir.join("COMMIT_EDITMSG");
+        std::fs::write(&msg_path, format!("{trimmed}\n"))
             .map_err(|e| AppError::new(ErrorCode::FsError, format!("write commit message: {e}")))?;
-        let msg_path = message_file.path();
 
         // Partial line selections → temporary index.
         if let Some(partial) = partial {
             if !partial.is_empty() {
-                return self
-                    .commit_partial(cwd, msg_path, amend, no_verify, partial, cancel)
-                    .await;
+                let result = self
+                    .commit_partial(cwd, &msg_path, amend, no_verify, partial, cancel)
+                    .await?;
+                return Ok(self.restore_after_commit(cwd, result).await);
             }
         }
 
@@ -309,7 +370,8 @@ impl GitRunner {
             }
         }
 
-        self.run_commit_and_result(cwd, args, amend, cancel).await
+        let result = self.run_commit_and_result(cwd, args, amend, cancel).await?;
+        Ok(self.restore_after_commit(cwd, result).await)
     }
 
     async fn commit_partial(
@@ -321,41 +383,21 @@ impl GitRunner {
         partial: &[gitx_core::PartialFileSelection],
         cancel: &CancellationToken,
     ) -> Result<CommitResult, AppError> {
-        let gitx_dir = self.git_dir(cwd, cancel).await?.join("gitx");
-        let scratch = tempfile::Builder::new()
-            .prefix("partial-")
-            .tempdir_in(gitx_dir)
-            .map_err(|e| {
-                AppError::new(
-                    ErrorCode::FsError,
-                    format!("create temporary index directory: {e}"),
-                )
+        let tmp_index = cwd.join(".git").join("gitx").join("partial-index");
+        let _ = std::fs::remove_file(&tmp_index);
+
+        // Seed temp index from the real index (or empty), then overlay selected lines.
+        let real_index = cwd.join(".git").join("index");
+        if real_index.exists() {
+            std::fs::copy(&real_index, &tmp_index).map_err(|e| {
+                AppError::new(ErrorCode::FsError, format!("copy index for partial: {e}"))
             })?;
-        let tmp_index = scratch.path().join("index");
-        // Start from HEAD, not the real index: unrelated staged files must not
-        // leak into a commit of selected lines. An unborn index must be created
-        // by Git; a zero-byte file is not a valid empty Git index.
-        let has_head = match self
-            .run(
-                GitInvocation::new(cwd, ["rev-parse", "--verify", "HEAD"]),
-                cancel,
-            )
-            .await
-        {
-            Ok(_) => true,
-            Err(error) if error.exit_code == Some(128) => false,
-            Err(error) => return Err(error),
-        };
-        self.run_with_index_env(
-            cwd,
-            &tmp_index,
-            vec![
-                "read-tree".into(),
-                if has_head { "HEAD" } else { "--empty" }.into(),
-            ],
-            cancel,
-        )
-        .await?;
+        } else {
+            // Unborn: empty index file.
+            std::fs::write(&tmp_index, []).map_err(|e| {
+                AppError::new(ErrorCode::FsError, format!("create temp index: {e}"))
+            })?;
+        }
 
         for sel in partial {
             let head_bytes = self
@@ -392,9 +434,9 @@ impl GitRunner {
             args.push("--no-verify".into());
         }
 
-        let result = self
-            .run_with_index_env(cwd, &tmp_index, args, cancel)
-            .await?;
+        // Run commit with GIT_INDEX_FILE via a wrapper script approach:
+        // `git -c ...` cannot set env; use std::process with env for this one call.
+        let result = self.run_with_index_env(cwd, &tmp_index, args, cancel).await;
 
         // Sync real index: reset selected paths so remaining worktree changes stay unstaged.
         let paths: Vec<String> = partial.iter().map(|p| p.path.clone()).collect();
@@ -411,7 +453,8 @@ impl GitRunner {
             )
             .await;
 
-        Ok(result)
+        let _ = std::fs::remove_file(&tmp_index);
+        result
     }
 
     async fn stage_hunk_text_in_index(
@@ -457,32 +500,44 @@ impl GitRunner {
     ) -> Result<CommitResult, AppError> {
         // For non-commit commands we only care about success; for commit we parse result.
         let is_commit = args.first().map(|s| s.as_str()) == Some("commit");
+        let mut cmd = tokio::process::Command::new(&self.git_bin);
+        cmd.args(&args)
+            .current_dir(cwd)
+            .env("GIT_INDEX_FILE", index_file)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        crate::process_win::hide_console_tokio(&mut cmd);
         if cancel.is_cancelled() {
             return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
         }
-        let amend = args.iter().any(|a| a == "--amend");
-        let invocation = GitInvocation::new(cwd, args)
-            .kind(OpKind::Write)
-            .git_bin(self.git_bin.clone())
-            .env("GIT_INDEX_FILE", index_file.to_string_lossy())
-            .timeout(Some(std::time::Duration::from_secs(120)));
-        if let Err(error) = self.run(invocation, cancel).await {
-            let stderr = error.git_stderr.as_deref().unwrap_or_default();
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| AppError::new(ErrorCode::GitCommandFailed, format!("spawn git: {e}")))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if stderr.contains("nothing to commit") {
                 return Err(AppError::new(
                     ErrorCode::NothingToCommit,
                     "nothing to commit",
                 ));
             }
-            return Err(error);
+            return Err(AppError::new(
+                ErrorCode::GitCommandFailed,
+                format!("git {} failed", args.first().unwrap_or(&"?".into())),
+            )
+            .with_stderr(stderr)
+            .with_exit_code(output.status.code().unwrap_or(1)));
         }
         if !is_commit {
             return Ok(CommitResult {
+                warning: None,
                 sha: String::new(),
                 subject: String::new(),
                 amended: false,
             });
         }
+        let amend = args.iter().any(|a| a == "--amend");
         self.commit_result_from_head(cwd, amend, cancel).await
     }
 
@@ -548,6 +603,7 @@ impl GitRunner {
             .await?;
         let subject = String::from_utf8_lossy(&subj_out.stdout).trim().to_string();
         Ok(CommitResult {
+            warning: None,
             sha,
             subject,
             amended: amend,
@@ -686,12 +742,20 @@ impl GitRunner {
         right: &str,
         cancel: &CancellationToken,
     ) -> Result<Vec<ChangedFile>, AppError> {
-        let empty_tree;
+        let empty_tree = if left == "EMPTY" || right == "EMPTY" {
+            Some(self.empty_tree(cwd, cancel).await?)
+        } else {
+            None
+        };
         let left = if left == "EMPTY" {
-            empty_tree = self.empty_tree(cwd, cancel).await?;
-            empty_tree.as_str()
+            empty_tree.as_deref().unwrap()
         } else {
             left
+        };
+        let right = if right == "EMPTY" {
+            empty_tree.as_deref().unwrap()
+        } else {
+            right
         };
         // right empty / WORKTREE → diff against working tree
         let mut args = vec![
@@ -749,15 +813,7 @@ impl GitRunner {
                 .read_blob_side(cwd, path, DiffSide::Index, cancel)
                 .await;
         }
-        let spec = format!("{rev}:{path}");
-        let inv = GitInvocation::new(cwd, ["show", &spec])
-            .kind(OpKind::Read)
-            .git_bin(self.git_bin.clone());
-        match self.run(inv, cancel).await {
-            Ok(out) => Ok(Some(out.stdout)),
-            Err(err) if err.exit_code == Some(128) => Ok(None),
-            Err(err) => Err(err),
-        }
+        self.read_git_blob(cwd, rev, path, cancel).await
     }
 
     pub async fn file_history(
@@ -772,12 +828,20 @@ impl GitRunner {
         let skip = offset.to_string();
         let max = (limit + 1).to_string();
         let mut args: Vec<String> = vec![
+            "--literal-pathspecs".into(),
             "log".into(),
             format!("--skip={skip}"),
             format!("--max-count={max}"),
             "--follow".into(),
             "--name-status".into(),
-            "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x1e".into(),
+            "-z".into(),
+            "--root".into(),
+            "--no-color".into(),
+            "--no-notes".into(),
+            "--no-show-signature".into(),
+            "--no-decorate".into(),
+            "--encoding=UTF-8".into(),
+            "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%s".into(),
         ];
         if all_branches {
             args.push("--all".into());
@@ -791,7 +855,11 @@ impl GitRunner {
             .timeout(Some(std::time::Duration::from_secs(120)));
         let out = match self.run(inv, cancel).await {
             Ok(o) => o,
-            Err(err) if err.exit_code == Some(128) => {
+            Err(err)
+                if !all_branches
+                    && err.exit_code == Some(128)
+                    && self.head_is_unborn(cwd, cancel).await? =>
+            {
                 return Ok(HistoryPage {
                     commits: Vec::new(),
                     truncated: false,
@@ -801,80 +869,8 @@ impl GitRunner {
             Err(err) => return Err(err),
         };
 
-        let text = String::from_utf8_lossy(&out.stdout);
-        // git prints: <format…\x1e>\n\n<name-status>\n<format…\x1e>\n\n…
-        // so name-status for commit i sits at the start of split-part i+1.
-        let parts: Vec<&str> = text.split('\x1e').collect();
-        let mut commits = Vec::new();
-        for i in 0..parts.len() {
-            let header_src = parts[i];
-            // First part is pure header; later parts start with name-status for previous commit.
-            let header_line = if i == 0 {
-                header_src.trim_matches('\n')
-            } else {
-                // Skip leading status lines; header is the first line containing NULs.
-                header_src
-                    .lines()
-                    .find(|l| l.contains('\0'))
-                    .unwrap_or("")
-                    .trim()
-            };
-            if header_line.is_empty() {
-                continue;
-            }
-            let fields: Vec<&str> = header_line.split('\0').collect();
-            if fields.len() < 6 {
-                continue;
-            }
-            let mut status = None;
-            let mut path_at = path.to_string();
-            let mut orig_path = None;
-            if let Some(next) = parts.get(i + 1) {
-                for line in next.lines() {
-                    let line = line.trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    if line.contains('\0') {
-                        break; // hit next header
-                    }
-                    let cols: Vec<&str> = line.split('\t').collect();
-                    if cols.is_empty() {
-                        continue;
-                    }
-                    let st = cols[0].chars().next().unwrap_or('M').to_string();
-                    status = Some(st.clone());
-                    if (st.starts_with('R') || st.starts_with('C')) && cols.len() >= 3 {
-                        orig_path = Some(cols[1].to_string());
-                        path_at = cols[2].to_string();
-                    } else if cols.len() >= 2 {
-                        path_at = cols[1].to_string();
-                    }
-                }
-            }
-            let sha = fields[0].to_string();
-            let short_sha: String = sha.chars().take(7).collect();
-            let parents = if fields[1].is_empty() {
-                Vec::new()
-            } else {
-                fields[1]
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect()
-            };
-            commits.push(HistoryCommit {
-                sha,
-                short_sha,
-                parents,
-                subject: fields[5].to_string(),
-                author: fields[2].to_string(),
-                author_email: fields[3].to_string(),
-                author_time: fields[4].parse().unwrap_or(0),
-                path_at_commit: path_at,
-                status,
-                orig_path,
-            });
-        }
+        let mut commits = parse_file_history_z(&out.stdout, path)
+            .map_err(|error| error.with_command(out.command))?;
 
         let truncated = commits.len() as u32 > limit;
         if truncated {
@@ -909,17 +905,7 @@ impl GitRunner {
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone())
             .timeout(Some(std::time::Duration::from_secs(120)));
-        let out = match self.run(inv, cancel).await {
-            Ok(o) => o,
-            Err(err) if err.exit_code == Some(128) => {
-                return Ok(BlameResult {
-                    path: path.to_string(),
-                    rev: rev.to_string(),
-                    lines: Vec::new(),
-                });
-            }
-            Err(err) => return Err(err),
-        };
+        let out = self.run(inv, cancel).await?;
 
         Ok(BlameResult {
             path: path.to_string(),
@@ -954,14 +940,10 @@ impl GitRunner {
             let dir_no_slash = prefix.trim_end_matches('/');
             format!("{rev}:{dir_no_slash}")
         };
-        let inv = GitInvocation::new(cwd, ["ls-tree", "-z", "--long", &spec])
+        let inv = GitInvocation::new(cwd, ["ls-tree", "-z", "--long", "--", &spec])
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone());
-        let out = match self.run(inv, cancel).await {
-            Ok(o) => o,
-            Err(err) if err.exit_code == Some(128) => return Ok(Vec::new()),
-            Err(err) => return Err(err),
-        };
+        let out = self.run(inv, cancel).await?;
         Ok(parse_ls_tree_z(&out.stdout, &prefix))
     }
 
@@ -972,16 +954,22 @@ impl GitRunner {
         path: &str,
         cancel: &CancellationToken,
     ) -> Result<BlobContent, AppError> {
-        let bytes = self.read_blob_at(cwd, rev, path, cancel).await?;
-        let size = bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
-        let binary = bytes
-            .as_ref()
-            .is_some_and(|b| b.iter().take(8000).any(|&c| c == 0));
+        let bytes = self
+            .read_blob_at(cwd, rev, path, cancel)
+            .await?
+            .ok_or_else(|| {
+                AppError::new(
+                    ErrorCode::NotFound,
+                    format!("file not found at {rev}: {path}"),
+                )
+            })?;
+        let size = bytes.len() as u64;
+        let binary = bytes.iter().take(8000).any(|&c| c == 0);
         let too_large = size > 5 * 1024 * 1024;
-        let text = if binary || too_large || bytes.is_none() {
+        let text = if binary || too_large {
             None
         } else {
-            bytes.map(|b| String::from_utf8_lossy(&b).into_owned())
+            Some(String::from_utf8_lossy(&bytes).into_owned())
         };
         Ok(BlobContent {
             path: path.to_string(),
@@ -1045,7 +1033,12 @@ impl GitRunner {
             .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
         let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        Ok(crate::resolve_git_path(cwd, &p))
+        let path = std::path::PathBuf::from(&p);
+        if path.is_absolute() {
+            Ok(path)
+        } else {
+            Ok(cwd.join(path))
+        }
     }
 
     pub async fn log_commit_details(
@@ -1137,10 +1130,8 @@ impl GitRunner {
         let inv = GitInvocation::new(cwd, ["log", "-1", "--format=%B"])
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone());
-        match self.run(inv, cancel).await {
-            Ok(out) => Ok(String::from_utf8_lossy(&out.stdout).to_string()),
-            Err(_) => Ok(String::new()),
-        }
+        let out = self.run(inv, cancel).await?;
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
     }
 
     pub async fn current_branch(
@@ -1176,7 +1167,8 @@ pub(crate) fn pathspec_nul(paths: &[String]) -> Vec<u8> {
 }
 
 fn looks_like_sha(s: &str) -> bool {
-    (7..=64).contains(&s.len()) && s.chars().all(|c| c.is_ascii_hexdigit())
+    let len = s.len();
+    (7..=40).contains(&len) && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn parse_blame_porcelain(stdout: &[u8]) -> Vec<BlameLine> {
@@ -1268,6 +1260,83 @@ fn parse_ls_tree_z(stdout: &[u8], prefix: &str) -> Vec<TreeEntry> {
         });
     }
     out
+}
+
+fn parse_file_history_z(stdout: &[u8], path: &str) -> Result<Vec<HistoryCommit>, AppError> {
+    let invalid = || {
+        AppError::new(
+            ErrorCode::GitCommandFailed,
+            "invalid file history output from Git",
+        )
+    };
+    if !stdout.is_empty() && stdout.last() != Some(&0) {
+        return Err(invalid());
+    }
+    let text = String::from_utf8_lossy(stdout);
+    let fields = text.split('\0').collect::<Vec<_>>();
+    let mut commits = Vec::new();
+    let mut i = 0;
+    // Each record starts with NUL and six header fields. Status records have
+    // one path, or two for a rename/copy. Consume that arity before looking for
+    // the next header; filenames may contain newlines, tabs and record separators.
+    while i < fields.len() {
+        while fields.get(i) == Some(&"") {
+            i += 1;
+        }
+        if i == fields.len() {
+            break;
+        }
+        let header = fields.get(i..i + 6).ok_or_else(invalid)?;
+        if !matches!(header[0].len(), 40 | 64) || !header[0].bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err(invalid());
+        }
+        let mut commit = HistoryCommit {
+            sha: header[0].to_string(),
+            short_sha: header[0].chars().take(7).collect(),
+            parents: header[1].split_whitespace().map(str::to_string).collect(),
+            author: header[2].to_string(),
+            author_email: header[3].to_string(),
+            author_time: header[4].parse().map_err(|_| invalid())?,
+            subject: header[5].to_string(),
+            path_at_commit: path.to_string(),
+            status: None,
+            orig_path: None,
+        };
+        i += 6;
+        while let Some(raw) = fields.get(i).filter(|field| !field.is_empty()) {
+            // The pretty-format/name-status boundary adds a newline. Only the
+            // status token is trimmed; path and metadata bytes stay untouched.
+            let status = raw.trim_start_matches('\n');
+            let code = status.as_bytes().first().copied().ok_or_else(invalid)?;
+            if !b"ACDMRTUXB".contains(&code)
+                || !status.as_bytes()[1..].iter().all(u8::is_ascii_digit)
+            {
+                return Err(invalid());
+            }
+            i += 1;
+            let first = fields
+                .get(i)
+                .filter(|path| !path.is_empty())
+                .ok_or_else(invalid)?;
+            i += 1;
+            let (original, current) = if matches!(code, b'R' | b'C') {
+                let second = fields
+                    .get(i)
+                    .filter(|path| !path.is_empty())
+                    .ok_or_else(invalid)?;
+                i += 1;
+                (Some((*first).to_string()), *second)
+            } else {
+                (None, *first)
+            };
+            commit.status = Some(char::from(code).to_string());
+            commit.path_at_commit = current.to_string();
+            commit.orig_path = original;
+        }
+        commits.push(commit);
+    }
+    Ok(commits)
 }
 
 fn parse_name_status_z(stdout: &[u8]) -> Vec<ChangedFile> {

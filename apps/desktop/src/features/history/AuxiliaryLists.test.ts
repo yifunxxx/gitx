@@ -65,7 +65,10 @@ it("bounds file history DOM and still selects the final revision", async () => {
 
 it("bounds historical directories and resets their scroll position on directory navigation", async () => {
   const entries = commits.map((_c, i) => ({ path: `dir/${i}`, name: `file ${i}`, kind: "blob" }));
-  mocks.revision = reactive({ tabs: [{ id: "tab", dir: "dir", entries }], openEntry: vi.fn() });
+  mocks.revision = reactive({
+    tabs: [{ id: "tab", rev: "rev", dir: "dir", entries }],
+    openEntry: vi.fn(),
+  });
   const wrapper = mount(RepoAtRevisionView, { props: { tabId: "tab" }, global });
   const list = wrapper.findComponent(VirtualList);
   expect(list.findAll("button").length).toBeLessThan(40);

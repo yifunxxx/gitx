@@ -1,69 +1,82 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
-import { closeDialog, useDialogState } from "@/composables/useDialog";
+import { closeDialog, useDialogStack, useDialogState } from "@/composables/useDialog";
+import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { useConflictsStore } from "@/stores/conflictsStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { formatErrorMessage } from "@/lib/errors";
 import type { ConflictEntry } from "@/lib/backend";
 
 const { t } = useI18n();
 const conflicts = useConflictsStore();
 const rewrite = useRewriteStore();
-const workspace = useWorkspaceStore();
 const dialog = useDialogState();
+const stack = useDialogStack();
 const dialogId = dialog.value?.id;
-const path = workspace.repoPath;
-const working = ref(false);
+const capture = useRepositoryAction(() => closeDialog(false, dialogId));
+const source = capture();
+const phase = ref<"load" | "open" | "write" | "continue" | null>(null);
 const ready = ref(false);
 const error = ref<string | null>(null);
-let disposed = false;
-let invalidated = false;
+let visibilityRevision = 0;
 let anchor: string | null = null;
-const busy = computed(() => working.value || conflicts.busy || rewrite.busy);
+const busy = computed(() => !!phase.value || conflicts.busy || conflicts.loading || rewrite.busy);
+const canDismiss = computed(
+  () => !conflicts.busy && !rewrite.busy && phase.value !== "write" && phase.value !== "continue",
+);
+const loaded = computed(() => ready.value && !conflicts.refreshError);
+const visibleError = computed(() => error.value || conflicts.refreshError);
 const selectedEntry = computed(() =>
   conflicts.entries.find((e) => conflicts.selected.includes(e.path)),
 );
-const current = () =>
-  !disposed && !invalidated && workspace.repoPath === path && dialog.value?.id === dialogId;
+const alive = () => source.current() && stack.value.some((item) => item.id === dialogId);
+const current = () => alive() && dialog.value?.id === dialogId;
 
 function dismiss() {
-  if (current() && !busy.value) closeDialog(false, dialogId);
+  if (current() && canDismiss.value) closeDialog(false, dialogId);
 }
+// A covered dialog may reappear, but its old editor request must stay cancelled.
 watch(
-  () => workspace.repoPath,
-  () => {
-    if (!disposed) closeDialog(false, dialogId);
-    invalidated = true;
-  },
+  () => dialog.value?.id,
+  () => ++visibilityRevision,
   { flush: "sync" },
 );
-onUnmounted(() => {
-  disposed = true;
-});
 
-onMounted(async () => {
-  working.value = true;
+async function load() {
+  if (!current() || phase.value) return;
+  phase.value = "load";
+  ready.value = false;
+  error.value = null;
   try {
-    await Promise.all([conflicts.refresh(), rewrite.refreshOpState()]);
-    if (!current()) return;
+    const results = await Promise.allSettled([conflicts.refresh(), rewrite.refreshOpState()]);
+    if (!alive()) return;
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+    if (
+      results.some(
+        (result) =>
+          result.status === "fulfilled" && (result.value === false || result.value === null),
+      )
+    )
+      throw new Error(t("merge.loadInterrupted"));
     ready.value = true;
     if (!conflicts.selected.length && conflicts.entries[0])
       conflicts.selected = [conflicts.entries[0].path];
   } catch (e) {
-    if (current()) error.value = formatErrorMessage(e);
+    if (alive()) error.value = formatErrorMessage(e);
   } finally {
-    working.value = false;
+    phase.value = null;
   }
-});
+}
+onMounted(load);
 
 function selectEntry(entry: ConflictEntry, event: MouseEvent) {
-  if (busy.value) return;
-  if (event.shiftKey && anchor) {
-    const start = conflicts.entries.findIndex((e) => e.path === anchor);
-    const end = conflicts.entries.findIndex((e) => e.path === entry.path);
+  if (!current() || busy.value || !loaded.value || event.altKey) return;
+  const start = conflicts.entries.findIndex((e) => e.path === anchor);
+  const end = conflicts.entries.findIndex((e) => e.path === entry.path);
+  if (event.shiftKey && start >= 0 && end >= 0) {
     conflicts.selected = conflicts.entries
       .slice(Math.min(start, end), Math.max(start, end) + 1)
       .map((e) => e.path);
@@ -76,31 +89,60 @@ function selectEntry(entry: ConflictEntry, event: MouseEvent) {
   }
 }
 
-async function run(action: () => Promise<unknown>) {
-  if (!current() || busy.value || !ready.value) return;
-  working.value = true;
+function toggleEntry(entry: ConflictEntry) {
+  if (current() && loaded.value && !busy.value) conflicts.toggleSelect(entry.path);
+}
+
+function rowKey(entry: ConflictEntry, event: KeyboardEvent) {
+  if (
+    event.target !== event.currentTarget ||
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.repeat ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.shiftKey
+  )
+    return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === "Enter") void mergeEntry(entry);
+  else toggleEntry(entry);
+}
+
+async function run(
+  kind: "open" | "write" | "continue",
+  action: (valid: () => boolean) => Promise<unknown>,
+) {
+  if (!current() || busy.value || !loaded.value) return;
+  const revision = visibilityRevision;
+  const valid = () => current() && revision === visibilityRevision;
+  phase.value = kind;
   error.value = null;
   try {
-    await action();
+    await action(valid);
   } catch (e) {
-    if (current()) error.value = formatErrorMessage(e);
+    if (valid()) error.value = formatErrorMessage(e);
   } finally {
-    working.value = false;
+    phase.value = null;
   }
 }
 
 async function mergeEntry(entry?: ConflictEntry) {
   if (!entry || entry.kind === "binary" || entry.kind === "submodule") return;
-  await run(async () => {
-    await conflicts.openMerge(entry);
-    if (current()) closeDialog(true, dialogId);
+  await run("open", async (valid) => {
+    const opened = await conflicts.openMerge(entry, valid);
+    if (opened && valid()) closeDialog(true, dialogId);
   });
 }
 
 async function continueAfter() {
-  await run(async () => {
+  if (conflicts.entries.length || !rewrite.opState || rewrite.opState.kind === "normal") return;
+  await run("continue", async (valid) => {
     const result = await rewrite.continueOp();
-    if (current() && result?.outcome !== "conflicts") closeDialog(true, dialogId);
+    if (valid() && result && result.outcome !== "conflicts") closeDialog(true, dialogId);
   });
 }
 </script>
@@ -125,9 +167,22 @@ async function continueAfter() {
           })
         }}
       </p>
-      <p v-if="error" role="alert" class="mt-2 text-xs text-destructive">{{ error }}</p>
-      <p v-if="!ready && working" role="status" class="mt-3 text-xs">{{ t("common.loading") }}</p>
-      <div v-if="ready" class="mt-3 min-h-0 flex-1 overflow-auto rounded border">
+      <p v-if="visibleError" role="alert" class="mt-2 text-xs text-destructive">
+        {{ visibleError }}
+      </p>
+      <Button
+        v-if="!loaded && visibleError"
+        size="sm"
+        variant="outline"
+        class="mt-2 self-start"
+        :disabled="busy"
+        @click="load"
+        >{{ t("merge.retryLoad") }}</Button
+      >
+      <p v-if="phase === 'load' || phase === 'open'" role="status" class="mt-3 text-xs">
+        {{ t("common.loading") }}
+      </p>
+      <div v-if="loaded" class="mt-3 min-h-0 flex-1 overflow-auto rounded border">
         <table class="w-full text-left text-xs">
           <thead class="sticky top-0 bg-muted">
             <tr>
@@ -148,8 +203,7 @@ async function continueAfter() {
               tabindex="0"
               @click="selectEntry(entry, $event)"
               @dblclick="mergeEntry(entry)"
-              @keydown.enter.prevent="mergeEntry(entry)"
-              @keydown.space.prevent="conflicts.toggleSelect(entry.path)"
+              @keydown="rowKey(entry, $event)"
             >
               <td class="px-2 py-1">
                 <input
@@ -159,7 +213,7 @@ async function continueAfter() {
                   :checked="conflicts.selected.includes(entry.path)"
                   @click.stop
                   @dblclick.stop
-                  @change="conflicts.toggleSelect(entry.path)"
+                  @change="toggleEntry(entry)"
                 />
               </td>
               <td class="px-2 py-1 font-mono">{{ entry.path }}</td>
@@ -178,15 +232,15 @@ async function continueAfter() {
           <Button
             size="sm"
             variant="outline"
-            :disabled="busy || !ready || !conflicts.selected.length"
-            @click="run(() => conflicts.acceptSide('ours', conflicts.selected))"
+            :disabled="busy || !loaded || !conflicts.selected.length"
+            @click="run('write', () => conflicts.acceptSide('ours', [...conflicts.selected]))"
             >{{ t("merge.acceptYours") }}</Button
           >
           <Button
             size="sm"
             variant="outline"
-            :disabled="busy || !ready || !conflicts.selected.length"
-            @click="run(() => conflicts.acceptSide('theirs', conflicts.selected))"
+            :disabled="busy || !loaded || !conflicts.selected.length"
+            @click="run('write', () => conflicts.acceptSide('theirs', [...conflicts.selected]))"
             >{{ t("merge.acceptTheirs") }}</Button
           >
           <Button
@@ -194,7 +248,7 @@ async function continueAfter() {
             variant="outline"
             :disabled="
               busy ||
-              !ready ||
+              !loaded ||
               !selectedEntry ||
               ['binary', 'submodule'].includes(selectedEntry.kind)
             "
@@ -204,15 +258,15 @@ async function continueAfter() {
           <Button
             size="sm"
             variant="secondary"
-            :disabled="busy || !ready || !conflicts.entries.length"
-            @click="run(() => conflicts.resolveSimple())"
+            :disabled="busy || !loaded || !conflicts.entries.length"
+            @click="run('write', () => conflicts.resolveSimple())"
             >{{ t("merge.resolveSimple") }}</Button
           >
         </div>
         <div class="flex gap-2">
           <Button
             v-if="
-              ready &&
+              loaded &&
               !conflicts.entries.length &&
               rewrite.opState &&
               rewrite.opState.kind !== 'normal'
@@ -224,7 +278,7 @@ async function continueAfter() {
               rewrite.opState.kind === "merge" ? t("merge.commitMerge") : t("merge.continue")
             }}</Button
           >
-          <Button variant="ghost" size="sm" :disabled="busy" @click="dismiss">{{
+          <Button variant="ghost" size="sm" :disabled="!canDismiss" @click="dismiss">{{
             t("common.close")
           }}</Button>
         </div>

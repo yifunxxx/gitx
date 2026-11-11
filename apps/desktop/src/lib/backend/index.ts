@@ -90,6 +90,7 @@ import type {
   InitRunReq,
   VcsEnableReq,
   RepoOpState,
+  SmartRestoreReq,
   RewriteResult,
   PathReq as RewritePathReq,
   MergeRunReq,
@@ -139,6 +140,8 @@ import type {
   ShelfRenameReq,
   ShelfImportReq,
   ShelfExportReq,
+  ShelfPreview,
+  ShelfPreviewReq,
   ShelfEntry,
   IgnoreAddReq,
   IgnoreSuggestReq,
@@ -248,6 +251,7 @@ export type Backend = {
   repoStateGet(req: RepoStateReq): Promise<RepoStateRes>;
   // M4
   repoOpStateGet(req: RewritePathReq): Promise<RepoOpState>;
+  smartRestoreChanges(req: SmartRestoreReq): Promise<null>;
   mergeRun(req: MergeRunReq): Promise<RewriteResult>;
   mergeAbort(req: RewritePathReq): Promise<RewriteResult>;
   mergeCommit(req: MergeCommitReq): Promise<RewriteResult>;
@@ -309,6 +313,7 @@ export type Backend = {
   shelfRename(req: ShelfRenameReq): Promise<ShelfEntry>;
   shelfImport(req: ShelfImportReq): Promise<ShelfEntry>;
   shelfExport(req: ShelfExportReq): Promise<PatchCreateResult>;
+  shelfPreview(req: ShelfPreviewReq): Promise<ShelfPreview>;
   ignoreAdd(req: IgnoreAddReq): Promise<IgnoreAddResult>;
   ignoreSuggestPatterns(req: IgnoreSuggestReq): Promise<string[]>;
   excludeOpen(req: ExcludePathReq): Promise<string>;
@@ -405,6 +410,7 @@ export const tauriBackend: Backend = {
   unshallowRun: (req) => commands.unshallowRun(req),
   repoStateGet: (req) => commands.repoStateGet(req),
   repoOpStateGet: (req) => commands.repoOpStateGet(req),
+  smartRestoreChanges: (req) => commands.smartRestoreChanges(req),
   mergeRun: (req) => commands.mergeRun(req),
   mergeAbort: (req) => commands.mergeAbort(req),
   mergeCommit: (req) => commands.mergeCommit(req),
@@ -464,6 +470,7 @@ export const tauriBackend: Backend = {
   shelfRename: (req) => commands.shelfRename(req),
   shelfImport: (req) => commands.shelfImport(req),
   shelfExport: (req) => commands.shelfExport(req),
+  shelfPreview: (req) => commands.shelfPreview(req),
   ignoreAdd: (req) => commands.ignoreAdd(req),
   ignoreSuggestPatterns: (req) => commands.ignoreSuggestPatterns(req),
   excludeOpen: (req) => commands.excludeOpen(req),

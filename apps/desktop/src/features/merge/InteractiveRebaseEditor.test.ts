@@ -1,18 +1,20 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
-import { reactive, shallowRef } from "vue";
+import { computed, reactive, shallowRef } from "vue";
 import InteractiveRebaseEditor from "./InteractiveRebaseEditor.vue";
 
 const mocks = vi.hoisted(() => ({
-  workspace: {} as { repoPath: string },
+  workspace: {} as any,
   rewrite: {} as any,
   dialog: {} as any,
+  stack: {} as any,
   close: vi.fn(),
 }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => mocks.rewrite }));
 vi.mock("@/composables/useDialog", () => ({
   useDialogState: () => mocks.dialog,
+  useDialogStack: () => mocks.stack,
   closeDialog: mocks.close,
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
@@ -45,8 +47,17 @@ const startButton = () =>
   wrapper!.findAll("button").find((b) => b.text() === "merge.startRebasing")!;
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.workspace = reactive({ repoPath: "A" });
+  mocks.workspace = reactive({
+    repoPath: "A",
+    repoId: "A",
+    isRepo: true,
+    navigation: 1,
+    navigationToken() {
+      return this.navigation;
+    },
+  });
   mocks.dialog = shallowRef({ id: 42 });
+  mocks.stack = computed(() => [mocks.dialog.value]);
   mocks.rewrite = reactive({
     busy: false,
     loadInteractivePlan: vi.fn().mockResolvedValue(plan()),
@@ -138,4 +149,29 @@ it("does not close a replacement dialog when an earlier operation finishes", asy
   pending.resolve({ outcome: "success" });
   await flushPromises();
   expect(mocks.close).not.toHaveBeenCalled();
+});
+
+it("invalidates the plan as soon as same-path navigation starts", async () => {
+  wrapper = mount(InteractiveRebaseEditor, { props: { fromSha: "1111111" } });
+  await flushPromises();
+  ++mocks.workspace.navigation;
+  await startButton().trigger("click");
+  expect(mocks.rewrite.startInteractive).not.toHaveBeenCalled();
+  expect(mocks.close).toHaveBeenCalledWith(false, 42);
+});
+
+it("can retry a failed plan load without changing its original source", async () => {
+  mocks.rewrite.loadInteractivePlan.mockRejectedValueOnce(new Error("load failed"));
+  wrapper = mount(InteractiveRebaseEditor, { props: { fromSha: "1111111" } });
+  await flushPromises();
+  await startButton().trigger("click");
+  expect(mocks.rewrite.startInteractive).not.toHaveBeenCalled();
+  await wrapper.setProps({ fromSha: "replacement" });
+  await wrapper
+    .findAll("button")
+    .find((b) => b.text() === "empty.retry")!
+    .trigger("click");
+  await flushPromises();
+  expect(mocks.rewrite.loadInteractivePlan).toHaveBeenLastCalledWith("1111111", false);
+  expect(wrapper.findAll("tbody tr")).toHaveLength(2);
 });

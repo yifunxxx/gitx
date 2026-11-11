@@ -993,6 +993,6 @@ mod tests {
             .iter()
             .flat_map(|b| b.result_lines.clone())
             .collect();
-        assert_eq!(result.concat(), "A\nb\nc\nD\n");
+        assert_eq!(result, vec!["A\n", "b\n", "c\n", "D\n"]);
     }
 }

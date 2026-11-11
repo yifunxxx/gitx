@@ -3,10 +3,15 @@ import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
 import { useConflictsStore } from "./conflictsStore";
 import type { ConflictEntry, Merge3Result } from "@/lib/backend";
-import { renderMergeResult } from "@/features/merge/mergeResult";
+import {
+  syncMergeText,
+  confirmManualRange,
+  mergeRanges,
+  pendingMergeCount,
+} from "@/features/merge/mergeDocument";
 
 const mocks = vi.hoisted(() => ({
-  ws: {} as { repoPath: string },
+  ws: {} as { repoPath: string; repoId: string; isRepo: boolean; navigationToken: () => number },
   backend: { conflictMerge3: vi.fn(), conflictSaveResult: vi.fn(), conflictsList: vi.fn() },
   changes: { refresh: vi.fn() },
   rewrite: { refreshOpState: vi.fn() },
@@ -56,6 +61,15 @@ const merge: Merge3Result = {
   ],
   conflictCount: 2,
 };
+function keepManual(store: ReturnType<typeof useConflictsStore>, id: string, text: string) {
+  const tab = store.mergeTabs.find((t) => t.id === id)!;
+  let state = syncMergeText(tab.mergeState, text);
+  for (const range of state.field(mergeRanges)) {
+    const spec = confirmManualRange(state, range.index);
+    if (spec) state = state.update(spec).state;
+  }
+  store.updateMergeState(id, state);
+}
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -66,7 +80,7 @@ const deferred = <T>() => {
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  mocks.ws = reactive({ repoPath: "A" });
+  mocks.ws = reactive({ repoPath: "A", repoId: "A", isRepo: true, navigationToken: () => 0 });
   mocks.backend.conflictMerge3.mockImplementation(async () => structuredClone(merge));
   mocks.backend.conflictsList.mockResolvedValue({ entries: [] });
 });
@@ -77,8 +91,8 @@ it("accepts individual identical conflicts without discarding hand edits, blank 
   const tab = store.mergeTabs[0]!;
   tab.resultText = tab.resultText.replace("prefix", "hand-edited");
   store.acceptBlock(tab.id, 2, "theirs");
-  expect(tab.resultText).toContain("<<<<<<< Yours (2)");
-  expect(tab.resultText).not.toContain("<<<<<<< Yours (3)");
+  expect(tab.resultText).toContain("base\ntheirs\n");
+  expect(pendingMergeCount(tab.mergeState)).toBe(1);
   store.acceptBlock(tab.id, 1, "ours");
   expect(tab.resultText).toBe("hand-edited\n\nours\ntheirs\ntail");
   await store.applyMergeResult(tab.id);
@@ -87,7 +101,6 @@ it("accepts individual identical conflicts without discarding hand edits, blank 
     filePath: "conflict.txt",
     content: "hand-edited\n\nours\ntheirs\ntail",
   });
-  expect(mocks.rewrite.refreshOpState).toHaveBeenCalledOnce();
   expect(store.mergeTabs).toEqual([]);
 });
 
@@ -101,13 +114,13 @@ it("does not overwrite a manually resolved block when its old accept button is c
   expect(tab.error).toBe("merge.manuallyEdited");
 });
 
-it("blocks unresolved markers and deduplicates saving after manual resolution", async () => {
+it("blocks pending decisions and deduplicates saving after explicit manual resolution", async () => {
   const store = useConflictsStore();
   await store.openMerge(entry);
   const tab = store.mergeTabs[0]!;
   expect(await store.applyMergeResult(tab.id)).toBe(false);
   expect(mocks.backend.conflictSaveResult).not.toHaveBeenCalled();
-  tab.resultText = "manual result";
+  keepManual(store, tab.id, "manual result");
   const pending = deferred<null>();
   mocks.backend.conflictSaveResult.mockReturnValueOnce(pending.promise);
   const saved = store.applyMergeResult(tab.id);
@@ -122,7 +135,7 @@ it("keeps the edited result available when saving fails", async () => {
   const store = useConflictsStore();
   await store.openMerge(entry);
   const tab = store.mergeTabs[0]!;
-  tab.resultText = "keep this draft";
+  keepManual(store, tab.id, "keep this draft");
   mocks.backend.conflictSaveResult.mockRejectedValueOnce(new Error("disk failure"));
   expect(await store.applyMergeResult(tab.id)).toBe(false);
   expect(store.mergeTabs[0]?.resultText).toBe("keep this draft");
@@ -134,31 +147,42 @@ it("ignores a completed save from an earlier A → B → A repository session", 
   const store = useConflictsStore();
   await store.openMerge(entry);
   const tab = store.mergeTabs[0]!;
-  tab.resultText = "old result";
+  keepManual(store, tab.id, "old result");
   const pending = deferred<null>();
   mocks.backend.conflictSaveResult.mockReturnValueOnce(pending.promise);
   const saved = store.applyMergeResult(tab.id);
   mocks.ws.repoPath = "B";
   mocks.ws.repoPath = "A";
-  await store.openMerge(entry);
-  store.mergeTabs[0]!.resultText = "new draft";
+  expect(store.busy).toBe(true);
+  expect(await store.openMerge(entry)).toBe(false);
+  mocks.backend.conflictsList.mockResolvedValueOnce({ entries: [entry] });
+  await store.refresh();
+  const currentList = store.list;
+  store.selected = [entry.path];
   pending.resolve(null);
-  await saved;
-  expect(store.mergeTabs[0]?.resultText).toBe("new draft");
-  expect(mocks.backend.conflictsList).not.toHaveBeenCalled();
+  expect(await saved).toBe(false);
+  expect(store.list).toBe(currentList);
+  expect(store.selected).toEqual([entry.path]);
+  expect(store.busy).toBe(false);
+  expect(mocks.backend.conflictsList).toHaveBeenCalledOnce();
+  await store.openMerge(entry);
+  expect(store.mergeTabs).toHaveLength(1);
+  expect(store.mergeTabs[0]?.saving).toBe(false);
 });
 
-it("renders complete non-conflicting tokens without changing CRLF, blanks or an empty result", () => {
-  expect(
-    renderMergeResult({
-      blocks: [{ ...conflict, kind: "onlyOurs", resultLines: ["one\r\n", "\r\n", "last"] }],
-      conflictCount: 0,
-    }),
-  ).toBe("one\r\n\r\nlast");
-  expect(
-    renderMergeResult({
-      blocks: [{ ...conflict, kind: "onlyTheirs", resultLines: [] }],
-      conflictCount: 0,
-    }),
-  ).toBe("");
+it("deduplicates opening and rejects stale merge results after A to B to A navigation", async () => {
+  const store = useConflictsStore();
+  const old = deferred<Merge3Result>();
+  mocks.backend.conflictMerge3.mockReturnValueOnce(old.promise);
+  const pending = store.openMerge(entry);
+  await store.openMerge(entry);
+  expect(mocks.backend.conflictMerge3).toHaveBeenCalledTimes(1);
+  mocks.ws.repoPath = "B";
+  mocks.ws.repoPath = "A";
+  await store.openMerge(entry);
+  const current = store.activeMergeId;
+  old.resolve(structuredClone(merge));
+  await pending;
+  expect(store.mergeTabs).toHaveLength(1);
+  expect(store.activeMergeId).toBe(current);
 });

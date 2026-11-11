@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use gitx_core::{AppError, ErrorCode, PatchCreateResult, ShelfEntry};
+use gitx_core::{AppError, ErrorCode, PatchCreateResult, ShelfEntry, ShelfPreview};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -76,6 +76,30 @@ pub struct ShelfExportReq {
     pub output: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfPreviewReq {
+    pub path: String,
+    pub id: String,
+    pub deleted: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn shelf_preview(
+    state: State<'_, AppState>,
+    req: ShelfPreviewReq,
+) -> Result<ShelfPreview, AppError> {
+    let git = state.git.read().await;
+    git.shelf_preview(
+        PathBuf::from(&req.path).as_path(),
+        &req.id,
+        req.deleted,
+        &CancellationToken::new(),
+    )
+    .await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn shelf_export(
@@ -104,6 +128,38 @@ async fn emit_cmd(app: &AppHandle, line: String) {
     );
 }
 
+async fn maintain_shelf(
+    state: &AppState,
+    path: &str,
+    git: &gitx_git::GitRunner,
+    cancel: &CancellationToken,
+) {
+    // Retention is a write even when triggered by list refresh. Share the repo
+    // scheduler with create/restore/unshelve and the cross-process Shelf lock.
+    let result = async {
+        if !git
+            .shelf_maintenance_is_due(std::path::Path::new(path), cancel)
+            .await?
+        {
+            return Ok(None);
+        }
+        let _permits = state
+            .scheduler
+            .acquire_repo_write(git, path, cancel)
+            .await?;
+        git.shelf_maintain_if_due(std::path::Path::new(path), cancel)
+            .await
+    }
+    .await;
+    match result {
+        Ok(Some(report)) => tracing::info!(?report, "Shelf maintenance completed"),
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(%error, "Shelf cleanup deferred; saved entries remain readable")
+        }
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn shelf_list(
@@ -113,6 +169,7 @@ pub async fn shelf_list(
     let cwd = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    maintain_shelf(&state, &req.path, &git, &cancel).await;
     git.shelf_list(&cwd, &cancel).await
 }
 
@@ -125,6 +182,7 @@ pub async fn shelf_list_deleted(
     let cwd = PathBuf::from(&req.path);
     let git = state.git.read().await;
     let cancel = CancellationToken::new();
+    maintain_shelf(&state, &req.path, &git, &cancel).await;
     git.shelf_list_deleted(&cwd, &cancel).await
 }
 

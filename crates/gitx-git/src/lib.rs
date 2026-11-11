@@ -24,6 +24,7 @@ mod rewrite_undo;
 mod runner;
 mod scheduler;
 mod shelf_export;
+mod shelf_maintenance;
 mod shelf_ops;
 mod smart_ops;
 mod stash_ops;
@@ -36,7 +37,7 @@ mod worktree_ops;
 
 pub use detect::{
     detect_git, ensure_windows_git_path, parse_wsl_unc_path, resolve_git_bin_for_path,
-    wsl_translate_path, GitDetectResult, MIN_GIT_VERSION,
+    test_git_executable, wsl_translate_path, GitDetectResult, MIN_GIT_VERSION,
 };
 pub use jobs::{JobEvent, JobManager, JobProgress, JobState};
 pub use ops::RawLogCommit;
@@ -44,5 +45,6 @@ pub use paths::resolve_git_path;
 pub use progress::ProgressParser;
 pub use runner::{helper_bin, GitInvocation, GitOutput, GitRunner, OpKind};
 pub use scheduler::RepoScheduler;
+pub use shelf_maintenance::ShelfMaintenanceReport;
 pub use status::parse_status_porcelain_v2;
 pub use stderr::StderrClassifier;

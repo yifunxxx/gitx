@@ -22,9 +22,8 @@ const activeId = ref(0);
 const profile = ref<TerminalShell>("default");
 const error = ref("");
 const menu = ref<{ key: number; x: number; y: number } | null>(null);
-const menuPanel = ref<HTMLElement | null>(null);
 const menuActions = ["copy", "paste", "selectAll", "clear"] as const;
-async function openMenu(event: MouseEvent | KeyboardEvent) {
+function openMenu(event: MouseEvent | KeyboardEvent) {
   if (event instanceof MouseEvent) markContextHandled(event);
   else {
     event.preventDefault();
@@ -38,8 +37,6 @@ async function openMenu(event: MouseEvent | KeyboardEvent) {
     x: event instanceof MouseEvent ? event.clientX : rect.left + 12,
     y: event instanceof MouseEvent ? event.clientY : rect.top + 12,
   };
-  await nextTick();
-  menuPanel.value?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
 }
 function closeMenu() {
   menu.value = null;
@@ -53,32 +50,6 @@ function menuAction(action: (typeof menuActions)[number]) {
   if (action === "paste") void paste(session);
   if (action === "selectAll") session.terminal.selectAll();
   if (action === "clear") session.terminal.clear();
-}
-function menuKey(event: KeyboardEvent) {
-  event.stopPropagation();
-  if (event.key === "Escape" || event.key === "Tab") {
-    event.preventDefault();
-    closeMenu();
-    return;
-  }
-  const items = Array.from(
-    menuPanel.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
-  );
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  const next =
-    event.key === "ArrowDown"
-      ? (index + 1) % items.length
-      : event.key === "ArrowUp"
-        ? (index + items.length - 1) % items.length
-        : event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? items.length - 1
-            : null;
-  if (next !== null) {
-    event.preventDefault();
-    items[next]?.focus();
-  }
 }
 const desktop = isTauri();
 const windows = navigator.userAgent.includes("Windows");
@@ -435,6 +406,7 @@ onBeforeUnmount(() => {
     </div>
     <div ref="host" data-terminal-host class="min-h-0 flex-1 overflow-hidden p-1" @contextmenu="openMenu" />
     <ContextMenuSurface
+      :label="t('toolWindows.terminal')"
       :open="!!menu"
       :anchor-x="menu?.x ?? 0"
       :anchor-y="menu?.y ?? 0"
@@ -442,7 +414,7 @@ onBeforeUnmount(() => {
       :estimated-height="136"
       @close="closeMenu"
     >
-      <div ref="menuPanel" role="menu" :aria-label="t('toolWindows.terminal')" @keydown="menuKey">
+      <div>
         <button
           v-for="action in menuActions"
           :key="action"

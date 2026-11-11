@@ -43,11 +43,14 @@ const preview = computed(() => {
   return `git ${opts.join(" ")}`;
 });
 
-onMounted(async () => {
+async function load() {
+  if (!current() || busy.value) return;
+  loading.value = true;
+  error.value = null;
   try {
     await branches.refresh();
     if (!current()) return;
-    const locals = otherBranches.value.map((b) => b.name);
+    const locals = branches.refs?.local.filter((b) => !b.isHead).map((b) => b.name) ?? [];
     if (locals[0]) selected.value = [locals[0]];
     loaded.value = true;
   } catch (reason) {
@@ -55,19 +58,12 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
-});
+}
+onMounted(load);
 const valid = computed(
   () =>
     loaded.value && selected.value.length > 0 && (!customMessage.value || !!message.value.trim()),
 );
-
-function toggleBranch(name: string) {
-  if (selected.value.includes(name)) {
-    selected.value = selected.value.filter((n) => n !== name);
-  } else {
-    selected.value = [...selected.value, name];
-  }
-}
 
 async function ok() {
   if (!valid.value || loading.value) return;
@@ -96,38 +92,44 @@ async function ok() {
     @keydown.esc.stop.prevent="dismiss"
   >
     <div
-      class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border bg-popover p-4 shadow-lg"
+      class="max-h-full w-full max-w-lg overflow-auto rounded-lg border bg-popover p-4 shadow-lg"
     >
       <h2 class="text-sm font-semibold">{{ t("merge.mergeTitle") }}</h2>
       <p class="mt-1 text-xs text-muted-foreground">{{ t("merge.mergeInto", { branch: head }) }}</p>
       <p v-if="error" role="alert" class="mt-2 text-xs text-destructive">{{ error }}</p>
       <p v-if="loading" class="mt-2 text-xs text-muted-foreground">{{ t("common.loading") }}</p>
-      <fieldset :disabled="busy || loading || !loaded" class="flex min-h-0 flex-1 flex-col">
+      <Button
+        v-if="error && !loaded"
+        size="sm"
+        variant="outline"
+        :disabled="loading"
+        @click="load"
+        >{{ t("empty.retry") }}</Button
+      >
+      <fieldset :disabled="busy || loading || !loaded">
         <VirtualList
-          class="mt-3 shrink-0 rounded border"
-          :style="{ height: `${Math.max(1, Math.min(otherBranches.length || 1, 8)) * 30}px` }"
+          class="mt-3 rounded border"
+          :style="{ height: `${Math.max(1, Math.min(otherBranches.length, 6)) * 30}px` }"
           :items="otherBranches"
           :item-height="30"
           :get-key="(b) => b.name"
         >
           <template #default="{ item: b }">
-            <button
-              type="button"
+            <label
               class="flex h-full w-full min-w-0 items-center gap-2 border-b px-2 text-left text-xs last:border-b-0 hover:bg-accent"
-              @click="toggleBranch(b.name)"
             >
-              <input type="checkbox" :checked="selected.includes(b.name)" readonly tabindex="-1" />
+              <input v-model="selected" type="checkbox" :value="b.name" />
               <span class="truncate font-mono" :title="b.name">{{ b.name }}</span>
-            </button>
+            </label>
           </template>
-          <template #footer>
-            <div
-              v-if="loaded && !otherBranches.length"
+          <template #footer
+            ><div
+              v-if="loaded && !branches.refs?.local.some((x) => !x.isHead)"
               class="p-3 text-xs text-muted-foreground"
             >
               {{ t("merge.noOtherBranches") }}
-            </div>
-          </template>
+            </div></template
+          >
         </VirtualList>
         <div class="mt-3 text-[11px] font-medium text-muted-foreground">
           {{ t("merge.options") }}

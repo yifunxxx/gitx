@@ -7,8 +7,31 @@ import { cloneJson } from "@/lib/clone";
 
 export const useSettingsStore = defineStore("settings", () => {
   let mediaQueryUnsub: (() => void) | null = null;
-  onScopeDispose(() => mediaQueryUnsub?.());
   const settings = ref<AppSettings | null>(null);
+  const previews = new Map<symbol, AppSettings>();
+  let saveQueue: Promise<unknown> = Promise.resolve();
+
+  function renderAppearance() {
+    const source = [...previews.values()].at(-1) ?? settings.value;
+    if (source) previewAppearance(source);
+  }
+
+  // A delayed save or an older dialog's cleanup must not overwrite a newer preview.
+  function beginAppearancePreview(initial: AppSettings) {
+    const id = Symbol("settings-preview");
+    previews.set(id, cloneJson(initial));
+    renderAppearance();
+    return {
+      update(next: AppSettings) {
+        if (!previews.has(id)) return;
+        previews.set(id, cloneJson(next));
+        renderAppearance();
+      },
+      end() {
+        if (previews.delete(id)) renderAppearance();
+      },
+    };
+  }
 
   function emptySettings(): AppSettings {
     return {
@@ -55,17 +78,19 @@ export const useSettingsStore = defineStore("settings", () => {
 
   async function load() {
     settings.value = await getBackend().settingsGet();
-    applyAppearance(settings.value);
-    applyLocale(settings.value.locale);
+    renderAppearance();
     watchSystemTheme();
   }
 
-  async function save(next: AppSettings) {
+  function save(next: AppSettings) {
     const plain = cloneJson(next);
-    settings.value = await getBackend().settingsSet(plain);
-    applyAppearance(settings.value);
-    applyLocale(settings.value.locale);
-    return settings.value;
+    const result = saveQueue.then(async () => {
+      settings.value = await getBackend().settingsSet(plain);
+      renderAppearance();
+      return settings.value;
+    });
+    saveQueue = result.catch(() => {});
+    return result;
   }
 
   function previewAppearance(next: AppSettings) {
@@ -94,14 +119,15 @@ export const useSettingsStore = defineStore("settings", () => {
   function watchSystemTheme() {
     mediaQueryUnsub?.();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      if (settings.value?.appearance.theme === "system") {
-        applyAppearance(settings.value);
-      }
-    };
+    const onChange = () => renderAppearance();
     mq.addEventListener("change", onChange);
     mediaQueryUnsub = () => mq.removeEventListener("change", onChange);
   }
+
+  onScopeDispose(() => {
+    mediaQueryUnsub?.();
+    previews.clear();
+  });
 
   async function setTheme(theme: "light" | "dark" | "system") {
     const base = cloneJson(settings.value ?? emptySettings());
@@ -129,6 +155,7 @@ export const useSettingsStore = defineStore("settings", () => {
     save,
     emptySettings,
     previewAppearance,
+    beginAppearancePreview,
     applyAppearance,
     applyLocale,
     setTheme,

@@ -33,6 +33,7 @@ beforeEach(() => {
     unshelve: vi.fn(),
     promptRenameShelf: vi.fn(),
     promptExportShelf: vi.fn(),
+    previewShelf: vi.fn(),
     deleteShelf: vi.fn(),
   });
 });
@@ -90,6 +91,7 @@ it("uses a stable active ID for context actions after reordering", async () => {
     "shelf.exportPatch",
     "shelf.rename",
     "shelf.delete",
+    "shelf.preview",
   ]);
   mocks.store.shelves.unshift(shelf("new"));
   await flushPromises();
@@ -121,12 +123,12 @@ it("exports through the toolbar and a context menu with a stable target", async 
   expect(document.activeElement).toBe(row.element);
 });
 
-it("offers only restore for deleted entries and restores focus on Escape", async () => {
+it("offers restore and preview for deleted entries and restores focus on Escape", async () => {
   const wrapper = create();
   const row = wrapper.findAll('[data-entry="deleted-shelf"]')[0]!;
   await row.trigger("keydown", { key: "F10", shiftKey: true });
   await flushPromises();
-  expect(menuItems().map((b) => b.textContent?.trim())).toEqual(["shelf.restore"]);
+  expect(menuItems().map((b) => b.textContent?.trim())).toEqual(["shelf.restore", "shelf.preview"]);
   expect(document.activeElement).toBe(menuItems()[0]);
   menuItems()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await flushPromises();
@@ -147,11 +149,11 @@ it("navigates menu actions and restores focus on Tab", async () => {
   const press = (key: string) =>
     document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
   press("End");
-  expect(document.activeElement).toBe(menuItems()[3]);
+  expect(document.activeElement).toBe(menuItems().at(-1));
   press("ArrowDown");
   expect(document.activeElement).toBe(menuItems()[0]);
   press("ArrowUp");
-  expect(document.activeElement).toBe(menuItems()[3]);
+  expect(document.activeElement).toBe(menuItems().at(-1));
   press("Home");
   expect(document.activeElement).toBe(menuItems()[0]);
   press("Tab");
@@ -209,6 +211,61 @@ it("guards busy actions and limits F2/Delete to active entries", async () => {
   await row.trigger("keydown", { key: "Delete" });
   expect(mocks.store.promptRenameShelf).toHaveBeenCalledExactlyOnceWith("first");
   expect(mocks.store.deleteShelf).toHaveBeenCalledExactlyOnceWith("first");
+});
+
+it.each(["ctrlKey", "altKey", "metaKey", "shiftKey", "isComposing"])(
+  "does not consume shelf row shortcuts with %s",
+  async (modifier) => {
+    const wrapper = create();
+    for (const section of ["shelf", "deleted-shelf"]) {
+      const row = wrapper.findAll(`[data-entry="${section}"]`)[0]!;
+      await row.trigger("click");
+      const selection = [mocks.store.selectedShelfId, mocks.store.selectedDeletedShelfId];
+      for (const key of [
+        "Delete",
+        "F2",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Home",
+        "End",
+        "ContextMenu",
+      ]) {
+        const event = new KeyboardEvent("keydown", {
+          key,
+          [modifier]: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        row.element.dispatchEvent(event);
+        await flushPromises();
+        expect(mocks.store.deleteShelf).not.toHaveBeenCalled();
+        expect(mocks.store.promptRenameShelf).not.toHaveBeenCalled();
+        expect([mocks.store.selectedShelfId, mocks.store.selectedDeletedShelfId]).toEqual(
+          selection,
+        );
+        expect(row.attributes("aria-expanded")).toBe("false");
+        expect(menuItems()).toHaveLength(0);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      if (modifier !== "shiftKey") {
+        await row.trigger("keydown", { key: "F10", shiftKey: true, [modifier]: true });
+        await flushPromises();
+        expect(menuItems()).toHaveLength(0);
+      }
+    }
+  },
+);
+
+it("does not repeatedly open the shelf context menu", async () => {
+  const wrapper = create();
+  const row = wrapper.findAll('[data-entry="shelf"]')[0]!;
+  for (const shortcut of [{ key: "ContextMenu" }, { key: "F10", shiftKey: true }]) {
+    await row.trigger("keydown", { ...shortcut, repeat: true });
+    await flushPromises();
+    expect(menuItems()).toHaveLength(0);
+  }
 });
 
 it("focuses the restored active entry", async () => {
@@ -334,4 +391,27 @@ it("bounds thousands of shelves and keeps offscreen navigation, expansion and me
   await wrapper.get('[data-shelf-id="entry-0"]').trigger("keydown", { key: "End" });
   await flushPromises();
   expect(wrapper.get('[data-shelf-id="entry-4999"]').attributes("aria-expanded")).toBe("true");
+});
+it.each(['shelf', 'deleted-shelf'] as const)('previews %s using a stable menu target, F4, double click and toolbar', async (section) => {
+  const wrapper = create();
+  const row = wrapper.findAll(`[data-entry="${section}"]`)[0]!;
+  const id = section === 'shelf' ? 'first' : 'deleted';
+  const deleted = section !== 'shelf';
+  await row.trigger('click');
+  await wrapper.findAll('button').find(b => b.text() === 'shelf.preview')!.trigger('click');
+  expect(mocks.store.previewShelf).toHaveBeenLastCalledWith(...(deleted ? [id, true] : [id]));
+  await row.trigger('dblclick');
+  await row.trigger('keydown', { key: 'F4' });
+  expect(mocks.store.previewShelf).toHaveBeenCalledTimes(3);
+  expect(mocks.store.previewShelf).toHaveBeenLastCalledWith(id, deleted);
+  await row.trigger('keydown', { key: 'F4', ctrlKey: true });
+  await row.trigger('keydown', { key: 'F4', shiftKey: true });
+  await row.trigger('keydown', { key: 'F4', repeat: true });
+  expect(mocks.store.previewShelf).toHaveBeenCalledTimes(3);
+  await row.trigger('contextmenu'); await flushPromises();
+  mocks.store.selectedShelfId = 'third';
+  menuItems().find(b => b.textContent?.trim() === 'shelf.preview')!.click(); await flushPromises();
+  expect(mocks.store.previewShelf).toHaveBeenLastCalledWith(id, deleted);
+  expect(mocks.store.unshelve).not.toHaveBeenCalled();
+  expect(mocks.store.restoreShelf).not.toHaveBeenCalled();
 });

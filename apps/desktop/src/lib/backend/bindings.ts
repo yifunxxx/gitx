@@ -242,6 +242,9 @@ export const commands = {
   async repoStateGet(req: RepoStateReq): Promise<RepoStateRes> {
     return await TAURI_INVOKE("repo_state_get", { req });
   },
+  async smartRestoreChanges(req: SmartRestoreReq): Promise<null> {
+    return await TAURI_INVOKE("smart_restore_changes", { req });
+  },
   async repoOpStateGet(req: PathReq): Promise<RepoOpState> {
     return await TAURI_INVOKE("repo_op_state_get", { req });
   },
@@ -418,6 +421,9 @@ export const commands = {
   },
   async shelfExport(req: ShelfExportReq): Promise<PatchCreateResult> {
     return await TAURI_INVOKE("shelf_export", { req });
+  },
+  async shelfPreview(req: ShelfPreviewReq): Promise<ShelfPreview> {
+    return await TAURI_INVOKE("shelf_preview", { req });
   },
   async shelfImport(req: ShelfImportReq): Promise<ShelfEntry> {
     return await TAURI_INVOKE("shelf_import", { req });
@@ -691,7 +697,7 @@ export type CommitDetails = {
   body: string;
   refs: string[];
 };
-export type CommitResult = { sha: string; subject: string; amended: boolean };
+export type CommitResult = { warning?: string | null; sha: string; subject: string; amended: boolean };
 /**
  * Commit tool window presentation (#69). Modal is deferred (#139).
  */
@@ -1379,6 +1385,7 @@ export type RepoOpPhase =
   | "readyToContinue"
   | "stoppedForEdit";
 export type RepoOpState = {
+  smartRecovery?: SmartRecovery | null;
   kind: RepoOpKind;
   phase: RepoOpPhase;
   step: number | null;
@@ -1434,6 +1441,7 @@ export type RewriteOutcome =
   | "fastForward"
   | "conflicts"
   | "nothingToCommit";
+export type RewritePathReq = { path: string };
 export type RewriteResult = {
   oldHead: string;
   newHead: string;
@@ -1466,9 +1474,17 @@ export type ShelfExportReq = { path: string; id: string; output: string };
 export type ShelfIdReq = { path: string; id: string };
 export type ShelfImportReq = { path: string; patchFile: string; message: string };
 export type ShelfPathReq = { path: string };
+export type ShelfPreview = { entry: ShelfEntry; patch: string; truncated: boolean; lossy: boolean };
+
+export type ShelfPreviewReq = { path: string; id: string; deleted: boolean };
+
 export type ShelfRenameReq = { path: string; id: string; message: string };
 export type ShelfUnshelveReq = { path: string; id: string; removeApplied?: boolean };
 export type ShelfUnshelveResult = { applied: string[]; failed: string[] };
+export type SmartRecovery = { sha: string; operation: string; phase: string; canRestore: boolean; pendingCommit: boolean };
+
+export type SmartRestoreReq = { path: string; sha: string };
+
 export type SquashCommitsReq = { path: string; shas: string[]; message: string };
 export type StashBranchReq = { path: string; branch: string; stashRef: string };
 export type StashCreateReq = {

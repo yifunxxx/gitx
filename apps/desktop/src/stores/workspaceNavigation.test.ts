@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
+import { watch } from "vue";
 import { useWorkspaceStore } from "./workspaceStore";
 
 const backend = vi.hoisted(() => ({
@@ -25,6 +26,21 @@ beforeEach(() => {
   setActivePinia(createPinia());
   backend.workspaceOpen.mockImplementation(({ path }) => Promise.resolve(opened(path)));
   backend.workspaceRecent.mockResolvedValue({ paths: [] });
+});
+
+it("notifies menu guards as soon as navigation starts, even when reopening the same path", async () => {
+  const store = useWorkspaceStore();
+  await store.openFolder("A");
+  const pending = deferred();
+  backend.workspaceOpen.mockReturnValueOnce(pending.promise);
+  const invalidated = vi.fn();
+  const stop = watch(() => store.navigationToken(), invalidated, { flush: "sync" });
+  const reopen = store.openFolder("A");
+  expect(invalidated).toHaveBeenCalledOnce();
+  expect(store.repoPath).toBe("A");
+  pending.resolve(opened("A"));
+  await reopen;
+  stop();
 });
 
 it("keeps the latest folder when an earlier open finishes later", async () => {

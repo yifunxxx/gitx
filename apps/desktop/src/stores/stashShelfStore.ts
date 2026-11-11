@@ -16,6 +16,7 @@ import { isTauri } from "@/lib/utils";
 
 const StashDialog = defineAsyncComponent(() => import("@/features/stash/CreateStashDialog.vue"));
 const ShelfDialog = defineAsyncComponent(() => import("@/features/stash/CreateShelfDialog.vue"));
+const ShelfPreviewDialog = defineAsyncComponent(() => import("@/features/stash/ShelfPreviewDialog.vue"));
 const t = (key: string, args = {}) => i18n.global.t(key, args);
 
 export const useStashShelfStore = defineStore("stashShelf", () => {
@@ -28,6 +29,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
   const selectedShelfId = ref<string | null>(null);
   const selectedDeletedShelfId = ref<string | null>(null);
   const showDeleted = ref(false);
+  let previewOpen = false;
   let refreshGeneration = 0;
   let repositoryGeneration = 0;
   const pendingPaths = ref(new Set<string>());
@@ -100,6 +102,20 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     deletedShelves.value = [];
     selectedDeletedShelfId.value = null;
     await refresh();
+  }
+
+  async function previewShelf(id: string, deleted = false) {
+    const path = workspace.repoPath;
+    const entry = (deleted ? deletedShelves.value : shelves.value).find((s) => s.id === id);
+    if (!path || !workspace.isRepo || !entry || previewOpen || (deleted && !showDeleted.value)) return;
+    previewOpen = true;
+    try {
+      await openDialog(ShelfPreviewDialog, {
+        path, id, deleted, message: entry.message, navigation: workspace.navigationToken(),
+      });
+    } finally {
+      previewOpen = false;
+    }
   }
 
   async function restoreShelf(id: string) {
@@ -403,6 +419,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     showDeleted,
     setShowDeleted,
     restoreShelf,
+    previewShelf,
     combineTab,
     refresh,
     stashRefOf,

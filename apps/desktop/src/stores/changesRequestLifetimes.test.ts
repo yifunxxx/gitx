@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
     changelistCreate: vi.fn(),
     changelistMove: vi.fn(),
     changelistSetActive: vi.fn(),
+    ignoreSuggestPatterns: vi.fn(),
+    ignoreAdd: vi.fn(),
   },
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks.backend }));
@@ -46,6 +48,17 @@ beforeEach(() => {
   });
   mocks.settings = reactive({ settings: { stagingMode: false }, load: vi.fn() });
   mocks.backend.changelistList.mockResolvedValue(lists("default"));
+});
+
+it("does not write ignore rules after navigation while suggestions are loading", async () => {
+  const suggestions = deferred<string[]>();
+  mocks.backend.ignoreSuggestPatterns.mockReturnValue(suggestions.promise);
+  const store = useChangesStore();
+  const pending = store.ignore(["a.txt"]);
+  mocks.ws.generation += 2;
+  suggestions.resolve(["a.txt"]);
+  await pending;
+  expect(mocks.backend.ignoreAdd).not.toHaveBeenCalled();
 });
 
 it.each(["create", "move", "active"])(

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import { closeDialog, openDialog, useDialogState } from "@/composables/useDialog";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { formatErrorMessage } from "@/lib/errors";
+import { useRewriteDialog } from "./useRewriteDialog";
 import InteractiveRebaseEditor from "@/features/merge/InteractiveRebaseEditor.vue";
 
 const branches = useBranchesStore();
@@ -15,22 +15,7 @@ const workspace = useWorkspaceStore();
 const { t } = useI18n();
 const dialog = useDialogState();
 const dialogId = dialog.value?.id;
-const path = workspace.repoPath;
-let disposed = false;
-let invalidated = false;
-const current = () =>
-  !disposed && !invalidated && workspace.repoPath === path && dialog.value?.id === dialogId;
-watch(
-  () => workspace.repoPath,
-  () => {
-    invalidated = true;
-    if (!disposed) closeDialog(false, dialogId);
-  },
-  { flush: "sync" },
-);
-onUnmounted(() => {
-  disposed = true;
-});
+const { busy, error, current, dismiss, showError, submit } = useRewriteDialog();
 
 const upstream = ref("");
 const onto = ref("");
@@ -43,9 +28,7 @@ const updateRefs = ref(false);
 const autosquash = ref(false);
 const interactive = ref(false);
 const loading = ref(true);
-const working = ref(false);
-const error = ref<string | null>(null);
-const busy = computed(() => working.value || rewrite.busy);
+const loaded = ref(false);
 const valid = computed(
   () => (root.value || upstream.value.trim()) && (!useOnto.value || onto.value.trim()),
 );
@@ -65,26 +48,27 @@ const preview = computed(() => {
   return "git " + opts.join(" ");
 });
 
-onMounted(async () => {
+async function load() {
+  if (!current() || busy.value) return;
+  loading.value = true;
+  error.value = null;
   try {
     await branches.refresh();
     if (!current()) return;
     const locals = branches.refs?.local.filter((b) => !b.isHead).map((b) => b.name) ?? [];
     const remotes = branches.refs?.remote.map((b) => b.name) ?? [];
     if (!upstream.value) upstream.value = remotes[0] ?? locals[0] ?? "main";
+    loaded.value = true;
   } catch (e) {
-    if (current()) error.value = formatErrorMessage(e);
+    showError(e);
   } finally {
     loading.value = false;
   }
-});
-
-function dismiss() {
-  if (current() && !busy.value) closeDialog(false, dialogId);
 }
+onMounted(load);
 
 async function ok() {
-  if (!valid.value || loading.value || busy.value || !current()) return;
+  if (!loaded.value || !valid.value || loading.value || busy.value || !current()) return;
   if (interactive.value) {
     closeDialog(false, dialogId);
     void openDialog(InteractiveRebaseEditor, {
@@ -96,10 +80,8 @@ async function ok() {
     });
     return;
   }
-  working.value = true;
-  error.value = null;
-  try {
-    const result = await rewrite.rebase({
+  await submit(() =>
+    rewrite.rebase({
       upstream: upstream.value.trim(),
       onto: useOnto.value ? onto.value.trim() : null,
       branch: switchBranch.value.trim() || null,
@@ -109,13 +91,8 @@ async function ok() {
       updateRefs: updateRefs.value,
       autosquash: autosquash.value,
       interactive: false,
-    });
-    if (result && current()) closeDialog(true, dialogId);
-  } catch (e) {
-    if (current()) error.value = formatErrorMessage(e);
-  } finally {
-    working.value = false;
-  }
+    }),
+  );
 }
 </script>
 
@@ -136,7 +113,15 @@ async function ok() {
         {{ t("merge.currentBranch", { branch: head }) }}
       </p>
       <p v-if="error" role="alert" class="mt-2 text-xs text-destructive">{{ error }}</p>
-      <fieldset :disabled="busy" class="mt-3 grid gap-2">
+      <Button
+        v-if="error && !loaded"
+        size="sm"
+        variant="outline"
+        :disabled="loading"
+        @click="load"
+        >{{ t("empty.retry") }}</Button
+      >
+      <fieldset :disabled="busy || loading || !loaded" class="mt-3 grid gap-2">
         <label class="text-[11px] text-muted-foreground"
           >{{ t("merge.upstream") }}
           <input
@@ -201,7 +186,7 @@ async function ok() {
         <Button variant="ghost" size="sm" :disabled="busy" @click="dismiss">{{
           t("common.cancel")
         }}</Button>
-        <Button size="sm" :disabled="!valid || loading || busy" @click="ok">{{
+        <Button size="sm" :disabled="!loaded || !valid || loading || busy" @click="ok">{{
           interactive ? t("merge.editPlan") : t("merge.rebaseTitle")
         }}</Button>
       </div>

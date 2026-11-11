@@ -6,12 +6,6 @@ import { Pane, Splitpanes } from "splitpanes";
 import { Eye, Filter, List, ListTree, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useCompareStore } from "@/stores/compareStore";
-import { useHistoryStore } from "@/stores/historyStore";
-import { useRepoAtRevStore } from "@/stores/repoAtRevStore";
-import { useDiffStore } from "@/stores/diffStore";
-import { useLayoutStore } from "@/stores/layoutStore";
-import { useRewriteStore } from "@/stores/rewriteStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
@@ -22,11 +16,11 @@ import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
 import type { FileChangeKind, LogListMode } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
-import { confirmDialog } from "@/composables/useConfirm";
 import { markContextHandled } from "@/lib/contextMenu";
-import { captureRewriteContext } from "@/features/merge/rewriteContext";
 import { formatErrorMessage } from "@/lib/errors";
 import { cloneJson } from "@/lib/clone";
+import { useRepositoryAction } from "@/composables/useRepositoryAction";
+import { useLogContextMenus } from "./useLogContextMenus";
 import {
   Select,
   SelectContent,
@@ -49,13 +43,43 @@ import { timedSync } from "@/lib/longTaskLog";
 const { t } = useI18n();
 const log = useLogStore();
 const workspace = useWorkspaceStore();
-const compare = useCompareStore();
-const history = useHistoryStore();
-const repoAtRev = useRepoAtRevStore();
-const diffs = useDiffStore();
-const layout = useLayoutStore();
-const rewrite = useRewriteStore();
 const settings = useSettingsStore();
+
+const {
+  ctx,
+  fileCtx,
+  target,
+  fileTarget,
+  selectedFile,
+  fileList,
+  selectFile,
+  openContext,
+  onFileContext,
+  closeCtx,
+  closeFileCtx,
+  closeMenus,
+  canRun,
+  runMenu,
+  openChangedFile,
+  ctxCopy,
+  ctxCompareLocal,
+  ctxCompareVersions,
+  ctxRepoAtRev,
+  ctxCombined,
+  openCommitChanges,
+  fileDiff,
+  fileHistory,
+  ctxCherryPick,
+  ctxRevert,
+  ctxUncommit,
+  ctxReword,
+  ctxInteractive,
+  ctxReset,
+  ctxSquash,
+  ctxDrop,
+  ctxExtract,
+} = useLogContextMenus();
+const captureAction = useRepositoryAction();
 
 const ROW_H = 22;
 const textDraft = ref("");
@@ -66,7 +90,6 @@ const datePreset = computed(() =>
   log.filters.since === "24.hours" ? "24h" : log.filters.since === "7.days" ? "7d" : "all",
 );
 const selectedSet = computed(() => new Set(log.selectedShas));
-const ctx = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
 
 onMounted(() => {
   if (workspace.isRepo) void log.load(true);
@@ -257,10 +280,11 @@ watch(
 );
 
 async function selectCommit(sha: string, multi = false, range = false) {
+  const source = captureAction();
   try {
     await log.select(sha, multi, range);
   } catch (error) {
-    toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+    if (source.current()) toast({ title: t("log.failed"), description: formatErrorMessage(error) });
   }
 }
 
@@ -293,6 +317,10 @@ async function onCommitKeydown(sha: string, event: KeyboardEvent) {
     event.preventDefault();
     target = log.commits.findIndex((commit) => commit.parents.includes(sha));
     if (target < 0) return;
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    if (!event.repeat && !event.shiftKey) await openCommitChanges(sha);
+    return;
   } else return;
   event.preventDefault();
   const commit = log.commits[Math.max(0, Math.min(log.commits.length - 1, target))];
@@ -362,182 +390,12 @@ function onCommitClick(sha: string, e: MouseEvent) {
 function onCommitContext(sha: string, e: MouseEvent) {
   markContextHandled(e);
   if (!log.selectedShas.includes(sha)) void selectCommit(sha);
-  // Placement (flip / clamp / scroll) handled by ContextMenuSurface.
-  ctx.value = { open: true, x: e.clientX, y: e.clientY };
-}
-
-function closeCtx() {
-  ctx.value = { ...ctx.value, open: false };
-}
-
-async function ctxCopy() {
-  log.copySelectedSha();
-  toast({ title: t("log.copiedRevision") });
-  closeCtx();
-}
-
-async function ctxCompareLocal() {
-  if (!log.selectedSha) return;
-  await compare.compareWithLocal(log.selectedSha);
-  closeCtx();
-}
-
-async function ctxCompareVersions() {
-  if (log.selectedShas.length < 2) {
-    toast({ title: t("log.selectTwoCommits") });
-    return;
-  }
-  await compare.compareVersions(log.selectedShas[0]!, log.selectedShas[1]!);
-  layout.bottomMaximized = false;
-  closeCtx();
-}
-
-async function ctxRepoAtRev() {
-  if (!log.selectedSha) return;
-  await repoAtRev.open(log.selectedSha);
-  layout.bottomMaximized = false;
-  closeCtx();
-}
-
-async function ctxCombined() {
-  if (!log.selectedSha) return;
-  const tab = await (async () => {
-    await compare.compareVersions(log.selectedSha!, `${log.selectedSha}^`);
-    const t = compare.tabs.find((x) => x.left === log.selectedSha || x.right === log.selectedSha);
-    if (t) await compare.showCombined(t);
-    return t;
-  })();
-  if (tab) {
-    layout.activeEditorKind = "compare";
-    layout.bottomMaximized = false;
-  }
-  closeCtx();
-}
-
-async function openChangedFile(path: string, origPath: string | null) {
-  if (!log.selectedSha) return;
-  await diffs.openRevDiff(path, `${log.selectedSha}^`, log.selectedSha, origPath ?? undefined);
-  layout.activeEditorKind = "diff";
-  layout.bottomMaximized = false;
-}
-
-async function showFileHistory(path: string) {
-  await history.openFileHistory(path);
-  layout.bottomMaximized = false;
-}
-
-async function ctxCherryPick() {
-  const shas = log.selectedShas.length
-    ? [...log.selectedShas]
-    : log.selectedSha
-      ? [log.selectedSha]
-      : [];
-  if (!shas.length) return;
-  closeCtx();
-  await rewrite.cherryPick({ shas });
-}
-
-async function ctxReword() {
-  if (!log.selectedSha) return;
-  const sha = log.selectedSha;
-  const current = captureRewriteContext();
-  closeCtx();
-  const { openDialog } = await import("@/composables/useDialog");
-  const RewordDialog = (await import("@/features/merge/RewordDialog.vue")).default;
-  if (current()) await openDialog(RewordDialog, { sha });
-}
-
-async function ctxInteractive() {
-  if (!log.selectedSha) return;
-  const fromSha = log.selectedSha;
-  const current = captureRewriteContext();
-  closeCtx();
-  const { openDialog } = await import("@/composables/useDialog");
-  const InteractiveRebaseEditor = (await import("@/features/merge/InteractiveRebaseEditor.vue"))
-    .default;
-  if (current()) await openDialog(InteractiveRebaseEditor, { fromSha });
-}
-
-async function ctxReset() {
-  if (!log.selectedSha) return;
-  const target = log.selectedSha;
-  const current = captureRewriteContext();
-  closeCtx();
-  const { openDialog } = await import("@/composables/useDialog");
-  const ResetDialog = (await import("@/features/merge/ResetDialog.vue")).default;
-  if (current()) await openDialog(ResetDialog, { target });
-}
-
-async function ctxRevert() {
-  const shas = log.selectedShas.length
-    ? [...log.selectedShas]
-    : log.selectedSha
-      ? [log.selectedSha]
-      : [];
-  if (!shas.length) return;
-  closeCtx();
-  await rewrite.revert(shas);
-}
-
-async function ctxDrop() {
-  const current = captureRewriteContext();
-  const shas = log.selectedShas.length
-    ? [...log.selectedShas]
-    : log.selectedSha
-      ? [log.selectedSha]
-      : [];
-  if (!shas.length) return;
-  closeCtx();
-  const ok = await confirmDialog({
-    title: t("actions.dropCommits"),
-    message: t("log.dropConfirm", { count: shas.length }),
-    destructive: true,
-  });
-  if (!ok || !current()) return;
-  await rewrite.drop(shas);
-}
-
-async function ctxSquash() {
-  const current = captureRewriteContext();
-  const shas = log.selectedShas.length ? [...log.selectedShas] : [];
-  if (shas.length < 2) {
-    toast({ title: t("log.selectTwoOrMore") });
-    return;
-  }
-  closeCtx();
-  const { openDialog } = await import("@/composables/useDialog");
-  const SquashDialog = (await import("@/features/merge/SquashDialog.vue")).default;
-  if (current()) await openDialog(SquashDialog, { shas });
-}
-
-async function ctxUncommit() {
-  closeCtx();
-  await rewrite.uncommit();
-}
-
-async function ctxPartialChanges(mode: "extract" | "drop", initialPaths?: string[]) {
-  if (!log.selectedSha) return;
-  const commit = log.selectedSha;
-  const current = captureRewriteContext();
-  closeCtx();
-  const { openDialog } = await import("@/composables/useDialog");
-  const PartialChangesDialog = (await import("@/features/merge/PartialChangesDialog.vue")).default;
-  if (current()) await openDialog(PartialChangesDialog, { commit, mode, initialPaths });
-}
-
-async function runRewriteAction(action: () => Promise<void>) {
-  if (rewrite.busy) return;
-  const current = captureRewriteContext();
-  try {
-    await action();
-  } catch (error) {
-    if (current()) toast({ title: formatErrorMessage(error) });
-  }
+  openContext(sha, e.clientX, e.clientY);
 }
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-background" @click="closeCtx">
+  <div class="flex h-full min-h-0 flex-col bg-background" @click="closeMenus">
     <EmptyState
       v-if="!workspace.isRepo"
       :title="t('log.noRepoTitle')"
@@ -841,6 +699,7 @@ async function runRewriteAction(action: () => Promise<void>) {
                           : 'hover:bg-hover-surface'
                       "
                       @click="onCommitClick(c.sha, $event)"
+                      @dblclick="openCommitChanges(c.sha)"
                       @contextmenu="onCommitContext(c.sha, $event)"
                     >
                       <span class="flex h-full min-w-0 items-center justify-start overflow-hidden">
@@ -934,6 +793,7 @@ async function runRewriteAction(action: () => Promise<void>) {
                           : 'hover:bg-hover-surface'
                       "
                       @click="onCommitClick(row.commit.sha, $event)"
+                      @dblclick="openCommitChanges(row.commit.sha)"
                       @contextmenu="onCommitContext(row.commit.sha, $event)"
                     >
                       <span class="flex min-w-0 items-center gap-1 truncate">
@@ -986,11 +846,15 @@ async function runRewriteAction(action: () => Promise<void>) {
                       {{ t("log.changedFiles") }}
                     </div>
                     <PathTreeList
-                      :files="log.changedFiles"
+                      v-for="source in fileList ? [fileList] : []"
+                      :key="source.id"
+                      :files="source.files"
+                      :selected-path="selectedFile?.path"
+                      @select="selectFile"
                       :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
                       empty-text=""
-                      @open="(f) => openChangedFile(f.path, f.origPath)"
-                      @context="({ file }) => showFileHistory(file.path)"
+                      @open="(file) => openChangedFile(source, file)"
+                      @context="(payload) => onFileContext(source, payload)"
                     />
                   </div>
                 </Pane>
@@ -1026,6 +890,8 @@ async function runRewriteAction(action: () => Promise<void>) {
     </template>
 
     <ContextMenuSurface
+      v-for="menu in target ? [target] : []"
+      :key="menu.id"
       :open="ctx.open"
       :anchor-x="ctx.x"
       :anchor-y="ctx.y"
@@ -1034,109 +900,167 @@ async function runRewriteAction(action: () => Promise<void>) {
       @close="closeCtx"
     >
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxCopy"
+        :disabled="!canRun(menu, 'any')"
+        @click="runMenu(menu, ctxCopy, 'any')"
       >
         {{ t("log.copyRevision") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxCherryPick)"
+        :disabled="!canRun(menu, 'write')"
+        @click="runMenu(menu, ctxCherryPick, 'write')"
       >
         {{ t("actions.cherryPick") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxReword)"
+        :disabled="!canRun(menu, 'singleWrite')"
+        @click="runMenu(menu, ctxReword, 'singleWrite')"
       >
         {{ t("actions.reword") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxInteractive)"
+        :disabled="!canRun(menu, 'singleWrite')"
+        @click="runMenu(menu, ctxInteractive, 'singleWrite')"
       >
         {{ t("actions.interactiveRebase") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxSquash)"
+        :disabled="!canRun(menu, 'squash')"
+        @click="runMenu(menu, ctxSquash, 'squash')"
       >
         {{ t("actions.squash") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxDrop)"
+        :disabled="!canRun(menu, 'write')"
+        @click="runMenu(menu, ctxDrop, 'write')"
       >
         {{ t("actions.dropCommits") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxUncommit)"
+        :disabled="!canRun(menu, 'uncommit')"
+        @click="runMenu(menu, ctxUncommit, 'uncommit')"
       >
         {{ t("actions.uncommit") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxRevert)"
+        :disabled="!canRun(menu, 'write')"
+        @click="runMenu(menu, ctxRevert, 'write')"
       >
         {{ t("actions.revert") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(ctxReset)"
+        :disabled="!canRun(menu, 'singleWrite')"
+        @click="runMenu(menu, ctxReset, 'singleWrite')"
       >
         {{ t("actions.reset") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(() => ctxPartialChanges('extract'))"
+        :disabled="!canRun(menu, 'extract')"
+        @click="runMenu(menu, ctxExtract, 'extract')"
       >
         {{ t("actions.extractSelected") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="runRewriteAction(() => ctxPartialChanges('drop'))"
-      >
-        {{ t("actions.dropSelected") }}
-      </button>
-      <button
-        type="button"
-        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxCompareLocal"
+        :disabled="!canRun(menu, 'single')"
+        @click="runMenu(menu, ctxCompareLocal, 'single')"
       >
         {{ t("history.compareWithLocal") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxCompareVersions"
+        :disabled="!canRun(menu, 'pair')"
+        @click="runMenu(menu, ctxCompareVersions, 'pair')"
       >
         {{ t("history.compareVersions") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxCombined"
+        :disabled="!canRun(menu, 'single')"
+        @click="runMenu(menu, ctxCombined, 'single')"
       >
         {{ t("history.showAllChanges") }}
       </button>
       <button
+        role="menuitem"
         type="button"
         class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
-        @click="ctxRepoAtRev"
+        :disabled="!canRun(menu, 'single')"
+        @click="runMenu(menu, ctxRepoAtRev, 'single')"
       >
         {{ t("history.repoAtRevision") }}
+      </button>
+    </ContextMenuSurface>
+    <ContextMenuSurface
+      v-for="menu in fileTarget ? [fileTarget] : []"
+      :key="menu.id"
+      :open="fileCtx.open"
+      :anchor-x="fileCtx.x"
+      :anchor-y="fileCtx.y"
+      :estimated-height="160"
+      @close="closeFileCtx"
+    >
+      <button
+        role="menuitem"
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        :disabled="!canRun(menu, 'single')"
+        @click="runMenu(menu, fileDiff, 'single')"
+      >
+        {{ t("actions.showDiff") }}
+      </button>
+      <button
+        role="menuitem"
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        :disabled="!canRun(menu, 'single')"
+        @click="runMenu(menu, fileHistory, 'single')"
+      >
+        {{ t("history.showHistory") }}
+      </button>
+      <button
+        role="menuitem"
+        type="button"
+        class="block w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent"
+        :disabled="!canRun(menu, 'extract')"
+        @click="runMenu(menu, ctxExtract, 'extract')"
+      >
+        {{ t("actions.extractSelected") }}
       </button>
     </ContextMenuSurface>
   </div>

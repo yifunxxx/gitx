@@ -8,7 +8,12 @@ import VirtualList from "@/components/common/VirtualList.vue";
 const mocks = vi.hoisted(() => ({ log: {} as any }));
 vi.mock("@/stores/logStore", () => ({ useLogStore: () => mocks.log }));
 vi.mock("@/stores/workspaceStore", () => ({
-  useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo", isRepo: true }),
+  useWorkspaceStore: () => ({
+    repoPath: "repo",
+    repoId: "repo",
+    isRepo: true,
+    navigationToken: () => 0,
+  }),
 }));
 vi.mock("@/stores/branchesStore", () => ({
   useBranchesStore: () => ({ refs: { local: [], remote: [], tags: [] }, remotes: [] }),

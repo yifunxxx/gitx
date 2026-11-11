@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { fileChangeHighlights } from "./fileChangeHighlights";
@@ -12,9 +12,14 @@ const tab = computed(() => store.tabs.find((t) => t.id === props.tabId));
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
 
-function mount() {
-  if (!host.value || !tab.value) return;
+function release() {
   view?.destroy();
+  view = null;
+}
+
+function mount() {
+  release();
+  if (!host.value || !tab.value || tab.value.loading) return;
   const text = tab.value.text;
   const hunks = tab.value.hunks;
   view = new EditorView({
@@ -25,10 +30,28 @@ function mount() {
         lineNumbers(),
         EditorView.editable.of(!!tab.value.editable),
         EditorView.theme({
-          "&": { height: "100%", fontSize: "12.5px" },
-          ".cm-scroller": { overflow: "auto", fontFamily: "ui-monospace, monospace" },
-          ".cm-diff-insert": { backgroundColor: "color-mix(in oklab, var(--color-success, #16a34a) 22%, transparent)" },
-          ".cm-file-modified": { backgroundColor: "color-mix(in oklab, var(--color-warning, #ca8a04) 22%, transparent)" },
+          "&": {
+            height: "100%",
+            fontSize: "12.5px",
+            backgroundColor: "var(--color-background)",
+            color: "var(--color-foreground)",
+          },
+          ".cm-scroller": { overflow: "auto", fontFamily: "var(--font-mono, monospace)" },
+          ".cm-gutters": {
+            backgroundColor: "var(--color-background)",
+            color: "var(--color-muted-foreground)",
+            borderRight: "1px solid var(--color-border)",
+          },
+          ".cm-cursor": { borderLeftColor: "var(--color-foreground)" },
+          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+            backgroundColor: "var(--color-accent)",
+          },
+          ".cm-diff-insert": {
+            backgroundColor: "color-mix(in oklab, var(--color-success, #16a34a) 22%, transparent)",
+          },
+          ".cm-file-modified": {
+            backgroundColor: "color-mix(in oklab, var(--color-warning, #ca8a04) 22%, transparent)",
+          },
         }),
         fileChangeHighlights(hunks),
       ],
@@ -36,13 +59,19 @@ function mount() {
   });
 }
 
-onMounted(mount);
-onBeforeUnmount(() => view?.destroy());
+onBeforeUnmount(release);
 watch(
-  () => [tab.value?.text, tab.value?.hunks, tab.value?.loading],
-  () => {
-    if (!tab.value?.loading) mount();
-  },
+  [
+    host,
+    () => tab.value?.id,
+    () => tab.value?.text,
+    () => tab.value?.hunks,
+    () => tab.value?.loading,
+    () => tab.value?.editable,
+  ],
+  mount,
+  // Loading replaces the host with v-if; wait until Vue has mounted its replacement.
+  { flush: "post" },
 );
 </script>
 

@@ -5,6 +5,7 @@ export function isTerminalToggle(event: KeyboardEvent): boolean {
     !event.shiftKey &&
     !event.altKey &&
     (event.ctrlKey || event.metaKey) &&
-    event.code === "Backquote"
+    // Some native/synthetic input paths omit the physical key code.
+    (event.code === "Backquote" || (!event.code && event.key === "`"))
   );
 }

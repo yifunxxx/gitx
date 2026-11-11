@@ -42,6 +42,7 @@ async function pick(id: string) {
 
 <template>
   <ContextMenuSurface
+    :label="t('actions.vcsOperations')"
     :open="layout.vcsPopupOpen"
     :anchor-x="40"
     :anchor-y="48"

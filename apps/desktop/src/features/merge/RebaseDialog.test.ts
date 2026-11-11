@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
-import { reactive, shallowRef } from "vue";
+import { computed, reactive, shallowRef } from "vue";
 import RebaseDialog from "./RebaseDialog.vue";
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +16,7 @@ vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => mocks.rewrite }
 vi.mock("@/stores/branchesStore", () => ({ useBranchesStore: () => mocks.branches }));
 vi.mock("@/composables/useDialog", () => ({
   useDialogState: () => mocks.dialog,
+  useDialogStack: () => computed(() => [mocks.dialog.value]),
   closeDialog: mocks.close,
   openDialog: mocks.open,
 }));
@@ -37,7 +38,16 @@ function deferred<T>() {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.workspace = reactive({ repoPath: "A", branch: { head: "feature" } });
+  mocks.workspace = reactive({
+    repoPath: "A",
+    repoId: "A",
+    isRepo: true,
+    navigation: 1,
+    navigationToken() {
+      return this.navigation;
+    },
+    branch: { head: "feature" },
+  });
   mocks.dialog = shallowRef({ id: 42 });
   mocks.rewrite = reactive({ busy: false, rebase: vi.fn() });
   mocks.branches = reactive({
@@ -117,4 +127,31 @@ it("invalidates the dialog after an A-B-A repository switch", async () => {
   await submit().trigger("click");
   expect(mocks.rewrite.rebase).not.toHaveBeenCalled();
   expect(mocks.open).not.toHaveBeenCalled();
+});
+
+it("does not open an interactive child after same-path navigation begins", async () => {
+  wrapper = mount(RebaseDialog);
+  await flushPromises();
+  await checkbox("--interactive").setValue(true);
+  ++mocks.workspace.navigation;
+  await submit().trigger("click");
+  expect(mocks.open).not.toHaveBeenCalled();
+  expect(mocks.rewrite.rebase).not.toHaveBeenCalled();
+  expect(mocks.close).toHaveBeenCalledWith(false, 42);
+});
+
+it("requires a successful branch reload after initial loading fails", async () => {
+  mocks.branches.refresh.mockRejectedValueOnce(new Error("load failed"));
+  wrapper = mount(RebaseDialog);
+  await flushPromises();
+  await checkbox("--root").setValue(true);
+  await submit().trigger("click");
+  expect(mocks.rewrite.rebase).not.toHaveBeenCalled();
+  await wrapper
+    .findAll("button")
+    .find((b) => b.text() === "empty.retry")!
+    .trigger("click");
+  await flushPromises();
+  await submit().trigger("click");
+  expect(mocks.rewrite.rebase).toHaveBeenCalledOnce();
 });

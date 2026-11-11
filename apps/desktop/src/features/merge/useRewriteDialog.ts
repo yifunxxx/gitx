@@ -1,42 +1,23 @@
-import { computed, onUnmounted, ref, watch } from "vue";
-import { closeDialog, useDialogState } from "@/composables/useDialog";
+import { computed, ref } from "vue";
+import { closeDialog, useDialogStack, useDialogState } from "@/composables/useDialog";
+import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { useRewriteStore } from "@/stores/rewriteStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { formatErrorMessage } from "@/lib/errors";
 
-/** Bind a pending edit to the repository and dialog where it was started. */
+/** Bind a pending edit to its original repository and dialog. */
 export function useRewriteDialog() {
-  const workspace = useWorkspaceStore();
   const rewrite = useRewriteStore();
   const dialog = useDialogState();
+  const stack = useDialogStack();
   const dialogId = dialog.value?.id;
-  const path = workspace.repoPath;
-  const navigation = workspace.navigationToken();
+  const capture = useRepositoryAction(() => closeDialog(false, dialogId));
+  const source = capture();
   const working = ref(false);
   const busy = computed(() => working.value || rewrite.busy);
   const error = ref<string | null>(null);
-  let invalidated = false;
-  const current = () =>
-    !invalidated &&
-    !!path &&
-    workspace.repoPath === path &&
-    workspace.navigationToken() === navigation &&
-    dialog.value?.id === dialogId;
-  watch(
-    () => workspace.repoPath,
-    () => {
-      invalidated = true;
-      closeDialog(false, dialogId);
-    },
-    { flush: "sync" },
-  );
-  onUnmounted(() => {
-    invalidated = true;
-  });
+  const current = () => source.current() && dialog.value?.id === dialogId;
   function dismiss() {
-    // A navigation attempt can invalidate submission before repoPath changes.
-    // The user must still be able to dismiss that now-stale dialog.
-    if (dialog.value?.id === dialogId && !busy.value) closeDialog(false, dialogId);
+    if (current() && !busy.value) closeDialog(false, dialogId);
   }
   function showError(reason: unknown) {
     if (current()) error.value = formatErrorMessage(reason);
@@ -47,12 +28,15 @@ export function useRewriteDialog() {
     error.value = null;
     try {
       const result = await operation();
-      if (result && current()) closeDialog(true, dialogId);
+      // A completed rewrite may open a child conflict dialog. Close only our
+      // own entry, leaving that child open; a replaced/unmounted edit is inert.
+      if (result && source.current() && stack.value.some((item) => item.id === dialogId))
+        closeDialog(true, dialogId);
     } catch (reason) {
       showError(reason);
     } finally {
       working.value = false;
     }
   }
-  return { path, busy, error, current, dismiss, showError, submit };
+  return { path: source.path, busy, error, current, dismiss, showError, submit };
 }

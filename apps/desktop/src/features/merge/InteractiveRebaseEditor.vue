@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,11 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { closeDialog, useDialogState } from "@/composables/useDialog";
 import { useRewriteStore } from "@/stores/rewriteStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useRewriteDialog } from "./useRewriteDialog";
 import type { RebasePlan, RebaseTodoAction } from "@/lib/backend";
-import { formatErrorMessage } from "@/lib/errors";
 
 const props = defineProps<{
   /** First commit to include (Log “from here”). */
@@ -26,58 +24,45 @@ const props = defineProps<{
   autosquash?: boolean;
 }>();
 const rewrite = useRewriteStore();
-const workspace = useWorkspaceStore();
 const { t } = useI18n();
-const dialog = useDialogState();
-const dialogId = dialog.value?.id;
-const path = workspace.repoPath;
-const working = ref(false);
-const busy = computed(() => working.value || rewrite.busy);
-let disposed = false;
-let invalidated = false;
-const current = () =>
-  !disposed && !invalidated && workspace.repoPath === path && dialog.value?.id === dialogId;
-watch(
-  () => workspace.repoPath,
-  () => {
-    invalidated = true;
-    if (!disposed) closeDialog(false, dialogId);
-  },
-  { flush: "sync" },
-);
-onUnmounted(() => {
-  disposed = true;
-});
-
-function dismiss() {
-  if (current() && !busy.value) closeDialog(false, dialogId);
-}
-
+const { busy, error, current, dismiss, showError, submit } = useRewriteDialog();
+const rootMode = props.root;
+const seed = rootMode ? "" : (props.upstream ?? props.fromSha);
+const upstream = !rootMode && !!props.upstream;
+const options = {
+  onto: props.onto,
+  rebaseMerges: props.rebaseMerges,
+  autosquash: props.autosquash,
+};
 const plan = ref<RebasePlan | null>(null);
-const error = ref<string | null>(null);
+const loading = ref(false);
 const selected = ref(0);
 
 const actions: RebaseTodoAction[] = ["pick", "reword", "edit", "squash", "fixup", "drop"];
 
-onMounted(async () => {
+async function load() {
+  if (!current() || busy.value || loading.value) return;
+  loading.value = true;
+  error.value = null;
   try {
-    const seed = props.root ? "" : (props.upstream ?? props.fromSha);
-    if (seed === undefined || (!seed && !props.root))
-      throw new Error("fromSha or upstream required");
-    const p = await rewrite.loadInteractivePlan(seed, !props.root && !!props.upstream);
+    if (seed === undefined || (!seed && !rootMode)) throw new Error("fromSha or upstream required");
+    const p = await rewrite.loadInteractivePlan(seed, upstream);
     if (!current()) return;
     if (!p) throw new Error(t("merge.planLoadFailed"));
     plan.value = {
       ...p,
-      onto: props.onto ?? p.onto,
-      rebaseMerges: props.rebaseMerges ?? p.rebaseMerges,
-      autosquash: props.autosquash ?? p.autosquash,
+      onto: options.onto ?? p.onto,
+      rebaseMerges: options.rebaseMerges ?? p.rebaseMerges,
+      autosquash: options.autosquash ?? p.autosquash,
       items: p.items.map((it) => ({ ...it, message: it.message ?? "" })),
     };
   } catch (e: unknown) {
-    if (current()) error.value = formatErrorMessage(e);
+    showError(e);
+  } finally {
+    loading.value = false;
   }
-});
+}
+onMounted(load);
 
 function move(delta: number) {
   if (!plan.value || busy.value || plan.value.rebaseMerges || plan.value.autosquash) return;
@@ -109,16 +94,7 @@ async function start() {
       message: it.message && String(it.message).trim() ? it.message : null,
     })),
   };
-  working.value = true;
-  error.value = null;
-  try {
-    const result = await rewrite.startInteractive(toSend);
-    if (result && current()) closeDialog(true, dialogId);
-  } catch (e) {
-    if (current()) error.value = formatErrorMessage(e);
-  } finally {
-    working.value = false;
-  }
+  await submit(() => rewrite.startInteractive(toSend));
 }
 </script>
 
@@ -128,7 +104,7 @@ async function start() {
     role="dialog"
     aria-modal="true"
     :aria-label="t('merge.interactiveRebase')"
-    :aria-busy="busy"
+    :aria-busy="loading || busy"
     @keydown.esc.stop.prevent="dismiss"
   >
     <div
@@ -139,6 +115,9 @@ async function start() {
         {{ t("merge.rebasePlanHint") }}
       </p>
       <p v-if="error" role="alert" class="mt-2 text-xs text-destructive">{{ error }}</p>
+      <Button v-if="error && !plan" size="sm" variant="outline" :disabled="loading" @click="load">{{
+        t("empty.retry")
+      }}</Button>
       <div v-if="!plan && !error" class="mt-4 text-xs text-muted-foreground">
         {{ t("merge.loadingCommits") }}
       </div>

@@ -10,6 +10,7 @@ const props = withDefaults(
     preserveScrollAnchor?: boolean;
     /** Reuse slot VNodes by window index instead of item identity (cuts SVG remount thrash). */
     recycleKeys?: boolean;
+    scrollTabindex?: number;
     getKey: (item: T, index: number) => string | number;
   }>(),
   { overscan: 10, recycleKeys: false },
@@ -240,6 +241,7 @@ watch(
 defineExpose({
   el: root,
   pointerDown,
+  isIndexVisible: (index: number) => index >= start.value && index < end.value,
   scrollToIndex(index: number, align: "nearest" | "center" = "nearest") {
     if (!root.value || !props.items.length) return;
     ++scrollGeneration;
@@ -262,6 +264,7 @@ defineExpose({
   <div class="flex min-h-0 flex-1 flex-col [app-region:no-drag]">
     <div
       ref="root"
+      :tabindex="scrollTabindex"
       class="min-h-0 flex-1 overflow-auto [overflow-anchor:none] [app-region:no-drag]"
       @scroll.passive="onScroll"
       @pointerdown="onPointerDown"

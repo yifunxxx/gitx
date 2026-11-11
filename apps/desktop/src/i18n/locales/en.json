@@ -187,10 +187,10 @@
     "loadNewer": "Load newer commits",
     "panGraph": "Pan commit graph (select a commit to reveal its node)",
     "backToLatest": "Back to latest",
-    "locating": "Locating…",
-    "commitOutsideHistory": "Commit {sha} is outside the current history.",
-    "clearAndGo": "Clear filters and locate",
-    "historyChanged": "The repository history changed while locating the commit. Try again.",
+    "locating": "Locating commit…",
+    "commitOutsideHistory": "Commit {sha} is outside the current history or filters.",
+    "clearAndGo": "Clear filters and go",
+    "historyChanged": "History changed while loading. Refresh and try again.",
     "retryLoadMore": "Retry",
     "chipText": "Text: {value}",
     "chipUser": "User: {value}",
@@ -253,11 +253,11 @@
     "remaining": "{count} unresolved conflict(s)",
     "autoMerged": "Non-conflicting changes are included",
     "applyNonConflicting": "Apply Non-Conflicting",
-    "acceptLeft": "Accept Left",
-    "acceptRight": "Accept Right",
+    "acceptLeft": "Accept all left",
+    "acceptRight": "Accept all right",
     "saving": "Saving…",
     "saveResolved": "Save and mark resolved",
-    "unresolvedMarkers": "Resolve the remaining conflict markers before saving.",
+    "unresolvedMarkers": "Resolve the remaining conflicts or confirm that the manual results should be kept.",
     "manuallyEdited": "This block was edited manually. Finish resolving it in the result editor.",
     "resolvedFile": "Resolved {path}",
     "changesFrom": "Changes from {branch}",
@@ -267,10 +267,10 @@
     "acceptBlockRight": "Accept right for block {index}",
     "acceptedYours": "Accepted yours",
     "acceptedTheirs": "Accepted theirs",
-    "resolvedSimple": "Resolved {count} simple conflict(s)",
+    "resolvedSimple": "Automatically resolved conflicts in {count} file(s)",
     "filesConflicted": "Conflicts in {count} file(s)",
     "paused": "Operation paused; review its state before continuing",
-    "smartDescription": "Save local changes, including untracked files, in Stash and restore them when the operation finishes. They remain stashed during edit or conflict pauses.",
+    "smartDescription": "Save local changes, including untracked files, in Stash and restore them when the operation finishes. They remain stashed during edit or conflict pauses. If restoration conflicts, the stash is kept; inspect local changes before proceeding.",
     "dirtyFilesUnavailable": "Cancel to review local changes in the Commit panel.",
     "smartAction": "Smart {operation}",
     "operationNames": {
@@ -320,7 +320,31 @@
       "cherryPick": "Cherry-pick in progress",
       "revert": "Revert in progress",
       "normal": "Ready"
-    }
+    },
+    "retryLoad": "Retry loading",
+    "loadInterrupted": "Loading was interrupted. Please retry.",
+    "smartRecovered": "Saved local changes restored",
+    "smartRestore": "Restore local changes",
+    "smartCleanup": "Remove restored saved copy",
+    "smartReviewStash": "View Stash",
+    "smartRecoveryReady": "The operation has ended. Local changes are still saved in Stash and can be restored.",
+    "smartRecoveryPaused": "Local changes are saved in Stash until the operation finishes.",
+    "smartRecoveryCommit": "Commit or undo the staged merge first. Local changes remain saved in Stash.",
+    "smartRecoveryAttention": "Local restoration needs attention. Review Stash and current files before applying again.",
+    "smartRecoveryApplied": "Local changes were restored. The saved copy remains; do not apply it again.",
+    "remainingFiles": "{count} unresolved file(s)",
+    "remainingBlocks": "{count} unresolved conflict block(s)",
+    "takeBlock": "Accept {side} content for conflict {index}",
+    "ignoreBlock": "Ignore {side} change for conflict {index}",
+    "leftSide": "left",
+    "rightSide": "right",
+    "previousConflict": "Previous conflict (Shift+F7)",
+    "nextConflict": "Next conflict (F7)",
+    "undo": "Undo (Ctrl+Z)",
+    "redo": "Redo (Ctrl+Shift+Z)",
+    "inlineHint": "Arrows accept, × ignores. Accept both to combine; ignore both to keep the base. Non-conflicting changes are merged automatically.",
+    "manualHint": "This block has manual edits; replacement actions are disabled.",
+    "keepManual": "Keep this manual result"
   },
   "toolWindows": {
     "commit": "Commit",
@@ -387,7 +411,8 @@
     "undoFailed": "Could not complete undo",
     "staleUndo": "HEAD or the checked-out branch changed after this operation. This Undo action has expired; its backup is retained.",
     "undoUnavailable": "The commit and branch for this Undo action are unavailable. Review the retained backup instead.",
-    "abortDone": "Operation aborted"
+    "abortDone": "Operation aborted",
+    "refreshFailed": "Operation completed, but the view could not refresh. Refresh the repository to see the result."
   },
   "common": {
     "cancel": "Cancel",
@@ -472,7 +497,7 @@
     "gitNotFound": "Git not found. Install Git for Windows, or enter the full path to git.exe below.",
     "pages": {
       "appearance": "Appearance",
-      "git": "Version Control | Git",
+      "git": "Version Control · Git",
       "confirmation": "Confirmation & Display",
       "keymap": "Keymap"
     },
@@ -534,15 +559,29 @@
       "shelve": "Shelve"
     },
     "keymap": {
-      "search": "Search by name or action id…",
+      "search": "Search by action name, ID, or shortcut…",
       "resetAll": "Reset all",
-      "hint": "Click Rebind, then press a shortcut. Esc cancels. Later bindings win on conflict.",
+      "hint": "Click Rebind and press a shortcut. Esc cancels; Tab leaves. Remove conflicting bindings first. Changes take effect with Apply or OK.",
       "action": "Action",
       "shortcut": "Shortcut",
       "recording": "Press keys…",
       "rebind": "Rebind",
-      "reset": "Reset"
-    }
+      "reset": "Reset",
+      "edit": "Edit binding",
+      "unbound": "Unbound",
+      "remove": "Remove binding",
+      "recordFor": "Record shortcut for {action}",
+      "rebindFor": "Rebind {action}",
+      "removeFor": "Remove binding for {action}",
+      "resetFor": "Reset binding for {action}",
+      "conflict": "{shortcut} is assigned to {actions}. Remove the existing binding first or choose another shortcut.",
+      "reserved": "{shortcut} is reserved for {action}. Choose another shortcut.",
+      "systemShortcut": "system actions",
+      "invalid": "unsupported key combinations"
+    },
+    "saving": "Saving settings…",
+    "saveFailed": "Could not save settings",
+    "invalidNumber": "Enter a whole number between {min} and {max}"
   },
   "worktrees": {
     "new": "New Worktree…",
@@ -551,7 +590,7 @@
     "openRefTitle": "Open Ref in Worktree",
     "openRefHint": "Host-agnostic: enter a PR number, merge-request ref, or any remote ref. No GitHub/GitLab API.",
     "refOrPr": "Ref / PR number",
-    "prune": "Prune stale entries",
+    "prune": "Prune",
     "pruneConfirm": "Prune these stale worktree entries?",
     "nothingToPrune": "No stale worktree entries",
     "pruned": "Worktree entries pruned",
@@ -612,7 +651,9 @@
     "copiedPath": "Path copied",
     "createPatch": "Create Patch…",
     "selectAll": "Select / deselect all files in this section",
-    "menuGapNote": "Delete to trash not wired (IDEA Delete parity deferred)"
+    "menuGapNote": "Delete to trash not wired (IDEA Delete parity deferred)",
+    "changesTree": "Changed files",
+    "untrackConfirm": "Stop tracking {count} files? Local files will be kept. Commit this change to record it."
   },
   "changelist": {
     "new": "New Changelist",
@@ -659,7 +700,7 @@
     "unshelved": "Shelf applied",
     "applyResult": "{applied} files applied, {failed} failed",
     "deleted": "Shelf deleted",
-    "deleteConfirm": "Delete this shelf? It will remain available in deleted shelves.",
+    "deleteConfirm": "Delete this shelf? You can restore it from Recently Deleted for 30 days. System backups are kept indefinitely.",
     "expandFiles": "Expand files in {name}",
     "collapseFiles": "Collapse files in {name}",
     "files": "Files in {name}",
@@ -683,7 +724,14 @@
     "keepChanges": "Keep local changes",
     "keepChangesHint": "Save the working files in the shelf and keep local files and staging unchanged.",
     "applyFailed": "Could not apply {count} shelf files. Review the working tree and conflicts.",
-    "applyPartial": "Applied {applied} shelf files; {failed} files remain unapplied. Review the working tree and conflicts."
+    "applyPartial": "Applied {applied} shelf files; {failed} files remain unapplied. Review the working tree and conflicts.",
+    "preview": "Preview Diff",
+    "previewHint": "Saved patch · Read-only unified view · + added / − removed",
+    "previewTruncated": "Showing only the first 2 MiB of this large patch.",
+    "previewLossy": "This patch contains non-UTF-8 bytes; some characters use replacement symbols. The saved patch is unchanged.",
+    "previewBinary": "Includes binary changes, shown below as patch records.",
+    "retentionHint": "Deleted shelves are kept for 30 days, then cleaned up when Shelf is refreshed. System backups are kept indefinitely.",
+    "systemBackup": "System backup"
   },
   "empty": {
     "noFolder": "Open a folder to get started",
@@ -715,7 +763,12 @@
     "amendCommit": "Amend Commit…",
     "amendCommitAction": "Amend Commit",
     "fixupOk": "Fixed up into selected commit",
-    "fixupFail": "Fixup failed"
+    "fixupFail": "Fixup failed",
+    "amendLoading": "Loading the latest commit message…",
+    "amendLoadFailed": "Could not load the latest commit message. Retry or uncheck Amend.",
+    "amendRetry": "Retry",
+    "draftStorageFailed": "Draft storage unavailable",
+    "draftStorageHint": "Your draft is kept for this session. Copy it before closing the app."
   },
   "history": {
     "showHistory": "Show History",
@@ -725,7 +778,27 @@
     "graphOptions": "Graph Options",
     "compareWithLocal": "Compare with Local",
     "compareVersions": "Compare Versions",
-    "showAllChanges": "Show All Changes"
+    "showAllChanges": "Show All Changes",
+    "allBranches": "All branches",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "loadFailed": "Could not load file history",
+    "empty": "No history",
+    "diffFailed": "Could not load revision diff",
+    "selectRevision": "Select a revision",
+    "binaryDiff": "Binary file — text diff is unavailable",
+    "tooLarge": "File too large to preview",
+    "up": "Up",
+    "restore": "Restore file…",
+    "restoreConfirm": "Restore {file} from {rev}? This replaces this file in both the working tree and the staging area, including any local changes.",
+    "restored": "File restored from revision",
+    "restoreRefreshFailed": "File restored, but refreshing Changes failed",
+    "directoryFailed": "Could not load directory",
+    "emptyDirectory": "Empty directory",
+    "unsupportedEntry": "Submodule contents cannot be opened in this browser",
+    "fileFailed": "Could not load file",
+    "binaryFile": "Binary file ({size} bytes)",
+    "selectFile": "Select a file"
   },
   "auth": {
     "title": "Credentials required",
@@ -808,5 +881,16 @@
     "start": "Clone",
     "running": "Cloning repository…",
     "cancelling": "Cancelling…"
+  },
+  "editorTabs": {
+    "menu": "Tab actions",
+    "closeCurrent": "Close Tab",
+    "closeOthers": "Close Other Tabs",
+    "closeRight": "Close Tabs to the Right",
+    "closeAll": "Close All Tabs",
+    "closeNamed": "Close {title}",
+    "unsavedTitle": "Close Unapplied Merge Results",
+    "unsavedMessage": "{count} merge tab(s) contain changes that have not been applied. Closing will discard these edits. Continue?",
+    "discardAndClose": "Discard Edits and Close"
   }
 }

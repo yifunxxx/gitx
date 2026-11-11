@@ -104,6 +104,26 @@ fn export_snapshot(
 }
 
 impl GitRunner {
+    pub async fn shelf_preview(
+        &self,
+        cwd: &Path,
+        id: &str,
+        deleted: bool,
+        cancel: &CancellationToken,
+    ) -> Result<gitx_core::ShelfPreview, AppError> {
+        let common = self.git_common_dir(cwd, cancel).await?;
+        let id = id.to_owned();
+        let cancel = cancel.clone();
+        tokio::task::spawn_blocking(move || {
+            if cancel.is_cancelled() {
+                return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
+            }
+            gitx_meta::preview_shelf(&common, &id, deleted)
+        })
+        .await
+        .map_err(|e| AppError::new(ErrorCode::Internal, format!("Shelf preview task: {e}")))?
+    }
+
     pub async fn shelf_export_patch(
         &self,
         cwd: &Path,

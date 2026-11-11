@@ -40,31 +40,33 @@ afterEach(() => vi.unstubAllGlobals());
 
 function fixture() {
   const wrapper = mount(ChangesTree, { attachTo: document.body });
-  const rows = wrapper.findAll('[tabindex="0"]');
+  const rows = wrapper.findAll('[role="treeitem"][data-path]');
   expect(rows.map((row) => row.text())).toEqual(["a.txt", "b.txt", "a.txt", "b.txt"]);
   return { wrapper, rows, store: useChangesStore() };
 }
 
 describe("Changes shortcuts", () => {
-  it("opens the focused file with plain F4", () => {
+  it("opens the focused file with plain F4", async () => {
     const { wrapper, rows } = fixture();
+    await rows[0]!.trigger("click");
     const event = new KeyboardEvent("keydown", { key: "F4", bubbles: true, cancelable: true });
-    rows[0]!.element.dispatchEvent(event);
+    wrapper.get('[role="tree"]').element.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
     expect(wrapper.emitted("openFile")).toEqual([["a.txt"]]);
   });
 
   it.each(["altKey", "ctrlKey", "metaKey", "shiftKey", "isComposing", "repeat"])(
     "leaves F4 with %s untouched",
-    (flag) => {
+    async (flag) => {
       const { wrapper, rows } = fixture();
+      await rows[0]!.trigger("click");
       const event = new KeyboardEvent("keydown", {
         key: "F4",
         bubbles: true,
         cancelable: true,
         [flag]: true,
       });
-      rows[0]!.element.dispatchEvent(event);
+      wrapper.get('[role="tree"]').element.dispatchEvent(event);
       expect(event.defaultPrevented).toBe(false);
       expect(wrapper.emitted("openFile")).toBeUndefined();
     },

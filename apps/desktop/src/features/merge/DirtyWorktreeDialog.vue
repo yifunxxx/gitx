@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Button } from "@/components/ui/button";
-import { computed, watch } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { closeDialog, useDialogState } from "@/composables/useDialog";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useRepositoryAction } from "@/composables/useRepositoryAction";
 
 const props = defineProps<{
   files: string[];
@@ -11,17 +11,15 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
-const dialogId = useDialogState().value?.id;
-const workspace = useWorkspaceStore();
+const dialog = useDialogState();
+const dialogId = dialog.value?.id;
+const source = useRepositoryAction(() => closeDialog("cancel", dialogId))();
 const titleOp = computed(() =>
   t(`merge.operationNames.${props.operation === "cherry-pick" ? "cherryPick" : props.operation}`),
 );
-const close = (choice: "smart" | "cancel") => closeDialog(choice, dialogId);
-watch(
-  () => workspace.repoPath,
-  () => close("cancel"),
-  { flush: "sync" },
-);
+function close(choice: "smart" | "cancel") {
+  if (source.current() && dialog.value?.id === dialogId) closeDialog(choice, dialogId);
+}
 </script>
 
 <template>

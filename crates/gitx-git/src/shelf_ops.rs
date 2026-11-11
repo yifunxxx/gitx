@@ -1,6 +1,7 @@
 //! Shelve / unshelve using gitx-meta shelf storage (#111).
 
 use crate::runner::{GitInvocation, GitRunner, OpKind};
+use crate::shelf_maintenance::shelf_operation_lock;
 use gitx_core::{AppError, ErrorCode, ShelfEntry};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -200,6 +201,7 @@ impl GitRunner {
         }
         let common = self.git_common_dir(cwd, cancel).await?;
         let base_sha = self.shelf_base(cwd, cancel).await?;
+        let _shelf_lock = shelf_operation_lock(&common, cancel).await?;
         let index_patch = self
             .shelf_diff(cwd, Some(&base_sha), true, paths, cancel)
             .await?;
@@ -245,7 +247,7 @@ impl GitRunner {
             cancel,
         )
         .await?;
-        let entry = gitx_meta::create_shelf_entry(
+        let entry = gitx_meta::create_shelf_entry_with_objects(
             &common,
             message,
             &base_sha,
@@ -254,6 +256,7 @@ impl GitRunner {
             source_changelist,
             binary,
             system,
+            Some(vec![base_sha.clone()]),
         )?;
 
         // Keepalive ref per shelf id.
@@ -327,6 +330,7 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<(Vec<String>, Vec<String>), AppError> {
         let common = self.git_common_dir(cwd, cancel).await?;
+        let _shelf_lock = shelf_operation_lock(&common, cancel).await?;
         let (_, patch) = gitx_meta::load_shelf_snapshot(&common, shelf_id)?;
         if patch.is_empty() {
             return Err(AppError::new(
@@ -450,6 +454,7 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
         let common = self.git_common_dir(cwd, cancel).await?;
+        let _shelf_lock = shelf_operation_lock(&common, cancel).await?;
         gitx_meta::soft_delete_shelf(&common, id)?;
         let shelf_ref = format!("refs/gitx/shelf/{id}");
         let inv = GitInvocation::new(cwd, ["update-ref", "--no-deref", "-d", &shelf_ref])
@@ -466,6 +471,7 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<ShelfEntry, AppError> {
         let common = self.git_common_dir(cwd, cancel).await?;
+        let _shelf_lock = shelf_operation_lock(&common, cancel).await?;
         gitx_meta::restore_shelf(&common, id)
     }
 
@@ -477,6 +483,7 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<ShelfEntry, AppError> {
         let common = self.git_common_dir(cwd, cancel).await?;
+        let _shelf_lock = shelf_operation_lock(&common, cancel).await?;
         gitx_meta::rename_shelf(&common, id, message)
     }
 
@@ -488,6 +495,7 @@ impl GitRunner {
         cancel: &CancellationToken,
     ) -> Result<ShelfEntry, AppError> {
         let common = self.git_common_dir(cwd, cancel).await?;
+        let _shelf_lock = shelf_operation_lock(&common, cancel).await?;
         let patch = std::fs::read(patch_file)
             .map_err(|e| AppError::new(ErrorCode::FsError, format!("read patch: {e}")))?;
         if patch.is_empty() {
@@ -530,8 +538,10 @@ impl GitRunner {
         // refs together before metadata; deleted Shelves remain restorable.
         let preimages = self.shelf_import_preimages(cwd, &patch, cancel).await?;
         let mut refs = format!("update refs/gitx/shelf-base-{base_sha} {base_sha}\n");
+        let mut retained_objects = vec![base_sha.clone()];
         if let Some(tree) = preimages {
             refs.push_str(&format!("update refs/gitx/shelf-base-{tree} {tree}\n"));
+            retained_objects.push(tree);
         }
         self.run(
             GitInvocation::new(cwd, ["update-ref", "--no-deref", "--stdin"])
@@ -540,8 +550,16 @@ impl GitRunner {
             cancel,
         )
         .await?;
-        let entry = gitx_meta::create_shelf_entry(
-            &common, message, &base_sha, &paths, &patch, None, binary, false,
+        let entry = gitx_meta::create_shelf_entry_with_objects(
+            &common,
+            message,
+            &base_sha,
+            &paths,
+            &patch,
+            None,
+            binary,
+            false,
+            Some(retained_objects),
         )?;
         let shelf_ref = format!("refs/gitx/shelf/{}", entry.id);
         self.run(
@@ -556,10 +574,20 @@ impl GitRunner {
     /// Retain locally available old blobs without applying the patch or
     /// touching the index. Missing external objects are allowed: plain apply
     /// may still work, but three-way merging then needs the external base.
-    async fn shelf_import_preimages(
+    pub(super) async fn shelf_import_preimages(
         &self,
         cwd: &Path,
         patch: &[u8],
+        cancel: &CancellationToken,
+    ) -> Result<Option<String>, AppError> {
+        self.shelf_patch_preimages(cwd, patch, false, cancel).await
+    }
+
+    pub(super) async fn shelf_patch_preimages(
+        &self,
+        cwd: &Path,
+        patch: &[u8],
+        require_all: bool,
         cancel: &CancellationToken,
     ) -> Result<Option<String>, AppError> {
         let mut ids = BTreeSet::new();
@@ -607,6 +635,11 @@ impl GitRunner {
         for line in String::from_utf8_lossy(&out.stdout).lines() {
             if let Some(id) = line.strip_suffix(" blob") {
                 blobs.insert(id.to_owned());
+            } else if require_all {
+                return Err(AppError::new(
+                    ErrorCode::ShelfFailed,
+                    "legacy Shelf preimage is missing or ambiguous; refs preserved",
+                ));
             }
         }
         if blobs.is_empty() {

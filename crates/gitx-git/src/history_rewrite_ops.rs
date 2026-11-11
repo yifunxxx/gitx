@@ -566,7 +566,7 @@ impl GitRunner {
             .run_rewrite(cwd, args, OpKind::Write, "revert", false, cancel)
             .await
         {
-            Ok(()) => {
+            Ok(_) => {
                 let new = self
                     .rev_parse_public(cwd, "HEAD", cancel)
                     .await
@@ -1203,7 +1203,9 @@ impl GitRunner {
             .env("GIT_EDITOR", editor);
 
         let run = if smart {
-            self.with_clean_tree_inv(cwd, "rebase", inv, cancel).await
+            self.with_clean_tree_inv(cwd, "rebase", inv, cancel)
+                .await
+                .map(|_| ())
         } else {
             self.run(inv, cancel).await.map(|_| ())
         };

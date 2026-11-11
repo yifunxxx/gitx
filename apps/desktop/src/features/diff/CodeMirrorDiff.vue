@@ -220,16 +220,20 @@ function theme() {
     "&": {
       height: "100%",
       fontSize: "12px",
-      backgroundColor: "rgb(var(--background))",
-      color: "rgb(var(--foreground))",
+      backgroundColor: "var(--color-background)",
+      color: "var(--color-foreground)",
     },
     ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
     ".cm-content": { caretColor: "transparent" },
     ".cm-gutters": {
-      backgroundColor: "rgb(var(--dbx-chrome))",
-      color: "rgb(var(--muted-foreground))",
-      borderColor: "rgb(var(--border))",
+      backgroundColor: "var(--color-background)",
+      color: "var(--color-muted-foreground)",
+      borderRight: "1px solid var(--color-border)",
     },
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+      backgroundColor: "var(--color-selection)",
+    },
+    "::selection": { color: "var(--color-selection-foreground)" },
     ".cm-diff-insert": {
       backgroundColor: "rgb(var(--diff-insert-bg) / 0.9)",
     },

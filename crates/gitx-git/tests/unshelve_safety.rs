@@ -252,10 +252,17 @@ async fn binary_unshelve_roundtrip_retains_unrelated_staged_changes() {
     std::fs::write(cwd.join("README.md"), "unrelated staged\n").unwrap();
     git_text(&runner, cwd, &["add", "README.md"]).await;
     let staged = git_text(&runner, cwd, &["show", ":README.md"]).await;
-    runner
-        .unshelve(cwd, &entry.id, false, &cancel)
-        .await
-        .unwrap();
+    if let Err(error) = runner.unshelve(cwd, &entry.id, false, &cancel).await {
+        let common = runner.git_common_dir(cwd, &cancel).await;
+        let entries = common.as_ref().ok().map(|dir| {
+            std::fs::read_dir(gitx_meta::shelf_root(dir)).map(|items| {
+                items
+                    .map(|item| item.map(|entry| entry.path()))
+                    .collect::<Vec<_>>()
+            })
+        });
+        panic!("binary Shelf {} failed: {error:?}; cwd={cwd:?}; common={common:?}; entries={entries:?}", entry.id);
+    }
     assert_eq!(std::fs::read(cwd.join("asset.bin")).unwrap(), saved);
     assert_eq!(
         git_text(&runner, cwd, &["show", ":README.md"]).await,

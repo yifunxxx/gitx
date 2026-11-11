@@ -1,19 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import {
-  getGroup,
-  getAction,
-  runAction,
-  shortcutFor,
-  isEnabled,
-  isVisible,
-} from "@/actions";
+import { getGroup, getAction, runAction, shortcutFor, isEnabled, isVisible } from "@/actions";
 import type { ActionContext } from "@/actions";
 import { resolveActionTitle } from "@/actions/titles";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { wasContextHandled } from "@/lib/contextMenu";
+import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 
 const { t } = useI18n();
@@ -23,15 +17,17 @@ const y = ref(0);
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
 
-const actionCtx = computed<ActionContext>(() => ({
-  repoIds: workspace.toplevel ? [workspace.toplevel] : [],
-  selection: {
-    files: changes.selectedPaths.length ? [...changes.selectedPaths] : undefined,
-  },
+const captureRepository = useRepositoryAction(onClose);
+let source: ReturnType<typeof captureRepository> | null = null;
+const actionCtx = ref<ActionContext>({
+  repoIds: [],
+  selection: {},
   source: "context",
   place: "Git.ContextMenu.Changes",
-  folderPath: workspace.folderPath,
-}));
+});
+watch(() => [changes.selectedSection, changes.stagingMode, ...changes.selectedPaths], onClose, {
+  flush: "sync",
+});
 
 const items = computed(() =>
   (getGroup("Git.ContextMenu.Changes")?.children ?? [])
@@ -70,6 +66,15 @@ function onContext(e: MouseEvent) {
     open.value = false;
     return;
   }
+  source = captureRepository();
+  if (!source.current()) return;
+  actionCtx.value = {
+    repoIds: source.repoId ? [source.repoId] : [],
+    selection: { files: changes.selectedPaths.length ? [...changes.selectedPaths] : undefined },
+    source: "context",
+    place: "Git.ContextMenu.Changes",
+    folderPath: workspace.folderPath,
+  };
   open.value = true;
   x.value = e.clientX;
   y.value = e.clientY;
@@ -80,24 +85,18 @@ function onClose() {
 }
 
 async function pick(id: string, enabled: boolean) {
-  if (!enabled) return;
+  if (!enabled || !open.value || !source?.current()) return;
   open.value = false;
   await runAction(id, actionCtx.value);
-}
-
-function onKey(ev: KeyboardEvent) {
-  if (ev.key === "Escape") onClose();
 }
 
 onMounted(() => {
   window.addEventListener("contextmenu", onContext);
   window.addEventListener("click", onClose);
-  window.addEventListener("keydown", onKey);
 });
 onUnmounted(() => {
   window.removeEventListener("contextmenu", onContext);
   window.removeEventListener("click", onClose);
-  window.removeEventListener("keydown", onKey);
 });
 </script>
 
@@ -112,6 +111,7 @@ onUnmounted(() => {
     @close="onClose"
   >
     <button
+      role="menuitem"
       v-for="a in items"
       :key="a.id"
       type="button"

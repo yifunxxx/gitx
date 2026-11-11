@@ -369,6 +369,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
       >
         <template v-if="menuFor">
           <button
+            role="menuitem"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
             @click="
@@ -379,6 +380,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.checkout") }}
           </button>
           <button
+            role="menuitem"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
             @click="
@@ -389,6 +391,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.newBranchFrom", { name: menuFor.name }) }}
           </button>
           <button
+            role="menuitem"
             v-if="menuFor.kind === 'localBranch'"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -400,6 +403,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.rename") }}
           </button>
           <button
+            role="menuitem"
             v-if="!menuFor.isHead"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -411,6 +415,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.mergeIntoCurrent", { name: menuFor.name }) }}
           </button>
           <button
+            role="menuitem"
             v-if="!menuFor.isHead"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -422,6 +427,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.rebaseOnto", { name: menuFor.name }) }}
           </button>
           <button
+            role="menuitem"
             v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -433,6 +439,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.checkoutAndRebase") }}
           </button>
           <button
+            role="menuitem"
             v-if="menuFor.kind === 'localBranch'"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -444,6 +451,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.push") }}
           </button>
           <button
+            role="menuitem"
             v-if="menuFor.kind === 'remoteBranch'"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -455,6 +463,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.pullMerge") }}
           </button>
           <button
+            role="menuitem"
             v-if="menuFor.kind === 'remoteBranch'"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
@@ -466,6 +475,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.pullRebase") }}
           </button>
           <button
+            role="menuitem"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
             @click="
@@ -476,6 +486,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.compareWithCurrent") }}
           </button>
           <button
+            role="menuitem"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
             @click="
@@ -486,6 +497,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.copyName") }}
           </button>
           <button
+            role="menuitem"
             v-if="menuFor.kind === 'localBranch' && !menuFor.isHead"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm text-destructive hover:bg-accent"
@@ -497,6 +509,7 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
             {{ t("branches.delete") }}
           </button>
           <button
+            role="menuitem"
             type="button"
             class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
             @click="closeMenu()"

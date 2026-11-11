@@ -149,7 +149,7 @@
     "failed": "加载 Log 失败",
     "noRepoTitle": "未打开仓库",
     "noRepoHint": "打开或创建 Git 仓库以查看历史。",
-    "searchPlaceholder": "搜索提交说明",
+    "searchPlaceholder": "搜索提交消息",
     "userPlaceholder": "作者",
     "branchPlaceholder": "分支 / a..b",
     "pathsPlaceholder": "路径",
@@ -187,10 +187,10 @@
     "loadNewer": "加载较新的提交",
     "panGraph": "横向查看提交图（选择提交时自动显示对应节点）",
     "backToLatest": "返回最新提交",
-    "locating": "定位中…",
-    "commitOutsideHistory": "提交 {sha} 不在当前历史范围内。",
-    "clearAndGo": "清除筛选并定位",
-    "historyChanged": "定位期间仓库历史发生了变化，请重试。",
+    "locating": "正在定位提交…",
+    "commitOutsideHistory": "提交 {sha} 不在当前历史或筛选结果中。",
+    "clearAndGo": "清除筛选并跳转",
+    "historyChanged": "加载期间提交历史发生变化，请刷新后重试。",
     "retryLoadMore": "重试",
     "chipText": "文本：{value}",
     "chipUser": "作者：{value}",
@@ -253,11 +253,11 @@
     "remaining": "剩余 {count} 处冲突",
     "autoMerged": "已自动合入无冲突的更改",
     "applyNonConflicting": "应用无冲突部分",
-    "acceptLeft": "接受左侧",
-    "acceptRight": "接受右侧",
+    "acceptLeft": "全部采用左侧",
+    "acceptRight": "全部采用右侧",
     "saving": "保存中…",
     "saveResolved": "保存并标记为已解决",
-    "unresolvedMarkers": "请先解决剩余冲突并移除冲突标记，再保存结果。",
+    "unresolvedMarkers": "请先处理剩余冲突，或确认保留手动编辑的结果。",
     "manuallyEdited": "此块已被手动编辑，请在结果编辑区完成解决。",
     "resolvedFile": "已解决 {path}",
     "changesFrom": "来自 {branch} 的更改",
@@ -267,10 +267,10 @@
     "acceptBlockRight": "第 {index} 块接受右侧",
     "acceptedYours": "已接受己方版本",
     "acceptedTheirs": "已接受对方版本",
-    "resolvedSimple": "已解决 {count} 处简单冲突",
+    "resolvedSimple": "已自动解决 {count} 个文件的冲突",
     "filesConflicted": "{count} 个文件存在冲突",
     "paused": "操作已暂停，请检查状态后继续",
-    "smartDescription": "将本地修改（包括未跟踪文件）保存到 Stash，操作结束后自动恢复；编辑或冲突暂停期间保留在 Stash 中。",
+    "smartDescription": "将本地修改（包括未跟踪文件）保存到 Stash，操作结束后自动恢复；编辑或冲突暂停期间保留在 Stash 中。恢复发生冲突时会保留 Stash，请检查本地修改后再处理。",
     "dirtyFilesUnavailable": "可取消后在提交面板检查本地修改。",
     "smartAction": "Smart {operation}",
     "operationNames": {
@@ -320,7 +320,31 @@
       "cherryPick": "正在拣选提交",
       "revert": "正在还原提交",
       "normal": "就绪"
-    }
+    },
+    "retryLoad": "重试加载",
+    "loadInterrupted": "加载已中断，请重试。",
+    "smartRecovered": "已恢复保存的本地修改",
+    "smartRestore": "恢复本地修改",
+    "smartCleanup": "清理已恢复的保存副本",
+    "smartReviewStash": "查看 Stash",
+    "smartRecoveryReady": "操作已经结束，本地修改仍保存在 Stash 中，可以恢复。",
+    "smartRecoveryPaused": "本地修改保存在 Stash 中，将在操作结束后恢复。",
+    "smartRecoveryCommit": "请先提交或撤销合并的暂存结果；本地修改仍保存在 Stash 中。",
+    "smartRecoveryAttention": "本地修改恢复未完成。请查看 Stash 并检查当前文件，避免重复应用。",
+    "smartRecoveryApplied": "本地修改已恢复，保存副本尚未清理；请勿再次应用。",
+    "remainingFiles": "剩余 {count} 个冲突文件",
+    "remainingBlocks": "剩余 {count} 个冲突块",
+    "takeBlock": "采用第 {index} 处{side}内容",
+    "ignoreBlock": "忽略第 {index} 处{side}更改",
+    "leftSide": "左侧",
+    "rightSide": "右侧",
+    "previousConflict": "上一处冲突（Shift+F7）",
+    "nextConflict": "下一处冲突（F7）",
+    "undo": "撤销（Ctrl+Z）",
+    "redo": "重做（Ctrl+Shift+Z）",
+    "inlineHint": "箭头采用，× 忽略；两侧均采用可合并，两侧忽略保留基准。无冲突更改已自动合入。",
+    "manualHint": "此块含手动编辑，已停用覆盖操作。",
+    "keepManual": "保留此块的手动结果"
   },
   "toolWindows": {
     "commit": "提交",
@@ -387,7 +411,8 @@
     "undoFailed": "无法完成撤销",
     "staleUndo": "此操作之后提交或当前分支已改变，旧的撤销已失效。备份仍然保留。",
     "undoUnavailable": "无法确认此撤销对应的提交和分支，请从保留的备份检查历史。",
-    "abortDone": "已中止操作"
+    "abortDone": "已中止操作",
+    "refreshFailed": "操作已完成，但界面刷新失败。请刷新仓库查看结果。"
   },
   "common": {
     "cancel": "取消",
@@ -472,9 +497,9 @@
     "gitNotFound": "未找到 git，请安装 Git for Windows 或在下方填写 git.exe 完整路径",
     "pages": {
       "appearance": "外观",
-      "git": "Version Control | Git",
+      "git": "版本控制 · Git",
       "confirmation": "确认与显示",
-      "keymap": "Keymap"
+      "keymap": "快捷键"
     },
     "fields": {
       "theme": "主题",
@@ -534,24 +559,38 @@
       "shelve": "Shelve"
     },
     "keymap": {
-      "search": "按名称或 Action Id 搜索…",
+      "search": "按操作名称、ID 或快捷键搜索…",
       "resetAll": "全部重置",
-      "hint": "点击「重新绑定」后按下新快捷键；Esc 取消。冲突时后绑定优先生效。",
+      "hint": "点击「重新绑定」并按下快捷键；Esc 取消，Tab 离开。重复绑定需先移除。修改在应用或确定后生效。",
       "action": "操作",
       "shortcut": "快捷键",
       "recording": "按下快捷键…",
       "rebind": "重新绑定",
-      "reset": "重置"
-    }
+      "reset": "重置",
+      "edit": "编辑绑定",
+      "unbound": "未绑定",
+      "remove": "移除绑定",
+      "recordFor": "为「{action}」录制快捷键",
+      "rebindFor": "重新绑定「{action}」",
+      "removeFor": "移除「{action}」的绑定",
+      "resetFor": "重置「{action}」的绑定",
+      "conflict": "{shortcut} 已用于「{actions}」。请先移除已有绑定，或使用其他快捷键。",
+      "reserved": "{shortcut} 已保留给「{action}」，请使用其他快捷键。",
+      "systemShortcut": "系统操作",
+      "invalid": "不支持的按键组合"
+    },
+    "saving": "正在保存设置…",
+    "saveFailed": "设置保存失败",
+    "invalidNumber": "请输入 {min} 到 {max} 之间的整数"
   },
   "worktrees": {
     "new": "新建 Worktree…",
     "newTitle": "创建新 Worktree",
     "openRef": "打开 Ref…",
     "openRefTitle": "在 Worktree 中打开 Ref",
-    "openRefHint": "输入远程分支或完整 Ref；PR 号将解析为 refs/pull/编号/head。",
+    "openRefHint": "托管无关：输入 PR 号、merge-request ref 或任意 remote ref。不调用 GitHub/GitLab API。",
     "refOrPr": "Ref / PR 号",
-    "prune": "清理失效记录",
+    "prune": "Prune",
     "pruneConfirm": "清理以下失效的工作树记录？",
     "nothingToPrune": "没有需要清理的工作树记录",
     "pruned": "已清理工作树记录",
@@ -575,7 +614,7 @@
     "openAfter": "创建后打开",
     "create": "创建",
     "lockReason": "锁定原因",
-    "removeConfirm": "移除工作树 {path}？如有未提交或未跟踪文件，操作会停止。",
+    "removeConfirm": "移除 worktree {path}？",
     "removeForceHint": "若有未提交更改请使用 force",
     "removeForceConfirm": "仍要移除（--force）？未提交更改会先快照再从该 worktree 丢弃。",
     "cannotRemoveCurrent": "不能移除主 worktree 或当前窗口所在 worktree",
@@ -612,7 +651,9 @@
     "copiedPath": "已复制路径",
     "createPatch": "创建补丁…",
     "selectAll": "全选 / 取消全选此区文件",
-    "menuGapNote": "删除到回收站未接（与 IDEA Delete 对齐待办）"
+    "menuGapNote": "删除到回收站未接（与 IDEA Delete 对齐待办）",
+    "changesTree": "更改文件树",
+    "untrackConfirm": "停止跟踪 {count} 个文件？本地文件会保留，此更改需要提交。"
   },
   "changelist": {
     "new": "新建变更列表",
@@ -659,7 +700,7 @@
     "unshelved": "Shelf 已应用",
     "applyResult": "已应用 {applied} 个文件，失败 {failed} 个",
     "deleted": "Shelf 已删除",
-    "deleteConfirm": "删除这个 Shelf？删除后仍可从已删除的 Shelf 中恢复。",
+    "deleteConfirm": "删除这个 Shelf？删除后 30 天内可从“最近删除”恢复；系统备份长期保留。",
     "expandFiles": "展开 {name} 的文件",
     "collapseFiles": "收起 {name} 的文件",
     "files": "{name} 的文件",
@@ -683,7 +724,14 @@
     "keepChanges": "保留本地修改",
     "keepChangesHint": "将工作区内容保存到 Shelf，同时保留本地文件和暂存状态。",
     "applyFailed": "有 {count} 个 Shelf 文件未能应用，请检查工作区和冲突。",
-    "applyPartial": "已应用 {applied} 个 Shelf 文件，另有 {failed} 个未能应用。请检查工作区和冲突。"
+    "applyPartial": "已应用 {applied} 个 Shelf 文件，另有 {failed} 个未能应用。请检查工作区和冲突。",
+    "preview": "预览差异",
+    "previewHint": "已保存的补丁 · 只读统一视图 · + 新增 / − 删除",
+    "previewTruncated": "补丁较大，当前仅预览前 2 MiB。",
+    "previewLossy": "补丁含非 UTF-8 字节，部分字符以替代符显示；已保存的补丁保持原样。",
+    "previewBinary": "包含二进制更改，以下显示其补丁记录。",
+    "retentionHint": "删除后保留 30 天，到期后在刷新 Shelf 时自动清理。系统备份长期保留。",
+    "systemBackup": "系统备份"
   },
   "empty": {
     "noFolder": "打开文件夹开始使用",
@@ -715,7 +763,12 @@
     "amendCommit": "Amend Commit…",
     "amendCommitAction": "Amend Commit",
     "fixupOk": "已 Fixup 到所选提交",
-    "fixupFail": "Fixup 失败"
+    "fixupFail": "Fixup 失败",
+    "amendLoading": "正在加载最近一次提交说明…",
+    "amendLoadFailed": "加载最近一次提交说明失败，请重试或取消勾选 Amend。",
+    "amendRetry": "重试",
+    "draftStorageFailed": "草稿无法持久保存",
+    "draftStorageHint": "本次会话仍会保留草稿，请在关闭应用前复制保存。"
   },
   "history": {
     "showHistory": "显示历史",
@@ -725,7 +778,27 @@
     "graphOptions": "图选项",
     "compareWithLocal": "与本地比较",
     "compareVersions": "比较版本",
-    "showAllChanges": "显示全部更改"
+    "showAllChanges": "显示全部更改",
+    "allBranches": "所有分支",
+    "refresh": "刷新",
+    "retry": "重试",
+    "loadFailed": "文件历史加载失败",
+    "empty": "暂无历史",
+    "diffFailed": "修订差异加载失败",
+    "selectRevision": "请选择修订",
+    "binaryDiff": "二进制文件，无法显示文本差异",
+    "tooLarge": "文件过大，无法预览",
+    "up": "上一级",
+    "restore": "恢复文件…",
+    "restoreConfirm": "将 {file} 恢复为 {rev} 中的版本？这会替换工作区和暂存区中的此文件，包括尚未提交的本地修改。",
+    "restored": "已从修订版恢复文件",
+    "restoreRefreshFailed": "文件已恢复，但刷新更改列表失败",
+    "directoryFailed": "目录加载失败",
+    "emptyDirectory": "空目录",
+    "unsupportedEntry": "此浏览器无法打开子模块内容",
+    "fileFailed": "文件加载失败",
+    "binaryFile": "二进制文件（{size} 字节）",
+    "selectFile": "请选择文件"
   },
   "auth": {
     "title": "需要凭据",
@@ -808,5 +881,16 @@
     "start": "克隆",
     "running": "正在克隆仓库…",
     "cancelling": "正在取消…"
+  },
+  "editorTabs": {
+    "menu": "标签操作",
+    "closeCurrent": "关闭当前",
+    "closeOthers": "关闭其他",
+    "closeRight": "关闭右侧",
+    "closeAll": "关闭全部",
+    "closeNamed": "关闭 {title}",
+    "unsavedTitle": "关闭未应用的合并结果",
+    "unsavedMessage": "有 {count} 个合并标签包含尚未应用的修改。关闭会丢弃这些编辑，是否继续？",
+    "discardAndClose": "丢弃编辑并关闭"
   }
 }

@@ -11,12 +11,11 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import ShelfFiles from "./ShelfFiles.vue";
 
 type Section = "shelf" | "deleted-shelf";
-type Action = "unshelve" | "exportPatch" | "rename" | "delete" | "restore";
+type Action = "unshelve" | "exportPatch" | "rename" | "delete" | "restore" | "preview";
 const { t } = useI18n();
 const store = useStashShelfStore();
 const workspace = useWorkspaceStore();
 const rows = ref<HTMLElement | null>(null);
-const menuPanel = ref<HTMLElement | null>(null);
 const removeApplied = ref(false);
 const fileListId = useId();
 const expanded = ref(new Set<string>());
@@ -70,8 +69,8 @@ const selectedDeleted = computed(() =>
 );
 const actions = computed<Action[]>(() =>
   menu.value?.section === "deleted-shelf"
-    ? ["restore"]
-    : ["unshelve", "exportPatch", "rename", "delete"],
+    ? ["restore", "preview"]
+    : ["unshelve", "exportPatch", "rename", "delete", "preview"],
 );
 
 function entries(section: Section) {
@@ -145,7 +144,7 @@ watch(
     if (!exists) closeMenu(false);
   },
 );
-async function openMenu(section: Section, id: string, event: MouseEvent | KeyboardEvent) {
+function openMenu(section: Section, id: string, event: MouseEvent | KeyboardEvent) {
   if (event instanceof MouseEvent) markContextHandled(event);
   else {
     event.preventDefault();
@@ -164,8 +163,6 @@ async function openMenu(section: Section, id: string, event: MouseEvent | Keyboa
     repository: store.repositoryToken(),
     navigation: workspace.navigationToken(),
   };
-  await nextTick();
-  menuPanel.value?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
 }
 async function restore(id: string) {
   const repository = store.repositoryToken();
@@ -188,6 +185,10 @@ function runMenu(action: Action) {
     return;
   }
   closeMenu();
+  if (action === "preview") {
+    void store.previewShelf(target.id, target.section === "deleted-shelf");
+    return;
+  }
   if (target.section === "deleted-shelf") {
     if (action === "restore") void restore(target.id);
     return;
@@ -198,18 +199,27 @@ function runMenu(action: Action) {
   if (action === "delete") void store.deleteShelf(target.id);
 }
 function rowKey(event: KeyboardEvent, section: Section, index: number) {
-  if (event.isComposing) return;
+  if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
   const list = entries(section);
   const entry = list[index];
   if (!entry) return;
+  if ((!event.shiftKey && event.key === "ContextMenu") || (event.shiftKey && event.key === "F10")) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void openMenu(section, entry.id, event);
+    return;
+  }
+  if (event.shiftKey) return;
+  if (event.key === "F4") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void store.previewShelf(entry.id, section === "deleted-shelf");
+    return;
+  }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     event.stopPropagation();
     if (entry.paths.length) setExpanded(section, entry.id, event.key === "ArrowRight");
-    return;
-  }
-  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-    void openMenu(section, entry.id, event);
     return;
   }
   if (event.key === "Delete" || event.key === "F2") {
@@ -237,33 +247,6 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
   select(section, list[next]!.id);
   focusRow(section, list[next]!.id);
 }
-function menuKey(event: KeyboardEvent) {
-  if (event.key === "Escape" || event.key === "Tab") {
-    event.preventDefault();
-    event.stopPropagation();
-    closeMenu();
-    return;
-  }
-  const items = Array.from(
-    menuPanel.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
-  );
-  if (!items.length) return;
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? items.length - 1
-        : event.key === "ArrowDown"
-          ? (index + 1) % items.length
-          : event.key === "ArrowUp"
-            ? (index + items.length - 1) % items.length
-            : null;
-  if (next == null) return;
-  event.preventDefault();
-  event.stopPropagation();
-  items[next]?.focus();
-}
 </script>
 
 <template>
@@ -283,6 +266,9 @@ function menuKey(event: KeyboardEvent) {
           {{ t("shelf.showDeleted") }}
         </Button>
       </div>
+      <p v-if="section.kind === 'deleted-shelf'" class="px-3 py-1 text-[11px] text-muted-foreground">
+        {{ t("shelf.retentionHint") }}
+      </p>
       <VirtualList
         v-if="section.entries.length"
         :ref="(value) => setList(section.kind, value)"
@@ -339,11 +325,13 @@ function menuKey(event: KeyboardEvent) {
               "
               class="flex h-full min-w-0 flex-1 cursor-pointer flex-col justify-center gap-0.5 pr-2 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
               @click="select(section.kind, s.id)"
+              @dblclick="store.previewShelf(s.id, section.kind === 'deleted-shelf')"
               @keydown="rowKey($event, section.kind, index)"
               @contextmenu="openMenu(section.kind, s.id, $event)"
             >
               <span class="flex w-full min-w-0 items-center gap-2">
                 <span class="truncate">{{ s.message }}</span>
+                <span v-if="s.system" class="shrink-0 text-[10px] text-muted-foreground">{{ t("shelf.systemBackup") }}</span>
                 <span class="shrink-0 text-muted-foreground">({{ s.paths.length }})</span>
               </span>
               <time
@@ -372,6 +360,9 @@ function menuKey(event: KeyboardEvent) {
         :disabled="store.busy"
         class="flex flex-wrap items-center gap-1 px-2 py-1"
       >
+        <Button size="xs" variant="outline" @click="store.previewShelf(selectedShelf!.id)">{{
+          t("shelf.preview")
+        }}</Button>
         <Button
           size="xs"
           variant="outline"
@@ -397,6 +388,9 @@ function menuKey(event: KeyboardEvent) {
         :disabled="store.busy"
         class="flex flex-wrap items-center gap-2 px-2 py-1"
       >
+        <Button size="xs" variant="outline" @click="store.previewShelf(selectedDeleted!.id, true)">{{
+          t("shelf.preview")
+        }}</Button>
         <Button size="xs" variant="outline" @click="restore(selectedDeleted!.id)">{{
           t("shelf.restore")
         }}</Button>
@@ -404,6 +398,7 @@ function menuKey(event: KeyboardEvent) {
       </fieldset>
     </section>
     <ContextMenuSurface
+      :label="t(menu?.section === 'deleted-shelf' ? 'shelf.recentlyDeleted' : 'shelf.section')"
       :open="!!menu"
       :anchor-x="menu?.x ?? 0"
       :anchor-y="menu?.y ?? 0"
@@ -411,14 +406,7 @@ function menuKey(event: KeyboardEvent) {
       :estimated-height="actions.length * 32 + 8"
       @close="closeMenu()"
     >
-      <div
-        ref="menuPanel"
-        role="menu"
-        :aria-label="
-          t(menu?.section === 'deleted-shelf' ? 'shelf.recentlyDeleted' : 'shelf.section')
-        "
-        @keydown="menuKey"
-      >
+      <div>
         <button
           v-for="action in actions"
           :key="action"

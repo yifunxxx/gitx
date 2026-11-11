@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
-import { reactive, shallowRef } from "vue";
+import { computed, reactive, shallowRef } from "vue";
 import RewordDialog from "./RewordDialog.vue";
 import SquashDialog from "./SquashDialog.vue";
 import ResetDialog from "./ResetDialog.vue";
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   log: { details: null, commits: [{ sha: "aabbccdd", subject: "subject only" }] },
   backend: { logCommitDetails: vi.fn(), resetPreview: vi.fn() },
   dialog: {} as any,
+  stack: {} as any,
   close: vi.fn(),
 }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
@@ -19,6 +20,7 @@ vi.mock("@/stores/logStore", () => ({ useLogStore: () => mocks.log }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks.backend }));
 vi.mock("@/composables/useDialog", () => ({
   useDialogState: () => mocks.dialog,
+  useDialogStack: () => mocks.stack,
   closeDialog: mocks.close,
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
@@ -39,8 +41,17 @@ const preview = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.workspace = reactive({ repoPath: "A", navigationToken: () => 1 });
+  mocks.workspace = reactive({
+    repoPath: "A",
+    repoId: "A",
+    isRepo: true,
+    navigation: 1,
+    navigationToken() {
+      return this.navigation;
+    },
+  });
   mocks.dialog = shallowRef({ id: 42 });
+  mocks.stack = computed(() => [mocks.dialog.value]);
   mocks.rewrite = reactive({ busy: false, reword: vi.fn(), squash: vi.fn(), reset: vi.fn() });
   mocks.backend.logCommitDetails.mockResolvedValue({
     sha: "aabbccdd",
@@ -103,7 +114,7 @@ for (const [name, component, props] of [
   it(`${name} can be dismissed after a new navigation starts`, async () => {
     wrapper = mount(component as any, { props });
     await flushPromises();
-    mocks.workspace.navigationToken = () => 2;
+    ++mocks.workspace.navigation;
     await submit().trigger("click");
     expect(mocks.rewrite[name]).not.toHaveBeenCalled();
     await wrapper
@@ -165,3 +176,92 @@ for (const [name, component, props] of [
       expect(mocks.rewrite[name].mock.lastCall[1]).toBe("keep my message\n\n正文");
   });
 }
+
+it("closes the completed parent while preserving its conflict dialog", async () => {
+  mocks.stack = shallowRef([{ id: 42 }]);
+  const pending = deferred<unknown>();
+  mocks.rewrite.reword.mockReturnValue(pending.promise);
+  wrapper = mount(RewordDialog, { props: { sha: "aabbccdd" } });
+  await flushPromises();
+  await submit().trigger("click");
+  mocks.dialog.value = { id: 43 };
+  mocks.stack.value = [{ id: 42 }, { id: 43 }];
+  pending.resolve({ outcome: "conflicts" });
+  await flushPromises();
+  expect(mocks.close).toHaveBeenCalledExactlyOnceWith(true, 42);
+});
+
+it("preserves exact edited whitespace and the originally selected commit", async () => {
+  wrapper = mount(RewordDialog, { props: { sha: "aabbccdd" } });
+  await flushPromises();
+  await wrapper.setProps({ sha: "replacement" });
+  await wrapper.get("textarea").setValue("  title\n\nbody\n\n");
+  await submit().trigger("click");
+  expect(mocks.rewrite.reword).toHaveBeenCalledWith("aabbccdd", "  title\n\nbody\n\n");
+});
+
+it("freezes squash commits even if the original selection array changes", async () => {
+  const shas = ["one", "two"];
+  wrapper = mount(SquashDialog, { props: { shas } });
+  shas.splice(0, 2, "replacement");
+  await submit().trigger("click");
+  expect(mocks.rewrite.squash).toHaveBeenCalledWith(["one", "two"], expect.any(String));
+});
+
+it("resets the resolved preview commit even if the original ref changes", async () => {
+  wrapper = mount(ResetDialog, { props: { target: "main" } });
+  await flushPromises();
+  await wrapper.setProps({ target: "replacement" });
+  await submit().trigger("click");
+  expect(mocks.rewrite.reset).toHaveBeenCalledWith(preview.target, "mixed");
+});
+
+for (const [component, props, method] of [
+  [RewordDialog, { sha: "aabbccdd" }, "logCommitDetails"],
+  [ResetDialog, { target: "aabbccdd" }, "resetPreview"],
+] as const) {
+  it(`${method} failure requires a successful reload before submitting`, async () => {
+    const backend = mocks.backend[method];
+    backend.mockRejectedValueOnce(new Error("load failed"));
+    wrapper = mount(component as any, { props });
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("load failed");
+    await submit().trigger("click");
+    expect(mocks.rewrite.reword).not.toHaveBeenCalled();
+    expect(mocks.rewrite.reset).not.toHaveBeenCalled();
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text() === "empty.retry")!
+      .trigger("click");
+    await flushPromises();
+    await submit().trigger("click");
+    expect(
+      method === "logCommitDetails" ? mocks.rewrite.reword : mocks.rewrite.reset,
+    ).toHaveBeenCalledOnce();
+  });
+  it(`${method} ignores a pending load after same-path identity changes`, async () => {
+    const pending = deferred<any>();
+    mocks.backend[method].mockReturnValueOnce(pending.promise);
+    wrapper = mount(component as any, { props });
+    mocks.workspace.repoId = "new-root";
+    pending.resolve(method === "resetPreview" ? preview : { subject: "stale", body: "stale body" });
+    await flushPromises();
+    await submit().trigger("click");
+    expect(mocks.rewrite.reword).not.toHaveBeenCalled();
+    expect(mocks.rewrite.reset).not.toHaveBeenCalled();
+    expect(mocks.close).toHaveBeenCalledWith(false, 42);
+  });
+}
+
+it("does not close or publish errors after the edit unmounts", async () => {
+  const pending = deferred<unknown>();
+  mocks.rewrite.reword.mockReturnValueOnce(pending.promise);
+  wrapper = mount(RewordDialog, { props: { sha: "aabbccdd" } });
+  await flushPromises();
+  await submit().trigger("click");
+  wrapper.unmount();
+  wrapper = undefined;
+  pending.resolve({ outcome: "success" });
+  await flushPromises();
+  expect(mocks.close).not.toHaveBeenCalled();
+});

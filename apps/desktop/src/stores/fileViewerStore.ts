@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, watch } from "vue";
+import { reactive, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { DiffHunk } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -42,7 +42,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     }
 
     const id = `file:${filePath}`;
-    let tab: FileViewerTab = {
+    const tab = reactive<FileViewerTab>({
       id,
       path: filePath,
       title: filePath.split("/").pop() ?? filePath,
@@ -50,9 +50,8 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       hunks: [],
       loading: true,
       editable: true,
-    };
+    });
     tabs.value.push(tab);
-    tab = tabs.value.find((t) => t.id === id)!;
     activeId.value = id;
     layout.activeEditorKind = "file";
 

@@ -20,7 +20,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useConsoleStore } from "@/stores/consoleStore";
-import { findActionIdByEvent, runAction, setKeymapOverridesProvider } from "@/actions";
+import { findActionIdByEvent, isShortcutEvent, matchShortcut, runAction, setKeymapOverridesProvider } from "@/actions";
 import { formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
@@ -38,15 +38,16 @@ const settings = useSettingsStore();
 const consoleStore = useConsoleStore();
 useAppEvents();
 
-setKeymapOverridesProvider(() => settings.settings?.keymapOverrides);
+const releaseKeymap = setKeymapOverridesProvider(() => settings.settings?.keymapOverrides);
 
 let disposed = false;
 
 function onKeydown(e: KeyboardEvent) {
+  if (!isShortcutEvent(e)) return;
   // Don't steal keys while typing in inputs / dialogs (except Find Action).
   const target = e.target as HTMLElement | null;
   const tag = target?.tagName?.toLowerCase();
-  if (isTerminalToggle(e) && !target?.closest("[role='dialog']")) {
+  if (isTerminalToggle(e) && e.ctrlKey !== e.metaKey && !target?.closest("[role='dialog']")) {
     e.preventDefault();
     layout.bottomOpen = !(layout.bottomOpen && layout.activeBottomTab === "terminal");
     layout.activeBottomTab = "terminal";
@@ -58,14 +59,13 @@ function onKeydown(e: KeyboardEvent) {
     target?.isContentEditable ||
     target?.closest("[role='dialog']");
 
-  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "a") {
+  if (matchShortcut(e, "ctrl+shift+a") || matchShortcut(e, "meta+shift+a")) {
     e.preventDefault();
     layout.findActionOpen = true;
     return;
   }
-  if (editing && !(e.key === "," && (e.metaKey || e.ctrlKey))) return;
-
   const id = findActionIdByEvent(e);
+  if (editing && id !== "Settings") return;
   if (!id) return;
   e.preventDefault();
   void runAction(id, {
@@ -114,6 +114,7 @@ onMounted(async () => {
 onUnmounted(() => {
   disposed = true;
   stopLongTaskLog();
+  releaseKeymap();
   window.removeEventListener("keydown", onKeydown);
 });
 </script>

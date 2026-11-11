@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   rewrite: {} as any,
   backend: { logCommitDetails: vi.fn(), logChangedFiles: vi.fn() },
   dialog: {} as any,
+  stack: {} as any,
   close: vi.fn(),
 }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
@@ -15,6 +16,7 @@ vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => mocks.rewrite }
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks.backend }));
 vi.mock("@/composables/useDialog", () => ({
   useDialogState: () => mocks.dialog,
+  useDialogStack: () => mocks.stack,
   closeDialog: mocks.close,
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
@@ -43,8 +45,9 @@ const open = async (mode: "extract" | "drop" = "extract", initialPaths?: string[
 };
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.workspace = reactive({ repoPath: "A", navigationToken: () => 1 });
+  mocks.workspace = reactive({ repoPath: "A", repoId: "A", isRepo: true, navigationToken: () => 1 });
   mocks.dialog = shallowRef({ id: 42 });
+  mocks.stack = shallowRef([{ id: 42 }]);
   mocks.rewrite = reactive({
     busy: false,
     extractChanges: vi.fn().mockResolvedValue({}),
@@ -125,7 +128,9 @@ it("prevents duplicate writes and dismissal while running", async () => {
   await button("common.cancel").trigger("click");
   expect(mocks.rewrite.dropChanges).toHaveBeenCalledOnce();
   expect(mocks.close).not.toHaveBeenCalled();
+  // Dialog replaced — our entry is no longer on the stack.
   mocks.dialog.value = { id: 43 };
+  mocks.stack.value = [{ id: 43 }];
   pending.resolve({});
   await flushPromises();
   expect(mocks.close).not.toHaveBeenCalled();
