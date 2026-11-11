@@ -87,10 +87,10 @@ pnpm tauri:build      # 产出 NSIS .exe + MSI，位于 target/release/bundle/
 | `*.msi`            | MSI 安装包   |
 
 1. 打开 **[Releases](https://github.com/yifunxxx/gitx/releases)**。
-2. 选择最新的 `v*` 发行版（例如 `v0.1.25`）。
+2. 选择最新的 `v*` 发行版（例如 `v0.1.26`）。
 3. 下载 NSIS `.exe`（多数用户）或 `.msi` 后运行 — 直接是安装文件，不是 zip。
 
-应用 / 包版本为 `0.1.25`，对应标签 `v0.1.25`。构建未签名 — SmartScreen 可能提示；选择 **更多信息** → **仍要运行**。
+应用 / 包版本为 `0.1.26`，对应标签 `v0.1.26`。构建未签名 — SmartScreen 可能提示；选择 **更多信息** → **仍要运行**。
 
 发布方式：推送版本标签（workflow 已在 `master` 上）：
 
@@ -99,12 +99,12 @@ git checkout master && git pull
 # 在 Cargo.toml / package.json / tauri.conf.json / README 中 bump 工作区版本。
 # Cargo.lock 中只改名为 gitx / gitx-* 的 [[package]] 块 — 切勿对整个文件 sed
 # （可能误改第三方 crate，例如 serde_repr）。
-git tag -a v0.1.25 -m "gitx v0.1.25"
-git push origin v0.1.25
+git tag -a v0.1.26 -m "gitx v0.1.26"
+git push origin v0.1.26
 # 关注：Actions → Release Windows；然后 https://github.com/yifunxxx/gitx/releases
 ```
 
-可选：**Actions → Release Windows → Run workflow**，输入 `version`（`0.1.25` 或 `v0.1.25`），无需本地推标签即可创建同样的 Release。
+可选：**Actions → Release Windows → Run workflow**，输入 `version`（`0.1.26` 或 `v0.1.26`），无需本地推标签即可创建同样的 Release。
 
 ### CI Artifacts（master / 调试）
 
