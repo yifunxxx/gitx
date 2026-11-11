@@ -50,13 +50,8 @@ pub fn parse_auth_target(url_or_err: &str) -> (Option<String>, Option<String>, O
             if user.contains('@') || host.contains('@') {
                 if let Some(idx) = user_host.rfind('@') {
                     let u = &user_host[..idx];
-                    let h = user_host[idx + 1..]
-                        .split('/')
-                        .next()
-                        .unwrap_or("")
-                        .split(':')
-                        .next()
-                        .unwrap_or("");
+                    // Keep host:port (and IPv6 bracket forms) intact for helper lookup.
+                    let h = user_host[idx + 1..].split('/').next().unwrap_or("");
                     return (
                         Some(protocol.into()),
                         Some(h.trim_end_matches('\'').to_string()),
@@ -64,17 +59,17 @@ pub fn parse_auth_target(url_or_err: &str) -> (Option<String>, Option<String>, O
                     );
                 }
             }
-            let host = host.split(':').next().unwrap_or(host);
             return (
                 Some(protocol.into()),
                 Some(host.trim_end_matches('\'').to_string()),
                 Some(user.to_string()),
             );
         }
-        let host = user_host.split(':').next().unwrap_or(user_host);
         return (
             Some(protocol.into()),
-            Some(host.trim_end_matches('\'').to_string()),
+            // Preserve a custom port because credential helpers distinguish
+            // `host` from `host:port`.
+            Some(user_host.trim_end_matches('\'').to_string()),
             None,
         );
     }
@@ -295,6 +290,35 @@ mod tests {
         let (proto, host, user) = parse_auth_target("https://github.com/org/repo.git");
         assert_eq!(proto.as_deref(), Some("https"));
         assert_eq!(host.as_deref(), Some("github.com"));
+        assert!(user.is_none());
+    }
+
+    #[test]
+    fn preserves_custom_https_port() {
+        let (proto, host, user) = parse_auth_target(
+            "fatal: could not read Username for 'https://git.tongabihm.com:6133/x': terminal prompts disabled",
+        );
+        assert_eq!(proto.as_deref(), Some("https"));
+        assert_eq!(host.as_deref(), Some("git.tongabihm.com:6133"));
+        assert!(user.is_none());
+    }
+
+    #[test]
+    fn preserves_custom_https_port_with_email_username() {
+        let (proto, host, user) = parse_auth_target(
+            "fatal: could not read Password for 'https://dev@corp.com@git.tongabihm.com:6133/x': terminal prompts disabled",
+        );
+        assert_eq!(proto.as_deref(), Some("https"));
+        assert_eq!(host.as_deref(), Some("git.tongabihm.com:6133"));
+        assert_eq!(user.as_deref(), Some("dev@corp.com"));
+    }
+
+    #[test]
+    fn preserves_ipv6_https_port() {
+        let (proto, host, user) =
+            parse_auth_target("https://[2001:db8::1]:8443/org/repo.git");
+        assert_eq!(proto.as_deref(), Some("https"));
+        assert_eq!(host.as_deref(), Some("[2001:db8::1]:8443"));
         assert!(user.is_none());
     }
 }

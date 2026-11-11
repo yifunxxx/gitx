@@ -1,4 +1,5 @@
 import { openDialog } from "@/composables/useDialog";
+import { toast } from "@/composables/useToast";
 import CredentialDialog, {
   type CredentialDialogResult,
 } from "@/features/sync/CredentialDialog.vue";
@@ -51,7 +52,7 @@ export async function promptCredentials(opts: AuthPromptOpts = {}): Promise<bool
 
   const storeHelper = result.storeHelper && (settings.settings?.git?.useCredentialHelper ?? true);
 
-  await getBackend().credentialSessionSet({
+  const saved = await getBackend().credentialSessionSet({
     path: ws.repoPath,
     protocol,
     host,
@@ -60,6 +61,16 @@ export async function promptCredentials(opts: AuthPromptOpts = {}): Promise<bool
     storeHelper,
     url,
   });
+
+  if (storeHelper && !saved.storedHelper) {
+    // The current retry can still use the in-memory askpass session, but make
+    // a failed persistent save visible instead of implying future reuse.
+    toast({
+      title: String(i18n.global.t("auth.storeFailedTitle")),
+      description: String(i18n.global.t("auth.storeFailedBody")),
+      persistent: true,
+    });
+  }
 
   return true;
 }
