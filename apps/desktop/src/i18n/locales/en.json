@@ -434,14 +434,25 @@
       "shelve": "Shelve"
     },
     "keymap": {
-      "search": "Search by name or action id…",
+      "search": "Search by action name, ID, or shortcut…",
       "resetAll": "Reset all",
-      "hint": "Click Rebind, then press a shortcut. Esc cancels. Later bindings win on conflict.",
+      "hint": "Click Rebind and press a shortcut. Esc cancels; Tab leaves. Remove conflicting bindings first. Changes take effect with Apply or OK.",
       "action": "Action",
       "shortcut": "Shortcut",
       "recording": "Press keys…",
       "rebind": "Rebind",
-      "reset": "Reset"
+      "reset": "Reset",
+      "edit": "Edit binding",
+      "unbound": "Unbound",
+      "remove": "Remove binding",
+      "recordFor": "Record shortcut for {action}",
+      "rebindFor": "Rebind {action}",
+      "removeFor": "Remove binding for {action}",
+      "resetFor": "Reset binding for {action}",
+      "conflict": "{shortcut} is assigned to {actions}. Remove the existing binding first or choose another shortcut.",
+      "reserved": "{shortcut} is reserved for {action}. Choose another shortcut.",
+      "systemShortcut": "system actions",
+      "invalid": "unsupported key combinations"
     }
   },
   "worktrees": {

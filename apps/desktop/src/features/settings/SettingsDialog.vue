@@ -213,7 +213,7 @@ function onEscape(event: KeyboardEvent) {
   cancel();
 }
 
-function onKeymapPatch(overrides: Record<string, string[]>) {
+function onKeymapPatch(overrides: AppSettings["keymapOverrides"]) {
   if (!current() || saving.value) return;
   draft.keymapOverrides = overrides;
   markDirty();

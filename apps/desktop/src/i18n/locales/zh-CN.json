@@ -375,7 +375,7 @@
       "appearance": "外观",
       "git": "版本控制 · Git",
       "confirmation": "确认与显示",
-      "keymap": "Keymap"
+      "keymap": "快捷键"
     },
     "fields": {
       "theme": "主题",
@@ -434,14 +434,25 @@
       "shelve": "Shelve"
     },
     "keymap": {
-      "search": "按名称或 Action Id 搜索…",
+      "search": "按操作名称、ID 或快捷键搜索…",
       "resetAll": "全部重置",
-      "hint": "点击「重新绑定」后按下新快捷键；Esc 取消。冲突时后绑定优先生效。",
+      "hint": "点击「重新绑定」并按下快捷键；Esc 取消，Tab 离开。重复绑定需先移除。修改在应用或确定后生效。",
       "action": "操作",
       "shortcut": "快捷键",
       "recording": "按下快捷键…",
       "rebind": "重新绑定",
-      "reset": "重置"
+      "reset": "重置",
+      "edit": "编辑绑定",
+      "unbound": "未绑定",
+      "remove": "移除绑定",
+      "recordFor": "为「{action}」录制快捷键",
+      "rebindFor": "重新绑定「{action}」",
+      "removeFor": "移除「{action}」的绑定",
+      "resetFor": "重置「{action}」的绑定",
+      "conflict": "{shortcut} 已用于「{actions}」。请先移除已有绑定，或使用其他快捷键。",
+      "reserved": "{shortcut} 已保留给「{action}」，请使用其他快捷键。",
+      "systemShortcut": "系统操作",
+      "invalid": "不支持的按键组合"
     }
   },
   "worktrees": {
