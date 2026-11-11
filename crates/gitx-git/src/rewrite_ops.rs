@@ -64,7 +64,12 @@ impl GitRunner {
             });
         }
 
-        if git_dir.join("CHERRY_PICK_HEAD").exists() || git_dir.join("sequencer").exists() {
+        // Single-commit conflicted reverts often leave only REVERT_HEAD (no
+        // sequencer/ dir). Cherry-picks leave CHERRY_PICK_HEAD and/or sequencer.
+        if git_dir.join("CHERRY_PICK_HEAD").exists()
+            || git_dir.join("REVERT_HEAD").exists()
+            || git_dir.join("sequencer").exists()
+        {
             let (kind, label) = if git_dir.join("REVERT_HEAD").exists() {
                 (RepoOpKind::Revert, "Revert")
             } else {
