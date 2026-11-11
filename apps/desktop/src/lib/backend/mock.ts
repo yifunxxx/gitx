@@ -720,6 +720,16 @@ export const mockBackend: Backend = {
   async appInfo() {
     return { name: "gitx", version: "0.1.3-web" };
   },
+  async appCheckForUpdates() {
+    return {
+      currentVersion: "0.1.3-web",
+      latestVersion: "0.1.3-web",
+      newer: false,
+      releaseUrl: "https://github.com/yifunxxx/gitx/releases",
+      nsisUrl: null,
+      msiUrl: null,
+    };
+  },
   async gitDetect() {
     return {
       path: "/usr/bin/git",

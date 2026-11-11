@@ -19,6 +19,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useUpdateStore } from "@/stores/updateStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { findActionIdByEvent, isShortcutEvent, matchShortcut, runAction, setKeymapOverridesProvider } from "@/actions";
 import { formatGitDetectError } from "@/lib/errors";
@@ -35,6 +36,7 @@ const stopLongTaskLog = installLongTaskLogging();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
+const updates = useUpdateStore();
 const consoleStore = useConsoleStore();
 useAppEvents();
 
@@ -81,6 +83,7 @@ onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
   await settings.load();
   if (disposed) return;
+  updates.startAutoChecks();
   await workspace.loadRecent();
   if (disposed) return;
   try {
@@ -113,6 +116,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disposed = true;
+  updates.stopAutoChecks();
   stopLongTaskLog();
   releaseKeymap();
   window.removeEventListener("keydown", onKeydown);

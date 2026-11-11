@@ -327,6 +327,11 @@ export const SETTINGS_PAGES: SettingPage[] = [
     titleKey: "settings.pages.keymap",
     fields: [],
   },
+  {
+    id: "about",
+    titleKey: "settings.pages.about",
+    fields: [],
+  },
 ];
 
 export function getByPath(obj: unknown, path: string): unknown {

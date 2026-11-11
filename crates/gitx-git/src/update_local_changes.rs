@@ -86,7 +86,7 @@ impl GitRunner {
     pub async fn finish_update_project_stash(
         &self,
         cwd: &Path,
-        cancel: &CancellationToken,
+        _cancel: &CancellationToken,
     ) -> Result<(), AppError> {
         let recovery = CancellationToken::new();
         let Some((path, marker)) = self.read_update_stash_marker(cwd, &recovery).await? else {

@@ -1,16 +1,43 @@
 use crate::state::AppState;
-use gitx_core::{AppError, AppSettings};
+use gitx_core::{AppError, AppSettings, ErrorCode};
 use gitx_git::detect_git;
 use gitx_meta::{load_app_settings, save_app_settings};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
 
+const GITHUB_RELEASES_LATEST: &str = "https://api.github.com/repos/yifunxxx/gitx/releases/latest";
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
     pub name: String,
     pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppUpdateInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub newer: bool,
+    pub release_url: String,
+    pub nsis_url: Option<String>,
+    pub msi_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    html_url: String,
+    #[serde(default)]
+    assets: Vec<GithubAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubAsset {
+    name: String,
+    browser_download_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -30,6 +57,77 @@ pub async fn app_info() -> Result<AppInfo, AppError> {
     Ok(AppInfo {
         name: "gitx".into(),
         version: env!("CARGO_PKG_VERSION").into(),
+    })
+}
+
+fn parse_semver(raw: &str) -> Option<(u64, u64, u64)> {
+    let trimmed = raw.trim().trim_start_matches('v');
+    let mut parts = trimmed.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts
+        .next()
+        .unwrap_or("0")
+        .split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()?;
+    Some((major, minor, patch))
+}
+
+fn is_newer(latest: &str, current: &str) -> bool {
+    match (parse_semver(latest), parse_semver(current)) {
+        (Some(l), Some(c)) => l > c,
+        _ => latest.trim_start_matches('v') != current.trim_start_matches('v'),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn app_check_for_updates() -> Result<AppUpdateInfo, AppError> {
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let client = reqwest::Client::builder()
+        .user_agent(format!("gitx/{current_version}"))
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| AppError::new(ErrorCode::Internal, format!("http client: {e}")))?;
+    let response = client
+        .get(GITHUB_RELEASES_LATEST)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| AppError::new(ErrorCode::NetworkError, format!("update check failed: {e}")))?;
+    if !response.status().is_success() {
+        return Err(AppError::new(
+            ErrorCode::NetworkError,
+            format!("GitHub Releases returned HTTP {}", response.status()),
+        ));
+    }
+    let release: GithubRelease = response.json().await.map_err(|e| {
+        AppError::new(
+            ErrorCode::NetworkError,
+            format!("invalid release payload: {e}"),
+        )
+    })?;
+    let latest_version = release.tag_name.trim_start_matches('v').to_string();
+    let mut nsis_url = None;
+    let mut msi_url = None;
+    for asset in release.assets {
+        let name = asset.name.to_ascii_lowercase();
+        if name.ends_with("-setup.exe") {
+            nsis_url = Some(asset.browser_download_url);
+        } else if name.ends_with(".msi") {
+            msi_url = Some(asset.browser_download_url);
+        }
+    }
+    Ok(AppUpdateInfo {
+        newer: is_newer(&latest_version, &current_version),
+        current_version,
+        latest_version,
+        release_url: release.html_url,
+        nsis_url,
+        msi_url,
     })
 }
 
