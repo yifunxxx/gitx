@@ -78,7 +78,7 @@ it("keeps settings errors visible and permits an explicit retry", async () => {
   expect(mocks.close).toHaveBeenCalledWith(true, 42);
 });
 
-it("does not close a replacement dialog when a pending update completes", async () => {
+it("closes immediately when Update Project starts and ignores a replaced dialog", async () => {
   let finish!: () => void;
   mocks.sync.updateProject.mockReturnValue(
     new Promise<void>((resolve) => {
@@ -86,8 +86,9 @@ it("does not close a replacement dialog when a pending update completes", async 
     }),
   );
   await submit().trigger("click");
+  expect(mocks.close).toHaveBeenCalledWith(true, 42);
   mocks.dialog.value = { id: 43 };
   finish();
   await flushPromises();
-  expect(mocks.close).not.toHaveBeenCalled();
+  expect(mocks.close).toHaveBeenCalledTimes(1);
 });

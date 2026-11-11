@@ -172,3 +172,16 @@ it("navigates with F7 and disables changes while a save is pending", async () =>
     wrapper.findAll(".merge-action").every((b) => b.attributes("disabled") !== undefined),
   ).toBe(true);
 });
+
+it("keeps the three conflict panes' scroll positions linked", async () => {
+  mocks.store.mergeTabs = [makeTab("first", 80)];
+  const wrapper = mount(MergeViewer, { attachTo: document.body });
+  await flushPromises();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const panes = views(wrapper).map((view) => view.scrollDOM);
+  expect(panes).toHaveLength(3);
+  panes[1]!.scrollTop = 120;
+  panes[1]!.dispatchEvent(new Event("scroll"));
+  expect(panes[0]!.scrollTop).toBe(120);
+  expect(panes[2]!.scrollTop).toBe(120);
+});

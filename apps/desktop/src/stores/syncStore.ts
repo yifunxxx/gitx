@@ -41,6 +41,8 @@ export const useSyncStore = defineStore("sync", () => {
     await useChangesStore().refresh();
     if (request !== generation) return;
     await useLogStore().load(true, true);
+    if (request !== generation) return;
+    await useStashShelfStore().refresh();
   }
 
   async function onAuthOrToast<T>(
@@ -170,7 +172,7 @@ export const useSyncStore = defineStore("sync", () => {
       message: "Fetching…",
     });
     const run = async () => {
-      jobs.progress(jobId, { message: "Fetching & updating…" });
+      jobs.progress(jobId, { message: "Fetching, updating, restoring local changes…" });
       const info = await getBackend()
         .updateProjectRun({
           path,
@@ -179,12 +181,12 @@ export const useSyncStore = defineStore("sync", () => {
         .catch(async (error) => {
           // An update can stop after changing HEAD, creating conflicts or saving
           // local work. Publish that state before showing the recovery message.
+          // Prefer op-state refresh first so AppliedNeedsDrop stashes are cleared.
           if (request === generation) {
             await Promise.allSettled([
-              afterSync(request),
-              useConflictsStore().refresh(),
               useRewriteStore().refreshOpState(),
-              useStashShelfStore().refresh(),
+              useConflictsStore().refresh(),
+              afterSync(request),
             ]);
           }
           throw error;

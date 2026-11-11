@@ -19,6 +19,7 @@ import { i18n } from "@/i18n";
 import { formatErrorMessage } from "@/lib/errors";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { useRewriteStore } from "./rewriteStore";
+import { useStashShelfStore } from "./stashShelfStore";
 
 export type MergeTab = {
   id: string;
@@ -109,6 +110,8 @@ export const useConflictsStore = defineStore("conflicts", () => {
         () => refresh(),
         () => useChangesStore().refresh(),
         () => useRewriteStore().refreshOpState(),
+        // Update Project may drop its managed stash once conflicts clear.
+        () => useStashShelfStore().refresh(),
       ].map((reload) => Promise.resolve().then(async () => {
         if (source.current()) await reload();
       })),

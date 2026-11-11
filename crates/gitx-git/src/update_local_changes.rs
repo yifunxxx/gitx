@@ -1,8 +1,11 @@
 //! Update Project's automatic save/restore. Never pop an unrelated user stash.
 use crate::{GitInvocation, GitRunner, OpKind};
 use gitx_core::{AppError, ErrorCode};
+use serde::{Deserialize, Serialize};
 use std::{
-    path::Path,
+    fs,
+    io::{self, Write},
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -10,7 +13,109 @@ use tokio_util::sync::CancellationToken;
 
 static SAVE_ID: AtomicU64 = AtomicU64::new(0);
 
+const MESSAGE_PREFIX: &str = "gitx: Update Project ";
+
+#[derive(Serialize, Deserialize)]
+struct UpdateStashMarker {
+    sha: String,
+    message: String,
+    #[serde(default)]
+    phase: UpdateStashPhase,
+}
+
+#[derive(Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum UpdateStashPhase {
+    /// Saved before merge/rebase/reset; not yet applied.
+    #[default]
+    Saved,
+    /// `stash apply` conflicted; worktree already has the restore attempt.
+    /// Drop once conflicts are cleared (IDEA Update Project behavior).
+    AppliedNeedsDrop,
+}
+
+fn save_marker(path: &Path, marker: &UpdateStashMarker) -> Result<(), AppError> {
+    let bytes = serde_json::to_vec(marker)
+        .map_err(|error| AppError::new(ErrorCode::Internal, error.to_string()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::new(ErrorCode::FsError, "missing gitx directory"))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| AppError::new(ErrorCode::FsError, error.to_string()))?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|error| AppError::new(ErrorCode::FsError, error.to_string()))?;
+    file.write_all(&bytes)
+        .and_then(|_| file.as_file().sync_all())
+        .map_err(|error| AppError::new(ErrorCode::FsError, error.to_string()))?;
+    file.persist(path)
+        .map_err(|error| AppError::new(ErrorCode::FsError, error.error.to_string()))?;
+    Ok(())
+}
+
 impl GitRunner {
+    async fn update_stash_marker_path(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<PathBuf, AppError> {
+        Ok(self
+            .git_dir(cwd, cancel)
+            .await?
+            .join("gitx/update-project-stash.json"))
+    }
+
+    async fn read_update_stash_marker(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<Option<(PathBuf, UpdateStashMarker)>, AppError> {
+        let path = self.update_stash_marker_path(cwd, cancel).await?;
+        match fs::read(&path) {
+            Ok(bytes) => {
+                let marker = serde_json::from_slice(&bytes)
+                    .map_err(|error| AppError::new(ErrorCode::FsError, error.to_string()))?;
+                Ok(Some((path, marker)))
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(AppError::new(ErrorCode::FsError, error.to_string())),
+        }
+    }
+
+    /// Drop an Update Project stash that was already applied with conflicts once
+    /// the index is clean. Never touches user stashes or unapplied Saved markers.
+    pub async fn finish_update_project_stash(
+        &self,
+        cwd: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let recovery = CancellationToken::new();
+        let Some((path, marker)) = self.read_update_stash_marker(cwd, &recovery).await? else {
+            return Ok(());
+        };
+        if marker.phase != UpdateStashPhase::AppliedNeedsDrop {
+            return Ok(());
+        }
+        if !self.unmerged_paths(cwd, &recovery).await?.is_empty() {
+            return Ok(());
+        }
+        let still_present = self
+            .stash_list(cwd, &recovery)
+            .await?
+            .iter()
+            .any(|entry| entry.sha == marker.sha);
+        if still_present {
+            self.stash_drop(cwd, &marker.sha, &recovery).await.map_err(|mut error| {
+                error.message = format!(
+                    "Conflicts are resolved, but the Update Project stash ({}) could not be removed. {}",
+                    marker.sha, error.message
+                );
+                error
+            })?;
+        }
+        let _ = fs::remove_file(path);
+        Ok(())
+    }
+
     pub(crate) async fn update_preserving_changes(
         &self,
         cwd: &Path,
@@ -24,7 +129,7 @@ impl GitRunner {
         // token must not interrupt recovery after files have left the worktree.
         let recovery = CancellationToken::new();
         let message = format!(
-            "gitx: Update Project {}-{}-{}",
+            "{MESSAGE_PREFIX}{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -46,10 +151,20 @@ impl GitRunner {
             }
         };
         let stash = if saved {
-            Some(self.stash_list(cwd, &recovery).await?.into_iter()
+            let entry = self.stash_list(cwd, &recovery).await?.into_iter()
                 .find(|entry| entry.message.ends_with(&format!(": {message}")))
                 .ok_or_else(|| AppError::new(ErrorCode::StashFailed,
-                    format!("Cannot identify saved local changes '{message}'. Update was not started; check Stash.")))?)
+                    format!("Cannot identify saved local changes '{message}'. Update was not started; check Stash.")))?;
+            let marker_path = self.update_stash_marker_path(cwd, &recovery).await?;
+            save_marker(
+                &marker_path,
+                &UpdateStashMarker {
+                    sha: entry.sha.clone(),
+                    message: message.clone(),
+                    phase: UpdateStashPhase::Saved,
+                },
+            )?;
+            Some((entry, marker_path))
         } else {
             None
         };
@@ -61,7 +176,7 @@ impl GitRunner {
                 cancel,
             )
             .await;
-        let Some(stash) = stash else {
+        let Some((stash, marker_path)) = stash else {
             return result.map(|_| ());
         };
 
@@ -73,14 +188,14 @@ impl GitRunner {
                 return Err(error);
             }
             if let Err(restore) = self
-                .restore_update_changes(cwd, &stash.sha, &recovery)
+                .restore_update_changes(cwd, &stash.sha, &marker_path, &message, &recovery)
                 .await
             {
                 error.message = format!("{} {}", error.message, restore.message);
             }
             return Err(error);
         }
-        self.restore_update_changes(cwd, &stash.sha, &recovery)
+        self.restore_update_changes(cwd, &stash.sha, &marker_path, &message, &recovery)
             .await
     }
 
@@ -88,18 +203,43 @@ impl GitRunner {
         &self,
         cwd: &Path,
         sha: &str,
+        marker_path: &Path,
+        message: &str,
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
         // --index preserves staged vs unstaged edits. Never retry a failed
         // application: Git may already have modified files or created conflicts.
-        self.stash_apply(cwd, sha, true, cancel).await.map_err(|mut error| {
+        if let Err(mut error) = self.stash_apply(cwd, sha, true, cancel).await {
+            // Apply already mutated the worktree; keep the stash until conflicts clear.
+            let _ = save_marker(
+                marker_path,
+                &UpdateStashMarker {
+                    sha: sha.into(),
+                    message: message.into(),
+                    phase: UpdateStashPhase::AppliedNeedsDrop,
+                },
+            );
             error.message = format!("Local changes need attention while restoring after Update Project. The saved copy is kept in Stash ({sha}). Resolve conflicts, or finish recovery from that stash. {}", error.message);
-            error
-        })?;
-        self.stash_drop(cwd, sha, cancel).await.map_err(|mut error| {
-            error.message = format!("Local changes were restored, but the saved copy remains in Stash ({sha}); do not apply it again. {}", error.message);
-            error
-        })
+            return Err(error);
+        }
+        match self.stash_drop(cwd, sha, cancel).await {
+            Ok(()) => {
+                let _ = fs::remove_file(marker_path);
+                Ok(())
+            }
+            Err(mut error) => {
+                let _ = save_marker(
+                    marker_path,
+                    &UpdateStashMarker {
+                        sha: sha.into(),
+                        message: message.into(),
+                        phase: UpdateStashPhase::AppliedNeedsDrop,
+                    },
+                );
+                error.message = format!("Local changes were restored, but the saved copy remains in Stash ({sha}); do not apply it again. {}", error.message);
+                Err(error)
+            }
+        }
     }
 }
 

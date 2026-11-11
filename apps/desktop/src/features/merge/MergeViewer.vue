@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, markRaw, nextTick, ref, watch } from "vue";
+import { computed, markRaw, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -38,13 +38,50 @@ type Pane = { getView: () => EditorView | undefined };
 const left = ref<Pane | null>(null);
 const result = ref<Pane | null>(null);
 const right = ref<Pane | null>(null);
+let scrollUnbind: (() => void) | undefined;
+let scrollSyncing = false;
 watch(
   () => tab.value?.id,
   () => {
     selected.value = ranges.value.find(rangePending)?.index ?? ranges.value[0]?.index ?? null;
+    void nextTick(() => bindLinkedScroll());
   },
   { immediate: true },
 );
+onBeforeUnmount(() => {
+  scrollUnbind?.();
+  scrollUnbind = undefined;
+});
+
+function bindLinkedScroll() {
+  scrollUnbind?.();
+  scrollUnbind = undefined;
+  const views = [left.value, result.value, right.value]
+    .map((pane) => pane?.getView())
+    .filter((view): view is EditorView => !!view);
+  if (views.length < 2) return;
+  const cleanups: Array<() => void> = [];
+  for (const view of views) {
+    const scroller = view.scrollDOM;
+    const onScroll = () => {
+      if (scrollSyncing) return;
+      scrollSyncing = true;
+      const top = scroller.scrollTop;
+      const leftPos = scroller.scrollLeft;
+      for (const other of views) {
+        if (other === view) continue;
+        if (other.scrollDOM.scrollTop !== top) other.scrollDOM.scrollTop = top;
+        if (other.scrollDOM.scrollLeft !== leftPos) other.scrollDOM.scrollLeft = leftPos;
+      }
+      scrollSyncing = false;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    cleanups.push(() => scroller.removeEventListener("scroll", onScroll));
+  }
+  scrollUnbind = () => {
+    for (const cleanup of cleanups) cleanup();
+  };
+}
 
 function sourceState(side: MergeSide) {
   const text =

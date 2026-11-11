@@ -15,6 +15,8 @@ impl GitRunner {
         cwd: &Path,
         cancel: &CancellationToken,
     ) -> Result<RepoOpState, AppError> {
+        // Drop Update Project stashes that already applied once conflicts clear.
+        let _ = self.finish_update_project_stash(cwd, cancel).await;
         let mut state = self.repo_op_state_raw(cwd, cancel).await?;
         state.smart_recovery = self.smart_recovery_status(cwd, &state, cancel).await?;
         Ok(state)
