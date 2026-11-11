@@ -807,6 +807,8 @@
     "username": "用户名",
     "password": "密码 / Token",
     "useCredentialHelper": "使用 credential helper 保存",
+    "storeFailedTitle": "凭据未能保存",
+    "storeFailedBody": "本次操作仍会使用当前会话重试，但下次可能再次询问。请检查 credential helper 设置。",
     "storeHint": "保存后，后续 fetch / pull / push / 更新项目可自动使用，无需再次输入。",
     "saveAndRetry": "保存并重试",
     "enterCredentials": "输入凭据…"

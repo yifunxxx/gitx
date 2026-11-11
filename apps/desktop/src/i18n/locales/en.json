@@ -807,6 +807,8 @@
     "username": "Username",
     "password": "Password / Token",
     "useCredentialHelper": "Save with credential helper",
+    "storeFailedTitle": "Credentials were not saved",
+    "storeFailedBody": "The current operation can retry with this session, but Git may ask again next time. Check your credential helper settings.",
     "storeHint": "After saving, later fetch / pull / push / Update Project can reuse them without prompting again.",
     "saveAndRetry": "Save and Retry",
     "enterCredentials": "Enter credentials…"

@@ -39,4 +39,23 @@ describe("parseAuthTarget", () => {
     expect(t.host).toBe("github.com");
     expect(t.username).toBeNull();
   });
+
+  it("keeps a custom HTTPS port for credential-helper lookup", () => {
+    const t = parseAuthTarget("https://git.tongabihm.com:6133/xietong/project-teamwork.git");
+    expect(t.host).toBe("git.tongabihm.com:6133");
+  });
+
+  it("keeps a custom HTTPS port with an email username", () => {
+    const t = parseAuthTarget(
+      "fatal: could not read Password for 'https://dev@corp.com@git.tongabihm.com:6133/x': terminal prompts disabled",
+    );
+    expect(t.protocol).toBe("https");
+    expect(t.host).toBe("git.tongabihm.com:6133");
+    expect(t.username).toBe("dev@corp.com");
+  });
+
+  it("keeps an IPv6 HTTPS authority with port", () => {
+    const t = parseAuthTarget("https://[2001:db8::1]:8443/org/repo.git");
+    expect(t.host).toBe("[2001:db8::1]:8443");
+  });
 });

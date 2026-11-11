@@ -53,18 +53,18 @@ export function parseAuthTarget(urlOrErr: string): ParsedAuthTarget {
     if (at >= 0) {
       const user = authority.slice(0, at);
       const hostPort = authority.slice(at + 1);
-      const host = hostPort.split(":")[0] ?? hostPort;
       return {
         protocol: proto,
-        host: host || null,
+        // Keep a non-default port: Git credential helpers scope HTTP entries
+        // by host and port, and `https://host:6133` is distinct from `https://host`.
+        host: hostPort || null,
         username: user || null,
         url: candidate,
       };
     }
-    const host = authority.split(":")[0] ?? authority;
     return {
       protocol: proto,
-      host: host || null,
+      host: authority || null,
       username: null,
       url: candidate,
     };
