@@ -343,7 +343,9 @@ impl GitRunner {
             if !partial.is_empty() {
                 let result = self
                     .commit_partial(cwd, &msg_path, amend, no_verify, partial, cancel)
-                    .await?;
+                    .await;
+                let _ = std::fs::remove_file(&msg_path);
+                let result = result?;
                 return Ok(self.restore_after_commit(cwd, result).await);
             }
         }
@@ -383,21 +385,35 @@ impl GitRunner {
         partial: &[gitx_core::PartialFileSelection],
         cancel: &CancellationToken,
     ) -> Result<CommitResult, AppError> {
-        let tmp_index = cwd.join(".git").join("gitx").join("partial-index");
+        let git_dir = self.git_dir(cwd, cancel).await?;
+        let gitx = git_dir.join("gitx");
+        std::fs::create_dir_all(&gitx)
+            .map_err(|e| AppError::new(ErrorCode::FsError, format!("create gitx dir: {e}")))?;
+        let tmp_index = gitx.join("partial-index");
         let _ = std::fs::remove_file(&tmp_index);
 
-        // Seed temp index from the real index (or empty), then overlay selected lines.
-        let real_index = cwd.join(".git").join("index");
-        if real_index.exists() {
-            std::fs::copy(&real_index, &tmp_index).map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("copy index for partial: {e}"))
-            })?;
-        } else {
-            // Unborn: empty index file.
-            std::fs::write(&tmp_index, []).map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("create temp index: {e}"))
-            })?;
-        }
+        // Seed from HEAD (or an empty tree), not the live index — unrelated staged
+        // files must stay out of the partial commit and remain staged afterward.
+        let head_ok = self
+            .run(
+                GitInvocation::new(cwd, ["rev-parse", "--verify", "HEAD"])
+                    .kind(OpKind::Read)
+                    .git_bin(self.git_bin.clone()),
+                cancel,
+            )
+            .await
+            .is_ok();
+        self.run_with_index_env(
+            cwd,
+            &tmp_index,
+            if head_ok {
+                vec!["read-tree".into(), "HEAD".into()]
+            } else {
+                vec!["read-tree".into(), "--empty".into()]
+            },
+            cancel,
+        )
+        .await?;
 
         for sel in partial {
             let head_bytes = self
@@ -438,20 +454,23 @@ impl GitRunner {
         // `git -c ...` cannot set env; use std::process with env for this one call.
         let result = self.run_with_index_env(cwd, &tmp_index, args, cancel).await;
 
-        // Sync real index: reset selected paths so remaining worktree changes stay unstaged.
-        let paths: Vec<String> = partial.iter().map(|p| p.path.clone()).collect();
-        let _ = self
-            .run(
-                GitInvocation::new(cwd, {
-                    let mut a = vec!["reset".into(), "-q".into(), "--".into()];
-                    a.extend(paths);
-                    a
-                })
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone()),
-                cancel,
-            )
-            .await;
+        // Only on success: reset selected paths on the real index so remaining
+        // worktree lines stay unstaged. Failed commits must leave the index alone.
+        if result.is_ok() {
+            let paths: Vec<String> = partial.iter().map(|p| p.path.clone()).collect();
+            let _ = self
+                .run(
+                    GitInvocation::new(cwd, {
+                        let mut a = vec!["reset".into(), "-q".into(), "--".into()];
+                        a.extend(paths);
+                        a
+                    })
+                    .kind(OpKind::Write)
+                    .git_bin(self.git_bin.clone()),
+                    cancel,
+                )
+                .await;
+        }
 
         let _ = std::fs::remove_file(&tmp_index);
         result
