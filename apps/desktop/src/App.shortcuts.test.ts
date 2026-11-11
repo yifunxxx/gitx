@@ -16,6 +16,9 @@ vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => state.layout }));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => state.settings }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => state.workspace }));
 vi.mock("@/stores/consoleStore", () => ({ useConsoleStore: () => ({ append: vi.fn() }) }));
+vi.mock("@/stores/updateStore", () => ({
+  useUpdateStore: () => ({ startAutoChecks: vi.fn(), stopAutoChecks: vi.fn() }),
+}));
 vi.mock("@/composables/useRepositoryRefresh", () => ({ useRepositoryRefresh: () => {} }));
 vi.mock("@/composables/useAppEvents", () => ({ useAppEvents: () => {} }));
 let wrapper: ReturnType<typeof shallowMount>;
