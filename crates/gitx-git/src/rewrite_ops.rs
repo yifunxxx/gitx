@@ -277,9 +277,28 @@ impl GitRunner {
                         });
                     }
                 }
+                // A true fast-forward lands HEAD on an already-existing tip
+                // (the merged branch / upstream). `old` is also an ancestor of a
+                // newly created merge commit, so ancestry alone is not enough.
+                let mut merged_tips = Vec::new();
+                if branches.is_empty() {
+                    if let Ok(upstream) = self.rev_parse_public(cwd, "@{u}", cancel).await {
+                        merged_tips.push(upstream);
+                    }
+                } else {
+                    for branch in branches {
+                        if let Ok(tip) = self.rev_parse_public(cwd, branch, cancel).await {
+                            merged_tips.push(tip);
+                        }
+                    }
+                }
+                let landed_on_merged_tip = merged_tips.iter().any(|tip| tip == &new);
                 let outcome = if old == new {
                     RewriteOutcome::AlreadyUpToDate
-                } else if !no_ff && is_ancestor(self, cwd, &old, &new, cancel).await {
+                } else if !no_ff
+                    && landed_on_merged_tip
+                    && is_ancestor(self, cwd, &old, &new, cancel).await
+                {
                     RewriteOutcome::FastForward
                 } else {
                     RewriteOutcome::Success
