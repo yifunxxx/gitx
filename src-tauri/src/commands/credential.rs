@@ -315,8 +315,7 @@ mod tests {
 
     #[test]
     fn preserves_ipv6_https_port() {
-        let (proto, host, user) =
-            parse_auth_target("https://[2001:db8::1]:8443/org/repo.git");
+        let (proto, host, user) = parse_auth_target("https://[2001:db8::1]:8443/org/repo.git");
         assert_eq!(proto.as_deref(), Some("https"));
         assert_eq!(host.as_deref(), Some("[2001:db8::1]:8443"));
         assert!(user.is_none());
