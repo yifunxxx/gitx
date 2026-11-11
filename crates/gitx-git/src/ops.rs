@@ -682,6 +682,7 @@ impl GitRunner {
             format!("--max-count={max}"),
             "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%D%x1e".into(),
             "--decorate-refs-exclude=refs/gitx/*".into(),
+            "--decorate-refs-exclude=refs/stash".into(),
             "--decorate=short".into(),
             "--no-show-signature".into(),
             "--no-patch".into(),
@@ -1073,6 +1074,7 @@ impl GitRunner {
                 "-s",
                 "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%s%x00%b%x00%D",
                 "--decorate-refs-exclude=refs/gitx/*",
+                "--decorate-refs-exclude=refs/stash",
                 "--decorate=short",
                 "--no-show-signature",
                 "--end-of-options",
@@ -1436,6 +1438,9 @@ fn append_log_filters(args: &mut Vec<String>, filters: &LogFilters) {
     }
     if filters.revisions.is_empty() {
         args.push("--exclude=refs/gitx/*".into());
+        // Stash WIP commits (refs/stash + index/untracked parents) must not
+        // pollute History — IDEA never shows them in the Log graph.
+        args.push("--exclude=refs/stash".into());
         args.push("--all".into());
     }
     args.push("--end-of-options".into());

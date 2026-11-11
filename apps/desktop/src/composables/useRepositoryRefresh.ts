@@ -12,6 +12,7 @@ import { useWorktreesStore } from "@/stores/worktreesStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useJobsStore } from "@/stores/jobsStore";
 import { useConsoleStore } from "@/stores/consoleStore";
+import { useSyncStore } from "@/stores/syncStore";
 import { formatErrorMessage } from "@/lib/errors";
 
 type ChangeKind = "worktree" | "index" | "refs" | "opState" | "ignore" | "metadata";
@@ -38,6 +39,7 @@ export function useRepositoryRefresh() {
   const worktrees = useWorktreesStore();
   const stash = useStashShelfStore();
   const jobs = useJobsStore();
+  const sync = useSyncStore();
   const console = useConsoleStore();
   const pending = new Set<ChangeKind>();
   let disposed = false;
@@ -69,7 +71,8 @@ export function useRepositoryRefresh() {
     )
       return;
     // Wait for gitx writes to finish, then publish their final state.
-    if (jobs.count || rewrite.busy) {
+    // Sync updates also stash/pull/restore — defer Log so stash WIP never flashes.
+    if (jobs.count || rewrite.busy || sync.updating || sync.pulling || sync.pushing) {
       timer = setTimeout(() => void flush(), 300);
       return;
     }

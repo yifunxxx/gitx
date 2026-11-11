@@ -7,6 +7,7 @@ enableAutoUnmount(afterEach);
 const mocks = vi.hoisted(() => ({
   ws: {} as { repoPath: string; repoId: string; isRepo: boolean; roots: unknown[] },
   jobs: { count: 0 },
+  sync: { updating: false, pulling: false, pushing: false },
   changes: { refresh: vi.fn() },
   branches: { refresh: vi.fn() },
   log: {
@@ -39,6 +40,7 @@ vi.mock("@/stores/conflictsStore", () => ({ useConflictsStore: () => mocks.confl
 vi.mock("@/stores/worktreesStore", () => ({ useWorktreesStore: () => mocks.worktrees }));
 vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => mocks.stash }));
 vi.mock("@/stores/jobsStore", () => ({ useJobsStore: () => mocks.jobs }));
+vi.mock("@/stores/syncStore", () => ({ useSyncStore: () => mocks.sync }));
 vi.mock("@/stores/consoleStore", () => ({ useConsoleStore: () => ({ append: mocks.append }) }));
 const Host = defineComponent({
   setup() {
@@ -62,6 +64,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.ws = reactive({ repoPath: "A", repoId: "A", isRepo: true, roots: [{ id: "A" }] });
   mocks.jobs.count = 0;
+  mocks.sync.updating = mocks.sync.pulling = mocks.sync.pushing = false;
   mocks.log.loading =
     mocks.log.locating =
     mocks.log.loadingMore =

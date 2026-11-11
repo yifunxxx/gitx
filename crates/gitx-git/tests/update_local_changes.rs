@@ -151,6 +151,32 @@ async fn restore_conflict_keeps_exact_saved_copy_and_remote_commit() {
 }
 
 #[tokio::test]
+async fn resolving_restore_conflicts_drops_the_update_project_stash() {
+    let repo = FixtureBuilder::new().build("with-remote").unwrap();
+    let cwd = repo.path();
+    git(cwd, &["config", "core.autocrlf", "false"]);
+    let other = peer(cwd);
+    commit(&other, "README.md", "remote\n");
+    git(&other, &["push"]);
+    fs::write(cwd.join("README.md"), "local\n").unwrap();
+    let runner = GitRunner::new("git");
+    let token = CancellationToken::new();
+    assert!(runner
+        .update_project_run(cwd, UpdateMethod::Rebase, &token)
+        .await
+        .is_err());
+    assert_eq!(runner.stash_list(cwd, &token).await.unwrap().len(), 1);
+    // Finish the restore the way the Conflicts UI does: take one side and clear
+    // unmerged entries, then refresh repo op state (drops the managed stash).
+    git(cwd, &["checkout", "--ours", "--", "README.md"]);
+    git(cwd, &["add", "--", "README.md"]);
+    assert!(git(cwd, &["ls-files", "-u"]).is_empty());
+    runner.repo_op_state(cwd, &token).await.unwrap();
+    assert!(runner.stash_list(cwd, &token).await.unwrap().is_empty());
+    assert!(!cwd.join(".git/gitx/update-project-stash.json").exists());
+}
+
+#[tokio::test]
 async fn untracked_collision_keeps_remote_file_and_saved_local_bytes() {
     let repo = FixtureBuilder::new().build("with-remote").unwrap();
     let cwd = repo.path();

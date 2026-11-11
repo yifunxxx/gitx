@@ -39,6 +39,7 @@ async function ok() {
   if (!current() || busy.value) return;
   working.value = true;
   error.value = null;
+  const chosen = strategy.value;
   try {
     if (dontShow.value && settings.settings) {
       await settings.save({
@@ -60,13 +61,14 @@ async function ok() {
             cherryPickSuffixProtected: true,
           }),
           showOptionsBeforeUpdate: false,
-          updateMethod: strategy.value,
+          updateMethod: chosen,
         },
       });
     }
     if (!current()) return;
-    await sync.updateProject(strategy.value);
-    if (current()) closeDialog(true, dialogId);
+    // IDEA-style: dismiss immediately; progress lives in the job toast strip.
+    closeDialog(true, dialogId);
+    await sync.updateProject(chosen);
   } catch (reason) {
     if (current()) error.value = formatErrorMessage(reason);
   } finally {
