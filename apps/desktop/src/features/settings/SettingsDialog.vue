@@ -23,6 +23,7 @@ import {
   type SettingField,
 } from "./schema";
 import KeymapPanel from "./KeymapPanel.vue";
+import AboutUpdatesPanel from "./AboutUpdatesPanel.vue";
 import { cloneJson } from "@/lib/clone";
 
 const settings = useSettingsStore();
@@ -71,7 +72,7 @@ const activePage = computed(() => pages.find((p) => p.id === activePageId.value)
 
 const filteredFields = computed(() => {
   const page = activePage.value;
-  if (page.id === "keymap") return [];
+  if (page.id === "keymap" || page.id === "about") return [];
   if (matchesPage(page.id, page.titleKey)) return page.fields;
   return page.fields.filter((f) => matchField(f, search.value, t));
 });
@@ -268,6 +269,8 @@ function onKeymapPatch(overrides: AppSettings["keymapOverrides"]) {
             :disabled="saving"
             @patch="onKeymapPatch"
           />
+
+          <AboutUpdatesPanel v-else-if="activePage.id === 'about'" :disabled="saving" />
 
           <fieldset v-else class="min-w-0 space-y-1" :disabled="saving">
             <div

@@ -7,8 +7,8 @@ mod state;
 mod terminal;
 
 use commands::app::{
-    app_info, git_detect, git_test_executable, log_frontend, settings_get, settings_reload,
-    settings_set,
+    app_check_for_updates, app_info, git_detect, git_test_executable, log_frontend, settings_get,
+    settings_reload, settings_set,
 };
 use commands::changelist::{
     changelist_create, changelist_delete, changelist_list, changelist_move, changelist_rename,
@@ -90,6 +90,7 @@ pub fn run() {
     let specta_builder =
         tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
             app_info,
+            app_check_for_updates,
             git_detect,
             git_test_executable,
             settings_get,

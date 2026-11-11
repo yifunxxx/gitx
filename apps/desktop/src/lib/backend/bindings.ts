@@ -10,6 +10,9 @@ export const commands = {
   async appInfo(): Promise<AppInfo> {
     return await TAURI_INVOKE("app_info");
   },
+  async appCheckForUpdates(): Promise<AppUpdateInfo> {
+    return await TAURI_INVOKE("app_check_for_updates");
+  },
   async gitDetect(): Promise<GitDetectDto> {
     return await TAURI_INVOKE("git_detect");
   },
@@ -525,6 +528,14 @@ export type AppError = {
   recover: RecoverAction[];
 };
 export type AppInfo = { name: string; version: string };
+export type AppUpdateInfo = {
+  currentVersion: string;
+  latestVersion: string;
+  newer: boolean;
+  releaseUrl: string;
+  nsisUrl: string | null;
+  msiUrl: string | null;
+};
 export type AppSettings = {
   schemaVersion: number;
   appearance: AppearanceSettings;

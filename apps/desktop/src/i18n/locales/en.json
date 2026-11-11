@@ -499,7 +499,8 @@
       "appearance": "Appearance",
       "git": "Version Control · Git",
       "confirmation": "Confirmation & Display",
-      "keymap": "Keymap"
+      "keymap": "Keymap",
+      "about": "About & Updates"
     },
     "fields": {
       "theme": "Theme",
@@ -892,5 +893,21 @@
     "unsavedTitle": "Close Unapplied Merge Results",
     "unsavedMessage": "{count} merge tab(s) contain changes that have not been applied. Closing will discard these edits. Continue?",
     "discardAndClose": "Discard Edits and Close"
+  },
+  "updates": {
+    "currentVersion": "Current version",
+    "latestVersion": "Latest release",
+    "checkNow": "Check for updates",
+    "checking": "Checking…",
+    "checkHint": "Check GitHub Releases for a newer gitx build.",
+    "autoCheckHint": "gitx also checks quietly after startup and about once a day.",
+    "availableTitle": "gitx {version} is available",
+    "availableBody": "You are on {current}. Open the GitHub Release to download the Windows installer.",
+    "upToDateTitle": "You're up to date",
+    "upToDateBody": "gitx {version} is the latest release.",
+    "checkFailed": "Could not check for updates",
+    "openRelease": "Open Release",
+    "downloadNsis": "Download NSIS (.exe)",
+    "downloadMsi": "Download MSI"
   }
 }

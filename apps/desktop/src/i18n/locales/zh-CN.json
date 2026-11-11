@@ -499,7 +499,8 @@
       "appearance": "外观",
       "git": "版本控制 · Git",
       "confirmation": "确认与显示",
-      "keymap": "快捷键"
+      "keymap": "快捷键",
+      "about": "关于与更新"
     },
     "fields": {
       "theme": "主题",
@@ -892,5 +893,21 @@
     "unsavedTitle": "关闭未应用的合并结果",
     "unsavedMessage": "有 {count} 个合并标签包含尚未应用的修改。关闭会丢弃这些编辑，是否继续？",
     "discardAndClose": "丢弃编辑并关闭"
+  },
+  "updates": {
+    "currentVersion": "当前版本",
+    "latestVersion": "最新版本",
+    "checkNow": "检查更新",
+    "checking": "正在检查…",
+    "checkHint": "从 GitHub Releases 检查是否有新的 gitx 构建。",
+    "autoCheckHint": "启动后也会安静检查一次，大约每天再检查一次。",
+    "availableTitle": "gitx {version} 可用",
+    "availableBody": "当前为 {current}。打开 GitHub Release 下载 Windows 安装包。",
+    "upToDateTitle": "已是最新版本",
+    "upToDateBody": "gitx {version} 已是最新发布。",
+    "checkFailed": "检查更新失败",
+    "openRelease": "打开 Release",
+    "downloadNsis": "下载 NSIS（.exe）",
+    "downloadMsi": "下载 MSI"
   }
 }
