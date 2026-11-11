@@ -63,7 +63,7 @@ it("does not close a newer dialog after a delayed OK completes", async () => {
   const pending = deferred<AppSettings>();
   backend.settingsSet.mockReturnValue(pending.promise);
   await theme("light");
-  await button("确定").trigger("click");
+  await button("OK").trigger("click");
   const saved = backend.settingsSet.mock.calls[0]![0];
   closeDialog();
   await nextTick();
@@ -79,9 +79,9 @@ it("submits only one save while Apply is pending", async () => {
   const pending = deferred<AppSettings>();
   backend.settingsSet.mockReturnValue(pending.promise);
   await theme("light");
-  await button("应用").trigger("click");
-  await button("应用").trigger("click");
-  await button("确定").trigger("click");
+  await button("Apply").trigger("click");
+  await button("Apply").trigger("click");
+  await button("OK").trigger("click");
   expect(backend.settingsSet).toHaveBeenCalledTimes(1);
   pending.resolve(backend.settingsSet.mock.calls[0]![0]);
   await flushPromises();
@@ -89,14 +89,14 @@ it("submits only one save while Apply is pending", async () => {
 });
 
 it("shows all appearance fields for a matching page title", async () => {
-  await host.get('input[type="search"]').setValue("外观");
+  await host.get('input[type="search"]').setValue("Appearance");
   expect(host.findComponent(SettingsDialog).findAllComponents(Select)).toHaveLength(4);
 });
 
 it("rejects out-of-range fetch intervals before persistence", async () => {
   await host.findAll("nav button")[1]!.trigger("click");
   await host.get('input[type="number"]').setValue(-1);
-  await button("应用").trigger("click");
+  await button("Apply").trigger("click");
   expect(backend.settingsSet).not.toHaveBeenCalled();
 });
 
@@ -104,7 +104,7 @@ it("tests automatic Git detection independently of the saved path", async () => 
   await host.findAll("nav button")[1]!.trigger("click");
   backend.gitTestExecutable.mockResolvedValue({ path: "C:/Git/git.exe", version: "2.50" });
   backend.gitDetect.mockResolvedValue({ path: "old", version: "2.49" });
-  await button("测试").trigger("click");
+  await button("Test").trigger("click");
   await flushPromises();
   expect(backend.gitTestExecutable).toHaveBeenCalledExactlyOnceWith("");
   expect(backend.gitDetect).not.toHaveBeenCalled();
@@ -113,12 +113,12 @@ it("tests automatic Git detection independently of the saved path", async () => 
 it("keeps failed saves editable and retries the same draft", async () => {
   backend.settingsSet.mockRejectedValueOnce({ message: "Disk is read-only" });
   await theme("light");
-  await button("确定").trigger("click");
+  await button("OK").trigger("click");
   await flushPromises();
   expect(host.get('[role="alert"]').text()).toContain("Disk is read-only");
   expect(host.findComponent(SettingsDialog).exists()).toBe(true);
   expect(store.settings!.appearance.theme).toBe("dark");
-  await button("确定").trigger("click");
+  await button("OK").trigger("click");
   await flushPromises();
   expect(backend.settingsSet).toHaveBeenCalledTimes(2);
   expect(store.settings!.appearance.theme).toBe("light");
@@ -129,17 +129,17 @@ it("locks editing and Escape during save, and cancels to the last applied theme"
   const pending = deferred<AppSettings>();
   backend.settingsSet.mockReturnValueOnce(pending.promise);
   await theme("light");
-  await button("应用").trigger("click");
+  await button("Apply").trigger("click");
   expect(host.get('fieldset').attributes("disabled")).toBeDefined();
   await theme("dark"); // even a late model event cannot edit a submitted draft
   await host.get('input[type="search"]').trigger("keydown", { key: "Escape" });
   expect(host.findComponent(SettingsDialog).exists()).toBe(true);
   pending.resolve(backend.settingsSet.mock.calls[0]![0]);
   await flushPromises();
-  expect(button("应用").attributes("disabled")).toBeDefined();
+  expect(button("Apply").attributes("disabled")).toBeDefined();
   expect(document.documentElement.classList.contains("dark")).toBe(false);
   await theme("dark");
-  await button("取消").trigger("click");
+  await button("Cancel").trigger("click");
   await flushPromises();
   expect(document.documentElement.classList.contains("dark")).toBe(false);
 });
@@ -148,7 +148,7 @@ it("preserves a newer settings preview while an older save completes", async () 
   const pending = deferred<AppSettings>();
   backend.settingsSet.mockReturnValue(pending.promise);
   await theme("light");
-  await button("确定").trigger("click");
+  await button("OK").trigger("click");
   closeDialog();
   await nextTick();
   await open();
@@ -157,7 +157,7 @@ it("preserves a newer settings preview while an older save completes", async () 
   await flushPromises();
   expect(host.findComponent(SettingsDialog).exists()).toBe(true);
   expect(document.documentElement.classList.contains("dark")).toBe(true);
-  await button("取消").trigger("click");
+  await button("Cancel").trigger("click");
   await flushPromises();
   expect(document.documentElement.classList.contains("dark")).toBe(false);
 });
@@ -171,33 +171,33 @@ it("restores the saved locale and ignores consumed or composing Escape", async (
     await nextTick();
     expect(host.findComponent(SettingsDialog).exists()).toBe(true);
   }
-  host.findComponent(SettingsDialog).findAllComponents(Select)[1]!.vm.$emit("update:modelValue", "en");
+  host.findComponent(SettingsDialog).findAllComponents(Select)[1]!.vm.$emit("update:modelValue", "zh-CN");
   await nextTick();
-  expect(document.documentElement.lang).toBe("en");
-  await input.trigger("keydown", { key: "Escape" });
   expect(document.documentElement.lang).toBe("zh-CN");
+  await input.trigger("keydown", { key: "Escape" });
+  expect(document.documentElement.lang).toBe("en");
 });
 
 it("invalidates old Git test results on path edits and permits a new test", async () => {
   await host.findAll("nav button")[1]!.trigger("click");
-  const input = host.get('input[placeholder="留空则使用 PATH 中的 git"]');
+  const input = host.get('input[placeholder="Leave empty to use git from PATH"]');
   const old = deferred<any>();
   const latest = deferred<any>();
   backend.gitTestExecutable.mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
   await input.setValue("old-git.exe");
-  await button("测试").trigger("click");
-  await button("测试").trigger("click");
+  await button("Test").trigger("click");
+  await button("Test").trigger("click");
   expect(backend.gitTestExecutable).toHaveBeenCalledTimes(1);
   await input.setValue("new-git.exe");
-  await button("测试").trigger("click");
+  await button("Test").trigger("click");
   old.resolve({ path: "old-git.exe", version: "2.49" });
   await flushPromises();
   expect(host.find('[role="status"]').exists()).toBe(false);
-  expect(button("测试").attributes("disabled")).toBeDefined();
+  expect(button("Test").attributes("disabled")).toBeDefined();
   latest.reject({ code: "gitNotFound" });
   await flushPromises();
-  expect(host.get('[role="status"]').text()).toContain("未找到 git");
-  expect(button("测试").attributes("disabled")).toBeUndefined();
+  expect(host.get('[role="status"]').text()).toContain("Git not found");
+  expect(button("Test").attributes("disabled")).toBeUndefined();
   await input.setValue("fixed-git.exe");
   expect(host.find('[role="status"]').exists()).toBe(false);
 });
@@ -208,10 +208,10 @@ it.each(["", "1.5", "1441"])("blocks invalid fetch interval %s and accepts zero"
   await input.setValue(value);
   expect(input.attributes("aria-invalid")).toBe("true");
   expect(host.get('[role="alert"]').text()).toContain("1440");
-  await button("确定").trigger("click");
+  await button("OK").trigger("click");
   expect(backend.settingsSet).not.toHaveBeenCalled();
   await input.setValue("0");
-  await button("应用").trigger("click");
+  await button("Apply").trigger("click");
   await flushPromises();
   expect(backend.settingsSet.mock.calls[0]![0].git.autoFetchMinutes).toBe(0);
 });

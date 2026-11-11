@@ -69,7 +69,7 @@ it("serializes saves and continues after failure without replacing committed set
   reject(new Error("disk full"));
   expect((await failed).message).toBe("disk full");
   expect((await saved).appearance.theme).toBe("dark");
-  expect(store.settings!.locale).toBe("zh-CN");
+  expect(store.settings!.locale).toBe("en");
   expect(backend.settingsSet).toHaveBeenCalledTimes(2);
 });
 
@@ -78,13 +78,13 @@ it("keeps a newer preview when an older preview is disposed", () => {
   initial.appearance.theme = "dark";
   const old = store.beginAppearancePreview(initial);
   const latest = store.emptySettings();
-  latest.locale = "en";
+  latest.locale = "zh-CN";
   latest.appearance.theme = "light";
   const newer = store.beginAppearancePreview(latest);
   old.end();
   old.update(initial);
   expect(document.documentElement.classList.contains("dark")).toBe(false);
-  expect(document.documentElement.lang).toBe("en");
-  newer.end();
   expect(document.documentElement.lang).toBe("zh-CN");
+  newer.end();
+  expect(document.documentElement.lang).toBe("en");
 });

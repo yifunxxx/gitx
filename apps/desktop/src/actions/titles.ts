@@ -2,7 +2,7 @@ import type { ActionDef } from "./types";
 
 /**
  * Maps action ids → vue-i18n keys. Prefer this over hard-coded English `title`
- * when rendering menus / palettes so locale follows settings (default zh-CN).
+ * when rendering menus / palettes so locale follows settings (default en).
  */
 export const ACTION_TITLE_KEYS: Record<string, string> = {
   "Git.RefreshStatus": "actions.refreshStatus",

@@ -197,7 +197,7 @@ fn default_log_indexing() -> bool {
 }
 
 fn default_locale() -> String {
-    "zh-CN".into()
+    "en".into()
 }
 
 impl Default for AppSettings {

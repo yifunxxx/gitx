@@ -1,6 +1,8 @@
 # gitx
 
-Focused desktop Git GUI built on the dbx stack (Tauri 2 + Vue 3 + Rust). Default UI language is **简体中文 (zh-CN)**; English is available in Settings → Appearance. Light / dark / system themes are supported and persisted.
+English | [简体中文](./README.zh-CN.md)
+
+Focused desktop Git GUI built on the dbx stack (Tauri 2 + Vue 3 + Rust). Default UI language is **English (en)**; 简体中文 (zh-CN) is available in Settings → Appearance. Light / dark / system themes are supported and persisted.
 
 ## Requirements
 
@@ -56,7 +58,7 @@ try {
 ### Theme & language
 
 - Toolbar sun/moon toggles light ↔ dark (persisted in app settings).
-- **Settings** (`Mod+,`) → **外观 / Appearance**: theme (system/light/dark), language (zh-CN / en), corner style, palette.
+- **Settings** (`Mod+,`) → **Appearance**: theme (system/light/dark), language (en / zh-CN), corner style, palette.
 - **Keymap** page: search actions, rebind shortcuts, reset overrides.
 
 ## Windows 11 — local run & build
@@ -89,10 +91,10 @@ Tagged builds (`v*`) publish a [GitHub Release](https://github.com/yifunxxx/gitx
 | `*.msi`            | MSI installer       |
 
 1. Open **[Releases](https://github.com/yifunxxx/gitx/releases)**.
-2. Pick the latest `v*` release (e.g. `v0.1.23`).
+2. Pick the latest `v*` release (e.g. `v0.1.24`).
 3. Download the NSIS `.exe` (most users) or the `.msi`, then run it — direct installer files, not zip packages.
 
-App / package versions are `0.1.23`, matching tag `v0.1.23`. Builds are unsigned — SmartScreen may warn; choose **More info** → **Run anyway**.
+App / package versions are `0.1.24`, matching tag `v0.1.24`. Builds are unsigned — SmartScreen may warn; choose **More info** → **Run anyway**.
 
 Publish a release by pushing a version tag (after the workflow is on `master`):
 
@@ -101,12 +103,12 @@ git checkout master && git pull
 # Bump workspace version in Cargo.toml / package.json / tauri.conf.json / README.
 # In Cargo.lock, only rewrite [[package]] blocks named gitx / gitx-* — never
 # sed the whole file (that can retarget third-party crates like serde_repr).
-git tag -a v0.1.23 -m "gitx v0.1.23"
-git push origin v0.1.23
+git tag -a v0.1.24 -m "gitx v0.1.24"
+git push origin v0.1.24
 # Watch: Actions → Release Windows; then https://github.com/yifunxxx/gitx/releases
 ```
 
-Optional: **Actions → Release Windows → Run workflow** with a `version` input (`0.1.23` or `v0.1.23`) to create the same Release without a local tag push.
+Optional: **Actions → Release Windows → Run workflow** with a `version` input (`0.1.24` or `v0.1.24`) to create the same Release without a local tag push.
 
 ### CI Artifacts (master / debugging)
 
@@ -134,4 +136,4 @@ gh run list --workflow=release-windows.yml --limit 3
 
 ## Milestone
 
-**M8 Settings, Polish & Release** (on top of M0–M7) — declarative Settings (searchable), Keymap overrides, zh-CN default + en, light/dark theme persistence, Welcome copy polish, concurrency/toast Busy hardening. See `docs/dev-plan/08-milestones.md`.
+**M8 Settings, Polish & Release** (on top of M0–M7) — declarative Settings (searchable), Keymap overrides, English default + zh-CN, light/dark theme persistence, Welcome copy polish, concurrency/toast Busy hardening. See `docs/dev-plan/08-milestones.md`.

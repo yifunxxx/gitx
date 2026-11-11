@@ -20,7 +20,7 @@ const defaultSettings: AppSettings = {
     palette: "pearl",
     cornerStyle: "small",
   },
-  locale: "zh-CN",
+  locale: "en",
   gitExecutable: null,
   recentWorkspaces: ["/tmp/demo-repo"],
   stagingMode: false,

@@ -41,7 +41,7 @@ export const useSettingsStore = defineStore("settings", () => {
         palette: "pearl",
         cornerStyle: "small",
       },
-      locale: "zh-CN",
+      locale: "en",
       gitExecutable: null,
       recentWorkspaces: [],
       stagingMode: false,
@@ -99,7 +99,7 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   function applyLocale(locale: string | undefined) {
-    const resolved = locale === "en" || locale === "zh-CN" ? locale : "zh-CN";
+    const resolved = locale === "en" || locale === "zh-CN" ? locale : "en";
     i18n.global.locale.value = resolved as "zh-CN" | "en";
     document.documentElement.lang = resolved;
   }

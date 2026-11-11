@@ -465,8 +465,8 @@ impl GitRunner {
                         },
                         conflict_files: files,
                         backup_ref: backup,
-                            undo_head: None,
-                        });
+                        undo_head: None,
+                    });
                 }
                 let outcome = if old == new {
                     RewriteOutcome::AlreadyUpToDate
@@ -484,8 +484,8 @@ impl GitRunner {
                     },
                     conflict_files: vec![],
                     backup_ref: backup,
-                            undo_head: None,
-                        })
+                    undo_head: None,
+                })
             }
             Err(e) => {
                 self.map_rewrite_err(cwd, e, &old, backup, "rebase", cancel)
@@ -579,8 +579,8 @@ impl GitRunner {
                         message: format!("Conflicts in {} file(s)", files.len().max(1)),
                         conflict_files: files,
                         backup_ref: backup,
-                            undo_head: None,
-                        });
+                        undo_head: None,
+                    });
                 }
                 Ok(RewriteResult {
                     old_head: old,
@@ -589,8 +589,8 @@ impl GitRunner {
                     message: format!("Cherry-picked {} commit(s)", shas.len()),
                     conflict_files: vec![],
                     backup_ref: backup,
-                            undo_head: None,
-                        })
+                    undo_head: None,
+                })
             }
             Err(e) => {
                 self.map_rewrite_err(cwd, e, &old, backup, "cherry-pick", cancel)
@@ -716,8 +716,8 @@ impl GitRunner {
                         },
                         conflict_files: files,
                         backup_ref: backup,
-                            undo_head: None,
-                        });
+                        undo_head: None,
+                    });
                 }
                 self.finish_smart_stash(cwd, cmd, cancel).await?;
                 Ok(RewriteResult {
@@ -727,8 +727,8 @@ impl GitRunner {
                     message: format!("{cmd} {flag}"),
                     conflict_files: vec![],
                     backup_ref: backup,
-                            undo_head: None,
-                        })
+                    undo_head: None,
+                })
             }
             Err(e) => {
                 self.map_rewrite_err(cwd, e, &old, backup, cmd, cancel)
@@ -839,8 +839,8 @@ impl GitRunner {
                 ),
                 conflict_files: files,
                 backup_ref: backup,
-                            undo_head: None,
-                        });
+                undo_head: None,
+            });
         }
 
         let _ = op;
