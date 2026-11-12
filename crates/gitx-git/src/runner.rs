@@ -364,7 +364,18 @@ pub fn helper_bin() -> String {
         return p;
     }
     if let Ok(exe) = std::env::current_exe() {
+        // cargo test binaries live in `target/<profile>/deps/`; the helper is
+        // built next to the profile dir (`target/<profile>/gitx-helper`).
+        let mut dirs = Vec::new();
         if let Some(dir) = exe.parent() {
+            dirs.push(dir.to_path_buf());
+            if dir.file_name().and_then(|s| s.to_str()) == Some("deps") {
+                if let Some(profile) = dir.parent() {
+                    dirs.push(profile.to_path_buf());
+                }
+            }
+        }
+        for dir in dirs {
             let candidate = dir.join("gitx-helper");
             if candidate.exists() {
                 return candidate.to_string_lossy().into_owned();
@@ -376,7 +387,7 @@ pub fn helper_bin() -> String {
                     return candidate.to_string_lossy().into_owned();
                 }
                 // Tauri externalBin renames sidecars with the target triple.
-                if let Ok(rd) = std::fs::read_dir(dir) {
+                if let Ok(rd) = std::fs::read_dir(&dir) {
                     for ent in rd.flatten() {
                         let name = ent.file_name();
                         let s = name.to_string_lossy();
@@ -388,7 +399,7 @@ pub fn helper_bin() -> String {
             }
             #[cfg(unix)]
             {
-                if let Ok(rd) = std::fs::read_dir(dir) {
+                if let Ok(rd) = std::fs::read_dir(&dir) {
                     for ent in rd.flatten() {
                         let name = ent.file_name();
                         let s = name.to_string_lossy();
