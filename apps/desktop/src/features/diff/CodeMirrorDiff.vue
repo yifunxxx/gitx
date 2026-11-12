@@ -10,6 +10,7 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import type { DiffHunk } from "@/lib/backend";
+import { editorChrome } from "@/features/editor/editorChrome";
 import { computeSideInlineRanges, computeUnifiedInlineRanges, type CharRange } from "./inlineDiff";
 import { countHunkLines } from "./collapsedDiff";
 import { contentFingerprint } from "./diffPaint";
@@ -224,16 +225,11 @@ function theme() {
       color: "var(--color-foreground)",
     },
     ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
-    ".cm-content": { caretColor: "transparent" },
     ".cm-gutters": {
       backgroundColor: "var(--color-background)",
       color: "var(--color-muted-foreground)",
       borderRight: "1px solid var(--color-border)",
     },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-      backgroundColor: "var(--color-selection)",
-    },
-    "::selection": { color: "var(--color-selection-foreground)" },
     ".cm-diff-insert": {
       backgroundColor: "rgb(var(--diff-insert-bg) / 0.9)",
     },
@@ -371,6 +367,7 @@ function mountNow() {
           markers: () => gutters,
         }),
         EditorView.editable.of(false),
+        ...editorChrome({ caret: false }),
         theme(),
         EditorView.decorations.of(deco),
       ],

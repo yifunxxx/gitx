@@ -47,22 +47,33 @@ const activeFile = computed(() =>
 );
 
 type EditorKind = "diff" | "history" | "compare" | "repoAtRev" | "merge" | "file";
-type EditorTab = { kind: EditorKind; id: string; title: string };
+type EditorTab = { kind: EditorKind; id: string; title: string; dirty: boolean };
 type CloseScope = "current" | "others" | "right" | "all";
 const tabBar = ref<HTMLElement | null>(null);
 const closing = ref(false);
 const menuEpoch = ref(0);
 const tabKey = (tab: EditorTab) => JSON.stringify([tab.kind, tab.id]);
-const tabEntries = (kind: EditorKind, items: { id: string; title: string }[] = []) =>
-  items.map(({ id, title }) => ({ kind, id, title }));
+const tabEntries = (
+  kind: EditorKind,
+  items: { id: string; title: string; dirty?: boolean }[] = [],
+): EditorTab[] => items.map(({ id, title, dirty }) => ({ kind, id, title, dirty: !!dirty }));
 // This order is also the visible order used by Close Tabs to the Right.
 const editorTabs = computed(() => [
   ...tabEntries("diff", diffs.tabs),
   ...tabEntries("history", history.tabs),
   ...tabEntries("compare", compare.tabs),
   ...tabEntries("repoAtRev", repoAtRev.tabs),
-  ...tabEntries("merge", conflicts.mergeTabs),
-  ...tabEntries("file", fileViewer.tabs),
+  ...tabEntries(
+    "merge",
+    conflicts.mergeTabs.map((tab) => ({
+      ...tab,
+      dirty: conflicts.hasUnsavedMergeResult(tab.id),
+    })),
+  ),
+  ...tabEntries(
+    "file",
+    fileViewer.tabs.map((tab) => ({ id: tab.id, title: tab.title, dirty: tab.dirty })),
+  ),
 ]);
 
 function storeFor(kind: Exclude<EditorKind, "merge">) {
@@ -105,9 +116,11 @@ async function closeTabs(target: EditorTab | null, scope: CloseScope) {
   closing.value = true;
   const epoch = menuEpoch.value;
   try {
-    const dirty = targets.filter(
-      (tab) => tab.kind === "merge" && conflicts.hasUnsavedMergeResult(tab.id),
-    );
+    const dirty = targets.filter((tab) => {
+      if (tab.kind === "merge") return conflicts.hasUnsavedMergeResult(tab.id);
+      if (tab.kind === "file") return !!fileViewer.tabs.find((t) => t.id === tab.id)?.dirty;
+      return false;
+    });
     if (
       dirty.length &&
       !(await confirmDialog({
@@ -188,6 +201,7 @@ function showWorkspace() {
         :key="tabKey(tab)"
         :tab-key="tabKey(tab)"
         :title="tab.title"
+        :dirty="tab.dirty"
         :active="isActive(tab)"
         :closable="true"
         :has-others="editorTabs.length > 1"

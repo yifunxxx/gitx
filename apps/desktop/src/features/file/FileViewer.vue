@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { EditorState } from "@codemirror/state";
-import { EditorView, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { fileChangeHighlights } from "./fileChangeHighlights";
+import { editorChrome } from "@/features/editor/editorChrome";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 
 const props = defineProps<{ tabId: string }>();
@@ -20,15 +22,19 @@ function release() {
 function mount() {
   release();
   if (!host.value || !tab.value || tab.value.loading) return;
-  const text = tab.value.text;
-  const hunks = tab.value.hunks;
+  const current = tab.value;
+  const text = current.text;
+  const hunks = current.hunks;
   view = new EditorView({
     parent: host.value,
     state: EditorState.create({
       doc: text,
       extensions: [
         lineNumbers(),
-        EditorView.editable.of(!!tab.value.editable),
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        EditorView.editable.of(!!current.editable),
+        ...editorChrome({ caret: !!current.editable }),
         EditorView.theme({
           "&": {
             height: "100%",
@@ -42,10 +48,6 @@ function mount() {
             color: "var(--color-muted-foreground)",
             borderRight: "1px solid var(--color-border)",
           },
-          ".cm-cursor": { borderLeftColor: "var(--color-foreground)" },
-          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-            backgroundColor: "var(--color-accent)",
-          },
           ".cm-diff-insert": {
             backgroundColor: "color-mix(in oklab, var(--color-success, #16a34a) 22%, transparent)",
           },
@@ -54,6 +56,12 @@ function mount() {
           },
         }),
         fileChangeHighlights(hunks),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) return;
+          const live = store.tabs.find((t) => t.id === props.tabId);
+          if (!live) return;
+          store.setDocument(live.id, update.state.doc.toString());
+        }),
       ],
     }),
   });
@@ -64,10 +72,11 @@ watch(
   [
     host,
     () => tab.value?.id,
-    () => tab.value?.text,
     () => tab.value?.hunks,
     () => tab.value?.loading,
     () => tab.value?.editable,
+    // Remount when the loaded baseline changes (async open), not on each keystroke.
+    () => tab.value?.baseline,
   ],
   mount,
   // Loading replaces the host with v-if; wait until Vue has mounted its replacement.
@@ -80,6 +89,7 @@ watch(
     <div class="flex h-8 items-center gap-2 border-b bg-dbx-chrome px-2 text-xs">
       <span class="font-medium">{{ tab.path }}</span>
       <span class="text-muted-foreground">vs HEAD</span>
+      <span v-if="tab.dirty" class="text-muted-foreground">· unsaved</span>
     </div>
     <div v-if="tab.loading" class="p-4 text-xs text-muted-foreground">Loading…</div>
     <div v-else ref="host" class="min-h-0 flex-1 overflow-hidden" />

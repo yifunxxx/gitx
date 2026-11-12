@@ -27,8 +27,8 @@
   --dbx-chrome: 245 245 245;
   --dbx-content: 255 255 255;
   --background-solid: 255 255 255;
-  /* Row / list selection — stronger than faint accent grey (GIT-37). */
-  --selection: 37 99 235 / 0.28;
+  /* Row / list / editor selection — strong enough on code surfaces (GIT-76). */
+  --selection: 37 99 235 / 0.38;
   --selection-foreground: 10 10 10;
   --hover-surface: 0 0 0 / 0.08;
 
@@ -77,8 +77,9 @@
   --dbx-chrome: 27 27 30;
   --dbx-content: 19 20 22;
   --background-solid: 19 20 22;
-  --selection: 59 130 246 / 0.45;
-  --selection-foreground: 215 215 219;
+  /* Dark: brighter blue + higher alpha so selected blocks read clearly on near-black. */
+  --selection: 96 165 250 / 0.55;
+  --selection-foreground: 248 250 252;
   --hover-surface: 255 255 255 / 0.12;
 }
 
