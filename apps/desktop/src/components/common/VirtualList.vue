@@ -148,7 +148,18 @@ function onPointerDown(e: PointerEvent) {
   if (e.button === 0) pointerDown.value = true;
 }
 
-function endPointerGesture() {
+function endPointerGesture(ev?: Event) {
+  // WebView2 often fires lostpointercapture when the cursor leaves the native
+  // scrollbar thumb into list content while the button is still held. Flushing
+  // the deferred window then remounts rows mid-drag → hitch. Stay deferred.
+  if (
+    ev &&
+    "buttons" in ev &&
+    typeof (ev as PointerEvent).buttons === "number" &&
+    ((ev as PointerEvent).buttons & 1) !== 0
+  ) {
+    return;
+  }
   const wasDown = pointerDown.value;
   pointerDown.value = false;
   if (!wasDown || !root.value) return;
@@ -176,8 +187,13 @@ onMounted(() => {
   window.addEventListener("pointerup", endPointerGesture);
   window.addEventListener("pointercancel", endPointerGesture);
   window.addEventListener("lostpointercapture", endPointerGesture);
-  window.addEventListener("blur", endPointerGesture);
+  // blur has no buttons — force-end (window lost focus).
+  window.addEventListener("blur", endPointerGestureOnBlur);
 });
+
+function endPointerGestureOnBlur() {
+  endPointerGesture();
+}
 
 onUnmounted(() => {
   ro?.disconnect();
@@ -187,7 +203,7 @@ onUnmounted(() => {
   window.removeEventListener("pointerup", endPointerGesture);
   window.removeEventListener("pointercancel", endPointerGesture);
   window.removeEventListener("lostpointercapture", endPointerGesture);
-  window.removeEventListener("blur", endPointerGesture);
+  window.removeEventListener("blur", endPointerGestureOnBlur);
   pendingScroll = null;
   heldScrollTop = null;
   queuedWheelTop = null;

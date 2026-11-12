@@ -106,7 +106,9 @@ function labelFor(node: PathTreeNode<T>) {
     class="text-[12.5px]"
     :items="rows"
     :item-height="ROW_H"
+    :overscan="16"
     :get-key="(row) => row.node.id"
+    recycle-keys
   >
     <template #default="{ item: row }">
       <div

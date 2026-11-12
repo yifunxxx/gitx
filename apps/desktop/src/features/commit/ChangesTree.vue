@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from "vue";
-import { ChevronDown, ChevronRight } from "@lucide/vue";
-import type { FileChange } from "@/lib/backend";
+import { ChevronDown, ChevronRight, List, ListTree } from "@lucide/vue";
+import type { ChangesListMode, FileChange } from "@/lib/backend";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import {
   buildPathTree,
   type PathTreeFileMeta,
@@ -12,13 +13,17 @@ import {
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
 import VirtualList from "@/components/common/VirtualList.vue";
 import IndeterminateCheckbox from "@/components/common/IndeterminateCheckbox.vue";
+import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import { markContextHandled } from "@/lib/contextMenu";
+import { cloneJson } from "@/lib/clone";
 import { useI18n } from "vue-i18n";
 import { statusClass } from "./statusColor";
 
 const { t } = useI18n();
 const changes = useChangesStore();
 const workspace = useWorkspaceStore();
+const settings = useSettingsStore();
 const emit = defineEmits<{
   openDiff: [path: string, section: ChangesSection];
   openFile: [path: string];
@@ -52,6 +57,19 @@ const collapsed = ref(new Set<string>());
 const currentKey = ref<string | null>(null);
 const anchorKey = ref<string | null>(null);
 
+const listMode = computed<ChangesListMode>(
+  () => settings.settings?.git?.changesListMode ?? "tree",
+);
+
+async function setListMode(mode: ChangesListMode) {
+  if (listMode.value === mode) return;
+  const base = cloneJson(settings.settings ?? settings.emptySettings());
+  await settings.save({
+    ...base,
+    git: { ...base.git, changesListMode: mode },
+  });
+}
+
 // Building/sorting the path trees depends only on repository data, never on
 // scrolling, selection or expanding a folder.
 const sections = computed(() => {
@@ -75,21 +93,24 @@ const sections = computed(() => {
   });
   if (changes.showIgnoredFiles)
     groups.push({ section: "ignored", label: t("changelist.ignored"), files: changes.ignored });
-  return groups.map((group) => ({
-    ...group,
-    nodes: buildPathTree(
-      group.files.map((file) => ({
-        path: file.path,
-        origPath: file.origPath,
-        change: file,
-        directoryLeaf: file.path.endsWith("/") || file.path.endsWith("\\"),
-      })),
-    ),
-  }));
+  return groups.map((group) => {
+    const metas: FileMeta[] = group.files.map((file) => ({
+      path: file.path,
+      origPath: file.origPath,
+      change: file,
+      directoryLeaf: file.path.endsWith("/") || file.path.endsWith("\\"),
+    }));
+    return {
+      ...group,
+      metas,
+      nodes: listMode.value === "tree" ? buildPathTree(metas) : [],
+    };
+  });
 });
 const isEmpty = computed(() => sections.value.every((section) => !section.files.length));
 const rows = computed<Row[]>(() => {
   const out: Row[] = [];
+  const flat = listMode.value === "flat";
   for (const [index, group] of sections.value.entries()) {
     const key = JSON.stringify([group.section]);
     const header: HeaderRow = {
@@ -106,25 +127,64 @@ const rows = computed<Row[]>(() => {
       siblings: sections.value.length,
     };
     out.push(header);
-    function walk(nodes: PathTreeNode<FileMeta>[], parent: string) {
-      nodes.forEach((node, position) => {
-        const key = JSON.stringify([group.section, node.id]);
-        const expanded = !!node.children?.length && !collapsed.value.has(key);
+    if (!header.expanded) continue;
+
+    if (flat) {
+      const files = [...group.metas].sort((a, b) => a.path.localeCompare(b.path));
+      files.forEach((meta, position) => {
+        const name = meta.path.replace(/\\/g, "/");
         out.push({
           kind: "file",
-          key,
+          key: JSON.stringify([group.section, meta.path]),
           section: group.section,
-          node,
-          expanded,
-          parent,
-          level: node.depth + 2,
+          node: {
+            id: meta.path,
+            name,
+            kind: meta.directoryLeaf ? "folder" : "file",
+            depth: 0,
+            file: meta,
+          },
+          expanded: false,
+          parent: key,
+          level: 2,
           position: position + 1,
-          siblings: nodes.length,
+          siblings: files.length,
         });
-        if (expanded) walk(node.children!, key);
       });
+      continue;
     }
-    if (header.expanded) walk(group.nodes, key);
+
+    // Iterative DFS — preserve parent keys for ArrowLeft / collapse ancestry.
+    const stack: { nodes: PathTreeNode<FileMeta>[]; parent: string; index: number }[] = [
+      { nodes: group.nodes, parent: key, index: 0 },
+    ];
+    while (stack.length) {
+      const frame = stack[stack.length - 1]!;
+      if (frame.index >= frame.nodes.length) {
+        stack.pop();
+        continue;
+      }
+      const node = frame.nodes[frame.index]!;
+      const position = frame.index + 1;
+      frame.index += 1;
+      const rowKey = JSON.stringify([group.section, node.id]);
+      const isFolder = !!node.children?.length;
+      const expanded = isFolder && !collapsed.value.has(rowKey);
+      out.push({
+        kind: "file",
+        key: rowKey,
+        section: group.section,
+        node,
+        expanded,
+        parent: frame.parent,
+        level: node.depth + 2,
+        position,
+        siblings: frame.nodes.length,
+      });
+      if (expanded) {
+        stack.push({ nodes: node.children!, parent: rowKey, index: 0 });
+      }
+    }
   }
   return out;
 });
@@ -341,7 +401,10 @@ function onKeydown(event: KeyboardEvent) {
 }
 function labelFor(node: PathTreeNode<FileMeta>) {
   const file = node.file?.change;
-  if (file?.origPath) return `${file.origPath.replace(/\\/g, "/").split("/").pop()} → ${node.name}`;
+  if (file?.origPath) {
+    const from = file.origPath.replace(/\\/g, "/").split("/").pop();
+    return `${from} → ${node.name}`;
+  }
   return node.name;
 }
 </script>
@@ -362,12 +425,44 @@ function labelFor(node: PathTreeNode<FileMeta>) {
     @keydown="onKeydown"
     @focus.self="list?.scrollToIndex(currentIndex)"
   >
+    <div class="flex h-7 shrink-0 items-center justify-end gap-1 border-b px-2">
+      <Tip :text="t('commitTw.listModeTip')">
+        <div class="flex items-center rounded-md border">
+          <Button
+            size="xs"
+            variant="ghost"
+            class="rounded-r-none"
+            :class="listMode === 'tree' ? 'bg-accent' : ''"
+            :aria-pressed="listMode === 'tree'"
+            :aria-label="t('commitTw.listModeTree')"
+            @click="setListMode('tree')"
+          >
+            <ListTree class="mr-1 h-3 w-3" />
+            {{ t("commitTw.listModeTree") }}
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            class="rounded-l-none border-l"
+            :class="listMode === 'flat' ? 'bg-accent' : ''"
+            :aria-pressed="listMode === 'flat'"
+            :aria-label="t('commitTw.listModeFlat')"
+            @click="setListMode('flat')"
+          >
+            <List class="mr-1 h-3 w-3" />
+            {{ t("commitTw.listModeFlat") }}
+          </Button>
+        </div>
+      </Tip>
+    </div>
     <VirtualList
       ref="list"
       :items="rows"
       :item-height="ROW_H"
+      :overscan="16"
       :get-key="(row) => row.key"
       :scroll-tabindex="-1"
+      recycle-keys
       preserve-scroll-anchor
     >
       <template #default="{ item: row }">
@@ -390,7 +485,11 @@ function labelFor(node: PathTreeNode<FileMeta>) {
               ? 'bg-selection text-selection-foreground'
               : 'text-foreground hover:bg-hover-surface'
           "
-          :style="{ paddingLeft: `${row.kind === 'header' ? 8 : 20 + row.node.depth * 12}px` }"
+          :style="{
+            paddingLeft: `${
+              row.kind === 'header' ? 8 : listMode === 'flat' ? 20 : 20 + row.node.depth * 12
+            }px`
+          }"
           @click="onClick(row, $event)"
           @dblclick="onDblClick(row, $event)"
           @contextmenu="onContext(row, $event)"

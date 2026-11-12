@@ -525,6 +525,7 @@
       "commitTwMode": "Commit tool window mode",
       "logIndexing": "Enable Log indexing",
       "logListMode": "Log list mode",
+      "changesListMode": "Changes list mode",
       "closeCommitTwAfterCommit": "Close Commit TW after successful commit",
       "commitControlsHidden": "Hide commit controls until Ctrl+K",
       "groupBranchesByDirectory": "Group branches by directory",
@@ -654,6 +655,9 @@
     "selectAll": "Select / deselect all files in this section",
     "menuGapNote": "Delete to trash not wired (IDEA Delete parity deferred)",
     "changesTree": "Changed files",
+    "listModeTip": "Show changed files as a directory tree or a flat path list",
+    "listModeFlat": "Flat list",
+    "listModeTree": "Tree",
     "untrackConfirm": "Stop tracking {count} files? Local files will be kept. Commit this change to record it."
   },
   "changelist": {
