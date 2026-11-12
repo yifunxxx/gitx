@@ -1,12 +1,17 @@
 use crate::state::AppState;
+use futures_util::StreamExt;
 use gitx_core::{AppError, AppSettings, ErrorCode};
 use gitx_git::detect_git;
 use gitx_meta::{load_app_settings, save_app_settings};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::State;
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Emitter, State};
+use tokio::io::AsyncWriteExt;
 
 const GITHUB_RELEASES_LATEST: &str = "https://api.github.com/repos/yifunxxx/gitx/releases/latest";
+const ALLOWED_DOWNLOAD_PREFIX: &str =
+    "https://github.com/yifunxxx/gitx/releases/download/";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -24,12 +29,36 @@ pub struct AppUpdateInfo {
     pub release_url: String,
     pub nsis_url: Option<String>,
     pub msi_url: Option<String>,
+    /// GitHub Release body (markdown / plain text). Empty when absent.
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppDownloadUpdateReq {
+    pub url: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppDownloadUpdateRes {
+    pub path: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInstallUpdateReq {
+    pub path: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
     tag_name: String,
     html_url: String,
+    #[serde(default)]
+    body: Option<String>,
     #[serde(default)]
     assets: Vec<GithubAsset>,
 }
@@ -128,7 +157,134 @@ pub async fn app_check_for_updates() -> Result<AppUpdateInfo, AppError> {
         release_url: release.html_url,
         nsis_url,
         msi_url,
+        notes: release.body.unwrap_or_default(),
     })
+}
+
+fn validate_download_url(url: &str) -> Result<(), AppError> {
+    if url.starts_with(ALLOWED_DOWNLOAD_PREFIX) {
+        Ok(())
+    } else {
+        Err(AppError::new(
+            ErrorCode::InvalidArgument,
+            "update download URL must be a gitx GitHub Release asset",
+        ))
+    }
+}
+
+fn installer_file_name(url: &str, version: &str) -> String {
+    Path::new(url)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| format!("gitx_{version}_x64-setup.exe"))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn app_download_update(
+    app: AppHandle,
+    req: AppDownloadUpdateReq,
+) -> Result<AppDownloadUpdateRes, AppError> {
+    validate_download_url(&req.url)?;
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let client = reqwest::Client::builder()
+        .user_agent(format!("gitx/{current_version}"))
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| AppError::new(ErrorCode::Internal, format!("http client: {e}")))?;
+    let response = client
+        .get(&req.url)
+        .send()
+        .await
+        .map_err(|e| AppError::new(ErrorCode::NetworkError, format!("download failed: {e}")))?;
+    if !response.status().is_success() {
+        return Err(AppError::new(
+            ErrorCode::NetworkError,
+            format!("download returned HTTP {}", response.status()),
+        ));
+    }
+    let total = response.content_length();
+    let file_name = installer_file_name(&req.url, &req.version);
+    let dir = std::env::temp_dir().join("gitx-updates");
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("create update dir: {e}")))?;
+    let path = dir.join(&file_name);
+    let partial = dir.join(format!("{file_name}.partial"));
+    let mut file = tokio::fs::File::create(&partial)
+        .await
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("create update file: {e}")))?;
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+    let _ = app.emit(
+        "update://progress",
+        serde_json::json!({
+            "version": req.version,
+            "downloaded": 0u64,
+            "total": total,
+        }),
+    );
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .map_err(|e| AppError::new(ErrorCode::NetworkError, format!("download stream: {e}")))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| AppError::new(ErrorCode::FsError, format!("write update file: {e}")))?;
+        downloaded = downloaded.saturating_add(chunk.len() as u64);
+        let _ = app.emit(
+            "update://progress",
+            serde_json::json!({
+                "version": req.version,
+                "downloaded": downloaded,
+                "total": total,
+            }),
+        );
+    }
+    file.flush()
+        .await
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("flush update file: {e}")))?;
+    drop(file);
+    tokio::fs::rename(&partial, &path)
+        .await
+        .map_err(|e| AppError::new(ErrorCode::FsError, format!("finalize update file: {e}")))?;
+    Ok(AppDownloadUpdateRes {
+        path: path.to_string_lossy().into_owned(),
+        version: req.version,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn app_install_update(
+    app: AppHandle,
+    req: AppInstallUpdateReq,
+) -> Result<(), AppError> {
+    let path = PathBuf::from(&req.path);
+    if !path.is_file() {
+        return Err(AppError::new(
+            ErrorCode::FsError,
+            format!("installer not found: {}", path.display()),
+        ));
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new(&path)
+            .spawn()
+            .map_err(|e| AppError::new(ErrorCode::Internal, format!("launch installer: {e}")))?;
+        // Exit so the installer can replace running binaries.
+        app.exit(0);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Err(AppError::new(
+            ErrorCode::Internal,
+            "in-app install is only supported on Windows",
+        ))
+    }
 }
 
 #[tauri::command]
@@ -243,4 +399,38 @@ pub async fn log_frontend(level: String, message: String) -> Result<(), AppError
         _ => tracing::info!(target: "frontend", "{message}"),
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn semver_compare_ignores_v_prefix() {
+        assert!(is_newer("0.1.32", "0.1.31"));
+        assert!(!is_newer("0.1.31", "0.1.31"));
+        assert!(!is_newer("0.1.30", "0.1.31"));
+        assert!(is_newer("v0.2.0", "0.1.99"));
+    }
+
+    #[test]
+    fn download_url_must_be_gitx_release_asset() {
+        assert!(validate_download_url(
+            "https://github.com/yifunxxx/gitx/releases/download/v0.1.32/gitx_0.1.32_x64-setup.exe"
+        )
+        .is_ok());
+        assert!(validate_download_url("https://evil.example/setup.exe").is_err());
+    }
+
+    #[test]
+    fn installer_name_falls_back_when_url_has_no_file() {
+        assert_eq!(
+            installer_file_name(
+                "https://github.com/yifunxxx/gitx/releases/download/v0.1.32/gitx_0.1.32_x64-setup.exe",
+                "0.1.32"
+            ),
+            "gitx_0.1.32_x64-setup.exe"
+        );
+    }
 }

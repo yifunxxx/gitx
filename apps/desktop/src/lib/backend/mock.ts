@@ -730,7 +730,14 @@ export const mockBackend: Backend = {
       releaseUrl: "https://github.com/yifunxxx/gitx/releases",
       nsisUrl: null,
       msiUrl: null,
+      notes: "",
     };
+  },
+  async appDownloadUpdate(req) {
+    return { path: `/tmp/gitx-mock-${req.version}.exe`, version: req.version };
+  },
+  async appInstallUpdate() {
+    return null;
   },
   async gitDetect() {
     return {

@@ -15,10 +15,10 @@ onMounted(() => {
 
 const status = computed(() => {
   if (updates.checking) return t("updates.checking");
-  if (updates.error) return updates.error;
-  if (updates.latest?.newer) {
-    return t("updates.availableBody", {
-      current: updates.latest.currentVersion,
+  if (updates.error && !updates.updateAvailable) return updates.error;
+  if (updates.updateAvailable) {
+    return updates.statusText || t("updates.availableBody", {
+      current: updates.latest?.currentVersion ?? updates.currentVersion ?? "",
     });
   }
   if (updates.latest) {
@@ -52,30 +52,21 @@ const status = computed(() => {
         {{ updates.checking ? t("updates.checking") : t("updates.checkNow") }}
       </Button>
       <Button
+        v-if="updates.updateAvailable"
+        size="sm"
+        :disabled="disabled"
+        @click="updates.openUpdateCenter()"
+      >
+        {{ t("updates.openCenter") }}
+      </Button>
+      <Button
         v-if="updates.latest?.newer"
         size="sm"
-        :disabled="disabled"
-        @click="updates.openReleasePage(updates.latest?.releaseUrl)"
-      >
-        {{ t("updates.openRelease") }}
-      </Button>
-      <Button
-        v-if="updates.latest?.nsisUrl"
-        size="sm"
         variant="outline"
         :disabled="disabled"
-        @click="updates.openReleasePage(updates.latest?.nsisUrl)"
+        @click="updates.openDownloadPage()"
       >
-        {{ t("updates.downloadNsis") }}
-      </Button>
-      <Button
-        v-if="updates.latest?.msiUrl"
-        size="sm"
-        variant="outline"
-        :disabled="disabled"
-        @click="updates.openReleasePage(updates.latest?.msiUrl)"
-      >
-        {{ t("updates.downloadMsi") }}
+        {{ t("updates.openDownloadPage") }}
       </Button>
     </div>
     <p class="text-[11px] text-muted-foreground">{{ t("updates.autoCheckHint") }}</p>

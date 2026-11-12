@@ -13,6 +13,12 @@ export const commands = {
   async appCheckForUpdates(): Promise<AppUpdateInfo> {
     return await TAURI_INVOKE("app_check_for_updates");
   },
+  async appDownloadUpdate(req: AppDownloadUpdateReq): Promise<AppDownloadUpdateRes> {
+    return await TAURI_INVOKE("app_download_update", { req });
+  },
+  async appInstallUpdate(req: AppInstallUpdateReq): Promise<null> {
+    return await TAURI_INVOKE("app_install_update", { req });
+  },
   async gitDetect(): Promise<GitDetectDto> {
     return await TAURI_INVOKE("git_detect");
   },
@@ -535,7 +541,14 @@ export type AppUpdateInfo = {
   releaseUrl: string;
   nsisUrl: string | null;
   msiUrl: string | null;
+  /**
+   * GitHub Release body (markdown / plain text). Empty when absent.
+   */
+  notes: string;
 };
+export type AppDownloadUpdateReq = { url: string; version: string };
+export type AppDownloadUpdateRes = { path: string; version: string };
+export type AppInstallUpdateReq = { path: string };
 export type AppSettings = {
   schemaVersion: number;
   appearance: AppearanceSettings;

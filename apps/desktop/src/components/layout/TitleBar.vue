@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Check,
+  CloudDownload,
   FolderOpen,
   GitBranch,
   History,
@@ -29,6 +30,7 @@ import { useChangesStore } from "@/stores/changesStore";
 import { useLogStore } from "@/stores/logStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSyncStore } from "@/stores/syncStore";
+import { useUpdateStore } from "@/stores/updateStore";
 
 const { t } = useI18n();
 const layout = useLayoutStore();
@@ -38,6 +40,7 @@ const changes = useChangesStore();
 const log = useLogStore();
 const settings = useSettingsStore();
 const sync = useSyncStore();
+const updates = useUpdateStore();
 
 const ctx = computed<ActionContext>(() => ({
   repoIds: workspace.toplevel ? [workspace.toplevel] : [],
@@ -156,6 +159,18 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
     <div class="flex-1" data-tauri-drag-region />
 
     <div class="flex items-center gap-0.5">
+      <Tip v-if="updates.updateAvailable" :text="updates.toolbarTooltip" side="bottom">
+        <button
+          type="button"
+          class="inline-flex h-7 items-center gap-1.5 rounded-full bg-foreground px-2.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
+          data-testid="toolbar-update-button"
+          :aria-label="updates.toolbarTooltip"
+          @click="updates.openUpdateCenter()"
+        >
+          <CloudDownload class="h-3.5 w-3.5" />
+          <span>{{ t("updates.toolbarLabel") }}</span>
+        </button>
+      </Tip>
       <Tip :text="t('toolbar.updateProject')">
         <Button
           variant="ghost"
