@@ -10,8 +10,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::io::AsyncWriteExt;
 
 const GITHUB_RELEASES_LATEST: &str = "https://api.github.com/repos/yifunxxx/gitx/releases/latest";
-const ALLOWED_DOWNLOAD_PREFIX: &str =
-    "https://github.com/yifunxxx/gitx/releases/download/";
+const ALLOWED_DOWNLOAD_PREFIX: &str = "https://github.com/yifunxxx/gitx/releases/download/";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -257,10 +256,7 @@ pub async fn app_download_update(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn app_install_update(
-    app: AppHandle,
-    req: AppInstallUpdateReq,
-) -> Result<(), AppError> {
+pub async fn app_install_update(app: AppHandle, req: AppInstallUpdateReq) -> Result<(), AppError> {
     let path = PathBuf::from(&req.path);
     if !path.is_file() {
         return Err(AppError::new(
@@ -400,7 +396,6 @@ pub async fn log_frontend(level: String, message: String) -> Result<(), AppError
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
