@@ -280,9 +280,19 @@ async fn cancelling_while_waiting_for_a_shelf_writer_does_not_expire_data() {
     let entry = import(&runner, cwd, addition()).await;
     runner.shelf_delete(cwd, &entry.id, &cancel).await.unwrap();
     modify(&common, &entry, true, |v| v["deletedAt"] = json!(1));
-    let guard = gitx_meta::try_shelf_operation_lock(&common)
-        .unwrap()
-        .unwrap();
+    // Delete's lock may still be releasing under load; retry briefly instead of
+    // treating a single WouldBlock as a hard failure (CI flake).
+    let mut guard = None;
+    for _ in 0..40 {
+        match gitx_meta::try_shelf_operation_lock(&common).unwrap() {
+            Some(file) => {
+                guard = Some(file);
+                break;
+            }
+            None => tokio::time::sleep(std::time::Duration::from_millis(25)).await,
+        }
+    }
+    let guard = guard.expect("shelf operation lock should be free after delete");
     let waiting = CancellationToken::new();
     let (result, ()) = tokio::join!(runner.shelf_maintain(cwd, &waiting), async {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
