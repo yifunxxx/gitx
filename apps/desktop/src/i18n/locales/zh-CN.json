@@ -531,6 +531,7 @@
       "logIndexing": "启用 Log 索引",
       "logListMode": "Log 列表模式",
       "changesListMode": "更改列表模式",
+      "logChangedFilesListMode": "Log 更改文件列表模式",
       "closeCommitTwAfterCommit": "提交成功后关闭 Commit 工具窗",
       "commitControlsHidden": "默认隐藏提交控件（Ctrl+K 显示）",
       "groupBranchesByDirectory": "按目录分组分支",

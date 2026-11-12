@@ -818,7 +818,9 @@ pub enum LogListMode {
     Tree,
 }
 
-/// Commit TW Changes file list: directory tree vs flat paths.
+/// File path list presentation: directory tree vs flat paths.
+/// Used by Commit TW Changes (`changes_list_mode`) and Log Changed Files
+/// (`log_changed_files_list_mode`) as independent settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum ChangesListMode {

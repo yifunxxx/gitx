@@ -1005,6 +1005,10 @@ export type GitSettings = {
    * Commit TW Changes list: directory tree or flat paths.
    */
   changesListMode?: ChangesListMode;
+  /**
+   * Log Changed Files pane: directory tree or flat paths (independent of Changes).
+   */
+  logChangedFilesListMode?: ChangesListMode;
 };
 export type GraphEdge = { fromLane: number; toLane: number };
 export type GraphRow = { lane: number; edges: GraphEdge[]; color: number };

@@ -38,11 +38,14 @@ export function useAppEvents() {
           .catch(report),
         listen<{ id: string; title?: string; cancellable?: boolean }>("job://started", (e) => {
           if (!disposed)
-            jobs.started({
-              id: e.payload.id,
-              title: e.payload.title ?? "job",
-              cancellable: e.payload.cancellable,
-            });
+            jobs.started(
+              {
+                id: e.payload.id,
+                title: e.payload.title ?? "job",
+                cancellable: e.payload.cancellable,
+              },
+              "native",
+            );
         })
           .then(keep)
           .catch(report),
