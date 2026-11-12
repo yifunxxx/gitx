@@ -73,6 +73,7 @@ export const useSettingsStore = defineStore("settings", () => {
         closeCommitTwAfterCommit: false,
         logListMode: "flat",
         changesListMode: "tree",
+        logChangedFilesListMode: "tree",
       },
     };
   }

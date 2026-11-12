@@ -531,6 +531,7 @@
       "logIndexing": "Enable Log indexing",
       "logListMode": "Log list mode",
       "changesListMode": "Changes list mode",
+      "logChangedFilesListMode": "Log Changed Files list mode",
       "closeCommitTwAfterCommit": "Close Commit TW after successful commit",
       "commitControlsHidden": "Hide commit controls until Ctrl+K",
       "groupBranchesByDirectory": "Group branches by directory",

@@ -34,13 +34,16 @@ afterEach(() => {
 
 it("lists running jobs with progress and cancels a cancellable job", async () => {
   const jobs = useJobsStore();
-  jobs.started({
-    id: "clone",
-    title: "Cloning repository…",
-    message: "Receiving objects",
-    percent: 45,
-    cancellable: true,
-  });
+  jobs.started(
+    {
+      id: "clone",
+      title: "Cloning repository…",
+      message: "Receiving objects",
+      percent: 45,
+      cancellable: true,
+    },
+    "native",
+  );
   mocks.list.mockResolvedValue([
     {
       id: "clone",
@@ -67,6 +70,19 @@ it("lists running jobs with progress and cancels a cancellable job", async () =>
   await flushPromises();
   expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith("clone");
   expect(jobs.count).toBe(0);
+});
+
+it("keeps a frontend UI job visible when jobList returns empty", async () => {
+  const jobs = useJobsStore();
+  jobs.started({ id: "fetch-1", title: "Fetching remotes…", message: "origin" });
+  mocks.list.mockResolvedValue([]);
+  jobs.openPopup({ x: 8, y: 640 });
+  mount(JobsPopup, { attachTo: document.body });
+  await flushPromises();
+  const menu = document.querySelector('[role="menu"]');
+  expect(menu?.textContent).toContain("Fetching remotes…");
+  expect(menu?.textContent).not.toContain("status.jobsEmpty");
+  expect(jobs.count).toBe(1);
 });
 
 it("shows an empty state when idle and closes on Escape", async () => {

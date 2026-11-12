@@ -280,6 +280,20 @@ export const SETTINGS_PAGES: SettingPage[] = [
         },
         scope: "app",
       },
+      {
+        id: "logChangedFilesListMode",
+        titleKey: "settings.fields.logChangedFilesListMode",
+        keywords: ["log", "changed", "files", "flat", "tree", "更改文件", "列表", "树"],
+        path: "git.logChangedFilesListMode",
+        control: {
+          kind: "select",
+          options: [
+            { value: "tree", labelKey: "commitTw.listModeTree" },
+            { value: "flat", labelKey: "commitTw.listModeFlat" },
+          ],
+        },
+        scope: "app",
+      },
     ],
   },
   {

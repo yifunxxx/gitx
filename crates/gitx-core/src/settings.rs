@@ -115,6 +115,9 @@ pub struct GitSettings {
     /// Commit TW Changes list: directory tree or flat paths.
     #[serde(default)]
     pub changes_list_mode: ChangesListMode,
+    /// Log Changed Files pane: directory tree or flat paths (independent of Changes).
+    #[serde(default)]
+    pub log_changed_files_list_mode: ChangesListMode,
 }
 
 fn default_fork_parent() -> String {
@@ -160,6 +163,7 @@ impl Default for GitSettings {
             close_commit_tw_after_commit: false,
             log_list_mode: LogListMode::Flat,
             changes_list_mode: ChangesListMode::Tree,
+            log_changed_files_list_mode: ChangesListMode::Tree,
         }
     }
 }

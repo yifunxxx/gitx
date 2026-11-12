@@ -52,6 +52,7 @@ const defaultSettings: AppSettings = {
     closeCommitTwAfterCommit: false,
     logListMode: "flat",
     changesListMode: "tree",
+    logChangedFilesListMode: "tree",
   },
 };
 

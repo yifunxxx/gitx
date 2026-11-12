@@ -119,7 +119,7 @@ function mapStatus(s: string): FileChangeKind {
 
 const listMode = computed<LogListMode>(() => settings.settings?.git?.logListMode ?? "flat");
 const changedFilesListMode = computed<ChangesListMode>(
-  () => settings.settings?.git?.changesListMode ?? "tree",
+  () => settings.settings?.git?.logChangedFilesListMode ?? "tree",
 );
 const changedFilesListModeTip = computed(() =>
   changedFilesListMode.value === "tree"
@@ -198,7 +198,7 @@ async function toggleChangedFilesListMode() {
   const base = cloneJson(settings.settings ?? settings.emptySettings());
   await settings.save({
     ...base,
-    git: { ...base.git, changesListMode: next },
+    git: { ...base.git, logChangedFilesListMode: next },
   });
 }
 
