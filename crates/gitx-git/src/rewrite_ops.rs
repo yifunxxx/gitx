@@ -207,7 +207,11 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "merge", &old, cancel).await.ok();
+        let backup = if old.is_empty() {
+            None
+        } else {
+            Some(self.safety_backup(cwd, "merge", &old, cancel).await?)
+        };
 
         let run_merge = |allow_unrelated: bool| {
             let mut args = vec!["merge".to_string()];
@@ -439,7 +443,11 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "rebase", &old, cancel).await.ok();
+        let backup = if old.is_empty() {
+            None
+        } else {
+            Some(self.safety_backup(cwd, "rebase", &old, cancel).await?)
+        };
 
         let mut args = vec!["rebase".to_string()];
         if rebase_merges {
@@ -568,10 +576,11 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let backup = self
-            .safety_backup(cwd, "cherry-pick", &old, cancel)
-            .await
-            .ok();
+        let backup = if old.is_empty() {
+            None
+        } else {
+            Some(self.safety_backup(cwd, "cherry-pick", &old, cancel).await?)
+        };
 
         let mut args = vec!["cherry-pick".to_string()];
         if add_suffix {
@@ -918,7 +927,9 @@ impl GitRunner {
                 let inv = GitInvocation::new(cwd, ["update-ref", &snap, &stash_sha])
                     .kind(OpKind::Write)
                     .git_bin(self.git_bin.clone());
-                let _ = self.run(inv, cancel).await;
+                // Worktree snapshot is part of the safety contract — a rejected
+                // snapshot must stop the rewrite (see rewrite_backups tests).
+                self.run(inv, cancel).await?;
             }
         }
         Ok(backup)

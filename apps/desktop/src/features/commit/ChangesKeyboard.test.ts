@@ -15,7 +15,13 @@ enableAutoUnmount(afterEach);
 beforeEach(() => {
   setActivePinia(createPinia());
   mocks.workspace = reactive({ repoPath: "fixture" });
-  mocks.settings = reactive({ settings: { stagingMode: true } });
+  mocks.settings = reactive({
+    settings: { stagingMode: true, git: { changesListMode: "tree" } },
+    emptySettings: () => ({ stagingMode: true, git: { changesListMode: "tree" } }),
+    save: vi.fn(async (next: unknown) => {
+      mocks.settings.settings = next;
+    }),
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -43,7 +49,10 @@ function setFiles(paths: string[]) {
 
 function fixture(paths = ["src/a.txt", "src/b.txt", "z.txt"]) {
   setFiles(paths);
-  const wrapper = mount(ChangesTree, { attachTo: document.body });
+  const wrapper = mount(ChangesTree, {
+    attachTo: document.body,
+    global: { stubs: { Tip: { template: "<div><slot /></div>" } } },
+  });
   const tree = wrapper.get('[role="tree"]');
   (tree.element as HTMLElement).focus();
   const active = () => document.getElementById(tree.attributes("aria-activedescendant") ?? "");
