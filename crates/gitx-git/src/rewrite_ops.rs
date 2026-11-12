@@ -907,9 +907,11 @@ impl GitRunner {
         if sha.is_empty() {
             return Err(AppError::new(ErrorCode::Internal, "empty sha for backup"));
         }
+        // Nanoseconds avoid same-second collisions when two backups are taken
+        // back-to-back (sync_safety expects the first restore point to remain).
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
+            .map(|d| d.as_nanos())
             .unwrap_or(0);
         let backup = format!("refs/gitx/backup/{op}-{ts}");
         let inv = GitInvocation::new(cwd, ["update-ref", &backup, sha])
