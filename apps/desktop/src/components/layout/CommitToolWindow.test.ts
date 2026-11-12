@@ -7,6 +7,7 @@ import ChangesTree from "@/features/commit/ChangesTree.vue";
 const mocks = vi.hoisted(() => ({
   ws: {} as any,
   changes: {} as any,
+  settings: {} as any,
   prompt: vi.fn(),
   toast: vi.fn(),
   navigation: 0,
@@ -15,6 +16,7 @@ vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
+vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => ({ commitControlsHidden: true }) }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({ refreshOpState: vi.fn() }) }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({}) }));
@@ -53,10 +55,18 @@ beforeEach(() => {
     createChangelist: vi.fn().mockResolvedValue(created),
     moveToChangelist: vi.fn().mockResolvedValue(created),
   });
+  mocks.settings = reactive({
+    settings: { stagingMode: false, git: { changesListMode: "tree" } },
+    emptySettings: () => ({ stagingMode: false, git: { changesListMode: "tree" } }),
+    save: vi.fn(async (next: unknown) => {
+      mocks.settings.settings = next;
+    }),
+  });
   wrapper = shallowMount(CommitToolWindow, {
     global: {
       stubs: {
         Button: { template: "<button><slot /></button>" },
+        Tip: { template: "<div><slot /></div>" },
         ContextMenuSurface: { template: "<div><slot /></div>" },
       },
     },
