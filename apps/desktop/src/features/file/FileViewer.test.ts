@@ -117,3 +117,23 @@ it("does not overwrite a reopened file with the closed tab's late response", asy
   expect(store.tabs).toHaveLength(1);
   expect(store.tabs[0]!.text).toBe("reopened");
 });
+
+it("marks the tab dirty after edits and clears dirty when restored to baseline", async () => {
+  mocks.diffFile.mockResolvedValueOnce(result("base\n"));
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await nextTick();
+  const cm = editor(wrapper);
+  cm.dispatch({
+    changes: { from: 0, to: cm.state.doc.length, insert: "edited\n" },
+  });
+  await flushPromises();
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(store.tabs[0]!.text).toBe("edited\n");
+  cm.dispatch({
+    changes: { from: 0, to: cm.state.doc.length, insert: "base\n" },
+  });
+  await flushPromises();
+  expect(store.tabs[0]!.dirty).toBe(false);
+});

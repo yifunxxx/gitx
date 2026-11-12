@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   ws: {} as any,
   changes: {} as any,
   settings: {} as any,
+  layout: {
+    commitTwMode: "docked" as string,
+    leftOpen: true,
+    commitControlsHidden: true,
+  },
   confirm: vi.fn(),
   prompt: vi.fn(),
   checkout: vi.fn(),
@@ -15,18 +20,20 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   patch: vi.fn(),
   dialog: vi.fn(),
+  focusCommitUi: vi.fn(),
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
-vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => ({ commitControlsHidden: true }) }));
+vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({ refreshOpState: vi.fn() }) }));
 vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => ({}) }));
 vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: mocks.open }) }));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({}) }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({}) }));
+vi.mock("@/features/commit/focusCommitUi", () => ({ focusCommitUi: mocks.focusCommitUi }));
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 vi.mock("@/composables/useConfirm", () => ({
   confirmDialog: mocks.confirm,
@@ -57,6 +64,11 @@ beforeEach(() => {
       return this.generation;
     },
   });
+  mocks.layout = {
+    commitTwMode: "docked",
+    leftOpen: true,
+    commitControlsHidden: true,
+  };
   mocks.changes = reactive({
     stagingMode: true,
     loading: false,
@@ -68,10 +80,12 @@ beforeEach(() => {
     unversioned: [],
     ignored: [],
     changelists: { lists: [] },
+    checkedPaths: [],
     refresh: vi.fn(),
     stage: vi.fn(),
     unstage: vi.fn(),
     add: vi.fn(),
+    setChecked: vi.fn(),
     rmCached: vi.fn(),
     createChangelist: vi.fn(),
     moveToChangelist: vi.fn(),
@@ -225,4 +239,46 @@ it("closes when a status refresh removes the menu's files from their section", a
   mocks.changes.snapshot = { files: [] };
   await flushPromises();
   expect(wrapper.find("[data-menu]").exists()).toBe(false);
+});
+
+it("Commit Files… stages unstaged paths then focuses the commit UI", async () => {
+  mocks.changes.selectedSection = "unstaged";
+  mocks.changes.selectedPaths = ["first.txt"];
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.changes.stage).toHaveBeenCalledWith(["first.txt"]);
+  expect(mocks.changes.setChecked).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+});
+
+it("Commit Files… checks paths in changelist mode and focuses the commit UI", async () => {
+  mocks.changes.stagingMode = false;
+  mocks.changes.selectedSection = "changelist:default";
+  mocks.changes.selectedPaths = ["first.txt", "second.txt"];
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.changes.setChecked).toHaveBeenCalledWith(["first.txt", "second.txt"]);
+  expect(mocks.changes.stage).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+});
+
+it("Commit Files… does not stage already-staged paths", async () => {
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.changes.stage).not.toHaveBeenCalled();
+  expect(mocks.changes.add).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+});
+
+it("Commit Files… stops after navigation invalidates staging", async () => {
+  const pending = deferred<void>();
+  mocks.changes.stage.mockReturnValue(pending.promise);
+  mocks.changes.selectedSection = "unstaged";
+  mocks.changes.selectedPaths = ["first.txt"];
+  await openMenu();
+  await click("commitTw.commitFiles");
+  mocks.ws.generation++;
+  pending.resolve();
+  await flushPromises();
+  expect(mocks.focusCommitUi).not.toHaveBeenCalled();
 });

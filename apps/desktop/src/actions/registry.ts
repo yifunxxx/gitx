@@ -24,7 +24,14 @@ export function getGroup(id: string): ActionGroup | undefined {
 }
 
 export function isVisible(def: ActionDef, ctx: ActionContext): boolean {
-  return def.when ? def.when(ctx) : true;
+  if (!def.when) return true;
+  try {
+    return def.when(ctx);
+  } catch {
+    // Store-backed `when` (e.g. conflicts) must not break Find Action / tests
+    // when Pinia is unavailable — treat as hidden.
+    return false;
+  }
 }
 
 export function isEnabled(def: ActionDef, ctx: ActionContext): EnabledResult {

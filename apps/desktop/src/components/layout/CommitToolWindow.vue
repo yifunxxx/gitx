@@ -15,6 +15,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { openChangeDiff } from "@/features/commit/openChangeDiff";
+import { focusCommitUi } from "@/features/commit/focusCommitUi";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
@@ -279,6 +280,21 @@ async function createPatchSelected(target: ChangesTarget) {
   });
 }
 
+/** Commit Files… — include selected paths in the next commit and focus the message box. */
+async function commitFilesSelected(target: ChangesTarget) {
+  if (!target.current() || !target.paths.length) return;
+  if (target.stagingMode) {
+    if (target.section === "unversioned") await changes.add(target.paths);
+    else if (target.section !== "staged" && target.section !== "ignored") {
+      await changes.stage(target.paths);
+    }
+  } else if (target.section !== "ignored") {
+    changes.setChecked([...target.paths]);
+  }
+  if (!target.current()) return;
+  await focusCommitUi();
+}
+
 function onContext(payload: { path: string; section: ChangesSection; x: number; y: number }) {
   layout.vcsPopupOpen = false;
   const paths =
@@ -313,7 +329,7 @@ async function runCtx(action: string) {
         if (path) await files.open(path);
         break;
       case "commit":
-        layout.leftOpen = true;
+        await commitFilesSelected(target);
         break;
       case "rollback":
         await rollbackSelected(target);
@@ -483,6 +499,7 @@ async function runCtx(action: string) {
       <div class="my-1 h-px bg-border" />
       <button
         role="menuitem"
+        v-if="ctxMenu && ctxMenu.section !== 'ignored'"
         type="button"
         class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
         @click="runCtx('commit')"

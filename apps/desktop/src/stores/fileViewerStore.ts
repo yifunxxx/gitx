@@ -11,9 +11,12 @@ export type FileViewerTab = {
   path: string;
   title: string;
   text: string;
+  /** Text as loaded from disk / last clean baseline. */
+  baseline: string;
   hunks: DiffHunk[];
   loading: boolean;
   editable: boolean;
+  dirty: boolean;
 };
 
 export const useFileViewerStore = defineStore("fileViewer", () => {
@@ -47,9 +50,11 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       path: filePath,
       title: filePath.split("/").pop() ?? filePath,
       text: "",
+      baseline: "",
       hunks: [],
       loading: true,
       editable: true,
+      dirty: false,
     });
     tabs.value.push(tab);
     activeId.value = id;
@@ -64,13 +69,26 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
         left: "head",
         right: "worktree",
       });
-      tab.text = diff.rightText ?? "";
+      const text = diff.rightText ?? "";
+      tab.text = text;
+      tab.baseline = text;
       tab.hunks = diff.hunks;
+      tab.dirty = false;
     } catch (e) {
-      tab.text = `// failed to load ${filePath}\n// ${formatErrorMessage(e)}`;
+      const text = `// failed to load ${filePath}\n// ${formatErrorMessage(e)}`;
+      tab.text = text;
+      tab.baseline = text;
+      tab.dirty = false;
     } finally {
       tab.loading = false;
     }
+  }
+
+  function setDocument(id: string, text: string) {
+    const tab = tabs.value.find((t) => t.id === id);
+    if (!tab) return;
+    tab.text = text;
+    tab.dirty = text !== tab.baseline;
   }
 
   function closeTab(id: string) {
@@ -85,5 +103,5 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     }
   }
 
-  return { tabs, activeId, open, closeTab };
+  return { tabs, activeId, open, setDocument, closeTab };
 });

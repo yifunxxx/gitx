@@ -20,6 +20,8 @@ const props = defineProps<{
   hasTabs: boolean;
   busy: boolean;
   menuEpoch: number;
+  /** Unsaved edits — show a dirty mark on the tab. */
+  dirty?: boolean;
 }>();
 const emit = defineEmits<{
   activate: [];
@@ -77,12 +79,18 @@ function restoreFocus(event: Event) {
           ref="trigger"
           type="button"
           :data-editor-key="tabKey"
-          :title="title"
+          :title="dirty ? title + ' •' : title"
           :aria-pressed="active"
-          class="max-w-[180px] truncate rounded-sm px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring"
+          :aria-label="dirty ? title + ' (unsaved)' : title"
+          class="flex max-w-[180px] items-center gap-1 truncate rounded-sm px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring"
           @click="emit('activate')"
         >
-          {{ title }}
+          <span
+            v-if="dirty"
+            class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-foreground"
+            aria-hidden="true"
+          />
+          <span class="truncate">{{ title }}</span>
         </button>
         <button
           v-if="closable"
