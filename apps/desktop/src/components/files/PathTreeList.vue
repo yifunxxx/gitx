@@ -17,12 +17,15 @@ const { t } = useI18n();
 const props = withDefaults(
   defineProps<{
     files: T[];
+    /** Directory tree vs flat full paths (Log Changed Files / Compare). */
+    mode?: "tree" | "flat";
     /** Status/color class for a file row. */
     statusClass?: (file: T) => string;
     selectedPath?: string | null;
     emptyText?: string;
   }>(),
   {
+    mode: "tree",
     statusClass: () => "text-foreground",
     selectedPath: null,
     emptyText: undefined,
@@ -41,8 +44,27 @@ const ROW_H = 22;
 /** Explicit expand/collapse overrides; default = expanded. */
 const expanded = ref<Set<string>>(new Set());
 
-const tree = computed(() => buildPathTree(props.files));
-const rows = computed(() => flattenPathTree(tree.value, expanded.value, true));
+const tree = computed(() => (props.mode === "flat" ? [] : buildPathTree(props.files)));
+const rows = computed(() => {
+  if (props.mode === "flat") {
+    return [...props.files]
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map((file) => {
+        const name = file.path.replace(/\\/g, "/");
+        return {
+          node: {
+            id: file.path,
+            name,
+            kind: file.directoryLeaf ? ("folder" as const) : ("file" as const),
+            depth: 0,
+            file,
+          },
+          expanded: false,
+        };
+      });
+  }
+  return flattenPathTree(tree.value, expanded.value, true);
+});
 
 function toggleFolder(node: PathTreeNode<T>) {
   const next = new Set(expanded.value);

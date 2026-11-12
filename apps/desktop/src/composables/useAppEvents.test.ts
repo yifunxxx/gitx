@@ -6,7 +6,7 @@ enableAutoUnmount(afterEach);
 const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   append: vi.fn(),
-  jobs: { refresh: vi.fn(), started: vi.fn(), finished: vi.fn() },
+  jobs: { refresh: vi.fn(), started: vi.fn(), progress: vi.fn(), finished: vi.fn() },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("@/lib/utils", () => ({ isTauri: () => true }));
@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 it("releases every listener even when registration completes after unmount", async () => {
-  const cleanups = [vi.fn(), vi.fn(), vi.fn()];
+  const cleanups = [vi.fn(), vi.fn(), vi.fn(), vi.fn()];
   let finish!: (cleanup: () => void) => void;
   mocks.listen
     .mockResolvedValueOnce(cleanups[0])
@@ -34,7 +34,8 @@ it("releases every listener even when registration completes after unmount", asy
         finish = done;
       }),
     )
-    .mockResolvedValueOnce(cleanups[2]);
+    .mockResolvedValueOnce(cleanups[2])
+    .mockResolvedValueOnce(cleanups[3]);
   const host = mount(Host);
   await flushPromises();
   host.unmount();
@@ -47,6 +48,7 @@ it("releases every listener even when registration completes after unmount", asy
     });
   expect(mocks.append).not.toHaveBeenCalled();
   expect(mocks.jobs.started).not.toHaveBeenCalled();
+  expect(mocks.jobs.progress).not.toHaveBeenCalled();
   expect(mocks.jobs.refresh).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(30_000);
   expect(mocks.jobs.refresh).not.toHaveBeenCalled();
@@ -63,6 +65,6 @@ it("keeps successful subscriptions after a partial failure and stops reconciliat
   const isCurrent = mocks.jobs.refresh.mock.lastCall![0];
   host.unmount();
   expect(isCurrent()).toBe(false);
-  expect(cleanup).toHaveBeenCalledTimes(2);
+  expect(cleanup).toHaveBeenCalledTimes(3);
   expect(vi.getTimerCount()).toBe(0);
 });

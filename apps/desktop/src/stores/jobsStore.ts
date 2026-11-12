@@ -8,10 +8,14 @@ export type JobUi = {
   percent?: number;
   message?: string;
   startedAt: number;
+  cancellable?: boolean;
 };
 
 export const useJobsStore = defineStore("jobs", () => {
   const running = ref<JobUi[]>([]);
+  const popupOpen = ref(false);
+  const anchorX = ref(8);
+  const anchorY = ref(0);
   let eventVersion = 0;
   let refreshing = false;
 
@@ -34,6 +38,27 @@ export const useJobsStore = defineStore("jobs", () => {
     running.value = running.value.filter((j) => j.id !== id);
   }
 
+  function openPopup(anchor?: { x: number; y: number }) {
+    if (anchor) {
+      anchorX.value = anchor.x;
+      anchorY.value = anchor.y;
+    }
+    popupOpen.value = true;
+    void refresh().catch(() => {
+      /* StatusBar list can still show event-driven rows. */
+    });
+  }
+
+  function closePopup() {
+    popupOpen.value = false;
+  }
+
+  async function cancel(id: string) {
+    const ok = await getBackend().jobCancel(id);
+    if (ok) finished(id);
+    return ok;
+  }
+
   async function refresh(current: () => boolean = () => true) {
     if (refreshing) return;
     refreshing = true;
@@ -42,15 +67,35 @@ export const useJobsStore = defineStore("jobs", () => {
       const jobs = await getBackend().jobList();
       // Events received during the read are more recent than its snapshot.
       if (!current() || version !== eventVersion) return;
-      running.value = jobs.map((job) => ({
-        id: job.id,
-        title: job.title,
-        startedAt: job.startedAt,
-      }));
+      const prevById = new Map(running.value.map((job) => [job.id, job]));
+      running.value = jobs.map((job) => {
+        const prev = prevById.get(job.id);
+        return {
+          id: job.id,
+          title: job.title,
+          startedAt: job.startedAt,
+          cancellable: job.cancellable,
+          percent: prev?.percent,
+          message: prev?.message,
+        };
+      });
     } finally {
       refreshing = false;
     }
   }
 
-  return { running, count, started, progress, finished, refresh };
+  return {
+    running,
+    count,
+    popupOpen,
+    anchorX,
+    anchorY,
+    started,
+    progress,
+    finished,
+    openPopup,
+    closePopup,
+    cancel,
+    refresh,
+  };
 });

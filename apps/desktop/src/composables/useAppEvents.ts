@@ -36,8 +36,27 @@ export function useAppEvents() {
         listen<{ stream: string; line: string }>("console://line", (e) => onLine(e.payload))
           .then(keep)
           .catch(report),
-        listen<{ id: string; title?: string }>("job://started", (e) => {
-          if (!disposed) jobs.started({ id: e.payload.id, title: e.payload.title ?? "job" });
+        listen<{ id: string; title?: string; cancellable?: boolean }>("job://started", (e) => {
+          if (!disposed)
+            jobs.started({
+              id: e.payload.id,
+              title: e.payload.title ?? "job",
+              cancellable: e.payload.cancellable,
+            });
+        })
+          .then(keep)
+          .catch(report),
+        listen<{
+          id: string;
+          percent?: number;
+          message?: string;
+          phase?: string;
+        }>("job://progress", (e) => {
+          if (!disposed)
+            jobs.progress(e.payload.id, {
+              percent: e.payload.percent,
+              message: e.payload.message ?? e.payload.phase,
+            });
         })
           .then(keep)
           .catch(report),
