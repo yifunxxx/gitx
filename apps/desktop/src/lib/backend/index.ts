@@ -1,5 +1,8 @@
 import type {
   AppInfo,
+  AppDownloadUpdateReq,
+  AppDownloadUpdateRes,
+  AppInstallUpdateReq,
   AppUpdateInfo,
   AppSettings,
   BlameReq,
@@ -184,6 +187,8 @@ import { isTauri } from "@/lib/utils";
 export type Backend = {
   appInfo(): Promise<AppInfo>;
   appCheckForUpdates(): Promise<AppUpdateInfo>;
+  appDownloadUpdate(req: AppDownloadUpdateReq): Promise<AppDownloadUpdateRes>;
+  appInstallUpdate(req: AppInstallUpdateReq): Promise<null>;
   gitDetect(): Promise<GitDetectDto>;
   gitTestExecutable(path: string): Promise<GitDetectDto>;
   settingsGet(): Promise<AppSettings>;
@@ -347,6 +352,8 @@ export type Backend = {
 export const tauriBackend: Backend = {
   appInfo: () => commands.appInfo(),
   appCheckForUpdates: () => commands.appCheckForUpdates(),
+  appDownloadUpdate: (req) => commands.appDownloadUpdate(req),
+  appInstallUpdate: (req) => commands.appInstallUpdate(req),
   gitDetect: () => commands.gitDetect(),
   gitTestExecutable: (path) => commands.gitTestExecutable(path),
   settingsGet: () => commands.settingsGet(),
