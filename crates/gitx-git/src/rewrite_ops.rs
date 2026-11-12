@@ -128,12 +128,13 @@ impl GitRunner {
             let onto = read_first_line(&dir.join("onto"))
                 .and_then(|s| short_sha(&s))
                 .or_else(|| read_first_line(&dir.join("onto")));
+            // `done` accumulates finished todo lines; the edit stop is the last one.
             let stopped_for_edit = dir.join("stop-for-edit").exists()
-                || read_first_line(&dir.join("done"))
-                    .map(|d| d.contains("edit "))
+                || (read_last_line(&dir.join("done"))
+                    .map(|d| d.starts_with("edit "))
                     .unwrap_or(false)
                     && conflict_count == 0
-                    && dir.join("amend").exists();
+                    && dir.join("amend").exists());
             let phase = if stopped_for_edit {
                 RepoOpPhase::StoppedForEdit
             } else if conflict_count > 0 {
@@ -703,15 +704,18 @@ impl GitRunner {
         } else {
             None
         };
-        // `--continue` commits with the prepared sequencer message. Without a
-        // non-interactive editor, dumb-terminal / non-TTY environments (CI,
-        // GUI hosts) fail with "Terminal is dumb, but EDITOR unset".
-        let inv = if flag == "--continue" {
-            GitInvocation::new(cwd, ["-c", "core.editor=true", cmd, flag])
+        // `--continue` / `--skip` may still hit reword/squash editors for later
+        // todo items (e.g. after Edit or after skipping a conflicted commit).
+        // Use gitx-helper so gitx-plan.json overrides apply; without a plan the
+        // helper leaves Git's prepared message alone. Plain `true` would drop
+        // those overrides in dumb-terminal / GUI hosts.
+        let inv = if matches!(flag, "--continue" | "--skip") {
+            let editor = crate::history_rewrite_ops::helper_command("editor");
+            GitInvocation::new(cwd, [cmd, flag])
                 .kind(OpKind::Write)
                 .git_bin(self.git_bin.clone())
-                .env("GIT_EDITOR", "true")
-                .env("EDITOR", "true")
+                .env("GIT_EDITOR", editor.clone())
+                .env("EDITOR", editor)
         } else {
             GitInvocation::new(cwd, [cmd, flag])
                 .kind(OpKind::Write)
@@ -1036,6 +1040,15 @@ async fn is_ancestor(
 fn read_first_line(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     text.lines().next().map(|s| s.trim().to_string())
+}
+
+fn read_last_line(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines()
+        .rev()
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 fn read_u32_file(path: &Path) -> Option<u32> {
