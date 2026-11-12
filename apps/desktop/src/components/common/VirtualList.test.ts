@@ -99,7 +99,7 @@ it("keeps thumb-drag deferral when lostpointercapture fires with the button stil
   wrapper.unmount();
 });
 
-it("disables pointer events on row content while scrolling and for 150ms after", async () => {
+it("suppresses hover/title while scrolling without disabling pointer events", async () => {
   vi.useFakeTimers();
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -108,31 +108,50 @@ it("disables pointer events on row content while scrolling and for 150ms after",
   });
   const wrapper = mount(VirtualList, {
     props: { items: ["a", "b", "c"], itemHeight: 22, getKey: String },
+    slots: {
+      default: `<button type="button" class="row" title="tip">{{ params.item }}</button>`,
+    },
   });
   const port = wrapper.get(".overflow-auto");
   const windowEl = () => wrapper.get("[data-vl-window]");
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
   expect(windowEl().classes()).not.toContain("pointer-events-none");
+  expect(wrapper.get(".row").attributes("title")).toBe("tip");
+  // Row click must not enter the scroll-suppress path (v0.1.29 regression).
+  await port.trigger("pointerdown", { button: 0 });
+  await nextTick();
+  expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(false);
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
+  expect(wrapper.get(".row").attributes("title")).toBe("tip");
+  window.dispatchEvent(new Event("pointerup"));
+  await nextTick();
   await port.trigger("scroll");
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
-  expect(windowEl().classes()).toContain("pointer-events-none");
+  expect(windowEl().attributes("data-scrolling")).toBeDefined();
+  expect(windowEl().classes()).not.toContain("pointer-events-none");
   expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(true);
+  expect(wrapper.get(".row").attributes("title")).toBeUndefined();
+  expect(wrapper.get(".row").attributes("data-vl-title")).toBe("tip");
   await vi.advanceTimersByTimeAsync(149);
-  expect(windowEl().classes()).toContain("pointer-events-none");
+  expect(windowEl().attributes("data-scrolling")).toBeDefined();
   await vi.advanceTimersByTimeAsync(2);
   await nextTick();
-  expect(windowEl().classes()).not.toContain("pointer-events-none");
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
   expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(false);
-  // Thumb drag: keep pointer-events off even after the idle timer while held.
+  expect(wrapper.get(".row").attributes("title")).toBe("tip");
+  // Thumb drag after a scroll: keep suppress while the button stays held.
+  await port.trigger("scroll");
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
   await port.trigger("pointerdown", { button: 0 });
-  expect(windowEl().classes()).toContain("pointer-events-none");
   await vi.advanceTimersByTimeAsync(200);
-  expect(windowEl().classes()).toContain("pointer-events-none");
+  expect(windowEl().attributes("data-scrolling")).toBeDefined();
   window.dispatchEvent(new Event("pointerup"));
   await nextTick();
   await vi.advanceTimersByTimeAsync(160);
   await nextTick();
-  expect(windowEl().classes()).not.toContain("pointer-events-none");
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
   wrapper.unmount();
   vi.useRealTimers();
 });
