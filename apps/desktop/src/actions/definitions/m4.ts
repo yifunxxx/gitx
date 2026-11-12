@@ -143,6 +143,10 @@ export function registerM4Actions() {
     description: "Open Conflicts dialog",
     icon: AlertTriangle,
     scope: "global",
+    when: () => {
+      const s = useRewriteStore().opState;
+      return !!s && s.kind !== "normal" && (s.conflictCount > 0 || useConflictsStore().hasConflicts);
+    },
     enabled: () => {
       const s = useRewriteStore().opState;
       return !!s && s.kind !== "normal" && (s.conflictCount > 0 || useConflictsStore().hasConflicts);
@@ -157,6 +161,7 @@ export function registerM4Actions() {
     id: "Git.ChangesView.AcceptYours",
     title: "Accept Yours",
     scope: "changes",
+    when: () => useConflictsStore().hasConflicts,
     enabled: () => useConflictsStore().hasConflicts,
     async run() {
       const c = useConflictsStore();
@@ -169,6 +174,7 @@ export function registerM4Actions() {
     id: "Git.ChangesView.AcceptTheirs",
     title: "Accept Theirs",
     scope: "changes",
+    when: () => useConflictsStore().hasConflicts,
     enabled: () => useConflictsStore().hasConflicts,
     async run() {
       const c = useConflictsStore();
@@ -181,6 +187,7 @@ export function registerM4Actions() {
     id: "Git.ChangesView.Merge",
     title: "Merge…",
     scope: "changes",
+    when: () => useConflictsStore().hasConflicts,
     enabled: () => useConflictsStore().hasConflicts,
     async run() {
       const c = useConflictsStore();

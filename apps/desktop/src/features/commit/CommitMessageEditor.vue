@@ -149,6 +149,7 @@ async function submit() {
     </div>
     <textarea
       v-model="commit.message"
+      data-gitx-commit-message
       class="min-h-[88px] resize-none bg-transparent px-2 py-1.5 font-mono text-[12.5px] outline-none placeholder:text-muted-foreground"
       :placeholder="t('commit.messagePlaceholder')"
       :aria-label="t('commit.messagePlaceholder')"
