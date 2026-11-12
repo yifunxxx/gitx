@@ -1,5 +1,6 @@
 <script setup lang="ts" generic="T">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { isPerfLogEnabled, perfLog } from "@/lib/longTaskLog";
 
 const props = withDefaults(
   defineProps<{
@@ -25,6 +26,16 @@ const scrollTop = ref(0);
 const viewportH = ref(400);
 /** True while the primary mouse button is held (native scrollbar thumb drag). */
 const pointerDown = ref(false);
+/**
+ * While true, row content uses `pointer-events: none` so rows sliding under a
+ * stationary cursor do not fire mouseover / :hover / native title tooltips
+ * (the hitch when wheeling over rows, or when the thumb-drag cursor enters the list).
+ * Cleared ~150ms after the last scroll event once the primary button is up.
+ */
+const scrolling = ref(false);
+let scrollIdleTimer = 0;
+let scrollBlockStartedMs = 0;
+const SCROLL_IDLE_MS = 150;
 
 // Optional known heights let expandable rows share the same bounded scrollport.
 // Build offsets only when data/heights change; scrolling uses a binary lookup.
@@ -137,7 +148,34 @@ function flushScroll() {
   applyScrollTop(top, ev);
 }
 
+function markScrolling() {
+  if (!scrolling.value) {
+    scrolling.value = true;
+    scrollBlockStartedMs = performance.now();
+    if (isPerfLogEnabled()) perfLog("debug", "VirtualList scroll: pointer-events none");
+  }
+  if (scrollIdleTimer) window.clearTimeout(scrollIdleTimer);
+  scrollIdleTimer = window.setTimeout(clearScrolling, SCROLL_IDLE_MS);
+}
+
+function clearScrolling() {
+  scrollIdleTimer = 0;
+  // Keep hit-testing off while the thumb is held — moving into list content
+  // mid-drag must not re-enter :hover / title tooltip paths.
+  if (pointerDown.value) {
+    scrollIdleTimer = window.setTimeout(clearScrolling, SCROLL_IDLE_MS);
+    return;
+  }
+  if (!scrolling.value) return;
+  const ms = performance.now() - scrollBlockStartedMs;
+  scrolling.value = false;
+  if (isPerfLogEnabled() || ms >= 100) {
+    perfLog(ms >= 100 ? "info" : "debug", `VirtualList scroll idle ${ms.toFixed(0)}ms`);
+  }
+}
+
 function onScroll(e: Event) {
+  markScrolling();
   ++scrollGeneration;
   pendingScroll = e;
   if (raf) return;
@@ -145,7 +183,10 @@ function onScroll(e: Event) {
 }
 
 function onPointerDown(e: PointerEvent) {
-  if (e.button === 0) pointerDown.value = true;
+  if (e.button === 0) {
+    pointerDown.value = true;
+    markScrolling();
+  }
 }
 
 function endPointerGesture(ev?: Event) {
@@ -172,6 +213,7 @@ function endPointerGesture(ev?: Event) {
   queuedWheelTop = null;
   // One reactive apply after the OS releases the thumb; emit without re-entry.
   applyScrollTop(top, null);
+  markScrolling();
 }
 
 onMounted(() => {
@@ -200,6 +242,7 @@ onUnmounted(() => {
   ro = null;
   if (raf) cancelAnimationFrame(raf);
   if (wheelGate) window.clearTimeout(wheelGate);
+  if (scrollIdleTimer) window.clearTimeout(scrollIdleTimer);
   window.removeEventListener("pointerup", endPointerGesture);
   window.removeEventListener("pointercancel", endPointerGesture);
   window.removeEventListener("lostpointercapture", endPointerGesture);
@@ -207,6 +250,7 @@ onUnmounted(() => {
   pendingScroll = null;
   heldScrollTop = null;
   queuedWheelTop = null;
+  scrolling.value = false;
 });
 
 watch(
@@ -257,6 +301,7 @@ watch(
 defineExpose({
   el: root,
   pointerDown,
+  scrolling,
   isIndexVisible: (index: number) => index >= start.value && index < end.value,
   scrollToIndex(index: number, align: "nearest" | "center" = "nearest") {
     if (!root.value || !props.items.length) return;
@@ -292,7 +337,10 @@ defineExpose({
       -->
       <div class="relative w-full" :style="{ height: `${totalH}px` }">
         <div
-          class="absolute left-0 right-0 top-0 will-change-transform"
+          class="vl-window absolute left-0 right-0 top-0 will-change-transform"
+          :class="{ 'pointer-events-none': scrolling || pointerDown }"
+          data-vl-window
+          :data-scrolling="scrolling || pointerDown ? '' : undefined"
           :style="{ transform: `translate3d(0, ${offsetY}px, 0)` }"
         >
           <div

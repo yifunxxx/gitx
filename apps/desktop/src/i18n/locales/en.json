@@ -656,6 +656,8 @@
     "menuGapNote": "Delete to trash not wired (IDEA Delete parity deferred)",
     "changesTree": "Changed files",
     "listModeTip": "Show changed files as a directory tree or a flat path list",
+    "listModeToggleTipTree": "Tree — click for flat list",
+    "listModeToggleTipFlat": "Flat list — click for tree",
     "listModeFlat": "Flat list",
     "listModeTree": "Tree",
     "untrackConfirm": "Stop tracking {count} files? Local files will be kept. Commit this change to record it."

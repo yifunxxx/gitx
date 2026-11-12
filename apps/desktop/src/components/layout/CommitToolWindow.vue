@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Plus, Minus, RefreshCw, ListPlus } from "@lucide/vue";
+import { Plus, Minus, RefreshCw, ListPlus, List, ListTree } from "@lucide/vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import Skeleton from "@/components/common/Skeleton.vue";
@@ -13,6 +13,7 @@ import CommitMessageEditor from "@/features/commit/CommitMessageEditor.vue";
 import RepoStateBanner from "@/features/merge/RepoStateBanner.vue";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { openChangeDiff } from "@/features/commit/openChangeDiff";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
@@ -21,21 +22,41 @@ import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { toast } from "@/composables/useToast";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
-import { getBackend } from "@/lib/backend";
+import { getBackend, type ChangesListMode } from "@/lib/backend";
 import { runAction } from "@/actions";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { openDialog } from "@/composables/useDialog";
 import StopTrackingDialog from "@/features/commit/StopTrackingDialog.vue";
 import { formatErrorMessage } from "@/lib/errors";
+import { cloneJson } from "@/lib/clone";
 
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
 const changes = useChangesStore();
+const settings = useSettingsStore();
 const layout = useLayoutStore();
 const rewrite = useRewriteStore();
 const stashShelf = useStashShelfStore();
 const files = useFileViewerStore();
 const history = useHistoryStore();
+
+const changesListMode = computed<ChangesListMode>(
+  () => settings.settings?.git?.changesListMode ?? "tree",
+);
+const changesListModeTip = computed(() =>
+  changesListMode.value === "tree"
+    ? t("commitTw.listModeToggleTipTree")
+    : t("commitTw.listModeToggleTipFlat"),
+);
+
+async function toggleChangesListMode() {
+  const next: ChangesListMode = changesListMode.value === "tree" ? "flat" : "tree";
+  const base = cloneJson(settings.settings ?? settings.emptySettings());
+  await settings.save({
+    ...base,
+    git: { ...base.git, changesListMode: next },
+  });
+}
 
 const ctxMenu = ref<{
   open: boolean;
@@ -354,6 +375,18 @@ async function runCtx(action: string) {
         <Tip :text="t('actions.refreshStatus')">
           <Button variant="ghost" size="icon" @click="changes.refresh()">
             <RefreshCw class="h-3.5 w-3.5" />
+          </Button>
+        </Tip>
+        <Tip :text="changesListModeTip">
+          <Button
+            variant="ghost"
+            size="icon"
+            :aria-label="changesListModeTip"
+            :aria-pressed="changesListMode === 'tree'"
+            @click="toggleChangesListMode"
+          >
+            <ListTree v-if="changesListMode === 'tree'" class="h-3.5 w-3.5" />
+            <List v-else class="h-3.5 w-3.5" />
           </Button>
         </Tip>
         <!-- Show Diff removed (GIT-38): left-click already opens Diff. -->
