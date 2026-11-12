@@ -9,6 +9,7 @@ import type { ChangesSection } from "@/stores/changesStore";
 
 const mocks = vi.hoisted(() => ({
   changes: {} as any,
+  settings: {} as any,
   openFileDiff: vi.fn(),
   actions: new Map<string, ActionDef>(),
 }));
@@ -18,6 +19,7 @@ vi.mock("@/stores/workspaceStore", () => ({
   useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo", folderPath: "repo", isRepo: true, navigationToken: () => 1 }),
 }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
+vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
 vi.mock("@/stores/diffStore", () => ({
   useDiffStore: () => ({ openFileDiff: mocks.openFileDiff }),
 }));
@@ -53,11 +55,19 @@ beforeEach(() => {
     changelists: { lists: [] },
     refresh: vi.fn(),
   });
+  mocks.settings = reactive({
+    settings: { stagingMode: false, git: { changesListMode: "tree" } },
+    emptySettings: () => ({ stagingMode: false, git: { changesListMode: "tree" } }),
+    save: vi.fn(async (next: unknown) => {
+      mocks.settings.settings = next;
+    }),
+  });
   registerVcsActions();
   wrapper = shallowMount(CommitToolWindow, {
     global: {
       stubs: {
         Button: { template: "<button><slot /></button>" },
+        Tip: { template: "<div><slot /></div>" },
         ContextMenuSurface: { template: "<div><slot /></div>" },
       },
     },

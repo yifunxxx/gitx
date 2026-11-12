@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from "vue";
-import { ChevronDown, ChevronRight, List, ListTree } from "@lucide/vue";
+import { ChevronDown, ChevronRight } from "@lucide/vue";
 import type { ChangesListMode, FileChange } from "@/lib/backend";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -13,10 +13,7 @@ import {
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
 import VirtualList from "@/components/common/VirtualList.vue";
 import IndeterminateCheckbox from "@/components/common/IndeterminateCheckbox.vue";
-import { Button } from "@/components/ui/button";
-import { Tip } from "@/components/ui/tooltip";
 import { markContextHandled } from "@/lib/contextMenu";
-import { cloneJson } from "@/lib/clone";
 import { useI18n } from "vue-i18n";
 import { statusClass } from "./statusColor";
 
@@ -60,15 +57,6 @@ const anchorKey = ref<string | null>(null);
 const listMode = computed<ChangesListMode>(
   () => settings.settings?.git?.changesListMode ?? "tree",
 );
-
-async function setListMode(mode: ChangesListMode) {
-  if (listMode.value === mode) return;
-  const base = cloneJson(settings.settings ?? settings.emptySettings());
-  await settings.save({
-    ...base,
-    git: { ...base.git, changesListMode: mode },
-  });
-}
 
 // Building/sorting the path trees depends only on repository data, never on
 // scrolling, selection or expanding a folder.
@@ -425,36 +413,6 @@ function labelFor(node: PathTreeNode<FileMeta>) {
     @keydown="onKeydown"
     @focus.self="list?.scrollToIndex(currentIndex)"
   >
-    <div class="flex h-7 shrink-0 items-center justify-end gap-1 border-b px-2">
-      <Tip :text="t('commitTw.listModeTip')">
-        <div class="flex items-center rounded-md border">
-          <Button
-            size="xs"
-            variant="ghost"
-            class="rounded-r-none"
-            :class="listMode === 'tree' ? 'bg-accent' : ''"
-            :aria-pressed="listMode === 'tree'"
-            :aria-label="t('commitTw.listModeTree')"
-            @click="setListMode('tree')"
-          >
-            <ListTree class="mr-1 h-3 w-3" />
-            {{ t("commitTw.listModeTree") }}
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            class="rounded-l-none border-l"
-            :class="listMode === 'flat' ? 'bg-accent' : ''"
-            :aria-pressed="listMode === 'flat'"
-            :aria-label="t('commitTw.listModeFlat')"
-            @click="setListMode('flat')"
-          >
-            <List class="mr-1 h-3 w-3" />
-            {{ t("commitTw.listModeFlat") }}
-          </Button>
-        </div>
-      </Tip>
-    </div>
     <VirtualList
       ref="list"
       :items="rows"

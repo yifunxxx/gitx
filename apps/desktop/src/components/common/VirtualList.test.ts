@@ -99,6 +99,44 @@ it("keeps thumb-drag deferral when lostpointercapture fires with the button stil
   wrapper.unmount();
 });
 
+it("disables pointer events on row content while scrolling and for 150ms after", async () => {
+  vi.useFakeTimers();
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const wrapper = mount(VirtualList, {
+    props: { items: ["a", "b", "c"], itemHeight: 22, getKey: String },
+  });
+  const port = wrapper.get(".overflow-auto");
+  const windowEl = () => wrapper.get("[data-vl-window]");
+  expect(windowEl().classes()).not.toContain("pointer-events-none");
+  await port.trigger("scroll");
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(windowEl().classes()).toContain("pointer-events-none");
+  expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(true);
+  await vi.advanceTimersByTimeAsync(149);
+  expect(windowEl().classes()).toContain("pointer-events-none");
+  await vi.advanceTimersByTimeAsync(2);
+  await nextTick();
+  expect(windowEl().classes()).not.toContain("pointer-events-none");
+  expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(false);
+  // Thumb drag: keep pointer-events off even after the idle timer while held.
+  await port.trigger("pointerdown", { button: 0 });
+  expect(windowEl().classes()).toContain("pointer-events-none");
+  await vi.advanceTimersByTimeAsync(200);
+  expect(windowEl().classes()).toContain("pointer-events-none");
+  window.dispatchEvent(new Event("pointerup"));
+  await nextTick();
+  await vi.advanceTimersByTimeAsync(160);
+  await nextTick();
+  expect(windowEl().classes()).not.toContain("pointer-events-none");
+  wrapper.unmount();
+  vi.useRealTimers();
+});
+
 it("gates wheel reactive updates so row props are not patched every frame", async () => {
   vi.useFakeTimers();
   const frames: FrameRequestCallback[] = [];

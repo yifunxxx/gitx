@@ -278,19 +278,39 @@ async fn cancelling_while_waiting_for_a_shelf_writer_does_not_expire_data() {
     let cancel = CancellationToken::new();
     let common = runner.git_common_dir(cwd, &cancel).await.unwrap();
     let entry = import(&runner, cwd, addition()).await;
-    runner.shelf_delete(cwd, &entry.id, &cancel).await.unwrap();
-    modify(&common, &entry, true, |v| v["deletedAt"] = json!(1));
-    let guard = gitx_meta::try_shelf_operation_lock(&common)
+
+    // Hold the operation lock as the "writer" for the whole setup + wait window.
+    // Soft-delete under that lock instead of calling shelf_delete (which takes
+    // and drops the same lock, racing the next try_lock under CI load).
+    let writer = gitx_meta::try_shelf_operation_lock(&common)
         .unwrap()
-        .unwrap();
+        .expect("shelf operation lock must be free after import returns");
+    gitx_meta::soft_delete_shelf(&common, &entry.id).unwrap();
+    let shelf_ref = format!("refs/gitx/shelf/{}", entry.id);
+    let _ = git(
+        &runner,
+        cwd,
+        &["update-ref", "--no-deref", "-d", &shelf_ref],
+    )
+    .await;
+    modify(&common, &entry, true, |v| v["deletedAt"] = json!(1));
+    assert!(
+        gitx_meta::try_shelf_operation_lock(&common)
+            .unwrap()
+            .is_none(),
+        "writer must still hold the exclusive operation lock"
+    );
+
     let waiting = CancellationToken::new();
     let (result, ()) = tokio::join!(runner.shelf_maintain(cwd, &waiting), async {
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        // Maintain polls the lock every 25ms; give it time to enter the wait
+        // loop under our held writer lock before cancelling.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         waiting.cancel();
     });
     assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
     assert!(gitx_meta::deleted_root(&common).join(&entry.id).exists());
-    drop(guard);
+    drop(writer);
     assert_eq!(
         runner.shelf_maintain(cwd, &cancel).await.unwrap().expired,
         1
