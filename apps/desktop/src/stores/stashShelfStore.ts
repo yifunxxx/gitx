@@ -183,16 +183,23 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
   }
 
   async function promptStash(options: { paths?: string[]; includeUntracked?: boolean } = {}) {
-    const paths = options.paths ? [...options.paths] : undefined;
+    const initialPaths = options.paths ? [...options.paths] : [];
     const includeUntracked = options.includeUntracked ?? false;
     return mutate(async (path, current) => {
       const result = await openDialog<{
         message: string;
         includeUntracked: boolean;
         keepIndex: boolean;
-      } | null>(StashDialog, { includeUntracked });
-      if (!result || !current()) return false;
-      await getBackend().stashCreate({ path, ...result, paths });
+        paths: string[];
+      } | null>(StashDialog, { includeUntracked, initialPaths });
+      if (!result?.paths.length || !current()) return false;
+      await getBackend().stashCreate({
+        path,
+        message: result.message,
+        includeUntracked: result.includeUntracked,
+        keepIndex: result.keepIndex,
+        paths: [...result.paths],
+      });
     }, "stash.created");
   }
 
@@ -285,21 +292,21 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     );
   }
 
-  async function promptShelf(paths: string[]) {
-    const selectedPaths = [...paths];
-    if (!selectedPaths.length) return false;
+  async function promptShelf(paths: string[] = []) {
+    const initialPaths = [...paths];
     return mutate(
       async (path, current) => {
-        const result = await openDialog<{ message: string; keepChanges: boolean } | null>(
-          ShelfDialog,
-          { count: selectedPaths.length },
-        );
-        if (!result || !current()) return false;
+        const result = await openDialog<{
+          message: string;
+          keepChanges: boolean;
+          paths: string[];
+        } | null>(ShelfDialog, { initialPaths });
+        if (!result?.paths.length || !current()) return false;
         await getBackend().shelfCreate({
           path,
           message: result.message.trim() || t("shelf.defaultMessage"),
           keepChanges: result.keepChanges,
-          paths: selectedPaths,
+          paths: [...result.paths],
           sourceChangelist: null,
         });
       },

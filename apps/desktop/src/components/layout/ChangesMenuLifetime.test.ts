@@ -132,8 +132,8 @@ it.each(["repository", "navigation", "selection", "section"])(
 it.each(["navigation", "roundtrip", "unmount"])(
   "cancels confirmed rollback after %s invalidates its source",
   async (kind) => {
-    const answer = deferred<boolean>();
-    mocks.confirm.mockReturnValue(answer.promise);
+    const answer = deferred<{ paths: string[] } | null>();
+    mocks.dialog.mockReturnValue(answer.promise);
     await openMenu();
     await click("commitTw.rollback");
     if (kind === "navigation") mocks.ws.generation++;
@@ -142,7 +142,7 @@ it.each(["navigation", "roundtrip", "unmount"])(
       mocks.ws.repoPath = "A";
     }
     if (kind === "unmount") wrapper.unmount();
-    answer.resolve(true);
+    answer.resolve({ paths: ["first.txt", "second.txt"] });
     await flushPromises();
     expect(mocks.changes.unstage).not.toHaveBeenCalled();
     expect(mocks.checkout).not.toHaveBeenCalled();
@@ -150,13 +150,13 @@ it.each(["navigation", "roundtrip", "unmount"])(
 );
 
 it("keeps the original files and section through a rollback confirmation", async () => {
-  const answer = deferred<boolean>();
-  mocks.confirm.mockReturnValue(answer.promise);
+  const answer = deferred<{ paths: string[] } | null>();
+  mocks.dialog.mockReturnValue(answer.promise);
   await openMenu();
   await click("commitTw.rollback");
   mocks.changes.selectedPaths.splice(0, 2, "other.txt");
   mocks.changes.selectedSection = "unstaged";
-  answer.resolve(true);
+  answer.resolve({ paths: ["first.txt", "second.txt"] });
   await flushPromises();
   expect(mocks.changes.unstage).toHaveBeenCalledWith(["first.txt", "second.txt"]);
   expect(mocks.checkout.mock.calls.map(([arg]) => arg)).toEqual([
@@ -169,6 +169,7 @@ it.each(["unstage", "checkout"])("stops rollback after navigation during %s", as
   const pending = deferred<void>();
   if (step === "unstage") mocks.changes.unstage.mockReturnValue(pending.promise);
   else mocks.checkout.mockReturnValueOnce(pending.promise);
+  mocks.dialog.mockResolvedValue({ paths: ["first.txt", "second.txt"] });
   await openMenu();
   await click("commitTw.rollback");
   mocks.ws.repoPath = "B";

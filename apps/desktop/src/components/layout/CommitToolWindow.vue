@@ -21,12 +21,13 @@ import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { toast } from "@/composables/useToast";
-import { confirmDialog, promptDialog } from "@/composables/useConfirm";
+import { promptDialog } from "@/composables/useConfirm";
 import { getBackend, type ChangesListMode } from "@/lib/backend";
 import { runAction } from "@/actions";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { openDialog } from "@/composables/useDialog";
 import StopTrackingDialog from "@/features/commit/StopTrackingDialog.vue";
+import RollbackChangesDialog from "@/features/commit/RollbackChangesDialog.vue";
 import { formatErrorMessage } from "@/lib/errors";
 import { cloneJson } from "@/lib/clone";
 
@@ -202,7 +203,7 @@ async function stashSelected(target: ChangesTarget) {
 }
 
 async function shelveSelected(target: ChangesTarget) {
-  if (!target.current() || !target.paths.length) return;
+  if (!target.current()) return;
   if (!(await stashShelf.promptShelf(target.paths)) || !target.current()) return;
   layout.bottomOpen = true;
   layout.activeBottomTab = stashShelf.combineTab ? "stashesShelves" : "shelf";
@@ -210,17 +211,18 @@ async function shelveSelected(target: ChangesTarget) {
 
 async function rollbackSelected(target: ChangesTarget) {
   if (!target.current() || !target.path || !target.repoId || !target.paths.length) return;
-  const ok = await confirmDialog({
-    title: t("commitTw.rollbackTitle"),
-    message: t("commitTw.rollbackConfirm"),
-    destructive: true,
+  const choice = await openDialog<{ paths: string[] } | null>(RollbackChangesDialog, {
+    initialPaths: [...target.paths],
   });
-  if (!ok || !target.current()) return;
+  if (!choice?.paths.length || !target.current()) return;
+  const paths = [...choice.paths];
   // Freeze the section as well as paths: confirmation may outlive selection.
   if (target.stagingMode && target.section === "staged") {
-    await changes.unstage(target.paths);
+    const stagedSet = new Set(changes.staged.map((file) => file.path));
+    const stagedPaths = paths.filter((path) => stagedSet.has(path));
+    if (stagedPaths.length) await changes.unstage(stagedPaths);
   }
-  for (const filePath of target.paths) {
+  for (const filePath of paths) {
     if (!target.current()) return;
     await getBackend().checkoutPathFromRev({
       repoId: target.repoId,
@@ -230,7 +232,7 @@ async function rollbackSelected(target: ChangesTarget) {
     });
   }
   if (!target.current()) return;
-  toast({ title: t("commitTw.rollbackDone"), description: `${target.paths.length}` });
+  toast({ title: t("commitTw.rollbackDone"), description: `${paths.length}` });
   await changes.refresh();
 }
 
