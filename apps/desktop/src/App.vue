@@ -9,6 +9,7 @@ import CommitToolWindow from "@/components/layout/CommitToolWindow.vue";
 import EditorTabs from "@/components/layout/EditorTabs.vue";
 import GitToolWindow from "@/components/layout/GitToolWindow.vue";
 import StatusBar from "@/components/layout/StatusBar.vue";
+import JobsPopup from "@/components/layout/JobsPopup.vue";
 import FindActionPalette from "@/components/layout/FindActionPalette.vue";
 import VcsOperationsPopup from "@/components/layout/VcsOperationsPopup.vue";
 import CustomContextMenuHost from "@/components/layout/CustomContextMenuHost.vue";
@@ -167,6 +168,7 @@ onUnmounted(() => {
         </div>
       </div>
       <StatusBar />
+      <JobsPopup />
       <FindActionPalette />
       <VcsOperationsPopup />
       <CustomContextMenuHost />

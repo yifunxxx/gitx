@@ -1,8 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useJobsStore } from "./jobsStore";
-const mocks = vi.hoisted(() => ({ list: vi.fn() }));
-vi.mock("@/lib/backend", () => ({ getBackend: () => ({ jobList: mocks.list }) }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), cancel: vi.fn() }));
+vi.mock("@/lib/backend", () => ({
+  getBackend: () => ({ jobList: mocks.list, jobCancel: mocks.cancel }),
+}));
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
@@ -10,9 +12,40 @@ beforeEach(() => {
 it("retains a long running native job and removes only jobs no longer running", async () => {
   const jobs = useJobsStore();
   jobs.started({ id: "gone", title: "completed" });
-  mocks.list.mockResolvedValue([{ id: "long", title: "clone", startedAt: Date.now() - 600_000 }]);
+  mocks.list.mockResolvedValue([
+    { id: "long", title: "clone", startedAt: Date.now() - 600_000, cancellable: true },
+  ]);
   await jobs.refresh();
   expect(jobs.running.map((j) => j.id)).toEqual(["long"]);
+  expect(jobs.running[0]?.cancellable).toBe(true);
+});
+it("opens a popup anchor and cancels a running job", async () => {
+  const jobs = useJobsStore();
+  jobs.started({ id: "pull", title: "Pulling…", cancellable: true, message: "Fetching…" });
+  mocks.list.mockResolvedValue([]);
+  jobs.openPopup({ x: 12, y: 640 });
+  expect(jobs.popupOpen).toBe(true);
+  expect(jobs.anchorX).toBe(12);
+  expect(jobs.anchorY).toBe(640);
+  mocks.cancel.mockResolvedValue(true);
+  await expect(jobs.cancel("pull")).resolves.toBe(true);
+  expect(jobs.count).toBe(0);
+  jobs.closePopup();
+  expect(jobs.popupOpen).toBe(false);
+});
+it("keeps progress details across a native list refresh", async () => {
+  const jobs = useJobsStore();
+  jobs.started({ id: "clone", title: "Cloning…", message: "Receiving objects", percent: 42 });
+  mocks.list.mockResolvedValue([
+    { id: "clone", title: "Cloning…", startedAt: 1, cancellable: true },
+  ]);
+  await jobs.refresh();
+  expect(jobs.running[0]).toMatchObject({
+    id: "clone",
+    percent: 42,
+    message: "Receiving objects",
+    cancellable: true,
+  });
 });
 it("rejects snapshots superseded by job events and coalesces overlapping polls", async () => {
   const jobs = useJobsStore();

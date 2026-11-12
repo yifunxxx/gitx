@@ -14,7 +14,7 @@ import VirtualList from "@/components/common/VirtualList.vue";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
-import type { FileChangeKind, LogListMode } from "@/lib/backend";
+import type { ChangesListMode, FileChangeKind, LogListMode } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { markContextHandled } from "@/lib/contextMenu";
 import { formatErrorMessage } from "@/lib/errors";
@@ -118,6 +118,14 @@ function mapStatus(s: string): FileChangeKind {
 }
 
 const listMode = computed<LogListMode>(() => settings.settings?.git?.logListMode ?? "flat");
+const changedFilesListMode = computed<ChangesListMode>(
+  () => settings.settings?.git?.changesListMode ?? "tree",
+);
+const changedFilesListModeTip = computed(() =>
+  changedFilesListMode.value === "tree"
+    ? t("commitTw.listModeToggleTipTree")
+    : t("commitTw.listModeToggleTipFlat"),
+);
 const graphCursor = shallowRef<GraphLayoutCursor | null>(null);
 const graphLayout = shallowRef<GraphLayoutResult>({ rows: [], maxLane: 0, colPx: 48 });
 
@@ -185,15 +193,13 @@ watch(
   },
   { immediate: true },
 );
-async function setListMode(mode: LogListMode) {
-  if (listMode.value === mode) return;
+async function toggleChangedFilesListMode() {
+  const next: ChangesListMode = changedFilesListMode.value === "tree" ? "flat" : "tree";
   const base = cloneJson(settings.settings ?? settings.emptySettings());
   await settings.save({
     ...base,
-    git: { ...base.git, logListMode: mode },
+    git: { ...base.git, changesListMode: next },
   });
-  await nextTick();
-  commitListRef.value?.scrollToIndex?.(0);
 }
 
 let loadMoreTimer = 0;
@@ -456,35 +462,6 @@ function onCommitContext(sha: string, e: MouseEvent) {
           <Button size="xs" variant="ghost" @click="clearSearch">
             {{ t("log.clear") }}
           </Button>
-        </Tip>
-        <div class="mx-1 h-4 w-px bg-border" />
-        <Tip :text="t('log.listModeTip')">
-          <div class="flex items-center rounded-md border">
-            <Button
-              size="xs"
-              variant="ghost"
-              class="rounded-r-none"
-              :class="listMode === 'flat' ? 'bg-accent' : ''"
-              :aria-pressed="listMode === 'flat'"
-              :aria-label="t('log.listModeFlat')"
-              @click="setListMode('flat')"
-            >
-              <List class="mr-1 h-3 w-3" />
-              {{ t("log.listModeFlat") }}
-            </Button>
-            <Button
-              size="xs"
-              variant="ghost"
-              class="rounded-l-none border-l"
-              :class="listMode === 'tree' ? 'bg-accent' : ''"
-              :aria-pressed="listMode === 'tree'"
-              :aria-label="t('log.listModeTree')"
-              @click="setListMode('tree')"
-            >
-              <ListTree class="mr-1 h-3 w-3" />
-              {{ t("log.listModeTree") }}
-            </Button>
-          </div>
         </Tip>
         <Tip :text="t('log.graphTip')">
           <Button
@@ -842,13 +819,27 @@ function onCommitContext(sha: string, e: MouseEvent) {
               <Splitpanes horizontal class="h-full">
                 <Pane :size="45">
                   <div class="flex h-full min-h-0 flex-col">
-                    <div class="border-b px-2 py-1 text-[11px] font-medium">
-                      {{ t("log.changedFiles") }}
+                    <div class="flex items-center justify-between border-b px-2 py-1 text-[11px] font-medium">
+                      <span>{{ t("log.changedFiles") }}</span>
+                      <Tip :text="changedFilesListModeTip">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          class="h-6 w-6"
+                          :aria-label="changedFilesListModeTip"
+                          :aria-pressed="changedFilesListMode === 'tree'"
+                          @click="toggleChangedFilesListMode"
+                        >
+                          <ListTree v-if="changedFilesListMode === 'tree'" class="h-3.5 w-3.5" />
+                          <List v-else class="h-3.5 w-3.5" />
+                        </Button>
+                      </Tip>
                     </div>
                     <PathTreeList
                       v-for="source in fileList ? [fileList] : []"
                       :key="source.id"
                       :files="source.files"
+                      :mode="changedFilesListMode"
                       :selected-path="selectedFile?.path"
                       @select="selectFile"
                       :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"

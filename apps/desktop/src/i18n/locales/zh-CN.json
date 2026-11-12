@@ -477,6 +477,11 @@
   "status": {
     "idle": "空闲",
     "busy": "{count} 个进程",
+    "jobsTitle": "后台进程",
+    "jobsEmpty": "没有正在运行的进程",
+    "jobRunning": "运行中…",
+    "jobPercent": "{percent}%",
+    "cancelFailed": "无法取消进程",
     "noRepo": "无仓库",
     "upstream": "上游",
     "noUpstream": "无上游分支 — Push 以设置",

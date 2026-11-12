@@ -477,6 +477,11 @@
   "status": {
     "idle": "Idle",
     "busy": "{count} process(es)",
+    "jobsTitle": "Background processes",
+    "jobsEmpty": "No running processes",
+    "jobRunning": "Running…",
+    "jobPercent": "{percent}%",
+    "cancelFailed": "Could not cancel process",
     "noRepo": "no repo",
     "upstream": "Upstream",
     "noUpstream": "No upstream branch — Push to set",
