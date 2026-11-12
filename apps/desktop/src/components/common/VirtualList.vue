@@ -22,20 +22,23 @@ const emit = defineEmits<{
 }>();
 
 const root = ref<HTMLElement | null>(null);
+const windowEl = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const viewportH = ref(400);
 /** True while the primary mouse button is held (native scrollbar thumb drag). */
 const pointerDown = ref(false);
 /**
- * While true, row content uses `pointer-events: none` so rows sliding under a
- * stationary cursor do not fire mouseover / :hover / native title tooltips
- * (the hitch when wheeling over rows, or when the thumb-drag cursor enters the list).
+ * While true, row hover paint and native `title` tooltips are suppressed so
+ * rows sliding under a stationary cursor do not restyle / tooltip each frame.
+ * Pointer events stay enabled so clicks and selection keep working.
  * Cleared ~150ms after the last scroll event once the primary button is up.
  */
 const scrolling = ref(false);
 let scrollIdleTimer = 0;
 let scrollBlockStartedMs = 0;
 const SCROLL_IDLE_MS = 150;
+const TITLE_HOLD = "data-vl-title";
+let titleObserver: MutationObserver | null = null;
 
 // Optional known heights let expandable rows share the same bounded scrollport.
 // Build offsets only when data/heights change; scrolling uses a binary lookup.
@@ -148,11 +151,51 @@ function flushScroll() {
   applyScrollTop(top, ev);
 }
 
+function stripTitles(target: HTMLElement) {
+  for (const el of target.querySelectorAll<HTMLElement>("[title]")) {
+    const text = el.getAttribute("title");
+    if (text === null) continue;
+    el.setAttribute(TITLE_HOLD, text);
+    el.removeAttribute("title");
+  }
+}
+
+function restoreTitles(target: HTMLElement) {
+  for (const el of target.querySelectorAll<HTMLElement>(`[${TITLE_HOLD}]`)) {
+    const text = el.getAttribute(TITLE_HOLD);
+    if (text !== null) el.setAttribute("title", text);
+    el.removeAttribute(TITLE_HOLD);
+  }
+}
+
+function startTitleSuppress() {
+  const target = windowEl.value;
+  if (!target) return;
+  stripTitles(target);
+  if (titleObserver) return;
+  titleObserver = new MutationObserver(() => {
+    if (windowEl.value) stripTitles(windowEl.value);
+  });
+  titleObserver.observe(target, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["title"],
+  });
+}
+
+function stopTitleSuppress() {
+  titleObserver?.disconnect();
+  titleObserver = null;
+  if (windowEl.value) restoreTitles(windowEl.value);
+}
+
 function markScrolling() {
   if (!scrolling.value) {
     scrolling.value = true;
     scrollBlockStartedMs = performance.now();
-    if (isPerfLogEnabled()) perfLog("debug", "VirtualList scroll: pointer-events none");
+    startTitleSuppress();
+    if (isPerfLogEnabled()) perfLog("debug", "VirtualList scroll: suppress hover/title");
   }
   if (scrollIdleTimer) window.clearTimeout(scrollIdleTimer);
   scrollIdleTimer = window.setTimeout(clearScrolling, SCROLL_IDLE_MS);
@@ -160,8 +203,8 @@ function markScrolling() {
 
 function clearScrolling() {
   scrollIdleTimer = 0;
-  // Keep hit-testing off while the thumb is held — moving into list content
-  // mid-drag must not re-enter :hover / title tooltip paths.
+  // Keep hover/title suppress while the thumb is held — moving into list
+  // content mid-drag must not re-enter :hover / title tooltip paths.
   if (pointerDown.value) {
     scrollIdleTimer = window.setTimeout(clearScrolling, SCROLL_IDLE_MS);
     return;
@@ -169,6 +212,7 @@ function clearScrolling() {
   if (!scrolling.value) return;
   const ms = performance.now() - scrollBlockStartedMs;
   scrolling.value = false;
+  stopTitleSuppress();
   if (isPerfLogEnabled() || ms >= 100) {
     perfLog(ms >= 100 ? "info" : "debug", `VirtualList scroll idle ${ms.toFixed(0)}ms`);
   }
@@ -183,10 +227,10 @@ function onScroll(e: Event) {
 }
 
 function onPointerDown(e: PointerEvent) {
-  if (e.button === 0) {
-    pointerDown.value = true;
-    markScrolling();
-  }
+  // Track primary-button hold for native scrollbar thumb deferral only.
+  // Do NOT suppress hover/title here — that ran on every row click in v0.1.29
+  // and, combined with pointer-events:none, swallowed selection entirely.
+  if (e.button === 0) pointerDown.value = true;
 }
 
 function endPointerGesture(ev?: Event) {
@@ -213,7 +257,9 @@ function endPointerGesture(ev?: Event) {
   queuedWheelTop = null;
   // One reactive apply after the OS releases the thumb; emit without re-entry.
   applyScrollTop(top, null);
-  markScrolling();
+  // Thumb drag usually produced scroll events already; refresh the idle timer
+  // so hover/title stay suppressed briefly after release.
+  if (scrolling.value) markScrolling();
 }
 
 onMounted(() => {
@@ -243,6 +289,7 @@ onUnmounted(() => {
   if (raf) cancelAnimationFrame(raf);
   if (wheelGate) window.clearTimeout(wheelGate);
   if (scrollIdleTimer) window.clearTimeout(scrollIdleTimer);
+  stopTitleSuppress();
   window.removeEventListener("pointerup", endPointerGesture);
   window.removeEventListener("pointercancel", endPointerGesture);
   window.removeEventListener("lostpointercapture", endPointerGesture);
@@ -337,10 +384,10 @@ defineExpose({
       -->
       <div class="relative w-full" :style="{ height: `${totalH}px` }">
         <div
+          ref="windowEl"
           class="vl-window absolute left-0 right-0 top-0 will-change-transform"
-          :class="{ 'pointer-events-none': scrolling || pointerDown }"
           data-vl-window
-          :data-scrolling="scrolling || pointerDown ? '' : undefined"
+          :data-scrolling="scrolling ? '' : undefined"
           :style="{ transform: `translate3d(0, ${offsetY}px, 0)` }"
         >
           <div
@@ -358,3 +405,24 @@ defineExpose({
     <slot name="footer" />
   </div>
 </template>
+
+<style scoped>
+/*
+  Keep pointer-events enabled so row clicks/selection work. While scrolling
+  (or thumb-held after a scroll), neutralize the common Tailwind hover paints
+  used by Log / Branches / Changes / Shelf rows. Selected rows keep their
+  explicit bg-* classes because hover utilities are overridden to transparent
+  only when they would otherwise paint a hover surface.
+*/
+.vl-window[data-scrolling] :deep(.hover\:bg-hover-surface:hover),
+.vl-window[data-scrolling] :deep(.hover\:bg-accent:hover),
+.vl-window[data-scrolling] :deep(.hover\:bg-accent\/50:hover) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Branches rows combine selection + hover:bg-accent — restore selection paint. */
+.vl-window[data-scrolling] :deep(.bg-selection\/40.hover\:bg-accent:hover) {
+  background-color: rgb(var(--selection)) !important;
+}
+</style>
