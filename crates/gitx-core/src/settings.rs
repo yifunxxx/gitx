@@ -1,4 +1,4 @@
-use crate::{CleanTreeMethod, CommitTwMode, LogListMode, SubmoduleUpdatePolicy};
+use crate::{ChangesListMode, CleanTreeMethod, CommitTwMode, LogListMode, SubmoduleUpdatePolicy};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -112,6 +112,9 @@ pub struct GitSettings {
     /// Log list: chronological flat or branch-oriented tree.
     #[serde(default)]
     pub log_list_mode: LogListMode,
+    /// Commit TW Changes list: directory tree or flat paths.
+    #[serde(default)]
+    pub changes_list_mode: ChangesListMode,
 }
 
 fn default_fork_parent() -> String {
@@ -156,6 +159,7 @@ impl Default for GitSettings {
             commit_controls_hidden: false,
             close_commit_tw_after_commit: false,
             log_list_mode: LogListMode::Flat,
+            changes_list_mode: ChangesListMode::Tree,
         }
     }
 }

@@ -67,6 +67,38 @@ it("emits the scrollport as the trailing scroll target when dragging ends outsid
   wrapper.unmount();
 });
 
+it("keeps thumb-drag deferral when lostpointercapture fires with the button still held", async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const items = Array.from({ length: 200 }, (_, i) => `row-${i}`);
+  const wrapper = mount(VirtualList, {
+    props: { items, itemHeight: 22, getKey: String, recycleKeys: true, overscan: 2 },
+    slots: { default: `<span class="cell">{{ params.item }}</span>` },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  Object.defineProperty(port, "clientHeight", { configurable: true, value: 220 });
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  await wrapper.get(".overflow-auto").trigger("pointerdown", { button: 0 });
+  port.scrollTop = 880;
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  window.dispatchEvent(Object.assign(new Event("lostpointercapture"), { buttons: 1 }));
+  await nextTick();
+  expect((wrapper.vm as unknown as { pointerDown: boolean }).pointerDown).toBe(true);
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  window.dispatchEvent(new Event("pointerup"));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).not.toBe("row-0");
+  wrapper.unmount();
+});
+
 it("gates wheel reactive updates so row props are not patched every frame", async () => {
   vi.useFakeTimers();
   const frames: FrameRequestCallback[] = [];

@@ -818,6 +818,15 @@ pub enum LogListMode {
     Tree,
 }
 
+/// Commit TW Changes file list: directory tree vs flat paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ChangesListMode {
+    #[default]
+    Tree,
+    Flat,
+}
+
 /// Submodule update policy after Update Project (#81).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]

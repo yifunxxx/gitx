@@ -525,6 +525,7 @@
       "commitTwMode": "Commit 工具窗模式",
       "logIndexing": "启用 Log 索引",
       "logListMode": "Log 列表模式",
+      "changesListMode": "更改列表模式",
       "closeCommitTwAfterCommit": "提交成功后关闭 Commit 工具窗",
       "commitControlsHidden": "默认隐藏提交控件（Ctrl+K 显示）",
       "groupBranchesByDirectory": "按目录分组分支",
@@ -654,6 +655,9 @@
     "selectAll": "全选 / 取消全选此区文件",
     "menuGapNote": "删除到回收站未接（与 IDEA Delete 对齐待办）",
     "changesTree": "更改文件树",
+    "listModeTip": "以目录树或平铺路径显示更改文件",
+    "listModeFlat": "平铺列表",
+    "listModeTree": "树",
     "untrackConfirm": "停止跟踪 {count} 个文件？本地文件会保留，此更改需要提交。"
   },
   "changelist": {

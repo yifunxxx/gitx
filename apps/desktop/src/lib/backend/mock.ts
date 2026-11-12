@@ -51,6 +51,7 @@ const defaultSettings: AppSettings = {
     commitControlsHidden: false,
     closeCommitTwAfterCommit: false,
     logListMode: "flat",
+    changesListMode: "tree",
   },
 };
 

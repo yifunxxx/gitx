@@ -72,6 +72,7 @@ export const useSettingsStore = defineStore("settings", () => {
         commitControlsHidden: false,
         closeCommitTwAfterCommit: false,
         logListMode: "flat",
+        changesListMode: "tree",
       },
     };
   }

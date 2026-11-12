@@ -266,6 +266,20 @@ export const SETTINGS_PAGES: SettingPage[] = [
         },
         scope: "app",
       },
+      {
+        id: "changesListMode",
+        titleKey: "settings.fields.changesListMode",
+        keywords: ["changes", "flat", "tree", "更改", "列表", "树"],
+        path: "git.changesListMode",
+        control: {
+          kind: "select",
+          options: [
+            { value: "tree", labelKey: "commitTw.listModeTree" },
+            { value: "flat", labelKey: "commitTw.listModeFlat" },
+          ],
+        },
+        scope: "app",
+      },
     ],
   },
   {

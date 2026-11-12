@@ -714,6 +714,7 @@ export type CommitResult = { warning?: string | null; sha: string; subject: stri
  */
 export type CommitTwMode = "docked" | "window" | "float";
 export type LogListMode = "flat" | "tree";
+export type ChangesListMode = "flat" | "tree";
 export type CompareRange = { left: string; right: string; leftOnly: string[]; rightOnly: string[] };
 export type CompareReq = { path: string; left: string; right: string };
 export type ConflictAcceptReq = { path: string; paths: string[]; side: ConflictSide };
@@ -1000,6 +1001,10 @@ export type GitSettings = {
    * Log list: chronological flat or branch-oriented tree.
    */
   logListMode?: LogListMode;
+  /**
+   * Commit TW Changes list: directory tree or flat paths.
+   */
+  changesListMode?: ChangesListMode;
 };
 export type GraphEdge = { fromLane: number; toLane: number };
 export type GraphRow = { lane: number; edges: GraphEdge[]; color: number };
