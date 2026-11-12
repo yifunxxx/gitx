@@ -221,19 +221,33 @@ it("does not submit a stash dialog after its repository changed", async () => {
   const pending = useStashShelfStore().promptStash();
   mocks.workspace.repoPath = "B";
   mocks.workspace.repoPath = "A";
-  dialog.resolve({ message: "old", includeUntracked: true, keepIndex: true });
+  dialog.resolve({
+    message: "old",
+    includeUntracked: true,
+    keepIndex: true,
+    paths: ["old.txt"],
+  });
   expect(await pending).toBe(false);
   expect(mocks.backend.stashCreate).not.toHaveBeenCalled();
 });
 it("keeps creation options and selected paths", async () => {
-  mocks.dialog.mockResolvedValue({ message: "selected", includeUntracked: true, keepIndex: true });
+  mocks.dialog.mockResolvedValue({
+    message: "selected",
+    includeUntracked: true,
+    keepIndex: true,
+    paths: ["new.txt", "extra.txt"],
+  });
   expect(await useStashShelfStore().promptStash({ paths: ["new.txt"] })).toBe(true);
+  expect(mocks.dialog).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ initialPaths: ["new.txt"], includeUntracked: false }),
+  );
   expect(mocks.backend.stashCreate).toHaveBeenCalledWith({
     path: "A",
     message: "selected",
     includeUntracked: true,
     keepIndex: true,
-    paths: ["new.txt"],
+    paths: ["new.txt", "extra.txt"],
   });
 });
 it("honors delete cancellation and invalidates a confirmation on repository change", async () => {
@@ -261,7 +275,12 @@ it("captures paths and blocks duplicate dialogs while awaiting creation options"
   expect(await store.dropStash("first")).toBe(false);
   expect(mocks.dialog).toHaveBeenCalledTimes(1);
   expect(mocks.confirm).not.toHaveBeenCalled();
-  dialog.resolve({ message: "saved", includeUntracked: false, keepIndex: false });
+  dialog.resolve({
+    message: "saved",
+    includeUntracked: false,
+    keepIndex: false,
+    paths: ["first.txt"],
+  });
   expect(await pending).toBe(true);
   expect(mocks.backend.stashCreate).toHaveBeenCalledWith(
     expect.objectContaining({ paths: ["first.txt"] }),
@@ -275,7 +294,12 @@ it("abandons a dialog as soon as navigation starts, before the visible repositor
   mocks.dialog.mockReturnValue(dialog.promise);
   const pending = useStashShelfStore().promptStash();
   navigation++;
-  dialog.resolve({ message: "old", includeUntracked: true, keepIndex: true });
+  dialog.resolve({
+    message: "old",
+    includeUntracked: true,
+    keepIndex: true,
+    paths: ["old.txt"],
+  });
   expect(await pending).toBe(false);
   expect(mocks.backend.stashCreate).not.toHaveBeenCalled();
 });
@@ -408,13 +432,17 @@ it("captures Shelf paths and blocks all overlapping dialogs until creation compl
   expect(await store.promptStash()).toBe(false);
   expect(mocks.dialog).toHaveBeenCalledOnce();
   expect(mocks.confirm).not.toHaveBeenCalled();
-  dialog.resolve({ message: " selected ", keepChanges: true });
+  dialog.resolve({ message: " selected ", keepChanges: true, paths: ["first.txt", "extra.txt"] });
   expect(await pending).toBe(true);
+  expect(mocks.dialog).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ initialPaths: ["first.txt"] }),
+  );
   expect(mocks.backend.shelfCreate).toHaveBeenCalledExactlyOnceWith({
     path: "A",
     message: "selected",
     keepChanges: true,
-    paths: ["first.txt"],
+    paths: ["first.txt", "extra.txt"],
     sourceChangelist: null,
   });
   expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "shelf.created" });
@@ -431,7 +459,7 @@ it("invalidates Shelf creation when navigation begins, including A to B to A", a
       mocks.workspace.repoPath = "B";
       mocks.workspace.repoPath = "A";
     } else navigation++;
-    dialog.resolve({ message: "old", keepChanges: false });
+    dialog.resolve({ message: "old", keepChanges: false, paths: ["first.txt"] });
     expect(await pending).toBe(false);
   }
   expect(mocks.backend.shelfCreate).not.toHaveBeenCalled();
@@ -439,7 +467,11 @@ it("invalidates Shelf creation when navigation begins, including A to B to A", a
 });
 
 it("refreshes a saved Shelf after cleanup fails and presents empty creation separately", async () => {
-  mocks.dialog.mockResolvedValue({ message: "new", keepChanges: false });
+  mocks.dialog.mockResolvedValue({
+    message: "new",
+    keepChanges: false,
+    paths: ["first.txt"],
+  });
   mocks.backend.shelfCreate.mockRejectedValue(new Error("Shelf saved but cleanup failed"));
   const store = useStashShelfStore();
   expect(await store.promptShelf(["first.txt"])).toBe(false);
@@ -456,7 +488,8 @@ it("cancels creation without writes and releases the dialog guard", async () => 
   mocks.dialog.mockResolvedValue(null);
   const store = useStashShelfStore();
   expect(await store.promptShelf([])).toBe(false);
-  expect(mocks.dialog).not.toHaveBeenCalled();
+  expect(mocks.dialog).toHaveBeenCalledOnce();
+  expect(mocks.backend.shelfCreate).not.toHaveBeenCalled();
   expect(await store.promptShelf(["first.txt"])).toBe(false);
   expect(mocks.backend.shelfCreate).not.toHaveBeenCalled();
   expect(store.busy).toBe(false);
