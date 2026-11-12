@@ -439,10 +439,9 @@ impl GitRunner {
                 .await;
         }
         self.ensure_not_busy(cwd, cancel).await?;
-        let old = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
+        // When rebasing another branch (`git rebase upstream topic`), HEAD may
+        // still be elsewhere — backup/compare the branch tip being rewritten.
+        let old = self.rebase_target_head(cwd, branch, cancel).await?;
         let backup = if old.is_empty() {
             None
         } else {
@@ -481,10 +480,7 @@ impl GitRunner {
             .await
         {
             Ok(_) => {
-                let new = self
-                    .rev_parse_public(cwd, "HEAD", cancel)
-                    .await
-                    .unwrap_or_default();
+                let new = self.rebase_target_head(cwd, branch, cancel).await?;
                 let state = self.repo_op_state(cwd, cancel).await?;
                 if state.kind == RepoOpKind::Rebase {
                     let files = self.unmerged_paths(cwd, cancel).await.unwrap_or_default();
