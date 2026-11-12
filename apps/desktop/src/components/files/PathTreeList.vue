@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from "@lucide/vue";
 import {
   buildPathTree,
   flattenPathTree,
+  type FlatTreeRow,
   type PathTreeFileMeta,
   type PathTreeNode,
 } from "@/lib/path-tree/buildPathTree";
@@ -45,22 +46,20 @@ const ROW_H = 22;
 const expanded = ref<Set<string>>(new Set());
 
 const tree = computed(() => (props.mode === "flat" ? [] : buildPathTree(props.files)));
-const rows = computed(() => {
+const rows = computed((): FlatTreeRow<T>[] => {
   if (props.mode === "flat") {
     return [...props.files]
       .sort((a, b) => a.path.localeCompare(b.path))
       .map((file) => {
         const name = file.path.replace(/\\/g, "/");
-        return {
-          node: {
-            id: file.path,
-            name,
-            kind: file.directoryLeaf ? ("folder" as const) : ("file" as const),
-            depth: 0,
-            file,
-          },
-          expanded: false,
+        const node: PathTreeNode<T> = {
+          id: file.path,
+          name,
+          kind: file.directoryLeaf ? "folder" : "file",
+          depth: 0,
+          file,
         };
+        return { node, expanded: false };
       });
   }
   return flattenPathTree(tree.value, expanded.value, true);
