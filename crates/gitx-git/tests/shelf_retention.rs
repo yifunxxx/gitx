@@ -282,9 +282,20 @@ async fn cancelling_while_waiting_for_a_shelf_writer_does_not_expire_data() {
     // Hold the operation lock as the "writer" for the whole setup + wait window.
     // Soft-delete under that lock instead of calling shelf_delete (which takes
     // and drops the same lock, racing the next try_lock under CI load).
-    let writer = gitx_meta::try_shelf_operation_lock(&common)
-        .unwrap()
-        .expect("shelf operation lock must be free after import returns");
+    // Under --test-threads>1 the import File drop can briefly lag the next
+    // try_lock on some runners; poll until the OS lock is free.
+    let writer = {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if let Some(lock) = gitx_meta::try_shelf_operation_lock(&common).unwrap() {
+                break lock;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                panic!("shelf operation lock must be free after import returns");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    };
     gitx_meta::soft_delete_shelf(&common, &entry.id).unwrap();
     let shelf_ref = format!("refs/gitx/shelf/{}", entry.id);
     let _ = git(
