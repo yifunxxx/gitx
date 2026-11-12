@@ -65,14 +65,18 @@ const editorTabs = computed(() => [
   ...tabEntries("repoAtRev", repoAtRev.tabs),
   ...tabEntries(
     "merge",
-    conflicts.mergeTabs.map((tab) => ({
+    (conflicts.mergeTabs ?? []).map((tab) => ({
       ...tab,
-      dirty: conflicts.hasUnsavedMergeResult(tab.id),
+      dirty: !!conflicts.hasUnsavedMergeResult?.(tab.id),
     })),
   ),
   ...tabEntries(
     "file",
-    fileViewer.tabs.map((tab) => ({ id: tab.id, title: tab.title, dirty: tab.dirty })),
+    (fileViewer.tabs ?? []).map((tab) => ({
+      id: tab.id,
+      title: tab.title,
+      dirty: !!tab.dirty,
+    })),
   ),
 ]);
 
