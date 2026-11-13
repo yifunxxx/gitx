@@ -22,6 +22,31 @@ impl GitRunner {
         Ok(parse_status_porcelain_v2(&out.stdout, repo_id, version))
     }
 
+    /// Write UTF-8 text into a worktree file. Does not stage the change.
+    pub async fn file_write_worktree(
+        &self,
+        cwd: &Path,
+        file_path: &str,
+        content: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
+        }
+        let full = crate::paths::resolve_worktree_file(cwd, file_path)?;
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                AppError::new(
+                    ErrorCode::FsError,
+                    format!("mkdir {}: {e}", parent.display()),
+                )
+            })?;
+        }
+        std::fs::write(&full, content.as_bytes())
+            .map_err(|e| AppError::new(ErrorCode::FsError, format!("write {file_path}: {e}")))?;
+        Ok(())
+    }
+
     pub async fn init_repo(
         &self,
         dir: &Path,

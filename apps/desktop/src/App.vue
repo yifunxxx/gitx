@@ -68,7 +68,8 @@ function onKeydown(e: KeyboardEvent) {
     return;
   }
   const id = findActionIdByEvent(e);
-  if (editing && id !== "Settings") return;
+  // Settings and Save must reach CodeMirror / contentEditable hosts (Ctrl/Cmd+S).
+  if (editing && id !== "Settings" && id !== "File.Save") return;
   if (!id) return;
   e.preventDefault();
   void runAction(id, {

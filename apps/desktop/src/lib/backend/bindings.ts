@@ -98,6 +98,9 @@ export const commands = {
   async statusGet(req: StatusGetReq): Promise<StatusSnapshot> {
     return await TAURI_INVOKE("status_get", { req });
   },
+  async fileWriteWorktree(req: FileWriteWorktreeReq): Promise<null> {
+    return await TAURI_INVOKE("file_write_worktree", { req });
+  },
   async stagePaths(req: PathsReq): Promise<null> {
     return await TAURI_INVOKE("stage_paths", { req });
   },
@@ -1538,6 +1541,12 @@ export type StashPathReq = { path: string };
 export type StashRefReq = { path: string; stashRef: string; reinstateIndex?: boolean };
 export type StashRestoreReq = { path: string; sha: string; message: string };
 export type StatusGetReq = { repoId: string; path: string; includeIgnored?: boolean };
+export type FileWriteWorktreeReq = {
+  repoId: string;
+  path: string;
+  filePath: string;
+  content: string;
+};
 export type StatusProbeReq = { path: string };
 export type StatusSnapshot = {
   repoId: string;

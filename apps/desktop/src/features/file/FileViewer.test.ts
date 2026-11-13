@@ -6,18 +6,46 @@ import { EditorView } from "@codemirror/view";
 import FileViewer from "./FileViewer.vue";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 
-const mocks = vi.hoisted(() => ({ diffFile: vi.fn(), workspace: {} as any, layout: {} as any }));
+const mocks = vi.hoisted(() => ({
+  diffFile: vi.fn(),
+  fileWriteWorktree: vi.fn(),
+  workspace: {} as any,
+  layout: {} as any,
+  changes: { refresh: vi.fn() },
+  toast: vi.fn(),
+}));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
+vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
+vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
+vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
+vi.mock("vue-i18n", async (original) => ({
+  ...(await original<typeof import("vue-i18n")>()),
+  useI18n: () => ({ t: (key: string) => key }),
+}));
 
 enableAutoUnmount(afterEach);
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  mocks.workspace = reactive({ repoPath: "repo-A", repoId: "repo-A" });
+  mocks.workspace = reactive({
+    repoPath: "repo-A",
+    repoId: "repo-A",
+    isRepo: true,
+    navigationToken: () => 1,
+  });
   mocks.layout = reactive({ activeEditorKind: "welcome" });
+  mocks.fileWriteWorktree.mockResolvedValue(null);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      readText: vi.fn(async () => "pasted"),
+      writeText: vi.fn(async () => {}),
+    },
+  });
 });
+afterEach(() => vi.unstubAllGlobals());
 
 function deferred() {
   let resolve!: (value: any) => void;
@@ -135,5 +163,80 @@ it("marks the tab dirty after edits and clears dirty when restored to baseline",
     changes: { from: 0, to: cm.state.doc.length, insert: "base\n" },
   });
   await flushPromises();
+  expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it("writes through Ctrl/Cmd+S path, clears dirty, and refreshes Changes", async () => {
+  mocks.diffFile
+    .mockResolvedValueOnce(result("base\n"))
+    .mockResolvedValueOnce({ rightText: "saved\n", hunks: [] });
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, {
+    props: { tabId: store.activeId! },
+    attachTo: document.body,
+  });
+  await nextTick();
+  const cm = editor(wrapper);
+  cm.dispatch({
+    changes: { from: 0, to: cm.state.doc.length, insert: "saved\n" },
+  });
+  await flushPromises();
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(await store.save(store.activeId)).toBe(true);
+  expect(mocks.fileWriteWorktree).toHaveBeenCalledExactlyOnceWith({
+    repoId: "repo-A",
+    path: "repo-A",
+    filePath: "a.txt",
+    content: "saved\n",
+  });
+  expect(store.tabs[0]!.dirty).toBe(false);
+  expect(store.tabs[0]!.baseline).toBe("saved\n");
+  expect(mocks.changes.refresh).toHaveBeenCalledOnce();
+});
+
+it("offers Cut/Copy on a selection and Save/Undo on empty editor chrome", async () => {
+  mocks.diffFile.mockResolvedValueOnce(result("hello\n"));
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, {
+    props: { tabId: store.activeId! },
+    attachTo: document.body,
+  });
+  await nextTick();
+  const cm = editor(wrapper);
+  cm.dispatch({ selection: { anchor: 0, head: 5 } });
+  await wrapper
+    .get("[data-file-viewer-host]")
+    .trigger("contextmenu", { clientX: 20, clientY: 30 });
+  await flushPromises();
+  const selected = document.querySelector('[role="menu"]')!;
+  expect(selected.textContent).toContain("editor.cut");
+  expect(selected.textContent).toContain("editor.copy");
+  expect(selected.textContent).toContain("editor.save");
+  selected.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await flushPromises();
+
+  cm.dispatch({
+    changes: { from: 0, to: cm.state.doc.length, insert: "edited\n" },
+    selection: { anchor: 0 },
+  });
+  await flushPromises();
+  await wrapper
+    .get("[data-file-viewer-host]")
+    .trigger("contextmenu", { clientX: 24, clientY: 36 });
+  await flushPromises();
+  const empty = document.querySelector('[role="menu"]')!;
+  expect(empty.textContent).not.toContain("editor.cut");
+  expect(empty.textContent).toContain("editor.paste");
+  expect(empty.textContent).toContain("editor.undo");
+  expect(empty.textContent).toContain("editor.save");
+  const save = Array.from(empty.querySelectorAll('[role="menuitem"]')).find((item) =>
+    item.textContent?.includes("editor.save"),
+  ) as HTMLButtonElement;
+  expect(save.disabled).toBe(false);
+  save.click();
+  await flushPromises();
+  expect(mocks.fileWriteWorktree).toHaveBeenCalledOnce();
   expect(store.tabs[0]!.dirty).toBe(false);
 });

@@ -77,6 +77,7 @@ import type {
   RepoStateReq,
   RepoStateRes,
   StatusGetReq,
+  FileWriteWorktreeReq,
   StatusProbeReq,
   StatusSnapshot,
   TagCreateReq,
@@ -203,6 +204,7 @@ export type Backend = {
   initRun(req: InitRunReq): Promise<WorkspaceOpenRes>;
   vcsEnable(req: VcsEnableReq): Promise<WorkspaceOpenRes>;
   statusGet(req: StatusGetReq): Promise<StatusSnapshot>;
+  fileWriteWorktree(req: FileWriteWorktreeReq): Promise<null>;
   stagePaths(req: PathsReq): Promise<null>;
   unstagePaths(req: PathsReq): Promise<null>;
   addPaths(req: AddPathsReq): Promise<null>;
@@ -368,6 +370,7 @@ export const tauriBackend: Backend = {
   initRun: (req) => commands.initRun(req),
   vcsEnable: (req) => commands.vcsEnable(req),
   statusGet: (req) => commands.statusGet(req),
+  fileWriteWorktree: (req) => commands.fileWriteWorktree(req),
   stagePaths: (req) => commands.stagePaths(req),
   unstagePaths: (req) => commands.unstagePaths(req),
   addPaths: (req) => commands.addPaths(req),

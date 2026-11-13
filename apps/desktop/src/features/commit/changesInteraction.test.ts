@@ -112,7 +112,7 @@ describe("Changes selection ownership", () => {
     expect(store.selectedPaths).toEqual(["a.txt"]);
     expect(store.selectedSection).toBe("unstaged");
     expect(wrapper.emitted("context")).toEqual([
-      [{ path: "a.txt", section: "unstaged", x: 42, y: 80 }],
+      [{ path: "a.txt", section: "unstaged", x: 42, y: 80, header: false }],
     ]);
     expect(rows[2]!.classes()).toContain("bg-selection");
     expect(rows[0]!.classes()).not.toContain("bg-selection");
