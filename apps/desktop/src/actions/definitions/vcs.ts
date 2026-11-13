@@ -9,11 +9,13 @@ import {
   Minus,
   GitCompare,
   FolderTree,
+  Save,
 } from "@lucide/vue";
 import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useCommitStore } from "@/stores/commitStore";
+import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { openChangeDiff } from "@/features/commit/openChangeDiff";
 import { focusCommitUi } from "@/features/commit/focusCommitUi";
 import { useLogStore } from "@/stores/logStore";
@@ -27,6 +29,29 @@ import { promptDialog } from "@/composables/useConfirm";
 import { isTauri } from "@/lib/utils";
 
 export function registerVcsActions() {
+  registerAction({
+    id: "File.Save",
+    title: "Save",
+    description: "Save the active file editor tab",
+    icon: Save,
+    defaultShortcuts: {
+      mac: ["mod+s"],
+      win: ["mod+s"],
+      linux: ["mod+s"],
+    },
+    scope: "global",
+    enabled: () => {
+      const layout = useLayoutStore();
+      const files = useFileViewerStore();
+      if (layout.activeEditorKind !== "file" || !files.activeId) return false;
+      const tab = files.tabs.find((t) => t.id === files.activeId);
+      return !!tab?.editable && !!tab.dirty && !tab.saving && !tab.loading;
+    },
+    async run() {
+      await useFileViewerStore().saveActive();
+    },
+  });
+
   registerAction({
     id: "Git.RefreshStatus",
     title: "Refresh Status",

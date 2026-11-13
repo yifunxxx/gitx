@@ -43,6 +43,12 @@ beforeEach(async () => {
       run: async () => {},
     },
     {
+      id: "File.Save",
+      title: "Save",
+      defaultShortcuts: { win: ["mod+s"] },
+      run: async () => {},
+    },
+    {
       id: "Git.Push",
       title: "Push",
       defaultShortcuts: { win: ["mod+shift+k"] },
@@ -90,6 +96,18 @@ it("leaves other action shortcuts to editors and dialogs", () => {
   dialog.remove();
   key({ key: "K", ctrlKey: true, shiftKey: true }, document.body);
   expect(state.run).toHaveBeenCalledOnce();
+});
+
+it("still runs File.Save from a contentEditable editor host", () => {
+  const host = document.createElement("div");
+  host.contentEditable = "true";
+  document.body.append(host);
+  key({ key: "s", ctrlKey: true }, host);
+  expect(state.run).toHaveBeenCalledExactlyOnceWith(
+    "File.Save",
+    expect.objectContaining({ source: "shortcut" }),
+  );
+  host.remove();
 });
 
 it.each([{ repeat: true }, { isComposing: true }, { keyCode: 229 }])(

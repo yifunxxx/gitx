@@ -830,6 +830,23 @@ export const mockBackend: Backend = {
     emitConsole("cmd", `git status --porcelain=v2 # ${req.path}`);
     return statusSnapshot(req.path, !!req.includeIgnored);
   },
+  async fileWriteWorktree(req) {
+    emitConsole("cmd", `# write worktree ${req.filePath}`);
+    const existing = files.find((f) => f.path === req.filePath);
+    if (existing) {
+      existing.worktreeStatus = existing.worktreeStatus === "." ? "M" : existing.worktreeStatus;
+      if (existing.kind === "untracked") existing.kind = "modified";
+    } else {
+      files.push({
+        path: req.filePath,
+        origPath: null,
+        indexStatus: ".",
+        worktreeStatus: "M",
+        kind: "modified",
+      });
+    }
+    return null;
+  },
   async stagePaths(req) {
     emitConsole("cmd", `git add -A -- ${req.paths.join(" ")}`);
     for (const p of req.paths) {

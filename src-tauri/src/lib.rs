@@ -60,7 +60,7 @@ use commands::stash::{
     stash_apply, stash_branch, stash_clear, stash_create, stash_drop, stash_list, stash_pop,
     stash_restore,
 };
-use commands::status::status_get;
+use commands::status::{file_write_worktree, status_get};
 use commands::sync::{
     fetch_run, ls_remote_check, pull_run, push_preview, push_run, submodule_update, sync_fork,
     update_project_run,
@@ -114,6 +114,7 @@ pub fn run() {
             init_run,
             vcs_enable,
             status_get,
+            file_write_worktree,
             stage_paths,
             unstage_paths,
             add_paths,

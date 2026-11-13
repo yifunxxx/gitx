@@ -19,6 +19,19 @@
     "name": "gitx",
     "welcome": "欢迎使用 gitx"
   },
+  "editor": {
+    "menu": "编辑器",
+    "unsaved": "未保存",
+    "saving": "保存中…",
+    "saveFailed": "无法保存文件",
+    "undo": "撤销",
+    "redo": "重做",
+    "cut": "剪切",
+    "copy": "复制",
+    "paste": "粘贴",
+    "selectAll": "全选",
+    "save": "保存"
+  },
   "pathTree": {
     "collapse": "折叠 {name}",
     "expand": "展开 {name}"
@@ -85,6 +98,7 @@
     "noActions": "无匹配操作",
     "vcsOperations": "VCS 操作",
     "openFolder": "打开…",
+    "save": "保存",
     "commit": "提交",
     "showDiff": "显示 Diff",
     "stage": "暂存",

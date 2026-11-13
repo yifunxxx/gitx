@@ -4,19 +4,25 @@ import { getBackend } from "@/lib/backend";
 import type { DiffHunk } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
+import { useChangesStore } from "./changesStore";
 import { formatErrorMessage } from "@/lib/errors";
+import { toast } from "@/composables/useToast";
+import { i18n } from "@/i18n";
 
 export type FileViewerTab = {
   id: string;
   path: string;
   title: string;
   text: string;
-  /** Text as loaded from disk / last clean baseline. */
+  /** Text as loaded from disk / last successful save. */
   baseline: string;
   hunks: DiffHunk[];
   loading: boolean;
+  saving: boolean;
   editable: boolean;
   dirty: boolean;
+  /** Bumped when a load finishes so the editor remounts once, not on each save. */
+  loadGeneration: number;
 };
 
 export const useFileViewerStore = defineStore("fileViewer", () => {
@@ -53,42 +59,121 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       baseline: "",
       hunks: [],
       loading: true,
+      saving: false,
       editable: true,
       dirty: false,
+      loadGeneration: 0,
     });
     tabs.value.push(tab);
     activeId.value = id;
     layout.activeEditorKind = "file";
 
+    const repoPath = workspace.repoPath;
+    const repoId = workspace.repoId;
     try {
       const backend = getBackend();
       const diff = await backend.diffFile({
-        repoId: workspace.repoId,
-        path: workspace.repoPath,
+        repoId,
+        path: repoPath,
         filePath,
         left: "head",
         right: "worktree",
       });
+      if (!tabs.value.includes(tab) || workspace.repoPath !== repoPath) return;
       const text = diff.rightText ?? "";
       tab.text = text;
       tab.baseline = text;
       tab.hunks = diff.hunks;
       tab.dirty = false;
+      tab.editable = true;
     } catch (e) {
+      if (!tabs.value.includes(tab) || workspace.repoPath !== repoPath) return;
       const text = `// failed to load ${filePath}\n// ${formatErrorMessage(e)}`;
       tab.text = text;
       tab.baseline = text;
       tab.dirty = false;
+      tab.editable = false;
     } finally {
-      tab.loading = false;
+      if (tabs.value.includes(tab)) {
+        tab.loading = false;
+        tab.loadGeneration += 1;
+      }
     }
   }
 
   function setDocument(id: string, text: string) {
     const tab = tabs.value.find((t) => t.id === id);
-    if (!tab) return;
+    if (!tab || tab.saving) return;
     tab.text = text;
     tab.dirty = text !== tab.baseline;
+  }
+
+  async function save(id?: string | null) {
+    const workspace = useWorkspaceStore();
+    const targetId = id ?? activeId.value;
+    const tab = tabs.value.find((t) => t.id === targetId);
+    if (!tab || !workspace.repoPath || !workspace.repoId) return false;
+    if (!tab.editable || tab.loading || tab.saving) return false;
+    if (!tab.dirty) return true;
+
+    const repoPath = workspace.repoPath;
+    const repoId = workspace.repoId;
+    const path = tab.path;
+    const content = tab.text;
+    const navigation = workspace.navigationToken();
+    tab.saving = true;
+    try {
+      const backend = getBackend();
+      await backend.fileWriteWorktree({
+        repoId,
+        path: repoPath,
+        filePath: path,
+        content,
+      });
+      if (
+        !tabs.value.includes(tab) ||
+        workspace.repoPath !== repoPath ||
+        workspace.navigationToken() !== navigation
+      ) {
+        return false;
+      }
+      tab.baseline = content;
+      tab.dirty = tab.text !== tab.baseline;
+      try {
+        const diff = await backend.diffFile({
+          repoId,
+          path: repoPath,
+          filePath: path,
+          left: "head",
+          right: "worktree",
+        });
+        if (
+          tabs.value.includes(tab) &&
+          workspace.repoPath === repoPath &&
+          workspace.navigationToken() === navigation
+        ) {
+          tab.hunks = diff.hunks;
+        }
+      } catch {
+        // Disk write already succeeded; stale gutter is recoverable on reopen.
+      }
+      if (workspace.repoPath === repoPath && workspace.navigationToken() === navigation) {
+        void useChangesStore().refresh();
+      }
+      return true;
+    } catch (e) {
+      toast({
+        title: i18n.global.t("editor.saveFailed"),
+        description: formatErrorMessage(e),
+      });
+      return false;
+    } finally {
+      if (tabs.value.includes(tab)) tab.saving = false;
+    }
+  }
+
+  async function saveActive() {
+    return save(activeId.value);
   }
 
   function closeTab(id: string) {
@@ -103,5 +188,5 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     }
   }
 
-  return { tabs, activeId, open, setDocument, closeTab };
+  return { tabs, activeId, open, setDocument, save, saveActive, closeTab };
 });
