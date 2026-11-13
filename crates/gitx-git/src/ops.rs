@@ -36,15 +36,14 @@ impl GitRunner {
         let full = crate::paths::resolve_worktree_file(cwd, file_path)?;
         if let Some(parent) = full.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("mkdir {}: {e}", parent.display()))
+                AppError::new(
+                    ErrorCode::FsError,
+                    format!("mkdir {}: {e}", parent.display()),
+                )
             })?;
         }
-        std::fs::write(&full, content.as_bytes()).map_err(|e| {
-            AppError::new(
-                ErrorCode::FsError,
-                format!("write {file_path}: {e}"),
-            )
-        })?;
+        std::fs::write(&full, content.as_bytes())
+            .map_err(|e| AppError::new(ErrorCode::FsError, format!("write {file_path}: {e}")))?;
         Ok(())
     }
 
