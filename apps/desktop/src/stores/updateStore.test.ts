@@ -103,3 +103,39 @@ it("primaryAction installs a ready download", async () => {
     path: "/tmp/gitx_0.1.26_x64-setup.exe",
   });
 });
+
+it("startAutoChecks always schedules a quiet check ~8s after startup", async () => {
+  vi.useFakeTimers();
+  try {
+    localStorage.setItem("gitx.update.lastCheckAt", String(Date.now() - 60_000));
+    const store = useUpdateStore();
+    store.startAutoChecks();
+    expect(backend.appCheckForUpdates).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(backend.appCheckForUpdates).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(backend.appCheckForUpdates).toHaveBeenCalledOnce();
+    expect(toast).not.toHaveBeenCalled();
+    store.stopAutoChecks();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("startAutoChecks is idempotent until stopped", async () => {
+  vi.useFakeTimers();
+  try {
+    const store = useUpdateStore();
+    store.startAutoChecks();
+    store.startAutoChecks();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(backend.appCheckForUpdates).toHaveBeenCalledOnce();
+    store.stopAutoChecks();
+    store.startAutoChecks();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(backend.appCheckForUpdates).toHaveBeenCalledTimes(2);
+    store.stopAutoChecks();
+  } finally {
+    vi.useRealTimers();
+  }
+});

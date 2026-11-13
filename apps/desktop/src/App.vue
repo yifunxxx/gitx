@@ -23,7 +23,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useUpdateStore } from "@/stores/updateStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { findActionIdByEvent, isShortcutEvent, matchShortcut, runAction, setKeymapOverridesProvider } from "@/actions";
-import { formatGitDetectError } from "@/lib/errors";
+import { formatErrorMessage, formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 
@@ -83,9 +83,17 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
-  await settings.load();
-  if (disposed) return;
+  // Schedule update auto-check immediately — do not wait on settings/Git detect,
+  // which can hang or throw and previously prevented startAutoChecks entirely.
   updates.startAutoChecks();
+  try {
+    await settings.load();
+  } catch (err) {
+    if (!disposed) {
+      consoleStore.append("stderr", formatErrorMessage(err));
+    }
+  }
+  if (disposed) return;
   await workspace.loadRecent();
   if (disposed) return;
   try {

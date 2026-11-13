@@ -332,13 +332,12 @@ export const useUpdateStore = defineStore("update", () => {
   function startAutoChecks() {
     if (started) return;
     started = true;
-    const due =
-      lastCheckedAt.value == null || Date.now() - lastCheckedAt.value >= AUTO_INTERVAL_MS;
-    if (due) {
-      autoTimer = setTimeout(() => {
-        void checkForUpdates({ quiet: true }).catch(() => {});
-      }, STARTUP_DELAY_MS);
-    }
+    // Always quiet-check ~8s after each launch (docs/in-app-update-check.md).
+    // Do not gate on lastCheckedAt — that skipped startup checks for a full day
+    // after any prior success, so relaunches looked like auto-check was broken.
+    autoTimer = setTimeout(() => {
+      void checkForUpdates({ quiet: true }).catch(() => {});
+    }, STARTUP_DELAY_MS);
     periodTimer = setInterval(
       () => {
         void checkForUpdates({ quiet: true }).catch(() => {});
