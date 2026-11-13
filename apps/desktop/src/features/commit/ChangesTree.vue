@@ -24,7 +24,15 @@ const settings = useSettingsStore();
 const emit = defineEmits<{
   openDiff: [path: string, section: ChangesSection];
   openFile: [path: string];
-  context: [payload: { path: string; section: ChangesSection; x: number; y: number }];
+  context: [
+    payload: {
+      path: string | null;
+      section: ChangesSection;
+      x: number;
+      y: number;
+      header: boolean;
+    },
+  ];
 }>();
 type FileMeta = PathTreeFileMeta & { change: FileChange };
 type Section = { section: ChangesSection; label: string; files: FileChange[]; active?: boolean };
@@ -293,17 +301,37 @@ function isSelected(row: Row) {
   return !!path && changes.selectedSection === row.section && selected.value.has(path);
 }
 function openContext(row: Row, x: number, y: number) {
+  focusRow(row);
+  if (row.kind === "header") {
+    // Changelist headers (including empty custom lists) need a menu for Delete / Move.
+    if (!row.section.startsWith("changelist:")) return;
+    if (changes.selectedSection !== row.section) {
+      changes.selectedSection = row.section;
+      changes.selectedPaths = [];
+    }
+    emit("context", {
+      path: null,
+      section: row.section,
+      x,
+      y,
+      header: true,
+    });
+    return;
+  }
   const path = filePath(row);
   if (!path) return;
-  focusRow(row);
   if (!isSelected(row)) {
     changes.select(path, row.section);
     anchorKey.value = row.key;
   }
-  emit("context", { path, section: row.section, x, y });
+  emit("context", { path, section: row.section, x, y, header: false });
 }
 function onContext(row: Row, event: MouseEvent) {
-  if (!filePath(row)) return;
+  if (row.kind === "header") {
+    if (!row.section.startsWith("changelist:")) return;
+  } else if (!filePath(row)) {
+    return;
+  }
   markContextHandled(event);
   openContext(row, event.clientX, event.clientY);
 }
@@ -348,7 +376,10 @@ function onKeydown(event: KeyboardEvent) {
   const contextKey =
     !multi &&
     ((event.key === "F10" && event.shiftKey) || (event.key === "ContextMenu" && !event.shiftKey));
-  if (contextKey && filePath(row)) {
+  if (
+    contextKey &&
+    (filePath(row) || (row.kind === "header" && row.section.startsWith("changelist:")))
+  ) {
     event.preventDefault();
     event.stopPropagation();
     const bounds =

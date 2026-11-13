@@ -669,6 +669,10 @@
     "moveToChangelist": "Move to Another Changelist…",
     "moveToChangelistTitle": "Move to Changelist",
     "moveToChangelistPrompt": "Target changelist name (existing or new)",
+    "moveToChangelistHint": "Choose which files to move, then pick an existing changelist or create a new one.",
+    "moveToChangelistTarget": "Target changelist",
+    "moveToExistingChangelist": "Existing changelist",
+    "moveToNewChangelist": "New changelist",
     "copyPath": "Copy Path",
     "copyRelativePath": "Copy Relative Path",
     "copiedPath": "Path copied",
@@ -686,6 +690,11 @@
   "changelist": {
     "new": "New Changelist",
     "active": "Active",
+    "default": "default",
+    "delete": "Delete Changelist",
+    "deleteTitle": "Delete Changelist",
+    "deleteConfirm": "Delete changelist “{name}”? Remaining files move to Changes.",
+    "deleted": "Changelist deleted",
     "unversioned": "Unversioned Files",
     "ignored": "Ignored Files",
     "namePlaceholder": "Changelist name"

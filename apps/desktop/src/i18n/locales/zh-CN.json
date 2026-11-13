@@ -669,6 +669,10 @@
     "moveToChangelist": "移动到其他变更列表…",
     "moveToChangelistTitle": "移动到变更列表",
     "moveToChangelistPrompt": "目标变更列表名称（新建或已有）",
+    "moveToChangelistHint": "勾选要移动的文件，然后选择已有变更列表或新建一个。",
+    "moveToChangelistTarget": "目标变更列表",
+    "moveToExistingChangelist": "已有变更列表",
+    "moveToNewChangelist": "新建变更列表",
     "copyPath": "复制路径",
     "copyRelativePath": "复制相对路径",
     "copiedPath": "已复制路径",
@@ -686,6 +690,11 @@
   "changelist": {
     "new": "新建变更列表",
     "active": "活动",
+    "default": "默认",
+    "delete": "删除变更列表",
+    "deleteTitle": "删除变更列表",
+    "deleteConfirm": "删除变更列表“{name}”？剩余文件将移回 Changes。",
+    "deleted": "变更列表已删除",
     "unversioned": "未版本控制的文件",
     "ignored": "已忽略的文件",
     "namePlaceholder": "变更列表名称"

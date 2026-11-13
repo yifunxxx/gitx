@@ -1745,14 +1745,17 @@ export const mockBackend: Backend = {
     return structuredClone(mockChangelists);
   },
   async changelistDelete(req) {
-    mockChangelists.lists = mockChangelists.lists.filter((l) => l.id !== req.id);
-    if (req.moveTo) {
-      for (const a of mockChangelists.assignments) {
-        if (a.listId === req.id) a.listId = req.moveTo;
-      }
-    } else {
-      mockChangelists.assignments = mockChangelists.assignments.filter((a) => a.listId !== req.id);
+    if (req.id === "default") {
+      throw new Error("default Changes list cannot be deleted");
     }
+    const target =
+      req.moveTo ??
+      mockChangelists.lists.find((l) => l.active && l.id !== req.id)?.id ??
+      "default";
+    for (const a of mockChangelists.assignments) {
+      if (a.listId === req.id) a.listId = target;
+    }
+    mockChangelists.lists = mockChangelists.lists.filter((l) => l.id !== req.id);
     if (!mockChangelists.lists.some((l) => l.active) && mockChangelists.lists[0]) {
       mockChangelists.lists[0].active = true;
     }

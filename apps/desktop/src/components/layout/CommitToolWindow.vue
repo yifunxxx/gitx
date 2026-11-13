@@ -22,13 +22,14 @@ import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { toast } from "@/composables/useToast";
-import { promptDialog } from "@/composables/useConfirm";
+import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { getBackend, type ChangesListMode } from "@/lib/backend";
 import { runAction } from "@/actions";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { openDialog } from "@/composables/useDialog";
 import StopTrackingDialog from "@/features/commit/StopTrackingDialog.vue";
 import RollbackChangesDialog from "@/features/commit/RollbackChangesDialog.vue";
+import MoveToChangelistDialog from "@/features/commit/MoveToChangelistDialog.vue";
 import { formatErrorMessage } from "@/lib/errors";
 import { cloneJson } from "@/lib/clone";
 
@@ -64,8 +65,9 @@ const ctxMenu = ref<{
   open: boolean;
   x: number;
   y: number;
-  path: string;
+  path: string | null;
   section: ChangesSection;
+  header: boolean;
   target: ChangesTarget;
 } | null>(null);
 
@@ -93,8 +95,28 @@ const ctxIsUnversioned = computed(() => ctxMenu.value?.section === "unversioned"
 const ctxIsTrackedChange = computed(
   () =>
     !!ctxMenu.value &&
+    !ctxMenu.value.header &&
     ctxMenu.value.section !== "unversioned" &&
     ctxMenu.value.section !== "ignored",
+);
+const ctxChangelistId = computed(() => {
+  const section = ctxMenu.value?.section;
+  return section?.startsWith("changelist:") ? section.slice("changelist:".length) : null;
+});
+const ctxCanDeleteChangelist = computed(
+  () =>
+    !!ctxMenu.value &&
+    !changes.stagingMode &&
+    !!ctxChangelistId.value &&
+    ctxChangelistId.value !== "default",
+);
+const ctxShowMoveChangelist = computed(
+  () =>
+    !!ctxMenu.value &&
+    !changes.stagingMode &&
+    !ctxIsUnversioned.value &&
+    ctxMenu.value.section !== "ignored" &&
+    (!ctxMenu.value.header || ctxMenu.value.target.paths.length > 0),
 );
 
 onMounted(() => {
@@ -238,24 +260,57 @@ async function rollbackSelected(target: ChangesTarget) {
 }
 
 async function moveToChangelistSelected(target: ChangesTarget) {
-  if (!target.current() || !target.paths.length) return;
-  const name = await promptDialog({
-    title: t("commitTw.moveToChangelistTitle"),
-    placeholder: t("commitTw.moveToChangelistPrompt"),
-    allowEmpty: false,
+  if (!target.current() || !target.section) return;
+  const sourceListId = target.section.startsWith("changelist:")
+    ? target.section.slice("changelist:".length)
+    : null;
+  const choice = await openDialog<{
+    paths: string[];
+    targetListId: string | null;
+    newName: string | null;
+  } | null>(MoveToChangelistDialog, {
+    initialPaths: [...target.paths],
+    sourceListId,
   });
-  if (!name?.trim() || !target.current()) return;
-  const nameToUse = name.trim();
-  let list = changes.changelists?.lists.find((l) => l.name === nameToUse);
-  if (!list) {
+  if (!choice?.paths.length || !target.current()) return;
+  let listId = choice.targetListId;
+  let description = changes.changelists?.lists.find((list) => list.id === listId)?.name ?? "";
+  if (choice.newName?.trim()) {
+    const nameToUse = choice.newName.trim();
     const created = await changes.createChangelist(nameToUse, false);
     if (!created || !target.current()) return;
-    list = created.lists.find((l) => l.name === nameToUse);
+    listId = created.lists.find((list) => list.name === nameToUse)?.id ?? null;
+    description = nameToUse;
   }
+  if (!listId) return;
+  const moved = await changes.moveToChangelist(choice.paths, listId);
+  if (moved && target.current()) {
+    toast({
+      title: t("commitTw.moveToChangelist"),
+      description: description || listId,
+    });
+  }
+}
+
+async function deleteChangelistSelected(target: ChangesTarget) {
+  if (!target.current() || changes.stagingMode || !target.section) return;
+  const listId = target.section.startsWith("changelist:")
+    ? target.section.slice("changelist:".length)
+    : null;
+  if (!listId || listId === "default") return;
+  const list = changes.changelists?.lists.find((item) => item.id === listId);
   if (!list) return;
-  const moved = await changes.moveToChangelist(target.paths, list.id);
-  if (moved && target.current())
-    toast({ title: t("commitTw.moveToChangelist"), description: nameToUse });
+  const ok = await confirmDialog({
+    title: t("changelist.deleteTitle"),
+    message: t("changelist.deleteConfirm", { name: list.name }),
+    confirmLabel: t("changelist.delete"),
+    destructive: true,
+  });
+  if (!ok || !target.current()) return;
+  const deleted = await changes.deleteChangelist(listId, "default");
+  if (deleted && target.current()) {
+    toast({ title: t("changelist.deleted"), description: list.name });
+  }
 }
 
 async function copyPath(target: ChangesTarget, relative: boolean) {
@@ -295,15 +350,41 @@ async function commitFilesSelected(target: ChangesTarget) {
   await focusCommitUi();
 }
 
-function onContext(payload: { path: string; section: ChangesSection; x: number; y: number }) {
+function onContext(payload: {
+  path: string | null;
+  section: ChangesSection;
+  x: number;
+  y: number;
+  header?: boolean;
+}) {
   layout.vcsPopupOpen = false;
-  const paths =
-    changes.selectedSection === payload.section && changes.selectedPaths.includes(payload.path)
-      ? changes.selectedPaths
-      : [payload.path];
+  const header = !!payload.header || !payload.path;
+  let paths: string[];
+  if (header) {
+    paths =
+      changes.selectedSection === payload.section && changes.selectedPaths.length
+        ? [...changes.selectedPaths]
+        : changes.pathsForSection(payload.section);
+  } else if (
+    changes.selectedSection === payload.section &&
+    payload.path &&
+    changes.selectedPaths.includes(payload.path)
+  ) {
+    paths = [...changes.selectedPaths];
+  } else {
+    paths = payload.path ? [payload.path] : [];
+  }
   const target = captureSelection(paths, payload.section);
   if (!target.current()) return;
-  ctxMenu.value = { open: true, ...payload, target };
+  ctxMenu.value = {
+    open: true,
+    x: payload.x,
+    y: payload.y,
+    path: payload.path,
+    section: payload.section,
+    header,
+    target,
+  };
 }
 
 function closeCtx() {
@@ -343,6 +424,9 @@ async function runCtx(action: string) {
         break;
       case "moveChangelist":
         await moveToChangelistSelected(target);
+        break;
+      case "deleteChangelist":
+        await deleteChangelistSelected(target);
         break;
       case "newChangelist":
         await newChangelist(target);
@@ -472,82 +556,85 @@ async function runCtx(action: string) {
       :estimated-height="420"
       @close="closeCtx"
     >
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('showDiff')"
-      >
-        {{ t("commitTw.showDiff") }}
-      </button>
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('showHistory')"
-      >
-        {{ t("commitTw.showHistory") }}
-      </button>
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('openFile')"
-      >
-        {{ t("commitTw.openFile") }}
-      </button>
-      <div class="my-1 h-px bg-border" />
-      <button
-        role="menuitem"
-        v-if="ctxMenu && ctxMenu.section !== 'ignored'"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('commit')"
-      >
-        {{ t("commitTw.commitFiles") }}
-      </button>
-      <button
-        role="menuitem"
-        v-if="ctxIsTrackedChange"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('rollback')"
-      >
-        {{ t("commitTw.rollback") }}
-      </button>
-      <div class="my-1 h-px bg-border" />
-      <button
-        role="menuitem"
-        v-if="changes.stagingMode && !ctxIsStaged && !ctxIsUnversioned"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('stage')"
-      >
-        {{ t("actions.stage") }}
-      </button>
-      <button
-        role="menuitem"
-        v-if="changes.stagingMode && ctxIsStaged"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('unstage')"
-      >
-        {{ t("actions.unstage") }}
-      </button>
-      <button
-        role="menuitem"
-        v-if="ctxIsUnversioned"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('add')"
-      >
-        {{ t("actions.addToVcs") }}
-      </button>
-      <template
-        v-if="ctxMenu && !changes.stagingMode && !ctxIsUnversioned && ctxMenu.section !== 'ignored'"
-      >
+      <template v-if="ctxMenu && !ctxMenu.header">
         <button
           role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('showDiff')"
+        >
+          {{ t("commitTw.showDiff") }}
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('showHistory')"
+        >
+          {{ t("commitTw.showHistory") }}
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('openFile')"
+        >
+          {{ t("commitTw.openFile") }}
+        </button>
+        <div class="my-1 h-px bg-border" />
+      </template>
+      <template v-if="ctxMenu && !ctxMenu.header">
+        <button
+          role="menuitem"
+          v-if="ctxMenu.section !== 'ignored'"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('commit')"
+        >
+          {{ t("commitTw.commitFiles") }}
+        </button>
+        <button
+          role="menuitem"
+          v-if="ctxIsTrackedChange"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('rollback')"
+        >
+          {{ t("commitTw.rollback") }}
+        </button>
+        <div class="my-1 h-px bg-border" />
+        <button
+          role="menuitem"
+          v-if="changes.stagingMode && !ctxIsStaged && !ctxIsUnversioned"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('stage')"
+        >
+          {{ t("actions.stage") }}
+        </button>
+        <button
+          role="menuitem"
+          v-if="changes.stagingMode && ctxIsStaged"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('unstage')"
+        >
+          {{ t("actions.unstage") }}
+        </button>
+        <button
+          role="menuitem"
+          v-if="ctxIsUnversioned"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('add')"
+        >
+          {{ t("actions.addToVcs") }}
+        </button>
+      </template>
+      <template v-if="ctxShowMoveChangelist || (!changes.stagingMode && ctxMenu)">
+        <button
+          role="menuitem"
+          v-if="ctxShowMoveChangelist"
           type="button"
           class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
           @click="runCtx('moveChangelist')"
@@ -556,75 +643,87 @@ async function runCtx(action: string) {
         </button>
         <button
           role="menuitem"
+          v-if="!changes.stagingMode"
           type="button"
           class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
           @click="runCtx('newChangelist')"
         >
           {{ t("changelist.new") }}
         </button>
+        <button
+          role="menuitem"
+          v-if="ctxCanDeleteChangelist"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-hover-surface"
+          @click="runCtx('deleteChangelist')"
+        >
+          {{ t("changelist.delete") }}
+        </button>
       </template>
-      <div class="my-1 h-px bg-border" />
-      <button
-        role="menuitem"
-        v-if="!ctxIsUnversioned"
-        type="button"
-        :disabled="stashShelf.busy"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('shelve')"
-      >
-        {{ t("shelf.create") }}
-      </button>
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('stash')"
-      >
-        {{ t("stash.create") }}
-      </button>
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('patch')"
-      >
-        {{ t("commitTw.createPatch") }}
-      </button>
-      <div class="my-1 h-px bg-border" />
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('ignore')"
-      >
-        {{ t("commitTw.ignore") }}
-      </button>
-      <button
-        role="menuitem"
-        v-if="ctxIsTrackedChange"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-hover-surface"
-        @click="runCtx('untrack')"
-      >
-        {{ t("commitTw.untrack") }}
-      </button>
-      <div class="my-1 h-px bg-border" />
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('copyPath')"
-      >
-        {{ t("commitTw.copyPath") }}
-      </button>
-      <button
-        role="menuitem"
-        type="button"
-        class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
-        @click="runCtx('copyRelative')"
-      >
-        {{ t("commitTw.copyRelativePath") }}
-      </button>
+      <template v-if="ctxMenu && !ctxMenu.header">
+        <div class="my-1 h-px bg-border" />
+        <button
+          role="menuitem"
+          v-if="!ctxIsUnversioned"
+          type="button"
+          :disabled="stashShelf.busy"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('shelve')"
+        >
+          {{ t("shelf.create") }}
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('stash')"
+        >
+          {{ t("stash.create") }}
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('patch')"
+        >
+          {{ t("commitTw.createPatch") }}
+        </button>
+        <div class="my-1 h-px bg-border" />
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('ignore')"
+        >
+          {{ t("commitTw.ignore") }}
+        </button>
+        <button
+          role="menuitem"
+          v-if="ctxIsTrackedChange"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] text-destructive hover:bg-hover-surface"
+          @click="runCtx('untrack')"
+        >
+          {{ t("commitTw.untrack") }}
+        </button>
+        <div class="my-1 h-px bg-border" />
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('copyPath')"
+        >
+          {{ t("commitTw.copyPath") }}
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('copyRelative')"
+        >
+          {{ t("commitTw.copyRelativePath") }}
+        </button>
+      </template>
       <div class="my-1 h-px bg-border" />
       <button
         role="menuitem"
