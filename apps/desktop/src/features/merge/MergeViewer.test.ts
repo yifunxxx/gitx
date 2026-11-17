@@ -127,6 +127,8 @@ it("keeps 5,000 conflicts virtualized and accepts all as one undo step", async (
 it("protects manual edits with an explicit keep action and allows undo", async () => {
   const wrapper = mount(MergeViewer);
   const view = views(wrapper)[1]!;
+  expect(view.state.facet(EditorState.readOnly)).toBe(false);
+  expect(view.contentDOM.getAttribute("contenteditable")).toBe("true");
   view.dispatch({ changes: { from: 0, to: 6, insert: "manual" } });
   await flushPromises();
   expect(

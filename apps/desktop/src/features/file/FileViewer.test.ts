@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { nextTick, reactive } from "vue";
 import { EditorView } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
 import FileViewer from "./FileViewer.vue";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 
@@ -153,6 +154,8 @@ it("marks the tab dirty after edits and clears dirty when restored to baseline",
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
   await nextTick();
   const cm = editor(wrapper);
+  expect(cm.state.facet(EditorState.readOnly)).toBe(false);
+  expect(cm.contentDOM.getAttribute("contenteditable")).toBe("true");
   cm.dispatch({
     changes: { from: 0, to: cm.state.doc.length, insert: "edited\n" },
   });

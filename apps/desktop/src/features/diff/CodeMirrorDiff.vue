@@ -366,7 +366,12 @@ function mountNow() {
           class: "cm-diff-change-gutter",
           markers: () => gutters,
         }),
+        EditorState.readOnly.of(true),
         EditorView.editable.of(false),
+        EditorView.contentAttributes.of({ "aria-readonly": "true" }),
+        // A diff is a snapshot. Only refreshed props may replace its content;
+        // commands/input transactions must still allow selection and scrolling.
+        EditorState.changeFilter.of(() => false),
         ...editorChrome({ caret: false }),
         theme(),
         EditorView.decorations.of(deco),
