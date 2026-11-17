@@ -41,6 +41,7 @@ type MenuState = {
 const menu = ref<MenuState | null>(null);
 
 function release() {
+  closeMenu();
   view?.destroy();
   view = null;
 }
@@ -140,31 +141,48 @@ async function copySelection(target: EditorView) {
 }
 
 async function cutSelection(target: EditorView) {
-  const { from, to } = target.state.selection.main;
-  if (from === to || !target.state.facet(EditorView.editable)) return;
-  const text = target.state.sliceDoc(from, to);
+  const current = tab.value;
+  const state = target.state;
+  const { from, to } = state.selection.main;
+  if (from === to || !current?.editable || !state.facet(EditorView.editable)) return;
+  const text = state.sliceDoc(from, to);
   try {
     await navigator.clipboard.writeText(text);
   } catch {
     return;
   }
-  target.dispatch(target.state.update({ changes: { from, to, insert: "" } }));
+  if (!canApplyClipboard(target, current, state)) return;
+  target.dispatch({ changes: { from, to, insert: "" }, userEvent: "delete.cut" });
 }
 
 async function pasteClipboard(target: EditorView) {
-  if (!target.state.facet(EditorView.editable)) return;
+  const current = tab.value;
+  const state = target.state;
+  if (!current?.editable || !state.facet(EditorView.editable)) return;
   let text = "";
   try {
     text = await navigator.clipboard.readText();
   } catch {
     return;
   }
-  const { from, to } = target.state.selection.main;
-  target.dispatch(
-    target.state.update({
-      changes: { from, to, insert: text },
-      selection: { anchor: from + text.length },
-    }),
+  if (!canApplyClipboard(target, current, state)) return;
+  const { from, to } = state.selection.main;
+  target.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from + text.length },
+    userEvent: "input.paste",
+  });
+}
+
+function canApplyClipboard(
+  target: EditorView,
+  current: NonNullable<typeof tab.value>,
+  state: EditorState,
+) {
+  return (
+    view === target && tab.value === current && store.tabs.includes(current) &&
+    current.editable && !current.loading && target.state.doc === state.doc &&
+    target.state.selection.eq(state.selection)
   );
 }
 
@@ -185,7 +203,7 @@ function mount() {
           {
             key: "Mod-s",
             run: () => {
-              void store.save(props.tabId);
+              if (tab.value === current) void store.save(current.id);
               return true;
             },
             preventDefault: true,
@@ -219,9 +237,8 @@ function mount() {
         highlights.of(fileChangeHighlights(hunks)),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
-          const live = store.tabs.find((t) => t.id === props.tabId);
-          if (!live) return;
-          store.setDocument(live.id, update.state.doc.toString());
+          if (tab.value !== current || !store.tabs.includes(current)) return;
+          store.setDocument(current.id, update.state.doc.toString());
         }),
         EditorView.domEventHandlers({
           contextmenu: (event, editorView) => {

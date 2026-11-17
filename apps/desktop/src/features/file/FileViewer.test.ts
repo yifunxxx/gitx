@@ -52,7 +52,7 @@ afterEach(() => vi.unstubAllGlobals());
 function deferred() {
   let resolve!: (value: any) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise((yes, no) => {
+  const promise = new Promise<any>((yes, no) => {
     resolve = yes;
     reject = no;
   });
@@ -330,4 +330,124 @@ it("keeps later edits after a write failure and retries with the latest draft", 
   expect(store.tabs[0]!.dirty).toBe(true);
   expect(await store.save(store.activeId)).toBe(true);
   expect(mocks.fileWriteWorktree.mock.calls[1]![0].content).toBe("later initial base\n");
+});
+
+async function clickEditorMenu(wrapper: ReturnType<typeof mount>, action: string) {
+  await wrapper.get("[data-file-viewer-host]").trigger("contextmenu", { clientX: 20, clientY: 30 });
+  await flushPromises();
+  const item = Array.from(document.querySelectorAll('[role="menuitem"]')).find((item) =>
+    item.textContent?.includes(`editor.${action}`),
+  ) as HTMLButtonElement;
+  expect(item.disabled).toBe(false);
+  item.click();
+  await flushPromises();
+}
+
+it("does not apply a pending paste to a different file or the disposed editor", async () => {
+  const clipboard = deferred();
+  vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
+  mocks.diffFile.mockResolvedValueOnce(result("first")).mockResolvedValueOnce(result("second"));
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const first = store.tabs[0]!;
+  const wrapper = mount(FileViewer, { props: { tabId: first.id }, attachTo: document.body });
+  await flushPromises();
+  const original = editor(wrapper);
+  await clickEditorMenu(wrapper, "paste");
+  await store.open("b.txt");
+  await wrapper.setProps({ tabId: store.activeId! });
+  const oldDispatch = vi.spyOn(original, "dispatch");
+  clipboard.resolve("clipboard text");
+  await flushPromises();
+  expect(oldDispatch).not.toHaveBeenCalled();
+  expect(first.text).toBe("first");
+  expect(store.tabs[1]!.text).toBe("second");
+  expect(editor(wrapper).state.doc.toString()).toBe("second");
+});
+
+it("does not cut stale positions after the draft changed while copying", async () => {
+  const clipboard = deferred();
+  vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(clipboard.promise);
+  mocks.diffFile.mockResolvedValueOnce(result("hello world"));
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! }, attachTo: document.body });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ selection: { anchor: 0, head: 5 } });
+  await clickEditorMenu(wrapper, "cut");
+  cm.contentDOM.blur();
+  cm.dispatch({ changes: { from: 0, insert: "new " } });
+  clipboard.resolve(undefined);
+  await flushPromises();
+  expect(store.tabs[0]!.text).toBe("new hello world");
+});
+
+it("abandons pending paste after the user moves the selection", async () => {
+  const clipboard = deferred();
+  vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
+  mocks.diffFile.mockResolvedValueOnce(result("hello world"));
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! }, attachTo: document.body });
+  await flushPromises();
+  const cm = editor(wrapper);
+  await clickEditorMenu(wrapper, "paste");
+  cm.contentDOM.blur();
+  cm.dispatch({ selection: { anchor: 6, head: 11 } });
+  clipboard.resolve("new");
+  await flushPromises();
+  expect(store.tabs[0]!.text).toBe("hello world");
+  expect(cm.state.selection.main.from).toBe(6);
+  expect(cm.state.selection.main.to).toBe(11);
+});
+
+it.each(["cut", "paste"])(
+  "still applies a current %s operation as an undoable edit",
+  async (action) => {
+    const clipboard = deferred();
+    if (action === "cut") vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(clipboard.promise);
+    else vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
+    mocks.diffFile.mockResolvedValueOnce(result("hello world"));
+    const store = useFileViewerStore();
+    await store.open("a.txt");
+    const wrapper = mount(FileViewer, {
+      props: { tabId: store.activeId! },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    const cm = editor(wrapper);
+    cm.dispatch({ selection: { anchor: 0, head: 5 } });
+    await clickEditorMenu(wrapper, action);
+    // happy-dom fires selectionchange synchronously during focused CM updates.
+    cm.contentDOM.blur();
+    clipboard.resolve(action === "cut" ? undefined : "pasted");
+    await flushPromises();
+    expect(store.tabs[0]!.text).toBe(action === "cut" ? " world" : "pasted world");
+    expect(store.tabs[0]!.dirty).toBe(true);
+    expect(undo(cm)).toBe(true);
+    expect(store.tabs[0]!.text).toBe("hello world");
+  },
+);
+
+it("abandons a pending paste after closing and reopening the same file", async () => {
+  const clipboard = deferred();
+  vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
+  mocks.diffFile.mockResolvedValueOnce(result("first")).mockResolvedValueOnce(result("reopened"));
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! }, attachTo: document.body });
+  await flushPromises();
+  const original = editor(wrapper);
+  await clickEditorMenu(wrapper, "paste");
+  store.closeTab(store.activeId!);
+  await flushPromises();
+  await store.open("a.txt");
+  await flushPromises();
+  const oldDispatch = vi.spyOn(original, "dispatch");
+  clipboard.resolve("clipboard text");
+  await flushPromises();
+  expect(oldDispatch).not.toHaveBeenCalled();
+  expect(store.tabs[0]!.text).toBe("reopened");
+  expect(store.tabs[0]!.dirty).toBe(false);
 });
