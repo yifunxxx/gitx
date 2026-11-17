@@ -458,18 +458,31 @@ async fn cancelling_a_running_smart_rebase_restores_changes_if_no_sequence_start
                     .await
             }
         };
-        let interrupt = async {
-            let reached = tokio::time::timeout(std::time::Duration::from_secs(15), async {
-                while !cwd.join(".git/smart-hook-started").exists() {
-                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-                }
-            })
-            .await;
-            // Always release the operation even if the hook did not run.
-            cancel.cancel();
-            reached.expect("pre-rebase hook reached after stashing");
+        let started = std::time::Instant::now();
+        // Reaching the hook includes status, safety backup and Smart Stash Git
+        // processes. Bound the whole setup separately from the hook's sleep,
+        // and surface an early operation failure instead of waiting blindly.
+        let hook_ready = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+            while !cwd.join(".git/smart-hook-started").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+            started.elapsed()
+        });
+        tokio::pin!(operation);
+        let (result, hook_elapsed) = tokio::select! {
+            result = &mut operation => (result, None),
+            reached = hook_ready => {
+                cancel.cancel();
+                // Let cancellation restore the saved work before any assertion
+                // can panic and drop the still-running operation/fixture.
+                (operation.await, reached.ok())
+            }
         };
-        let (result, _) = tokio::join!(operation, interrupt);
+        eprintln!("Smart cancellation interactive={interactive}; hook_after={hook_elapsed:?}; total={:?}; result={result:?}", started.elapsed());
+        assert!(
+            hook_elapsed.is_some(),
+            "pre-rebase hook not reached; interactive={interactive}; operation={result:?}"
+        );
         assert_eq!(result.unwrap_err().code, gitx_core::ErrorCode::Cancelled);
         assert_eq!(git(cwd, &["rev-parse", "HEAD"]), head);
         assert_eq!(git(cwd, &["status", "--porcelain"]), before);
