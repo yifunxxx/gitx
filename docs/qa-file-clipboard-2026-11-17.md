@@ -10,8 +10,8 @@
 
 - 修改前三个回归失败，覆盖以上路径；修改后通过，并补充同名文件关闭重开、正常剪切/粘贴和撤销的正向回归。
 - 文件、行标记及编辑器标签 3 文件 / 29 项通过；完整前端 127 文件 / 1077 项通过。测试使用受控剪贴板 Promise，happy-dom 同步 selectionchange 的模拟差异通过失焦后回填规避，不把该测试环境问题作为原生产品缺陷。
-- 类型/生产构建首轮发现测试 deferred Promise 类型为 unknown，补齐测试辅助函数返回类型后重跑。最终构建结果及原生边界见统一台账。
+- 类型/生产构建首轮发现测试 deferred Promise 类型为 unknown，补齐测试辅助函数返回类型后重跑通过；最终 Windows 原生构建也通过。最终程序和 SHA256 见统一台账，未做原生交互验收。
 - 日志位于 `E:/IDEAproject/gitx/test-results/`：`file-clipboard-before-0137.log`、`file-clipboard-0137-vitest.log`、`file-clipboard-0137-build.log`。
 - 原生 UI 复查仍归 QA-009；本轮没有替换用户安装版。
 
-本功能独立提交，提交/推送状态见 `qa-progress.md`。
+本功能独立提交 `35e2ab9` 并推送，已核对远端 SHA。源码和自动验证完成；剩余原生边界见 `qa-progress.md`。
