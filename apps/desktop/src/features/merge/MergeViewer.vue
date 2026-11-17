@@ -39,7 +39,6 @@ const left = ref<Pane | null>(null);
 const result = ref<Pane | null>(null);
 const right = ref<Pane | null>(null);
 let scrollUnbind: (() => void) | undefined;
-let scrollSyncing = false;
 watch(
   () => tab.value?.id,
   () => {
@@ -60,20 +59,35 @@ function bindLinkedScroll() {
     .map((pane) => pane?.getView())
     .filter((view): view is EditorView => !!view);
   if (views.length < 2) return;
+  // Programmatic scrolling dispatches its event after this handler returns.
+  // Remember the actual (possibly clamped) position in each pane so that a
+  // shorter document cannot feed its limit back into the user's source pane.
+  const panes = views.map((view) => ({
+    scroller: view.scrollDOM,
+    top: view.scrollDOM.scrollTop,
+    left: view.scrollDOM.scrollLeft,
+  }));
   const cleanups: Array<() => void> = [];
-  for (const view of views) {
-    const scroller = view.scrollDOM;
+  for (const pane of panes) {
+    const { scroller } = pane;
     const onScroll = () => {
-      if (scrollSyncing) return;
-      scrollSyncing = true;
       const top = scroller.scrollTop;
       const leftPos = scroller.scrollLeft;
-      for (const other of views) {
-        if (other === view) continue;
-        if (other.scrollDOM.scrollTop !== top) other.scrollDOM.scrollTop = top;
-        if (other.scrollDOM.scrollLeft !== leftPos) other.scrollDOM.scrollLeft = leftPos;
+      const vertical = top !== pane.top;
+      const horizontal = leftPos !== pane.left;
+      if (!vertical && !horizontal) return;
+      pane.top = top;
+      pane.left = leftPos;
+      for (const other of panes) {
+        if (other === pane) continue;
+        // Only synchronize the axis that moved. Horizontal input on a short
+        // pane must not pull the longer panes back to its vertical limit.
+        if (vertical && other.scroller.scrollTop !== top) other.scroller.scrollTop = top;
+        if (horizontal && other.scroller.scrollLeft !== leftPos)
+          other.scroller.scrollLeft = leftPos;
+        other.top = other.scroller.scrollTop;
+        other.left = other.scroller.scrollLeft;
       }
-      scrollSyncing = false;
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
     cleanups.push(() => scroller.removeEventListener("scroll", onScroll));

@@ -187,3 +187,87 @@ it("keeps the three conflict panes' scroll positions linked", async () => {
   expect(panes[0]!.scrollTop).toBe(120);
   expect(panes[2]!.scrollTop).toBe(120);
 });
+
+// happy-dom has no layout/clamping or deferred native scroll events. Model
+// those browser boundaries explicitly, retaining the real three EditorViews.
+function limitScroll(pane: HTMLElement, maxTop: number, maxLeft: number) {
+  let top = 0;
+  let left = 0;
+  Object.defineProperties(pane, {
+    scrollTop: {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => { top = Math.max(0, Math.min(maxTop, value)); },
+    },
+    scrollLeft: {
+      configurable: true,
+      get: () => left,
+      set: (value: number) => { left = Math.max(0, Math.min(maxLeft, value)); },
+    },
+  });
+}
+
+it("does not feed a shorter pane's clamped scroll position back into the source", async () => {
+  const wrapper = mount(MergeViewer);
+  await flushPromises();
+  const [left, result, right] = views(wrapper).map((view) => view.scrollDOM);
+  limitScroll(left!, 2000, 1000);
+  limitScroll(result!, 300, 100);
+  limitScroll(right!, 1200, 600);
+  left!.scrollTop = 800;
+  left!.scrollLeft = 500;
+  left!.dispatchEvent(new Event("scroll"));
+  expect(result!.scrollTop).toBe(300);
+  expect(result!.scrollLeft).toBe(100);
+  // Programmatic writes dispatch scroll after the source handler has returned.
+  result!.dispatchEvent(new Event("scroll"));
+  right!.dispatchEvent(new Event("scroll"));
+  expect(left!.scrollTop).toBe(800);
+  expect(left!.scrollLeft).toBe(500);
+  expect(right!.scrollTop).toBe(800);
+  expect(right!.scrollLeft).toBe(500);
+});
+
+it("accepts a new user scroll immediately without moving the other axis", async () => {
+  const wrapper = mount(MergeViewer);
+  await flushPromises();
+  const [left, result, right] = views(wrapper).map((view) => view.scrollDOM);
+  limitScroll(left!, 2000, 1000);
+  limitScroll(result!, 300, 100);
+  limitScroll(right!, 1200, 600);
+  left!.scrollTop = 800;
+  left!.scrollLeft = 500;
+  left!.dispatchEvent(new Event("scroll"));
+  // A real horizontal movement can arrive before the queued feedback event.
+  result!.scrollLeft = 60;
+  result!.dispatchEvent(new Event("scroll"));
+  expect(left!.scrollLeft).toBe(60);
+  expect(right!.scrollLeft).toBe(60);
+  expect(left!.scrollTop).toBe(800);
+  expect(right!.scrollTop).toBe(800);
+  result!.scrollTop = 180;
+  result!.dispatchEvent(new Event("scroll"));
+  expect(left!.scrollTop).toBe(180);
+  expect(right!.scrollTop).toBe(180);
+});
+
+it("unbinds old scroll panes on tab replacement and unmount", async () => {
+  const wrapper = mount(MergeViewer);
+  await flushPromises();
+  const original = views(wrapper).map((view) => view.scrollDOM);
+  mocks.store.mergeTabs.push(makeTab("second"));
+  mocks.store.activeMergeId = "second";
+  await flushPromises();
+  original[0]!.scrollTop = 400;
+  original[0]!.dispatchEvent(new Event("scroll"));
+  expect(original[1]!.scrollTop).toBe(0);
+  const current = views(wrapper).map((view) => view.scrollDOM);
+  expect(current[0]!.scrollTop).toBe(0);
+  current[1]!.scrollTop = 120;
+  current[1]!.dispatchEvent(new Event("scroll"));
+  expect(current[0]!.scrollTop).toBe(120);
+  wrapper.unmount();
+  current[1]!.scrollTop = 200;
+  current[1]!.dispatchEvent(new Event("scroll"));
+  expect(current[0]!.scrollTop).toBe(120);
+});
