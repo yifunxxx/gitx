@@ -67,7 +67,7 @@ it("emits the scrollport as the trailing scroll target when dragging ends outsid
   wrapper.unmount();
 });
 
-it("keeps thumb-drag deferral when lostpointercapture fires with the button still held", async () => {
+it("keeps drag tracking when capture is lost while still rendering current rows", async () => {
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frames.push(callback);
@@ -92,7 +92,7 @@ it("keeps thumb-drag deferral when lostpointercapture fires with the button stil
   window.dispatchEvent(Object.assign(new Event("lostpointercapture"), { buttons: 1 }));
   await nextTick();
   expect((wrapper.vm as unknown as { pointerDown: boolean }).pointerDown).toBe(true);
-  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-38");
   window.dispatchEvent(new Event("pointerup"));
   await nextTick();
   expect(wrapper.findAll(".cell")[0]!.text()).not.toBe("row-0");
@@ -156,7 +156,7 @@ it("suppresses hover/title while scrolling without disabling pointer events", as
   vi.useRealTimers();
 });
 
-it("gates wheel reactive updates so row props are not patched every frame", async () => {
+it("renders each wheel destination on its animation frame", async () => {
   vi.useFakeTimers();
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -175,20 +175,17 @@ it("gates wheel reactive updates so row props are not patched every frame", asyn
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
   expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
-  // Immediate second wheel tick is gated; window stays put until the timeout.
+  // A second wheel tick must not leave the viewport outside the rendered rows.
   port.scrollTop = 880;
   port.dispatchEvent(new Event("scroll"));
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
-  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
-  await vi.advanceTimersByTimeAsync(55);
-  await nextTick();
-  expect(wrapper.findAll(".cell")[0]!.text()).not.toBe("row-0");
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-38");
   wrapper.unmount();
   vi.useRealTimers();
 });
 
-it("defers reactive windowing while the scrollbar thumb is held", async () => {
+it("updates rows during a held drag but defers parent pagination until release", async () => {
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frames.push(callback);
@@ -205,17 +202,19 @@ it("defers reactive windowing while the scrollbar thumb is held", async () => {
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
   expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  const initialEvents = wrapper.emitted("scroll")?.length ?? 0;
   await wrapper.get(".overflow-auto").trigger("pointerdown", { button: 0 });
   port.scrollTop = 880;
   port.dispatchEvent(new Event("scroll"));
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
-  // Still showing the pre-drag window — no remount storm under pointer capture.
-  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-38");
+  expect(wrapper.emitted("scroll")?.length ?? 0).toBe(initialEvents);
   window.dispatchEvent(new Event("pointerup"));
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
   expect(wrapper.findAll(".cell")[0]!.text()).not.toBe("row-0");
+  expect(wrapper.emitted("scroll")?.length).toBe(initialEvents + 1);
   wrapper.unmount();
 });
 
@@ -274,8 +273,6 @@ it("reuses window slots when recycleKeys is enabled", async () => {
   expect(firstKeys.length).toBeLessThan(30);
   port.scrollTop = 440;
   port.dispatchEvent(new Event("scroll"));
-  frames.splice(0).forEach((callback) => callback(0));
-  await new Promise((resolve) => setTimeout(resolve, 55));
   frames.splice(0).forEach((callback) => callback(0));
   await nextTick();
   const secondKeys = wrapper.findAll(".cell").map((node) => node.text());

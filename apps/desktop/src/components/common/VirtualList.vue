@@ -87,13 +87,6 @@ let ro: ResizeObserver | null = null;
 let raf = 0;
 let pendingScroll: Event | null = null;
 let scrollGeneration = 0;
-/** Latest native scrollTop while the thumb is held — applied once on release. */
-let heldScrollTop: number | null = null;
-/** Wheel/trackpad: latest top waiting for the gated apply. */
-let queuedWheelTop: number | null = null;
-let wheelGate = 0;
-let lastApplyMs = 0;
-const WHEEL_APPLY_MS = 50;
 
 /** Parents (load-more) read metrics from event.target — must be the scrollport. */
 function emitScrollFromPort() {
@@ -105,21 +98,8 @@ function emitScrollFromPort() {
 
 function applyScrollTop(top: number, ev: Event | null) {
   scrollTop.value = top;
-  lastApplyMs = performance.now();
   if (ev) emit("scroll", ev);
   else emitScrollFromPort();
-}
-
-function flushQueuedWheel() {
-  wheelGate = 0;
-  if (pointerDown.value || !root.value) {
-    queuedWheelTop = null;
-    return;
-  }
-  const top = queuedWheelTop ?? root.value.scrollTop;
-  queuedWheelTop = null;
-  // Emit directly — do not dispatchEvent("scroll") or the wheel gate re-enters.
-  applyScrollTop(top, null);
 }
 
 function flushScroll() {
@@ -129,23 +109,12 @@ function flushScroll() {
   pendingScroll = null;
   if (!el) return;
   const top = el.scrollTop;
-  // While the primary button is down (native scrollbar thumb on Windows), the
-  // WebView HWND typically owns mouse interaction for this window. Remounting
-  // virtual rows every frame blocks the window's input pump → clicks ignored
-  // until the long task ends. Defer reactive windowing until pointerup.
+  // Native scrolling moves the viewport immediately. Keep its bounded row
+  // window in sync once per frame, including while the scrollbar is held.
+  // Delaying rows by 50ms or until release exposes an empty part of the spacer.
+  // Only defer parent work (such as pagination that changes scrollHeight).
   if (pointerDown.value) {
-    heldScrollTop = top;
-    return;
-  }
-  // Wheel/trackpad path (no pointerDown): recycleKeys still patches every
-  // visible row's props each frame (CommitGraphCell SVG recomputes). Gate
-  // reactive applies to ~20Hz so the WebView input pump stays responsive.
-  const now = performance.now();
-  if (now - lastApplyMs < WHEEL_APPLY_MS) {
-    queuedWheelTop = top;
-    if (!wheelGate) {
-      wheelGate = window.setTimeout(flushQueuedWheel, WHEEL_APPLY_MS - (now - lastApplyMs));
-    }
+    scrollTop.value = top;
     return;
   }
   applyScrollTop(top, ev);
@@ -227,16 +196,15 @@ function onScroll(e: Event) {
 }
 
 function onPointerDown(e: PointerEvent) {
-  // Track primary-button hold for native scrollbar thumb deferral only.
+  // Track primary-button hold to defer pagination and anchor changes only.
   // Do NOT suppress hover/title here — that ran on every row click in v0.1.29
   // and, combined with pointer-events:none, swallowed selection entirely.
   if (e.button === 0) pointerDown.value = true;
 }
 
 function endPointerGesture(ev?: Event) {
-  // WebView2 often fires lostpointercapture when the cursor leaves the native
-  // scrollbar thumb into list content while the button is still held. Flushing
-  // the deferred window then remounts rows mid-drag → hitch. Stay deferred.
+  // Losing capture while the button remains held must not resume pagination
+  // or anchor changes that would move the native thumb under the pointer.
   if (
     ev &&
     "buttons" in ev &&
@@ -248,15 +216,8 @@ function endPointerGesture(ev?: Event) {
   const wasDown = pointerDown.value;
   pointerDown.value = false;
   if (!wasDown || !root.value) return;
-  const top = heldScrollTop ?? root.value.scrollTop;
-  heldScrollTop = null;
-  if (wheelGate) {
-    window.clearTimeout(wheelGate);
-    wheelGate = 0;
-  }
-  queuedWheelTop = null;
-  // One reactive apply after the OS releases the thumb; emit without re-entry.
-  applyScrollTop(top, null);
+  // Read the current port, never a saved position from an older scroll event.
+  applyScrollTop(root.value.scrollTop, null);
   // Thumb drag usually produced scroll events already; refresh the idle timer
   // so hover/title stay suppressed briefly after release.
   if (scrolling.value) markScrolling();
@@ -287,7 +248,6 @@ onUnmounted(() => {
   ro?.disconnect();
   ro = null;
   if (raf) cancelAnimationFrame(raf);
-  if (wheelGate) window.clearTimeout(wheelGate);
   if (scrollIdleTimer) window.clearTimeout(scrollIdleTimer);
   stopTitleSuppress();
   window.removeEventListener("pointerup", endPointerGesture);
@@ -295,8 +255,6 @@ onUnmounted(() => {
   window.removeEventListener("lostpointercapture", endPointerGesture);
   window.removeEventListener("blur", endPointerGestureOnBlur);
   pendingScroll = null;
-  heldScrollTop = null;
-  queuedWheelTop = null;
   scrolling.value = false;
 });
 
@@ -363,7 +321,6 @@ defineExpose({
       root.value.scrollTop = bottom - root.value.clientHeight;
     }
     scrollTop.value = root.value.scrollTop;
-    heldScrollTop = null;
   },
 });
 </script>
