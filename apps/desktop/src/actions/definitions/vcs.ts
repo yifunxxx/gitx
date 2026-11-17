@@ -9,12 +9,15 @@ import {
   Minus,
   GitCompare,
   FolderTree,
+  Save,
 } from "@lucide/vue";
 import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useCommitStore } from "@/stores/commitStore";
+import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { openChangeDiff } from "@/features/commit/openChangeDiff";
+import { focusCommitUi } from "@/features/commit/focusCommitUi";
 import { useLogStore } from "@/stores/logStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useCompareStore } from "@/stores/compareStore";
@@ -26,6 +29,29 @@ import { promptDialog } from "@/composables/useConfirm";
 import { isTauri } from "@/lib/utils";
 
 export function registerVcsActions() {
+  registerAction({
+    id: "File.Save",
+    title: "Save",
+    description: "Save the active file editor tab",
+    icon: Save,
+    defaultShortcuts: {
+      mac: ["mod+s"],
+      win: ["mod+s"],
+      linux: ["mod+s"],
+    },
+    scope: "global",
+    enabled: () => {
+      const layout = useLayoutStore();
+      const files = useFileViewerStore();
+      if (layout.activeEditorKind !== "file" || !files.activeId) return false;
+      const tab = files.tabs.find((t) => t.id === files.activeId);
+      return !!tab?.editable && !!tab.dirty && !tab.saving && !tab.loading;
+    },
+    async run() {
+      await useFileViewerStore().saveActive();
+    },
+  });
+
   registerAction({
     id: "Git.RefreshStatus",
     title: "Refresh Status",
@@ -144,6 +170,7 @@ export function registerVcsActions() {
       linux: ["ctrl+alt+a"],
     },
     scope: "changes",
+    enabled: () => useChangesStore().selectedPaths.length > 0,
     async run() {
       const changes = useChangesStore();
       const paths = changes.selectedPaths;
@@ -159,6 +186,7 @@ export function registerVcsActions() {
     description: "Stage selected files",
     icon: Plus,
     scope: "changes",
+    enabled: () => useChangesStore().selectedPaths.length > 0,
     async run() {
       const changes = useChangesStore();
       if (!changes.selectedPaths.length) return;
@@ -173,6 +201,7 @@ export function registerVcsActions() {
     description: "Unstage selected files",
     icon: Minus,
     scope: "changes",
+    enabled: () => useChangesStore().selectedPaths.length > 0,
     async run() {
       const changes = useChangesStore();
       if (!changes.selectedPaths.length) return;
@@ -216,30 +245,30 @@ export function registerVcsActions() {
     scope: "global",
     async run() {
       const layout = useLayoutStore();
-      layout.leftOpen = true;
       const changes = useChangesStore();
       const commit = useCommitStore();
+      const workspace = useWorkspaceStore();
+      // Freeze session before any await so a mid-flight focus cannot pin a newer repo.
+      const path = workspace.repoPath;
+      const repoId = workspace.repoId;
+      const navigation = workspace.navigationToken();
+      const sameSession = () =>
+        workspace.isRepo &&
+        workspace.repoPath === path &&
+        workspace.repoId === repoId &&
+        workspace.navigationToken() === navigation;
+      // IDEA: first invoke focuses the Commit TW / message; second (with text) commits.
+      await focusCommitUi();
+      if (!sameSession()) return;
       const hasCheckedChanges = !changes.stagingMode && changes.checkedPaths.length > 0;
       if (!changes.staged.length && !hasCheckedChanges && !commit.amend) {
         toast({ title: "Nothing to commit" });
         return;
       }
-      // Message box is already visible; committing requires explicit Commit button
-      // or a second Ctrl+K when message is non-empty (IDEA focuses first).
       if (commit.message.trim()) {
-        const workspace = useWorkspaceStore();
-        const path = workspace.repoPath;
-        const repoId = workspace.repoId;
-        const navigation = workspace.navigationToken();
         try {
           const result = await commit.commit();
-          if (
-            result &&
-            workspace.isRepo &&
-            workspace.repoPath === path &&
-            workspace.repoId === repoId &&
-            workspace.navigationToken() === navigation
-          ) {
+          if (result && sameSession()) {
             layout.activeBottomTab = "log";
           }
         } catch {

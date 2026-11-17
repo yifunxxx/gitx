@@ -51,6 +51,8 @@ const defaultSettings: AppSettings = {
     commitControlsHidden: false,
     closeCommitTwAfterCommit: false,
     logListMode: "flat",
+    changesListMode: "tree",
+    logChangedFilesListMode: "tree",
   },
 };
 
@@ -728,7 +730,14 @@ export const mockBackend: Backend = {
       releaseUrl: "https://github.com/yifunxxx/gitx/releases",
       nsisUrl: null,
       msiUrl: null,
+      notes: "",
     };
+  },
+  async appDownloadUpdate(req) {
+    return { path: `/tmp/gitx-mock-${req.version}.exe`, version: req.version };
+  },
+  async appInstallUpdate() {
+    return null;
   },
   async gitDetect() {
     return {
@@ -820,6 +829,23 @@ export const mockBackend: Backend = {
   async statusGet(req) {
     emitConsole("cmd", `git status --porcelain=v2 # ${req.path}`);
     return statusSnapshot(req.path, !!req.includeIgnored);
+  },
+  async fileWriteWorktree(req) {
+    emitConsole("cmd", `# write worktree ${req.filePath}`);
+    const existing = files.find((f) => f.path === req.filePath);
+    if (existing) {
+      existing.worktreeStatus = existing.worktreeStatus === "." ? "M" : existing.worktreeStatus;
+      if (existing.kind === "untracked") existing.kind = "modified";
+    } else {
+      files.push({
+        path: req.filePath,
+        origPath: null,
+        indexStatus: ".",
+        worktreeStatus: "M",
+        kind: "modified",
+      });
+    }
+    return null;
   },
   async stagePaths(req) {
     emitConsole("cmd", `git add -A -- ${req.paths.join(" ")}`);
@@ -1719,14 +1745,17 @@ export const mockBackend: Backend = {
     return structuredClone(mockChangelists);
   },
   async changelistDelete(req) {
-    mockChangelists.lists = mockChangelists.lists.filter((l) => l.id !== req.id);
-    if (req.moveTo) {
-      for (const a of mockChangelists.assignments) {
-        if (a.listId === req.id) a.listId = req.moveTo;
-      }
-    } else {
-      mockChangelists.assignments = mockChangelists.assignments.filter((a) => a.listId !== req.id);
+    if (req.id === "default") {
+      throw new Error("default Changes list cannot be deleted");
     }
+    const target =
+      req.moveTo ??
+      mockChangelists.lists.find((l) => l.active && l.id !== req.id)?.id ??
+      "default";
+    for (const a of mockChangelists.assignments) {
+      if (a.listId === req.id) a.listId = target;
+    }
+    mockChangelists.lists = mockChangelists.lists.filter((l) => l.id !== req.id);
     if (!mockChangelists.lists.some((l) => l.active) && mockChangelists.lists[0]) {
       mockChangelists.lists[0].active = true;
     }

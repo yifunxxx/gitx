@@ -22,16 +22,37 @@ const branchText = computed(() => {
 const busyText = computed(() =>
   jobs.count ? t("status.busy", { count: jobs.count }) : t("status.idle"),
 );
+
+function toggleJobsPopup(event: MouseEvent) {
+  if (jobs.popupOpen) {
+    jobs.closePopup();
+    return;
+  }
+  const target = event.currentTarget;
+  if (!(target instanceof HTMLElement)) {
+    jobs.openPopup();
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  // Anchor at the top of the indicator so the menu flips above the status bar.
+  jobs.openPopup({ x: rect.left, y: rect.top });
+}
 </script>
 
 <template>
   <footer
     class="flex h-6 shrink-0 items-center gap-3 border-t bg-dbx-chrome px-2 text-[11px] text-muted-foreground"
   >
-    <div class="flex items-center gap-1">
+    <button
+      type="button"
+      class="flex items-center gap-1 rounded px-1 hover:bg-accent/60 hover:text-foreground"
+      :aria-expanded="jobs.popupOpen"
+      :aria-label="t('status.jobsTitle')"
+      @click="toggleJobsPopup"
+    >
       <LoaderCircle v-if="jobs.count" class="h-3 w-3 animate-spin" />
       <span>{{ busyText }}</span>
-    </div>
+    </button>
     <div class="h-3 w-px bg-border" />
     <button
       type="button"

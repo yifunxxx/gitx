@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
+import { editorChrome } from "@/features/editor/editorChrome";
 import { parseSource, restoreEndings, sourceExtensions, sourceText } from "./preservedText";
 
 const props = withDefaults(
@@ -48,6 +49,7 @@ onMounted(() => {
         lineNumbers(),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
+        ...editorChrome({ caret: props.editable && !props.disabled }),
         EditorView.updateListener.of((update) => {
           // Scrolling, selection and resizing never serialize the full document.
           if (!update.docChanged || external) return;
@@ -67,11 +69,7 @@ onMounted(() => {
             color: "var(--color-muted-foreground)",
             borderRight: "1px solid var(--color-border)",
           },
-          ".cm-cursor": { borderLeftColor: "var(--color-foreground)" },
           "&.cm-focused": { outline: "none" },
-          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-            backgroundColor: "var(--color-accent)",
-          },
         }),
       ],
     }),

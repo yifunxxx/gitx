@@ -53,6 +53,7 @@ beforeEach(() => {
   mocks.compare = store("compare", ["c"]);
   mocks.repoAtRev = store("repoAtRev", ["r"]);
   mocks.file = store("file", ["f"]);
+  mocks.file.tabs[0].dirty = false;
   mocks.merge = reactive({
     mergeTabs: [{ id: "m", title: "merge m" }],
     activeMergeId: "m",
@@ -166,6 +167,18 @@ describe("Editor tab closing", () => {
     expect(mocks.confirm).toHaveBeenCalledOnce();
     expect(mocks.diff.closeTab).not.toHaveBeenCalled();
     expect(mocks.merge.closeMergeTab).not.toHaveBeenCalled();
+  });
+
+  it("shows a dirty mark on unsaved file tabs and confirms before closing them", async () => {
+    const { wrapper, close, tab } = setup();
+    mocks.file.tabs[0].dirty = true;
+    await flushPromises();
+    expect(tab("file", "f").props("dirty")).toBe(true);
+    expect(wrapper.find('[aria-label="file f (unsaved)"]').exists()).toBe(true);
+    mocks.confirm.mockResolvedValue(false);
+    await close("file", "f", "current");
+    expect(mocks.confirm).toHaveBeenCalledOnce();
+    expect(mocks.file.closeTab).not.toHaveBeenCalled();
   });
 
   it("invalidates an outstanding confirmation on A → B → A navigation", async () => {

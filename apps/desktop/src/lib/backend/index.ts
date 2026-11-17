@@ -1,5 +1,8 @@
 import type {
   AppInfo,
+  AppDownloadUpdateReq,
+  AppDownloadUpdateRes,
+  AppInstallUpdateReq,
   AppUpdateInfo,
   AppSettings,
   BlameReq,
@@ -74,6 +77,7 @@ import type {
   RepoStateReq,
   RepoStateRes,
   StatusGetReq,
+  FileWriteWorktreeReq,
   StatusProbeReq,
   StatusSnapshot,
   TagCreateReq,
@@ -184,6 +188,8 @@ import { isTauri } from "@/lib/utils";
 export type Backend = {
   appInfo(): Promise<AppInfo>;
   appCheckForUpdates(): Promise<AppUpdateInfo>;
+  appDownloadUpdate(req: AppDownloadUpdateReq): Promise<AppDownloadUpdateRes>;
+  appInstallUpdate(req: AppInstallUpdateReq): Promise<null>;
   gitDetect(): Promise<GitDetectDto>;
   gitTestExecutable(path: string): Promise<GitDetectDto>;
   settingsGet(): Promise<AppSettings>;
@@ -198,6 +204,7 @@ export type Backend = {
   initRun(req: InitRunReq): Promise<WorkspaceOpenRes>;
   vcsEnable(req: VcsEnableReq): Promise<WorkspaceOpenRes>;
   statusGet(req: StatusGetReq): Promise<StatusSnapshot>;
+  fileWriteWorktree(req: FileWriteWorktreeReq): Promise<null>;
   stagePaths(req: PathsReq): Promise<null>;
   unstagePaths(req: PathsReq): Promise<null>;
   addPaths(req: AddPathsReq): Promise<null>;
@@ -347,6 +354,8 @@ export type Backend = {
 export const tauriBackend: Backend = {
   appInfo: () => commands.appInfo(),
   appCheckForUpdates: () => commands.appCheckForUpdates(),
+  appDownloadUpdate: (req) => commands.appDownloadUpdate(req),
+  appInstallUpdate: (req) => commands.appInstallUpdate(req),
   gitDetect: () => commands.gitDetect(),
   gitTestExecutable: (path) => commands.gitTestExecutable(path),
   settingsGet: () => commands.settingsGet(),
@@ -361,6 +370,7 @@ export const tauriBackend: Backend = {
   initRun: (req) => commands.initRun(req),
   vcsEnable: (req) => commands.vcsEnable(req),
   statusGet: (req) => commands.statusGet(req),
+  fileWriteWorktree: (req) => commands.fileWriteWorktree(req),
   stagePaths: (req) => commands.stagePaths(req),
   unstagePaths: (req) => commands.unstagePaths(req),
   addPaths: (req) => commands.addPaths(req),

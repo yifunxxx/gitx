@@ -9,6 +9,7 @@ import CommitToolWindow from "@/components/layout/CommitToolWindow.vue";
 import EditorTabs from "@/components/layout/EditorTabs.vue";
 import GitToolWindow from "@/components/layout/GitToolWindow.vue";
 import StatusBar from "@/components/layout/StatusBar.vue";
+import JobsPopup from "@/components/layout/JobsPopup.vue";
 import FindActionPalette from "@/components/layout/FindActionPalette.vue";
 import VcsOperationsPopup from "@/components/layout/VcsOperationsPopup.vue";
 import CustomContextMenuHost from "@/components/layout/CustomContextMenuHost.vue";
@@ -22,7 +23,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useUpdateStore } from "@/stores/updateStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { findActionIdByEvent, isShortcutEvent, matchShortcut, runAction, setKeymapOverridesProvider } from "@/actions";
-import { formatGitDetectError } from "@/lib/errors";
+import { formatErrorMessage, formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 
@@ -67,7 +68,8 @@ function onKeydown(e: KeyboardEvent) {
     return;
   }
   const id = findActionIdByEvent(e);
-  if (editing && id !== "Settings") return;
+  // Settings and Save must reach CodeMirror / contentEditable hosts (Ctrl/Cmd+S).
+  if (editing && id !== "Settings" && id !== "File.Save") return;
   if (!id) return;
   e.preventDefault();
   void runAction(id, {
@@ -81,9 +83,17 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
-  await settings.load();
-  if (disposed) return;
+  // Schedule update auto-check immediately — do not wait on settings/Git detect,
+  // which can hang or throw and previously prevented startAutoChecks entirely.
   updates.startAutoChecks();
+  try {
+    await settings.load();
+  } catch (err) {
+    if (!disposed) {
+      consoleStore.append("stderr", formatErrorMessage(err));
+    }
+  }
+  if (disposed) return;
   await workspace.loadRecent();
   if (disposed) return;
   try {
@@ -167,6 +177,7 @@ onUnmounted(() => {
         </div>
       </div>
       <StatusBar />
+      <JobsPopup />
       <FindActionPalette />
       <VcsOperationsPopup />
       <CustomContextMenuHost />

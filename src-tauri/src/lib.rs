@@ -7,8 +7,8 @@ mod state;
 mod terminal;
 
 use commands::app::{
-    app_check_for_updates, app_info, git_detect, git_test_executable, log_frontend, settings_get,
-    settings_reload, settings_set,
+    app_check_for_updates, app_download_update, app_info, app_install_update, git_detect,
+    git_test_executable, log_frontend, settings_get, settings_reload, settings_set,
 };
 use commands::changelist::{
     changelist_create, changelist_delete, changelist_list, changelist_move, changelist_rename,
@@ -60,7 +60,7 @@ use commands::stash::{
     stash_apply, stash_branch, stash_clear, stash_create, stash_drop, stash_list, stash_pop,
     stash_restore,
 };
-use commands::status::status_get;
+use commands::status::{file_write_worktree, status_get};
 use commands::sync::{
     fetch_run, ls_remote_check, pull_run, push_preview, push_run, submodule_update, sync_fork,
     update_project_run,
@@ -91,6 +91,8 @@ pub fn run() {
         tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
             app_info,
             app_check_for_updates,
+            app_download_update,
+            app_install_update,
             git_detect,
             git_test_executable,
             settings_get,
@@ -112,6 +114,7 @@ pub fn run() {
             init_run,
             vcs_enable,
             status_get,
+            file_write_worktree,
             stage_paths,
             unstage_paths,
             add_paths,

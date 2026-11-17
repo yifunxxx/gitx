@@ -7,6 +7,12 @@ import ChangesTree from "@/features/commit/ChangesTree.vue";
 const mocks = vi.hoisted(() => ({
   ws: {} as any,
   changes: {} as any,
+  settings: {} as any,
+  layout: {
+    commitTwMode: "docked" as string,
+    leftOpen: true,
+    commitControlsHidden: true,
+  },
   confirm: vi.fn(),
   prompt: vi.fn(),
   checkout: vi.fn(),
@@ -14,17 +20,20 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   patch: vi.fn(),
   dialog: vi.fn(),
+  focusCommitUi: vi.fn(),
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
-vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => ({ commitControlsHidden: true }) }));
+vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
+vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({ refreshOpState: vi.fn() }) }));
 vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => ({}) }));
 vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: mocks.open }) }));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({}) }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({}) }));
+vi.mock("@/features/commit/focusCommitUi", () => ({ focusCommitUi: mocks.focusCommitUi }));
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 vi.mock("@/composables/useConfirm", () => ({
   confirmDialog: mocks.confirm,
@@ -55,6 +64,11 @@ beforeEach(() => {
       return this.generation;
     },
   });
+  mocks.layout = {
+    commitTwMode: "docked",
+    leftOpen: true,
+    commitControlsHidden: true,
+  };
   mocks.changes = reactive({
     stagingMode: true,
     loading: false,
@@ -66,18 +80,28 @@ beforeEach(() => {
     unversioned: [],
     ignored: [],
     changelists: { lists: [] },
+    checkedPaths: [],
     refresh: vi.fn(),
     stage: vi.fn(),
     unstage: vi.fn(),
     add: vi.fn(),
+    setChecked: vi.fn(),
     rmCached: vi.fn(),
     createChangelist: vi.fn(),
     moveToChangelist: vi.fn(),
+  });
+  mocks.settings = reactive({
+    settings: { stagingMode: true, git: { changesListMode: "tree" } },
+    emptySettings: () => ({ stagingMode: true, git: { changesListMode: "tree" } }),
+    save: vi.fn(async (next: unknown) => {
+      mocks.settings.settings = next;
+    }),
   });
   mocks.confirm.mockResolvedValue(true);
   wrapper = shallowMount(CommitToolWindow, {
     global: {
       stubs: {
+        Tip: { template: "<div><slot /></div>" },
         Button: { template: "<button><slot /></button>" },
         ContextMenuSurface: {
           props: ["open"],
@@ -122,8 +146,8 @@ it.each(["repository", "navigation", "selection", "section"])(
 it.each(["navigation", "roundtrip", "unmount"])(
   "cancels confirmed rollback after %s invalidates its source",
   async (kind) => {
-    const answer = deferred<boolean>();
-    mocks.confirm.mockReturnValue(answer.promise);
+    const answer = deferred<{ paths: string[] } | null>();
+    mocks.dialog.mockReturnValue(answer.promise);
     await openMenu();
     await click("commitTw.rollback");
     if (kind === "navigation") mocks.ws.generation++;
@@ -132,7 +156,7 @@ it.each(["navigation", "roundtrip", "unmount"])(
       mocks.ws.repoPath = "A";
     }
     if (kind === "unmount") wrapper.unmount();
-    answer.resolve(true);
+    answer.resolve({ paths: ["first.txt", "second.txt"] });
     await flushPromises();
     expect(mocks.changes.unstage).not.toHaveBeenCalled();
     expect(mocks.checkout).not.toHaveBeenCalled();
@@ -140,13 +164,13 @@ it.each(["navigation", "roundtrip", "unmount"])(
 );
 
 it("keeps the original files and section through a rollback confirmation", async () => {
-  const answer = deferred<boolean>();
-  mocks.confirm.mockReturnValue(answer.promise);
+  const answer = deferred<{ paths: string[] } | null>();
+  mocks.dialog.mockReturnValue(answer.promise);
   await openMenu();
   await click("commitTw.rollback");
   mocks.changes.selectedPaths.splice(0, 2, "other.txt");
   mocks.changes.selectedSection = "unstaged";
-  answer.resolve(true);
+  answer.resolve({ paths: ["first.txt", "second.txt"] });
   await flushPromises();
   expect(mocks.changes.unstage).toHaveBeenCalledWith(["first.txt", "second.txt"]);
   expect(mocks.checkout.mock.calls.map(([arg]) => arg)).toEqual([
@@ -159,6 +183,7 @@ it.each(["unstage", "checkout"])("stops rollback after navigation during %s", as
   const pending = deferred<void>();
   if (step === "unstage") mocks.changes.unstage.mockReturnValue(pending.promise);
   else mocks.checkout.mockReturnValueOnce(pending.promise);
+  mocks.dialog.mockResolvedValue({ paths: ["first.txt", "second.txt"] });
   await openMenu();
   await click("commitTw.rollback");
   mocks.ws.repoPath = "B";
@@ -214,4 +239,46 @@ it("closes when a status refresh removes the menu's files from their section", a
   mocks.changes.snapshot = { files: [] };
   await flushPromises();
   expect(wrapper.find("[data-menu]").exists()).toBe(false);
+});
+
+it("Commit Files… stages unstaged paths then focuses the commit UI", async () => {
+  mocks.changes.selectedSection = "unstaged";
+  mocks.changes.selectedPaths = ["first.txt"];
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.changes.stage).toHaveBeenCalledWith(["first.txt"]);
+  expect(mocks.changes.setChecked).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+});
+
+it("Commit Files… checks paths in changelist mode and focuses the commit UI", async () => {
+  mocks.changes.stagingMode = false;
+  mocks.changes.selectedSection = "changelist:default";
+  mocks.changes.selectedPaths = ["first.txt", "second.txt"];
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.changes.setChecked).toHaveBeenCalledWith(["first.txt", "second.txt"]);
+  expect(mocks.changes.stage).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+});
+
+it("Commit Files… does not stage already-staged paths", async () => {
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.changes.stage).not.toHaveBeenCalled();
+  expect(mocks.changes.add).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+});
+
+it("Commit Files… stops after navigation invalidates staging", async () => {
+  const pending = deferred<void>();
+  mocks.changes.stage.mockReturnValue(pending.promise);
+  mocks.changes.selectedSection = "unstaged";
+  mocks.changes.selectedPaths = ["first.txt"];
+  await openMenu();
+  await click("commitTw.commitFiles");
+  mocks.ws.generation++;
+  pending.resolve();
+  await flushPromises();
+  expect(mocks.focusCommitUi).not.toHaveBeenCalled();
 });

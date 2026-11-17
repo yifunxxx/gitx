@@ -22,7 +22,12 @@ export function registerM6Actions() {
     scope: "global",
     enabled: () => hasRepo() && !useStashShelfStore().busy,
     async run() {
-      await useStashShelfStore().promptStash();
+      const changes = useChangesStore();
+      const paths = changes.selectedPaths.length ? [...changes.selectedPaths] : undefined;
+      await useStashShelfStore().promptStash({
+        paths,
+        includeUntracked: changes.selectedSection === "unversioned",
+      });
     },
   });
 
@@ -96,10 +101,12 @@ export function registerM6Actions() {
     description: "Shelve selected paths",
     icon: Package,
     scope: "changes",
-    enabled: () =>
-      hasRepo() && useChangesStore().selectedPaths.length > 0 && !useStashShelfStore().busy,
+    enabled: () => hasRepo() && !useStashShelfStore().busy,
     async run() {
-      await useStashShelfStore().promptShelf(useChangesStore().selectedPaths);
+      const changes = useChangesStore();
+      await useStashShelfStore().promptShelf(
+        changes.selectedPaths.length ? [...changes.selectedPaths] : [],
+      );
     },
   });
 

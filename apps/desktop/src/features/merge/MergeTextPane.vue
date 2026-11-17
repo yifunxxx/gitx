@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, historyKeymap, redo } from "@codemirror/commands";
+import { editorChrome } from "@/features/editor/editorChrome";
 import { mergeViewConfig } from "./mergeDocument";
 
 const props = defineProps<{
@@ -31,6 +32,7 @@ function config() {
       ...defaultKeymap,
       ...historyKeymap,
     ]),
+    ...editorChrome({ caret: !!props.editable && !props.disabled }),
     props.extensions ?? [],
     EditorView.updateListener.of((update) => {
       if (props.editable) emit("change", props.ownerId, update.state, update.docChanged);
@@ -53,12 +55,7 @@ function config() {
         color: "var(--color-muted-foreground)",
         borderColor: "var(--color-border)",
       },
-      ".cm-cursor": { borderLeftColor: "var(--color-foreground)" },
       "&.cm-focused": { outline: "none" },
-      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-        backgroundColor: "var(--color-selection)",
-      },
-      "::selection": { color: "var(--color-selection-foreground)" },
       ".cm-merge-pending": {
         backgroundColor: "rgb(var(--diff-conflict-bg))",
         boxShadow: "inset 3px 0 var(--color-warning)",

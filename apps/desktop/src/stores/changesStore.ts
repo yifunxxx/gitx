@@ -370,6 +370,18 @@ export const useChangesStore = defineStore("changes", () => {
     );
   }
 
+  async function deleteChangelist(id: string, moveTo: string | null = null) {
+    if (!id || id === "default") return null;
+    const backend = getBackend();
+    return mutateChangelists((path) =>
+      backend.changelistDelete({
+        path,
+        id,
+        moveTo,
+      }),
+    );
+  }
+
   async function setActiveChangelist(id: string) {
     const backend = getBackend();
     return mutateChangelists((path) =>
@@ -427,6 +439,7 @@ export const useChangesStore = defineStore("changes", () => {
     rmCached,
     moveToChangelist,
     createChangelist,
+    deleteChangelist,
     setActiveChangelist,
     toggleShowIgnored,
   };

@@ -1,5 +1,31 @@
-use gitx_core::parse_wsl_unc_path;
-use std::path::{Path, PathBuf};
+use gitx_core::{parse_wsl_unc_path, AppError, ErrorCode};
+use std::path::{Component, Path, PathBuf};
+
+/// Resolve a relative worktree path under `cwd`, rejecting traversal and absolute paths.
+pub fn resolve_worktree_file(cwd: &Path, file_path: &str) -> Result<PathBuf, AppError> {
+    if file_path.is_empty() || file_path.contains('\0') {
+        return Err(AppError::new(ErrorCode::InvalidArgument, "empty file path"));
+    }
+    let rel = Path::new(file_path);
+    if rel.is_absolute() {
+        return Err(AppError::new(
+            ErrorCode::InvalidArgument,
+            "file path must be relative to the repository",
+        ));
+    }
+    for component in rel.components() {
+        match component {
+            Component::Normal(_) | Component::CurDir => {}
+            _ => {
+                return Err(AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "file path must stay inside the repository",
+                ));
+            }
+        }
+    }
+    Ok(cwd.join(rel))
+}
 
 /// Resolve a path printed by Git in the context of the invocation's cwd.
 /// WSL Git returns Linux paths; native filesystem consumers need UNC paths.
@@ -57,5 +83,17 @@ mod tests {
         let cwd = root.join("repo/subdir");
         assert_eq!(resolve_git_path(&cwd, "../.git"), cwd.join("../.git"));
         assert_eq!(resolve_git_path(&cwd, &root.to_string_lossy()), root);
+    }
+
+    #[test]
+    fn worktree_file_paths_reject_traversal_and_absolute_inputs() {
+        let cwd = Path::new("/tmp/repo");
+        assert_eq!(
+            resolve_worktree_file(cwd, "src/a.txt").unwrap(),
+            cwd.join("src/a.txt")
+        );
+        assert!(resolve_worktree_file(cwd, "").is_err());
+        assert!(resolve_worktree_file(cwd, "../escape.txt").is_err());
+        assert!(resolve_worktree_file(cwd, "/etc/passwd").is_err());
     }
 }

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
 import { bootstrapActions, getAction, searchActions } from "./index";
 import type { ActionContext } from "./types";
 import { resolveActionTitle } from "./titles";
@@ -14,6 +15,7 @@ const ctx: ActionContext = {
 
 describe("action registry", () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     bootstrapActions();
   });
 

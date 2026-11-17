@@ -1376,8 +1376,9 @@ dependencies = [
 
 [[package]]
 name = "gitx"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
+ "futures-util",
  "gitx-core",
  "gitx-diff",
  "gitx-git",
@@ -1408,7 +1409,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-core"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "serde",
  "serde_json",
@@ -1420,7 +1421,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-diff"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
  "similar",
@@ -1428,7 +1429,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-git"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
  "gitx-diff",
@@ -1449,14 +1450,14 @@ dependencies = [
 
 [[package]]
 name = "gitx-graph"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
 ]
 
 [[package]]
 name = "gitx-helper"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
  "gitx-git",
@@ -1470,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-index"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
  "rusqlite",
@@ -1479,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-meta"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
  "serde",
@@ -1492,14 +1493,14 @@ dependencies = [
 
 [[package]]
 name = "gitx-read"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
 ]
 
 [[package]]
 name = "gitx-testkit"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
  "tempfile",
@@ -1508,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "gitx-watch"
-version = "0.1.26"
+version = "0.1.37"
 dependencies = [
  "gitx-core",
  "notify",
@@ -3266,6 +3267,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",
@@ -3285,12 +3287,14 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tower",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams 0.4.2",
  "web-sys",
  "webpki-roots",
 ]
@@ -3325,7 +3329,7 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams",
+ "wasm-streams 0.5.0",
  "web-sys",
 ]
 
@@ -5049,6 +5053,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b1f9c3798725016c6ee5f2f57869ec0831e8bbc0ab0310a86e787e97f41389e"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasm-streams"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

@@ -15,7 +15,13 @@ enableAutoUnmount(afterEach);
 beforeEach(() => {
   setActivePinia(createPinia());
   mocks.workspace = reactive({ repoPath: "fixture" });
-  mocks.settings = reactive({ settings: { stagingMode: true } });
+  mocks.settings = reactive({
+    settings: { stagingMode: true, git: { changesListMode: "tree" } },
+    emptySettings: () => ({ stagingMode: true, git: { changesListMode: "tree" } }),
+    save: vi.fn(async (next: unknown) => {
+      mocks.settings.settings = next;
+    }),
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -39,7 +45,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 function fixture() {
-  const wrapper = mount(ChangesTree, { attachTo: document.body });
+  const wrapper = mount(ChangesTree, {
+    attachTo: document.body,
+    global: { stubs: { Tip: { template: "<div><slot /></div>" } } },
+  });
   const rows = wrapper.findAll('[role="treeitem"][data-path]');
   expect(rows.map((row) => row.text())).toEqual(["a.txt", "b.txt", "a.txt", "b.txt"]);
   return { wrapper, rows, store: useChangesStore() };
@@ -103,7 +112,7 @@ describe("Changes selection ownership", () => {
     expect(store.selectedPaths).toEqual(["a.txt"]);
     expect(store.selectedSection).toBe("unstaged");
     expect(wrapper.emitted("context")).toEqual([
-      [{ path: "a.txt", section: "unstaged", x: 42, y: 80 }],
+      [{ path: "a.txt", section: "unstaged", x: 42, y: 80, header: false }],
     ]);
     expect(rows[2]!.classes()).toContain("bg-selection");
     expect(rows[0]!.classes()).not.toContain("bg-selection");

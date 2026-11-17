@@ -13,6 +13,12 @@ export const commands = {
   async appCheckForUpdates(): Promise<AppUpdateInfo> {
     return await TAURI_INVOKE("app_check_for_updates");
   },
+  async appDownloadUpdate(req: AppDownloadUpdateReq): Promise<AppDownloadUpdateRes> {
+    return await TAURI_INVOKE("app_download_update", { req });
+  },
+  async appInstallUpdate(req: AppInstallUpdateReq): Promise<null> {
+    return await TAURI_INVOKE("app_install_update", { req });
+  },
   async gitDetect(): Promise<GitDetectDto> {
     return await TAURI_INVOKE("git_detect");
   },
@@ -91,6 +97,9 @@ export const commands = {
   },
   async statusGet(req: StatusGetReq): Promise<StatusSnapshot> {
     return await TAURI_INVOKE("status_get", { req });
+  },
+  async fileWriteWorktree(req: FileWriteWorktreeReq): Promise<null> {
+    return await TAURI_INVOKE("file_write_worktree", { req });
   },
   async stagePaths(req: PathsReq): Promise<null> {
     return await TAURI_INVOKE("stage_paths", { req });
@@ -535,7 +544,14 @@ export type AppUpdateInfo = {
   releaseUrl: string;
   nsisUrl: string | null;
   msiUrl: string | null;
+  /**
+   * GitHub Release body (markdown / plain text). Empty when absent.
+   */
+  notes: string;
 };
+export type AppDownloadUpdateReq = { url: string; version: string };
+export type AppDownloadUpdateRes = { path: string; version: string };
+export type AppInstallUpdateReq = { path: string };
 export type AppSettings = {
   schemaVersion: number;
   appearance: AppearanceSettings;
@@ -714,6 +730,7 @@ export type CommitResult = { warning?: string | null; sha: string; subject: stri
  */
 export type CommitTwMode = "docked" | "window" | "float";
 export type LogListMode = "flat" | "tree";
+export type ChangesListMode = "flat" | "tree";
 export type CompareRange = { left: string; right: string; leftOnly: string[]; rightOnly: string[] };
 export type CompareReq = { path: string; left: string; right: string };
 export type ConflictAcceptReq = { path: string; paths: string[]; side: ConflictSide };
@@ -1000,6 +1017,14 @@ export type GitSettings = {
    * Log list: chronological flat or branch-oriented tree.
    */
   logListMode?: LogListMode;
+  /**
+   * Commit TW Changes list: directory tree or flat paths.
+   */
+  changesListMode?: ChangesListMode;
+  /**
+   * Log Changed Files pane: directory tree or flat paths (independent of Changes).
+   */
+  logChangedFilesListMode?: ChangesListMode;
 };
 export type GraphEdge = { fromLane: number; toLane: number };
 export type GraphRow = { lane: number; edges: GraphEdge[]; color: number };
@@ -1516,6 +1541,12 @@ export type StashPathReq = { path: string };
 export type StashRefReq = { path: string; stashRef: string; reinstateIndex?: boolean };
 export type StashRestoreReq = { path: string; sha: string; message: string };
 export type StatusGetReq = { repoId: string; path: string; includeIgnored?: boolean };
+export type FileWriteWorktreeReq = {
+  repoId: string;
+  path: string;
+  filePath: string;
+  content: string;
+};
 export type StatusProbeReq = { path: string };
 export type StatusSnapshot = {
   repoId: string;

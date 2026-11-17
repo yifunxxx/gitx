@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, watch } from "vue";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
+import { editorChrome } from "@/features/editor/editorChrome";
 import { patchHighlights } from "./patchHighlights";
 
 const props = defineProps<{ text: string; label: string }>();
@@ -34,6 +35,7 @@ watch(
           }),
           lineNumbers(),
           keymap.of(defaultKeymap),
+          ...editorChrome({ caret: false }),
           patchHighlights,
           EditorView.theme({
             "&": {
@@ -60,9 +62,6 @@ watch(
               backgroundColor: "color-mix(in oklab, var(--color-destructive) 18%, transparent)",
             },
             ".cm-patch-header": { color: "var(--color-muted-foreground)", fontWeight: "600" },
-            "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-              backgroundColor: "var(--color-accent)",
-            },
           }),
         ],
       }),

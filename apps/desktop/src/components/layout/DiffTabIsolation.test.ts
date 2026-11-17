@@ -27,7 +27,9 @@ vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({}) }));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({ tabs: [] }) }));
 vi.mock("@/stores/compareStore", () => ({ useCompareStore: () => ({ tabs: [] }) }));
 vi.mock("@/stores/repoAtRevStore", () => ({ useRepoAtRevStore: () => ({ tabs: [] }) }));
-vi.mock("@/stores/conflictsStore", () => ({ useConflictsStore: () => ({}) }));
+vi.mock("@/stores/conflictsStore", () => ({
+  useConflictsStore: () => ({ mergeTabs: [], hasUnsavedMergeResult: () => false }),
+}));
 vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ tabs: [] }) }));
 
 // A selectable editor surface makes unintended remounts observable without

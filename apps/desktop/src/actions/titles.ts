@@ -7,6 +7,7 @@ import type { ActionDef } from "./types";
 export const ACTION_TITLE_KEYS: Record<string, string> = {
   "Git.RefreshStatus": "actions.refreshStatus",
   "File.OpenFolder": "actions.openFolder",
+  "File.Save": "actions.save",
   "Git.Init": "actions.createRepo",
   "Git.Clone": "actions.clone",
   "Git.Branches": "actions.branches",

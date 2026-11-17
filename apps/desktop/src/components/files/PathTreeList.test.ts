@@ -36,3 +36,23 @@ it("toggles a directory once per double-click and supports Enter/Space without o
   expect(wrapper.emitted("open")).toMatchObject([[{ path: "src/example.ts" }]]);
   wrapper.unmount();
 });
+
+it("renders flat full paths without folder rows", async () => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const wrapper = mount(PathTreeList, {
+    props: {
+      mode: "flat",
+      files: [{ path: "src/example.ts" }, { path: "README.md" }],
+    },
+  });
+  const labels = wrapper.findAll('[tabindex="0"]').map((row) => row.text());
+  expect(labels).toEqual(["README.md", "src/example.ts"]);
+  expect(wrapper.find("button").exists()).toBe(false);
+  wrapper.unmount();
+});

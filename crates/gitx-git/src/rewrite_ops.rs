@@ -64,7 +64,12 @@ impl GitRunner {
             });
         }
 
-        if git_dir.join("CHERRY_PICK_HEAD").exists() || git_dir.join("sequencer").exists() {
+        // Single-commit conflicted reverts often leave only REVERT_HEAD (no
+        // sequencer/ dir). Cherry-picks leave CHERRY_PICK_HEAD and/or sequencer.
+        if git_dir.join("CHERRY_PICK_HEAD").exists()
+            || git_dir.join("REVERT_HEAD").exists()
+            || git_dir.join("sequencer").exists()
+        {
             let (kind, label) = if git_dir.join("REVERT_HEAD").exists() {
                 (RepoOpKind::Revert, "Revert")
             } else {
@@ -123,12 +128,13 @@ impl GitRunner {
             let onto = read_first_line(&dir.join("onto"))
                 .and_then(|s| short_sha(&s))
                 .or_else(|| read_first_line(&dir.join("onto")));
+            // `done` accumulates finished todo lines; the edit stop is the last one.
             let stopped_for_edit = dir.join("stop-for-edit").exists()
-                || read_first_line(&dir.join("done"))
-                    .map(|d| d.contains("edit "))
+                || (read_last_line(&dir.join("done"))
+                    .map(|d| d.starts_with("edit "))
                     .unwrap_or(false)
                     && conflict_count == 0
-                    && dir.join("amend").exists();
+                    && dir.join("amend").exists());
             let phase = if stopped_for_edit {
                 RepoOpPhase::StoppedForEdit
             } else if conflict_count > 0 {
@@ -202,7 +208,11 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "merge", &old, cancel).await.ok();
+        let backup = if old.is_empty() {
+            None
+        } else {
+            Some(self.safety_backup(cwd, "merge", &old, cancel).await?)
+        };
 
         let run_merge = |allow_unrelated: bool| {
             let mut args = vec!["merge".to_string()];
@@ -277,9 +287,28 @@ impl GitRunner {
                         });
                     }
                 }
+                // A true fast-forward lands HEAD on an already-existing tip
+                // (the merged branch / upstream). `old` is also an ancestor of a
+                // newly created merge commit, so ancestry alone is not enough.
+                let mut merged_tips = Vec::new();
+                if branches.is_empty() {
+                    if let Ok(upstream) = self.rev_parse_public(cwd, "@{u}", cancel).await {
+                        merged_tips.push(upstream);
+                    }
+                } else {
+                    for branch in branches {
+                        if let Ok(tip) = self.rev_parse_public(cwd, branch, cancel).await {
+                            merged_tips.push(tip);
+                        }
+                    }
+                }
+                let landed_on_merged_tip = merged_tips.iter().any(|tip| tip == &new);
                 let outcome = if old == new {
                     RewriteOutcome::AlreadyUpToDate
-                } else if !no_ff && is_ancestor(self, cwd, &old, &new, cancel).await {
+                } else if !no_ff
+                    && landed_on_merged_tip
+                    && is_ancestor(self, cwd, &old, &new, cancel).await
+                {
                     RewriteOutcome::FastForward
                 } else {
                     RewriteOutcome::Success
@@ -411,11 +440,14 @@ impl GitRunner {
                 .await;
         }
         self.ensure_not_busy(cwd, cancel).await?;
-        let old = self
-            .rev_parse_public(cwd, "HEAD", cancel)
-            .await
-            .unwrap_or_default();
-        let backup = self.safety_backup(cwd, "rebase", &old, cancel).await.ok();
+        // When rebasing another branch (`git rebase upstream topic`), HEAD may
+        // still be elsewhere — backup/compare the branch tip being rewritten.
+        let old = self.rebase_target_head(cwd, branch, cancel).await?;
+        let backup = if old.is_empty() {
+            None
+        } else {
+            Some(self.safety_backup(cwd, "rebase", &old, cancel).await?)
+        };
 
         let mut args = vec!["rebase".to_string()];
         if rebase_merges {
@@ -449,10 +481,7 @@ impl GitRunner {
             .await
         {
             Ok(_) => {
-                let new = self
-                    .rev_parse_public(cwd, "HEAD", cancel)
-                    .await
-                    .unwrap_or_default();
+                let new = self.rebase_target_head(cwd, branch, cancel).await?;
                 let state = self.repo_op_state(cwd, cancel).await?;
                 if state.kind == RepoOpKind::Rebase {
                     let files = self.unmerged_paths(cwd, cancel).await.unwrap_or_default();
@@ -544,10 +573,11 @@ impl GitRunner {
             .rev_parse_public(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
-        let backup = self
-            .safety_backup(cwd, "cherry-pick", &old, cancel)
-            .await
-            .ok();
+        let backup = if old.is_empty() {
+            None
+        } else {
+            Some(self.safety_backup(cwd, "cherry-pick", &old, cancel).await?)
+        };
 
         let mut args = vec!["cherry-pick".to_string()];
         if add_suffix {
@@ -674,15 +704,18 @@ impl GitRunner {
         } else {
             None
         };
-        // `--continue` commits with the prepared sequencer message. Without a
-        // non-interactive editor, dumb-terminal / non-TTY environments (CI,
-        // GUI hosts) fail with "Terminal is dumb, but EDITOR unset".
-        let inv = if flag == "--continue" {
-            GitInvocation::new(cwd, ["-c", "core.editor=true", cmd, flag])
+        // `--continue` / `--skip` may still hit reword/squash editors for later
+        // todo items (e.g. after Edit or after skipping a conflicted commit).
+        // Use gitx-helper so gitx-plan.json overrides apply; without a plan the
+        // helper leaves Git's prepared message alone. Plain `true` would drop
+        // those overrides in dumb-terminal / GUI hosts.
+        let inv = if matches!(flag, "--continue" | "--skip") {
+            let editor = crate::history_rewrite_ops::helper_command("editor");
+            GitInvocation::new(cwd, [cmd, flag])
                 .kind(OpKind::Write)
                 .git_bin(self.git_bin.clone())
-                .env("GIT_EDITOR", "true")
-                .env("EDITOR", "true")
+                .env("GIT_EDITOR", editor.clone())
+                .env("EDITOR", editor)
         } else {
             GitInvocation::new(cwd, [cmd, flag])
                 .kind(OpKind::Write)
@@ -874,9 +907,11 @@ impl GitRunner {
         if sha.is_empty() {
             return Err(AppError::new(ErrorCode::Internal, "empty sha for backup"));
         }
+        // Nanoseconds avoid same-second collisions when two backups are taken
+        // back-to-back (sync_safety expects the first restore point to remain).
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
+            .map(|d| d.as_nanos())
             .unwrap_or(0);
         let backup = format!("refs/gitx/backup/{op}-{ts}");
         let inv = GitInvocation::new(cwd, ["update-ref", &backup, sha])
@@ -894,7 +929,9 @@ impl GitRunner {
                 let inv = GitInvocation::new(cwd, ["update-ref", &snap, &stash_sha])
                     .kind(OpKind::Write)
                     .git_bin(self.git_bin.clone());
-                let _ = self.run(inv, cancel).await;
+                // Worktree snapshot is part of the safety contract — a rejected
+                // snapshot must stop the rewrite (see rewrite_backups tests).
+                self.run(inv, cancel).await?;
             }
         }
         Ok(backup)
@@ -1003,6 +1040,15 @@ async fn is_ancestor(
 fn read_first_line(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     text.lines().next().map(|s| s.trim().to_string())
+}
+
+fn read_last_line(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines()
+        .rev()
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 fn read_u32_file(path: &Path) -> Option<u32> {

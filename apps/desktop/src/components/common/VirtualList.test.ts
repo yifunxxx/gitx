@@ -67,6 +67,95 @@ it("emits the scrollport as the trailing scroll target when dragging ends outsid
   wrapper.unmount();
 });
 
+it("keeps thumb-drag deferral when lostpointercapture fires with the button still held", async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const items = Array.from({ length: 200 }, (_, i) => `row-${i}`);
+  const wrapper = mount(VirtualList, {
+    props: { items, itemHeight: 22, getKey: String, recycleKeys: true, overscan: 2 },
+    slots: { default: `<span class="cell">{{ params.item }}</span>` },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  Object.defineProperty(port, "clientHeight", { configurable: true, value: 220 });
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  await wrapper.get(".overflow-auto").trigger("pointerdown", { button: 0 });
+  port.scrollTop = 880;
+  port.dispatchEvent(new Event("scroll"));
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  window.dispatchEvent(Object.assign(new Event("lostpointercapture"), { buttons: 1 }));
+  await nextTick();
+  expect((wrapper.vm as unknown as { pointerDown: boolean }).pointerDown).toBe(true);
+  expect(wrapper.findAll(".cell")[0]!.text()).toBe("row-0");
+  window.dispatchEvent(new Event("pointerup"));
+  await nextTick();
+  expect(wrapper.findAll(".cell")[0]!.text()).not.toBe("row-0");
+  wrapper.unmount();
+});
+
+it("suppresses hover/title while scrolling without disabling pointer events", async () => {
+  vi.useFakeTimers();
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const wrapper = mount(VirtualList, {
+    props: { items: ["a", "b", "c"], itemHeight: 22, getKey: String },
+    slots: {
+      default: `<button type="button" class="row" title="tip">{{ params.item }}</button>`,
+    },
+  });
+  const port = wrapper.get(".overflow-auto");
+  const windowEl = () => wrapper.get("[data-vl-window]");
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
+  expect(windowEl().classes()).not.toContain("pointer-events-none");
+  expect(wrapper.get(".row").attributes("title")).toBe("tip");
+  // Row click must not enter the scroll-suppress path (v0.1.29 regression).
+  await port.trigger("pointerdown", { button: 0 });
+  await nextTick();
+  expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(false);
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
+  expect(wrapper.get(".row").attributes("title")).toBe("tip");
+  window.dispatchEvent(new Event("pointerup"));
+  await nextTick();
+  await port.trigger("scroll");
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  expect(windowEl().attributes("data-scrolling")).toBeDefined();
+  expect(windowEl().classes()).not.toContain("pointer-events-none");
+  expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(true);
+  expect(wrapper.get(".row").attributes("title")).toBeUndefined();
+  expect(wrapper.get(".row").attributes("data-vl-title")).toBe("tip");
+  await vi.advanceTimersByTimeAsync(149);
+  expect(windowEl().attributes("data-scrolling")).toBeDefined();
+  await vi.advanceTimersByTimeAsync(2);
+  await nextTick();
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
+  expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(false);
+  expect(wrapper.get(".row").attributes("title")).toBe("tip");
+  // Thumb drag after a scroll: keep suppress while the button stays held.
+  await port.trigger("scroll");
+  frames.splice(0).forEach((callback) => callback(0));
+  await nextTick();
+  await port.trigger("pointerdown", { button: 0 });
+  await vi.advanceTimersByTimeAsync(200);
+  expect(windowEl().attributes("data-scrolling")).toBeDefined();
+  window.dispatchEvent(new Event("pointerup"));
+  await nextTick();
+  await vi.advanceTimersByTimeAsync(160);
+  await nextTick();
+  expect(windowEl().attributes("data-scrolling")).toBeUndefined();
+  wrapper.unmount();
+  vi.useRealTimers();
+});
+
 it("gates wheel reactive updates so row props are not patched every frame", async () => {
   vi.useFakeTimers();
   const frames: FrameRequestCallback[] = [];
