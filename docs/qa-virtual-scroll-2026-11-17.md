@@ -39,5 +39,17 @@
 - 类型检查和生产构建通过，保留已有的大包体积提示；相关 Oxlint、git diff --check 通过。
 - Windows 原生构建通过（`cargo build -p gitx --locked --features tauri/custom-protocol`）。日志：`virtual-scroll-all-20261117.log`、`virtual-scroll-build-20261117.log`、`virtual-scroll-native-20261117.log`。
 - 专用测试程序：`E:/IDEAproject/gitx/test-results/isolated-target/debug/gitx-scroll-0137-20261117.exe`，SHA256 `BC6C9EE3FA79D86490A760E5D7D2A674A361F9C75D477A1313D82C24A4BC443A`，原生交互验收另记。
-- 旧原生编辑器测试程序仍停在剪贴板权限提示，须由用户自行处理，未以旧程序验收本轮滚动源码。安装版 `D:/gitx/gitx.exe` 未更新。
-- 本功能独立提交、推送后在统一台账补记哈希和远端核对结果。QA-008 继续记录原生性能测量边界。
+- 本轮滚动验收使用上述新构建；旧编辑器程序的剪贴板权限由用户自行处理，其编辑器验收另记。安装版 `D:/gitx/gitx.exe` 未更新。
+- 本功能已独立提交并推送 `176e9eea6bd178385ffe611ef18d01a17fc2c292`，经 `ls-remote` 核对远端一致。QA-008 继续记录原生性能测量边界。
+
+## 新构建原生交互复查
+
+使用上述 `gitx-scroll-0137-20261117.exe` 打开隔离仓库 `E:/IDEAproject/gitx/test-results/repos/branch-virtual-gui-20261110`，包含 6001 个引用。
+
+- Git 面板最大化正常；原生滚轮可从 `feature/0000` 向后推进。
+- 拖动分支滚动条到接近末尾显示 `v/1957` 起的条目，继续滚轮可到达 `v/1999`，观察到的视口没有空白。
+- 对末尾 `v/1999` 打开右键菜单，菜单目标正确；Escape 正常关闭。
+- 在末尾筛选 `feature/1999`，本地和远程结果正常；清空筛选恢复完整列表顶部。
+- 前后 HEAD 均为 `7039403405c4aeab010f68c291d0200f6aba4375`，工作区干净；引用和索引哈希一致。专用测试程序已正常退出。
+
+证据位于 `E:/IDEAproject/gitx/test-results/`：`virtual-scroll-native-before-20261117.json`、`virtual-scroll-native-verified-20261117.json`、`virtual-scroll-native-end-20261117.txt`。这是原生交互、末尾可达性和数据保持验证；没有逐帧采样拖动持有期间的画面，也没有测量原生输入到显示的延迟，因此不关闭 QA-008。
