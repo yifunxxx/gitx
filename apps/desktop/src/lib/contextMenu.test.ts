@@ -35,6 +35,15 @@ describe("placeContextMenu", () => {
     expect(p.maxHeight).toBe(200);
   });
 
+  it("keeps a short menu visible when its old anchor is outside a resized viewport", () => {
+    vi.stubGlobal("window", { innerWidth: 900, innerHeight: 600 });
+    const p = placeContextMenu(1200, 780, { width: 240, estimatedHeight: 96 });
+    expect(p.x + 240).toBeLessThanOrEqual(890);
+    expect(p.y).toBeGreaterThanOrEqual(10);
+    expect(p.y + p.maxHeight).toBeLessThanOrEqual(590);
+    expect(p.maxHeight).toBe(96);
+  });
+
   it("includes the menu border in its natural height before choosing a side", () => {
     vi.stubGlobal("window", { innerWidth: 800, innerHeight: 400 });
     const panel = document.createElement("div");

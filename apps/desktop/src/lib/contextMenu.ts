@@ -29,6 +29,8 @@ export function placeContextMenu(
   const estimatedHeight = Math.max(48, opts.estimatedHeight ?? 320);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  // A window resize can leave the original click outside the new viewport.
+  y = Math.min(Math.max(margin, y), Math.max(margin, vh - margin));
 
   let left = x;
   if (left + width + margin > vw) left = vw - width - margin;
@@ -59,10 +61,8 @@ export function placeContextMenu(
   }
 
   // Final clamp — never paint outside the viewport.
-  if (top < margin) top = margin;
-  if (top + maxHeight > vh - margin) {
-    maxHeight = Math.max(120, vh - margin - top);
-  }
+  top = Math.min(Math.max(margin, top), Math.max(margin, vh - margin));
+  maxHeight = Math.max(0, Math.min(maxHeight, vh - margin - top));
 
   return { x: left, y: top, maxHeight };
 }

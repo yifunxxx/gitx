@@ -76,6 +76,7 @@ function restoreFocus() {
 }
 function endSession() {
   ++generation;
+  window.removeEventListener("resize", onViewportResize);
   observer?.disconnect();
   observer = undefined;
   restoreFocus();
@@ -89,6 +90,7 @@ watch(
       return;
     }
     const request = ++generation;
+    window.addEventListener("resize", onViewportResize);
     previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     await nextTick();
     if (disposed || !props.open || request !== generation || !panel.value) return;
@@ -219,6 +221,10 @@ async function syncPlacement() {
   const el = panel.value;
   if (!el || disposed || !props.open || request !== generation) return;
   place.value = refineMenuPlacement(el, props.anchorX, props.anchorY);
+}
+
+function onViewportResize() {
+  if (props.open && !disposed) void syncPlacement();
 }
 
 watch(
