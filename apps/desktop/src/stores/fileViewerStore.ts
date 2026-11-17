@@ -103,7 +103,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
 
   function setDocument(id: string, text: string) {
     const tab = tabs.value.find((t) => t.id === id);
-    if (!tab || tab.saving) return;
+    if (!tab || !tab.editable || tab.loading) return;
     tab.text = text;
     tab.dirty = text !== tab.baseline;
   }
@@ -150,8 +150,10 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
         if (
           tabs.value.includes(tab) &&
           workspace.repoPath === repoPath &&
-          workspace.navigationToken() === navigation
+          workspace.navigationToken() === navigation &&
+          tab.text === content
         ) {
+          // These line numbers describe the saved snapshot, not later draft edits.
           tab.hunks = diff.hunks;
         }
       } catch {

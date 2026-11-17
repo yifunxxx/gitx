@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { nextTick, reactive } from "vue";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
+import { undo } from "@codemirror/commands";
 import FileViewer from "./FileViewer.vue";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 
@@ -209,9 +210,7 @@ it("offers Cut/Copy on a selection and Save/Undo on empty editor chrome", async 
   await nextTick();
   const cm = editor(wrapper);
   cm.dispatch({ selection: { anchor: 0, head: 5 } });
-  await wrapper
-    .get("[data-file-viewer-host]")
-    .trigger("contextmenu", { clientX: 20, clientY: 30 });
+  await wrapper.get("[data-file-viewer-host]").trigger("contextmenu", { clientX: 20, clientY: 30 });
   await flushPromises();
   const selected = document.querySelector('[role="menu"]')!;
   expect(selected.textContent).toContain("editor.cut");
@@ -225,9 +224,7 @@ it("offers Cut/Copy on a selection and Save/Undo on empty editor chrome", async 
     selection: { anchor: 0 },
   });
   await flushPromises();
-  await wrapper
-    .get("[data-file-viewer-host]")
-    .trigger("contextmenu", { clientX: 24, clientY: 36 });
+  await wrapper.get("[data-file-viewer-host]").trigger("contextmenu", { clientX: 24, clientY: 36 });
   await flushPromises();
   const empty = document.querySelector('[role="menu"]')!;
   expect(empty.textContent).not.toContain("editor.cut");
@@ -242,4 +239,95 @@ it("offers Cut/Copy on a selection and Save/Undo on empty editor chrome", async 
   await flushPromises();
   expect(mocks.fileWriteWorktree).toHaveBeenCalledOnce();
   expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it("retains edits made during a save and gutter refresh, and saves them on the next request", async () => {
+  const write = deferred();
+  const refresh = deferred();
+  mocks.diffFile.mockResolvedValueOnce(result("base\n")).mockReturnValueOnce(refresh.promise);
+  mocks.fileWriteWorktree.mockReturnValueOnce(write.promise);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: "saved\n" } });
+  const saving = store.save(store.activeId);
+  cm.dispatch({ changes: { from: cm.state.doc.length, insert: "during write\n" } });
+  expect(store.tabs[0]!.text).toBe("saved\nduring write\n");
+  expect(await store.save(store.activeId)).toBe(false);
+  expect(mocks.fileWriteWorktree).toHaveBeenCalledOnce();
+  write.resolve(null);
+  await flushPromises();
+  expect(store.tabs[0]!.baseline).toBe("saved\n");
+  expect(store.tabs[0]!.dirty).toBe(true);
+  cm.dispatch({ changes: { from: cm.state.doc.length, insert: "during refresh\n" } });
+  refresh.resolve(result("saved\n"));
+  await saving;
+  await flushPromises();
+  expect(editor(wrapper)).toBe(cm);
+  expect(cm.state.doc.toString()).toBe("saved\nduring write\nduring refresh\n");
+  expect(store.tabs[0]!.dirty).toBe(true);
+  mocks.diffFile.mockResolvedValueOnce(result(store.tabs[0]!.text));
+  expect(await store.save(store.activeId)).toBe(true);
+  expect(mocks.fileWriteWorktree.mock.calls[1]![0].content).toBe(
+    "saved\nduring write\nduring refresh\n",
+  );
+  expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it("retains the editor, selection and undo history when saved highlights refresh", async () => {
+  mocks.diffFile.mockResolvedValueOnce(result("base\n")).mockResolvedValueOnce({
+    rightText: "saved\n",
+    hunks: [
+      {
+        index: 0,
+        header: "@@ -1 +1 @@",
+        oldStart: 1,
+        oldLines: 1,
+        newStart: 1,
+        newLines: 1,
+        lines: ["-base", "+saved"],
+      },
+    ],
+  });
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({
+    changes: { from: 0, to: cm.state.doc.length, insert: "saved\n" },
+    selection: { anchor: 2, head: 4 },
+  });
+  await store.save(store.activeId);
+  await flushPromises();
+  expect(editor(wrapper)).toBe(cm);
+  expect(cm.state.selection.main.anchor).toBe(2);
+  expect(cm.state.selection.main.head).toBe(4);
+  expect(wrapper.find(".cm-file-modified").exists()).toBe(true);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe("base\n");
+  expect(store.tabs[0]!.dirty).toBe(true);
+});
+
+it("keeps later edits after a write failure and retries with the latest draft", async () => {
+  const write = deferred();
+  mocks.diffFile.mockResolvedValue(result("base\n"));
+  mocks.fileWriteWorktree.mockReturnValueOnce(write.promise);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 0, insert: "initial " } });
+  const saving = store.save(store.activeId);
+  cm.dispatch({ changes: { from: 0, insert: "later " } });
+  write.reject(new Error("write failed"));
+  expect(await saving).toBe(false);
+  expect(store.tabs[0]!.text).toBe("later initial base\n");
+  expect(store.tabs[0]!.baseline).toBe("base\n");
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(await store.save(store.activeId)).toBe(true);
+  expect(mocks.fileWriteWorktree.mock.calls[1]![0].content).toBe("later initial base\n");
 });

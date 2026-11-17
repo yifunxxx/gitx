@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import {
   defaultKeymap,
@@ -25,6 +25,7 @@ const { t } = useI18n();
 const tab = computed(() => store.tabs.find((t) => t.id === props.tabId));
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
+const highlights = new Compartment();
 
 type MenuAction = "undo" | "redo" | "cut" | "copy" | "paste" | "selectAll" | "save";
 type MenuState = {
@@ -215,7 +216,7 @@ function mount() {
             backgroundColor: "color-mix(in oklab, var(--color-warning, #ca8a04) 22%, transparent)",
           },
         }),
-        fileChangeHighlights(hunks),
+        highlights.of(fileChangeHighlights(hunks)),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           const live = store.tabs.find((t) => t.id === props.tabId);
@@ -251,13 +252,21 @@ watch(
   [
     host,
     () => tab.value?.id,
-    () => tab.value?.hunks,
     () => tab.value?.loading,
     () => tab.value?.editable,
     () => tab.value?.loadGeneration,
   ],
   mount,
   // Loading replaces the host with v-if; wait until Vue has mounted its replacement.
+  { flush: "post" },
+);
+watch(
+  () => tab.value?.hunks,
+  (hunks) => {
+    if (!view || !tab.value || !hunks || tab.value.dirty) return;
+    // Updating saved line marks must preserve the draft, selection and undo history.
+    view.dispatch({ effects: highlights.reconfigure(fileChangeHighlights(hunks)) });
+  },
   { flush: "post" },
 );
 
