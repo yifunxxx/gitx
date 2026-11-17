@@ -17,3 +17,15 @@
 本功能独立提交 `35e2ab9` 并推送，已核对远端 SHA。源码和自动验证完成；剩余原生边界见 `qa-progress.md`。
 
 2026-11-17 最终程序原生续查：编辑器右键菜单可打开，选区存在时显示 Cut/Copy/Paste，空选区隐藏 Cut/Copy，Undo/Redo/Save 状态与操作历史和 dirty 状态一致。复制测试文本后从菜单粘贴，WebView 弹出剪贴板访问权限提示，已交由用户自行处理；粘贴结果尚未验证，不把权限请求计作缺陷。异步过期防护仍以受控回归为证据。
+
+## 用户处理权限后的原生验证（2026-11-17）
+
+使用同一 `gitx-editor-0137-20261117.exe`，SHA256 `41FD8CA462964D7A136553B0593B05DAA8CAF19F1C3A44AEB1C4925624AFD345`。确认提示已消失后，在隔离仓库 `readonly-edit-20261117` 的 Open File 标签完成：
+
+- 选中 `working` 后菜单 Copy，在第 4 行空行菜单 Paste，成功插入文本并显示未保存标记。
+- 菜单 Save 后磁盘内容精确为 `first line\nworking content\nlast line\nworking`，44 字节；证明不是仅更新了界面。
+- 保存后菜单 Undo 移除刚才粘贴的文本，重新显示未保存标记；保存刷新没有清空撤销历史。
+- 选中第 2 行 `working`，菜单 Cut 后该行成为 ` content`，菜单 Undo 恢复原文。
+- Ctrl+S 后保存结束、未保存标记消失。文件恢复为 37 字节，SHA256 `24F289AFB2871C01E04F8988B7E77C1AFD1F206D4CCABECC4CC016B136A23147`，与测试前一致；Git 状态仍为 ` M readme.txt`，索引无暂存修改。专用测试程序正常退出。
+
+磁盘核对：`E:/IDEAproject/gitx/test-results/file-clipboard-native-verified-20261117.json`。界面通过屏幕观察核实；Windows 无障碍文本存在缓存滞后，归档的 accessibility 文本不单独用作实时编辑内容的证据。上述结果替代早前“粘贴结果尚未验证”的待办；延迟剪贴板请求、切换标签后过期等竞态仍只由受控自动回归覆盖，未冒充原生复现。用户安装版未替换。
