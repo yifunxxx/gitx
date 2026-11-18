@@ -23,7 +23,7 @@ import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 import { normalizeEolForDisplay } from "./diffPaint";
 import { expandUnifiedHunks, unifiedLineMap } from "./expandedDiff";
-import { diffViewKey } from "./diffViewState";
+import { diffViewKey, type DiffPaneScroll } from "./diffViewState";
 
 const props = defineProps<{ tabId: string }>();
 const { t } = useI18n();
@@ -31,14 +31,14 @@ const diffs = useDiffStore();
 const changes = useChangesStore();
 const workspace = useWorkspaceStore();
 
-type DiffPane = { applyScroll: (left: number, top: number) => void };
+type DiffPane = { applyScroll: (left?: number, top?: number) => void };
 const leftPane = ref<DiffPane | null>(null);
 const rightPane = ref<DiffPane | null>(null);
 
-function onLeftScroll(pos: { left: number; top: number }) {
+function onLeftScroll(pos: DiffPaneScroll) {
   rightPane.value?.applyScroll(pos.left, pos.top);
 }
-function onRightScroll(pos: { left: number; top: number }) {
+function onRightScroll(pos: DiffPaneScroll) {
   leftPane.value?.applyScroll(pos.left, pos.top);
 }
 

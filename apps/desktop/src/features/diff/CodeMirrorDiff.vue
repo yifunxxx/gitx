@@ -14,7 +14,7 @@ import { editorChrome } from "@/features/editor/editorChrome";
 import { computeSideInlineRanges, computeUnifiedInlineRanges, type CharRange } from "./inlineDiff";
 import { countHunkLines } from "./collapsedDiff";
 import { contentFingerprint } from "./diffPaint";
-import type { DiffPaneSnapshot, DiffPaneViewState } from "./diffViewState";
+import type { DiffPaneScroll, DiffPaneSnapshot, DiffPaneViewState } from "./diffViewState";
 
 const props = defineProps<{
   text: string;
@@ -33,14 +33,14 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  scroll: [pos: { left: number; top: number }];
+  scroll: [pos: DiffPaneScroll];
   saveViewState: [snapshot: DiffPaneSnapshot];
 }>();
 
 const hostRef = ref<HTMLDivElement | null>(null);
 
 let view: EditorView | null = null;
-let syncing = false;
+let scrollPosition = { left: 0, top: 0 };
 let onScroll: (() => void) | null = null;
 let mountToken = 0;
 let lastFingerprint = "";
@@ -456,9 +456,15 @@ function scheduleMount() {
 function attachScroll() {
   const scroller = view?.scrollDOM;
   if (!scroller) return;
+  scrollPosition = { left: scroller.scrollLeft, top: scroller.scrollTop };
   onScroll = () => {
-    if (syncing || !view) return;
-    emit("scroll", { left: scroller.scrollLeft, top: scroller.scrollTop });
+    if (!view) return;
+    const position = { left: scroller.scrollLeft, top: scroller.scrollTop };
+    const changed: DiffPaneScroll = {};
+    if (position.left !== scrollPosition.left) changed.left = position.left;
+    if (position.top !== scrollPosition.top) changed.top = position.top;
+    scrollPosition = position;
+    if (changed.left !== undefined || changed.top !== undefined) emit("scroll", changed);
   };
   scroller.addEventListener("scroll", onScroll, { passive: true });
 }
@@ -474,15 +480,14 @@ function getScroller() {
   return view?.scrollDOM ?? null;
 }
 
-function applyScroll(left: number, top: number) {
+function applyScroll(left?: number, top?: number) {
   const scroller = view?.scrollDOM;
   if (!scroller) return;
-  syncing = true;
-  if (scroller.scrollLeft !== left) scroller.scrollLeft = left;
-  if (scroller.scrollTop !== top) scroller.scrollTop = top;
-  requestAnimationFrame(() => {
-    syncing = false;
-  });
+  if (left !== undefined && scroller.scrollLeft !== left) scroller.scrollLeft = left;
+  if (top !== undefined && scroller.scrollTop !== top) scroller.scrollTop = top;
+  // Remember actual clamping so the later programmatic scroll event cannot
+  // pull the source pane back. A new user movement remains immediately valid.
+  scrollPosition = { left: scroller.scrollLeft, top: scroller.scrollTop };
 }
 
 defineExpose({ getScroller, applyScroll });
