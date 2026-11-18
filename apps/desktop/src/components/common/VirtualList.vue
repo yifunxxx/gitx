@@ -127,6 +127,8 @@ function stripTitles(target: HTMLElement) {
     el.setAttribute(TITLE_HOLD, text);
     el.removeAttribute("title");
   }
+  // Discard records produced by our own removeAttribute("title") calls.
+  titleObserver?.takeRecords?.();
 }
 
 function restoreTitles(target: HTMLElement) {
@@ -279,7 +281,9 @@ watch(
     const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
     const newIndex =
       !appendOnly && props.preserveScrollAnchor && key !== null
-        ? items.findIndex((item, index) => props.getKey(item, index) === key)
+        ? oldIndex >= 0 && oldIndex < items.length && props.getKey(items[oldIndex]!, oldIndex) === key
+          ? oldIndex
+          : items.findIndex((item, index) => props.getKey(item, index) === key)
         : -1;
     await nextTick();
     if (
@@ -291,8 +295,10 @@ watch(
       return;
     if (newIndex >= 0) {
       const oldTop = oldOffsets?.[oldIndex] ?? oldIndex * oldHeight;
-      root.value.scrollTop =
-        rowTop(newIndex) + Math.min(previousTop - oldTop, rowHeight(newIndex) - 1);
+      const nextTop = rowTop(newIndex) + Math.min(previousTop - oldTop, rowHeight(newIndex) - 1);
+      if (Math.abs(nextTop - root.value.scrollTop) >= 1) {
+        root.value.scrollTop = nextTop;
+      }
       scrollTop.value = root.value.scrollTop;
     }
     const max = Math.max(0, totalH.value - viewportH.value);

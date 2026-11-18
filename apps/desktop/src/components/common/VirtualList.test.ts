@@ -303,3 +303,26 @@ it("preserves the visible anchor when an expanded row above it changes height", 
   expect(port.scrollTop).toBe(1085);
   wrapper.unmount();
 });
+
+it("avoids redundant scrollTop writes when replacing items keeps the anchor at the same offset", async () => {
+  const items = Array.from({ length: 100 }, (_, i) => `row-${i}`);
+  const wrapper = mount(VirtualList, {
+    props: { items, itemHeight: 22, getKey: String, preserveScrollAnchor: true },
+  });
+  const port = wrapper.get(".overflow-auto").element;
+  let scrollTopValue = 440;
+  const writes: number[] = [];
+  Object.defineProperty(port, "scrollTop", {
+    configurable: true,
+    get: () => scrollTopValue,
+    set: (value: number) => {
+      writes.push(value);
+      scrollTopValue = value;
+    },
+  });
+  await wrapper.setProps({ items: [...items] });
+  await flushPromises();
+  expect(writes).toEqual([]);
+  expect(port.scrollTop).toBe(440);
+  wrapper.unmount();
+});

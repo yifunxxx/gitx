@@ -94,7 +94,8 @@ function layoutRange(
     lanes[lane] = undefined;
 
     const parents = options.firstParent ? commit.parents.slice(0, 1) : commit.parents;
-    [...new Set(parents)].forEach((parent, index) => {
+    const uniqueParents = parents.length <= 1 ? parents : [...new Set(parents)];
+    uniqueParents.forEach((parent, index) => {
       // Message/author/path filters can omit every immediate parent. Do not
       // keep an unresolved lane through every later match: that creates a
       // growing wall of lines which falsely looks like parallel branches.

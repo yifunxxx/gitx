@@ -287,7 +287,8 @@ export const useLogStore = defineStore("log", () => {
 
       if (reset) {
         startOffset.value = offset;
-        if (!sameCommitWindow(commits.value, page.commits)) commits.value = page.commits;
+        const windowChanged = !sameCommitWindow(commits.value, page.commits);
+        if (windowChanged) commits.value = page.commits;
         truncated.value = page.truncated;
         nextOffset.value = page.nextOffset;
         if (!background || !page.commits.some((c) => c.sha === selectedSha.value)) {
@@ -296,7 +297,7 @@ export const useLogStore = defineStore("log", () => {
           selectedShas.value = [];
           details.value = null;
           changedFiles.value = [];
-        } else {
+        } else if (windowChanged) {
           const known = new Set(page.commits.map((c) => c.sha));
           selectedShas.value = selectedShas.value.filter((sha) => known.has(sha));
         }

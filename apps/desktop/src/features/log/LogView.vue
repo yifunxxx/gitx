@@ -659,7 +659,7 @@ function onCommitContext(sha: string, e: MouseEvent) {
                   <template #default="{ item: c, index: idx }">
                     <button
                       type="button"
-                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring [contain:layout_paint]"
+                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring [contain:layout_paint]"
                       role="option"
                       :aria-selected="selectedSet.has(c.sha)"
                       :tabindex="
@@ -754,7 +754,7 @@ function onCommitContext(sha: string, e: MouseEvent) {
                     <button
                       v-else
                       type="button"
-                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring [contain:layout_paint]"
+                      class="grid h-[22px] w-full select-none items-center px-2 text-left text-[12.5px] outline-none transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring [contain:layout_paint]"
                       role="option"
                       :aria-selected="selectedSet.has(row.commit.sha)"
                       :tabindex="log.selectedSha === row.commit.sha ? 0 : -1"

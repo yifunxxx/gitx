@@ -247,3 +247,60 @@ it("cancels obsolete queued writes and releases read suppression even if navigat
   await store.refreshChangelists();
   expect(store.changelists).toEqual(lists("current"));
 });
+
+it("keeps snapshot and changelist references unchanged on identical refreshes while updating on real changes", async () => {
+  const fileA = {
+    path: "a.ts",
+    origPath: null,
+    indexStatus: ".",
+    worktreeStatus: "M",
+    kind: "modified",
+  };
+  const fileB = {
+    path: "b.ts",
+    origPath: null,
+    indexStatus: "M",
+    worktreeStatus: ".",
+    kind: "modified",
+  };
+  const state = (active: boolean): ChangelistsState => ({
+    lists: [
+      { id: "default", name: "Changes", comment: "", active },
+      { id: "other", name: "Other", comment: "", active: !active },
+    ],
+    assignments: [{ path: "b.ts", listId: "other", hunkRanges: [] }],
+  });
+  mocks.backend.statusGet
+    .mockResolvedValueOnce({ repoId: "A", version: 1, files: [fileA, fileB], branch: { head: "main" } })
+    .mockResolvedValueOnce({
+      repoId: "A",
+      version: 2,
+      files: [{ ...fileA }, { ...fileB }],
+      branch: { head: "main" },
+    })
+    .mockResolvedValueOnce({
+      repoId: "A",
+      version: 3,
+      files: [{ ...fileA, worktreeStatus: "D", kind: "deleted" }, { ...fileB }],
+      branch: { head: "main" },
+    });
+  mocks.backend.changelistList
+    .mockResolvedValueOnce(state(true))
+    .mockResolvedValueOnce(state(true))
+    .mockResolvedValueOnce(state(true));
+
+  const store = useChangesStore();
+  await store.refresh();
+  const initialSnapshot = store.snapshot;
+  const initialLists = store.changelists;
+  expect(store.filesForChangelist("default").map((f) => f.path)).toEqual(["a.ts"]);
+  expect(store.filesForChangelist("other").map((f) => f.path)).toEqual(["b.ts"]);
+
+  await store.refresh(true);
+  expect(store.snapshot).toBe(initialSnapshot);
+  expect(store.changelists).toBe(initialLists);
+
+  await store.refresh(true);
+  expect(store.snapshot).not.toBe(initialSnapshot);
+  expect(store.snapshot?.files[0]?.kind).toBe("deleted");
+});

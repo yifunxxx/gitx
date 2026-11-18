@@ -30,9 +30,11 @@ function splitPath(path: string): { parts: string[]; directoryLeaf: boolean } {
   return { parts: trimmed.split("/").filter(Boolean), directoryLeaf };
 }
 
+const nameCollator = new Intl.Collator();
+
 function compareNodes<T extends PathTreeFileMeta>(a: PathTreeNode<T>, b: PathTreeNode<T>): number {
   if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
-  return a.name.localeCompare(b.name);
+  return nameCollator.compare(a.name, b.name);
 }
 
 /**
@@ -65,7 +67,7 @@ export function buildPathTree<T extends PathTreeFileMeta>(files: T[]): PathTreeN
   type Frame = { folder: FolderAcc<T>; id: string; name: string; depth: number; parentId: string | null };
   const frames: Frame[] = [];
   const seed: [string, FolderAcc<T>][] = [...root.children.entries()].sort(([a], [b]) =>
-    a.localeCompare(b),
+    nameCollator.compare(a, b),
   );
   for (const [name, child] of seed) {
     frames.push({ folder: child, id: name, name, depth: 0, parentId: null });
@@ -76,7 +78,9 @@ export function buildPathTree<T extends PathTreeFileMeta>(files: T[]): PathTreeN
   while (frames.length) {
     const frame = frames.pop()!;
     order.push(frame);
-    const nested = [...frame.folder.children.entries()].sort(([a], [b]) => a.localeCompare(b));
+    const nested = [...frame.folder.children.entries()].sort(([a], [b]) =>
+      nameCollator.compare(a, b),
+    );
     // Push reversed so left-to-right pops in locale order.
     for (let i = nested.length - 1; i >= 0; i--) {
       const [childName, childFolder] = nested[i]!;

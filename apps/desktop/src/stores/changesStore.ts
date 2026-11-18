@@ -1,10 +1,69 @@
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { getBackend } from "@/lib/backend";
-import type { ChangelistsState, FileChange } from "@/lib/backend";
+import type { ChangelistsState, FileChange, StatusSnapshot } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { formatErrorMessage } from "@/lib/errors";
+
+function sameBranch(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((key) => left[key] === right[key]);
+}
+
+function sameStatusSnapshot(a: StatusSnapshot | null, b: StatusSnapshot): boolean {
+  if (!a || a.repoId !== b.repoId || !sameBranch(a.branch, b.branch)) return false;
+  if (a.files.length !== b.files.length) return false;
+  for (let i = 0; i < a.files.length; i++) {
+    const left = a.files[i]!;
+    const right = b.files[i]!;
+    if (
+      left.path !== right.path ||
+      left.origPath !== right.origPath ||
+      left.indexStatus !== right.indexStatus ||
+      left.worktreeStatus !== right.worktreeStatus ||
+      left.kind !== right.kind
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sameChangelists(a: ChangelistsState | null, b: ChangelistsState): boolean {
+  if (a === b) return true;
+  if (!a || a.lists.length !== b.lists.length || a.assignments.length !== b.assignments.length)
+    return false;
+  for (let i = 0; i < a.lists.length; i++) {
+    const left = a.lists[i]!;
+    const right = b.lists[i]!;
+    if (
+      left.id !== right.id ||
+      left.name !== right.name ||
+      left.comment !== right.comment ||
+      left.active !== right.active
+    ) {
+      return false;
+    }
+  }
+  for (let i = 0; i < a.assignments.length; i++) {
+    const left = a.assignments[i]!;
+    const right = b.assignments[i]!;
+    if (left.path !== right.path || left.listId !== right.listId) return false;
+    const leftHunks = left.hunkRanges ?? [];
+    const rightHunks = right.hunkRanges ?? [];
+    if (leftHunks.length !== rightHunks.length) return false;
+    for (let h = 0; h < leftHunks.length; h++) {
+      if (leftHunks[h] !== rightHunks[h]) return false;
+    }
+  }
+  return true;
+}
 
 export type ChangesSection =
   | "staged"
@@ -38,8 +97,10 @@ function isChanged(f: FileChange): boolean {
 }
 
 export const useChangesStore = defineStore("changes", () => {
-  const snapshot = ref<import("@/lib/backend").StatusSnapshot | null>(null);
-  const changelists = ref<ChangelistsState | null>(null);
+  // Shallow: large status/assignment payloads must not be deep-proxied or
+  // trigger full tree rebuilds when background refreshes return identical data.
+  const snapshot = shallowRef<StatusSnapshot | null>(null);
+  const changelists = shallowRef<ChangelistsState | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
   const selectedPaths = ref<string[]>([]);
@@ -93,13 +154,24 @@ export const useChangesStore = defineStore("changes", () => {
     return lists.find((l) => l.active)?.id ?? lists[0]?.id ?? "default";
   });
 
+  const assignmentByPath = computed(() => {
+    const map = new Map<string, string>();
+    for (const assignment of changelists.value?.assignments ?? []) {
+      map.set(assignment.path, assignment.listId);
+    }
+    return map;
+  });
+
+  const checkedSet = computed(() => new Set(checkedPaths.value));
+
   function listIdForPath(path: string): string {
-    const assignment = changelists.value?.assignments.find((a) => a.path === path);
-    return assignment?.listId ?? activeListId.value;
+    return assignmentByPath.value.get(path) ?? activeListId.value;
   }
 
   function filesForChangelist(listId: string): FileChange[] {
-    return changed.value.filter((f) => listIdForPath(f.path) === listId);
+    const active = activeListId.value;
+    const map = assignmentByPath.value;
+    return changed.value.filter((f) => (map.get(f.path) ?? active) === listId);
   }
 
   /** Paths that show checkboxes in a Changes section (changelist mode). */
@@ -117,7 +189,7 @@ export const useChangesStore = defineStore("changes", () => {
   function checkStateForSection(section: ChangesSection): "none" | "all" | "partial" {
     const paths = pathsForSection(section);
     if (!paths.length) return "none";
-    const set = new Set(checkedPaths.value);
+    const set = checkedSet.value;
     let n = 0;
     for (const p of paths) if (set.has(p)) n += 1;
     if (n === 0) return "none";
@@ -157,7 +229,7 @@ export const useChangesStore = defineStore("changes", () => {
     try {
       const backend = getBackend();
       const result = await backend.changelistList({ path });
-      if (current()) changelists.value = result;
+      if (current() && !sameChangelists(changelists.value, result)) changelists.value = result;
     } catch (e) {
       if (current()) error.value = formatErrorMessage(e);
     }
@@ -221,17 +293,22 @@ export const useChangesStore = defineStore("changes", () => {
       if (!current()) return;
       if (next.version < localVersion.value) return;
       localVersion.value = next.version;
-      snapshot.value = next;
+      if (!sameStatusSnapshot(snapshot.value, next)) {
+        snapshot.value = next;
+      }
       workspace.setBranch(next.branch);
       if (!stagingMode.value) {
         await refreshChangelists();
         if (!current()) return;
-      } else {
+      } else if (changelists.value !== null) {
         changelists.value = null;
       }
       // Drop checks that no longer exist.
-      const known = new Set(next.files.map((f) => f.path));
-      checkedPaths.value = checkedPaths.value.filter((p) => known.has(p));
+      if (checkedPaths.value.length) {
+        const known = new Set(next.files.map((f) => f.path));
+        const kept = checkedPaths.value.filter((p) => known.has(p));
+        if (kept.length !== checkedPaths.value.length) checkedPaths.value = kept;
+      }
     } catch (e) {
       if (current()) error.value = formatErrorMessage(e);
     } finally {
