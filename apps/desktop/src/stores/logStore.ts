@@ -235,38 +235,48 @@ export const useLogStore = defineStore("log", () => {
       let requestedCount = background ? Math.max(100, commits.value.length) : 100;
       const requestFilters = copyFilters(filters.value);
       let appendedStart = startOffset.value;
+      const repoId = workspace.repoId;
+      const readPage = (from: number, limit: number) =>
+        backend.logQuery({ repoId, path, offset: from, limit, filters: requestFilters });
+      const current = () => gen === loadGen && isCurrentRepository();
+      let page: Awaited<ReturnType<typeof readPage>> | undefined;
       if (reset && background && commits.value[0]) {
-        const anchor = await backend.logLocate({
-          path,
-          revision: commits.value[0].sha,
-          filters: requestFilters,
-        });
-        if (gen !== loadGen || !isCurrentRepository()) return;
-        if (anchor.offset !== null) {
-          // Include a small number of new rows without dropping the old bottom.
-          // A large incoming history keeps the existing bounded window instead.
-          if (startOffset.value === 0 && anchor.offset <= 1000) requestedCount += anchor.offset;
-          else offset = anchor.offset;
+        const first = commits.value[0].sha;
+        // The first page usually contains the current top anchor, even after a push.
+        // Reuse it both to verify the anchor and to display the updated commits.
+        if (startOffset.value === 0) {
+          page = await readPage(0, Math.min(1000, requestedCount));
+          if (!current()) return;
+          const index = page.commits.findIndex((commit) => commit.sha === first);
+          if (index >= 0) requestedCount += index;
+          else page = undefined;
         }
-      } else if (!reset && commits.value.at(-1)) {
-        const anchor = await backend.logLocate({
-          path,
-          revision: commits.value.at(-1)!.sha,
-          filters: requestFilters,
-        });
-        if (gen !== loadGen || !isCurrentRepository()) return;
-        if (anchor.offset === null) throw new Error(String(i18n.global.t("log.historyChanged")));
-        offset = anchor.offset + 1;
-        appendedStart = Math.max(0, startOffset.value + offset - nextOffset.value);
+        if (!page) {
+          const anchor = await backend.logLocate({ path, revision: first, filters: requestFilters });
+          if (!current()) return;
+          if (anchor.offset !== null) {
+            if (startOffset.value === 0 && anchor.offset <= 1000) requestedCount += anchor.offset;
+            else offset = anchor.offset;
+          }
+        }
+      } else if (!reset && commits.value.length) {
+        const tail = commits.value[commits.value.length - 1]!.sha;
+        // Read the boundary and next page from one Git snapshot. Only a shifted
+        // or removed boundary needs the more expensive exact history lookup.
+        const overlap = await readPage(Math.max(0, offset - 1), requestedCount + 1);
+        if (!current()) return;
+        if (overlap.commits[0]?.sha === tail) {
+          page = { ...overlap, commits: overlap.commits.slice(1) };
+        } else {
+          const anchor = await backend.logLocate({ path, revision: tail, filters: requestFilters });
+          if (!current()) return;
+          if (anchor.offset === null) throw new Error(String(i18n.global.t("log.historyChanged")));
+          offset = anchor.offset + 1;
+          appendedStart = Math.max(0, startOffset.value + offset - nextOffset.value);
+        }
       }
-      const page = await backend.logQuery({
-        repoId: workspace.repoId,
-        path,
-        offset,
-        limit: Math.min(1000, requestedCount),
-        filters: requestFilters,
-      });
-      if (gen !== loadGen || !isCurrentRepository()) return;
+      page ??= await readPage(offset, Math.min(1000, requestedCount));
+      if (!current()) return;
       // The backend caps each page at 1000. Preserve an already scrolled
       // history during refresh instead of silently dropping its later pages.
       while (reset && background && page.truncated && page.commits.length < requestedCount) {

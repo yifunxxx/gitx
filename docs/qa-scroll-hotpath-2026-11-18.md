@@ -14,3 +14,13 @@
 定向 5 文件 / 49 项、完整前端 130 文件 / 1096 项通过。类型检查、生产构建、Windows 原生构建和修改文件 lint 通过。原始日志位于 `E:/IDEAproject/gitx/test-results` 下的 `row-pool-before-20261118.log`、`section-scroll-before-20261118.log` 和 `scroll-hotpath-*-20261118.log`。
 
 Windows 原生验证使用 `gitx-scroll-0139-20261118.exe`（SHA256 `9A905A7E2F22A6E816E5199776CCF4F2731B1DCDF1AB39D1BA7ADCC63DE02899`，生产前端、开发配置 Rust）。在专用仓库 `changes-keyboard-gui-20261110` 中，窗口显示 83 个跟踪更改和 1 个未跟踪文件。滚轮从表头推进至 file-019，拖动滚动条到底可见 file-079 和 untracked.txt。点击 file-079 打开的左右差异显示该文件正确的 Staged / Local 内容。完成后退出专用程序。安装路径 `D:/gitx/gitx.exe` 的文件版本为 0.1.35。
+
+## Log 翻页和顶部后台刷新
+
+旧版追加 100 条记录时先解析上一页末尾的 SHA，再运行完整 `rev-list` 寻找它的位置，最后读取分页。顶部后台刷新也会先定位。现在追加页面多读一条，核对与上一页重叠的 SHA 后直接使用余下记录。顶部刷新从实际返回的第一页找原锚点。发生错位或深层窗口刷新时保留原定位逻辑、筛选条件、选择与请求代次保护。
+
+在 Git for Windows 2.34.1 的隔离仓库 `large-log-qa` 中，用与产品相同的 Git 参数、100 条页面和 1 条截断探针比较第二页。仓库含 20,160 条可见提交，每轮校验全部 101 条原始元数据相等。预热后交替运行 9 对，构建结束后的命令耗时中位数从 407.4 ms 降至 156.4 ms，每页 Git 进程从 3 个降到 1 个。另一次与编译/回归并行的中位数为 1398.1 / 414.4 ms。脚本 `log-page-ab-20261118.py` 和两次原始 JSON 均在 `test-results`。这些耗时衡量 Git 查询，不含窗口绘制。
+
+最终源码的 Log 定向 38 项、完整前端 130 文件 / 1097 项、类型检查、生产前端和 Windows 原生构建均通过。原生窗口中拖至初始 100 条末尾，加载后保持在 main change 023–019，滚轮进入 018–014，点击 015 后详情显示 `35dea748`，与同位置 Git 输出相符。关闭程序后测试仓库 HEAD、索引 SHA256 和干净状态保持一致。
+
+包含两项性能修改的测试版为 `E:/IDEAproject/gitx/test-results/isolated-target/debug/gitx-perf-0139-20261118.exe`，SHA256 `FAD608EE64832EE031DAECB91727908B71CE3B6AAEF3E57C5D76A3F6B02E3853`。0.1.35 安装版和实际用户仓库的原生逐帧数据仍单独记录。滚动组件修复 `6ea7f1c` 已独立推送并核对远端。

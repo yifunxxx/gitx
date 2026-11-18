@@ -290,6 +290,7 @@ describe("log request lifetime and selection", () => {
       truncated: offset + limit < refreshed.length,
     }));
     await log.load(true, true);
+    expect(mocks.backend.logLocate).not.toHaveBeenCalled();
     expect(log.commits).toHaveLength(101);
     expect(log.selectedSha).toBe("99");
     expect(log.details?.sha).toBe("99");
@@ -328,6 +329,23 @@ describe("log request lifetime and selection", () => {
     expect(log.details?.sha).toBe("kept");
   });
 
+  it("appends from the verified boundary without locating it across the whole history", async () => {
+    const log = useLogStore();
+    const rows = Array.from({ length: 201 }, (_, index) => commit(String(index)));
+    mocks.backend.logQuery.mockImplementation(async ({ offset, limit }) => ({
+      commits: rows.slice(offset, offset + limit),
+      nextOffset: Math.min(rows.length, offset + limit),
+      truncated: offset + limit < rows.length,
+    }));
+    await log.load();
+    await log.loadMore();
+    await log.loadMore();
+    expect(log.commits.map(row => row.sha)).toEqual(rows.map(row => row.sha));
+    expect(log.truncated).toBe(false);
+    expect(mocks.backend.logLocate).not.toHaveBeenCalled();
+    expect(mocks.backend.logQuery).toHaveBeenCalledTimes(3);
+  });
+
   it("recomputes the older-page offset after new commits shift the loaded window", async () => {
     const log = useLogStore();
     mocks.backend.logQuery.mockResolvedValueOnce({
@@ -337,6 +355,7 @@ describe("log request lifetime and selection", () => {
     });
     await log.load();
     mocks.backend.logLocate.mockResolvedValue({ sha: "b", offset: 2 });
+    mocks.backend.logQuery.mockResolvedValueOnce({ commits: [commit("a"), commit("b"), commit("c")], nextOffset: 4, truncated: false });
     mocks.backend.logQuery.mockResolvedValueOnce({
       commits: [commit("c")],
       nextOffset: 4,
