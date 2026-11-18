@@ -241,3 +241,32 @@ describe("Changes tree keyboard navigation", () => {
     expect(active()?.getAttribute("aria-expanded")).toBe("true");
   });
 });
+
+
+it("keeps scroll work independent of offscreen files while a changelist header is visible", async () => {
+  mocks.settings.settings.stagingMode = false;
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+  const store = useChangesStore();
+  setFiles(Array.from({ length: 2000 }, (_, i) => `f${String(i).padStart(4, "0")}.txt`));
+  const tail = store.snapshot!.files.at(-1)!;
+  const path = tail.path;
+  let reads = 0;
+  Object.defineProperty(tail, "path", { get() { reads++; return path; } });
+  store.checkedPaths = [path];
+  const wrapper = mount(ChangesTree);
+  const header = wrapper.get("[aria-level=\"1\"]");
+  expect(header.attributes("aria-checked")).toBe("mixed");
+  const port = wrapper.get(".overflow-auto").element;
+  reads = 0;
+  for (let i = 1; i <= 8; i++) {
+    port.scrollTop = i * 22;
+    port.dispatchEvent(new Event("scroll"));
+    frames.splice(0).forEach((callback) => callback(0));
+    await nextTick();
+  }
+  expect(reads, "offscreen path reads across eight scroll steps").toBe(0);
+  store.checkedPaths = [];
+  await nextTick();
+  expect(header.attributes("aria-checked")).toBe("false");
+});

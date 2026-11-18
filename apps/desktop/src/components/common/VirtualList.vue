@@ -9,7 +9,7 @@ const props = withDefaults(
     getItemHeight?: (item: T, index: number) => number;
     overscan?: number;
     preserveScrollAnchor?: boolean;
-    /** Reuse slot VNodes by window index instead of item identity (cuts SVG remount thrash). */
+    /** Reuse a bounded pool of row elements across scroll windows. */
     recycleKeys?: boolean;
     scrollTabindex?: number;
     getKey: (item: T, index: number) => string | number;
@@ -80,6 +80,14 @@ const visible = computed(() => {
   }
   return out;
 });
+
+// A fixed-height window spans at most ceil(viewport / row) + 1 rows plus overscan.
+// Indexing the pool by absolute row preserves overlapping cells on a one-row scroll.
+const poolSize = computed(() => Math.ceil(viewportH.value / props.itemHeight) + 1 + 2 * props.overscan);
+function rowKey(item: T, index: number, slot: number) {
+  if (!props.recycleKeys) return props.getKey(item, index);
+  return props.getItemHeight ? slot : index % poolSize.value;
+}
 
 const offsetY = computed(() => rowTop(start.value));
 
@@ -355,7 +363,7 @@ defineExpose({
         >
           <div
             v-for="(row, slot) in visible"
-            :key="recycleKeys ? slot : getKey(row.item, row.index)"
+            :key="rowKey(row.item, row.index, slot)"
             class="[contain:layout_paint]"
             :style="{ height: `${rowHeight(row.index)}px` }"
           >

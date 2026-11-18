@@ -168,10 +168,19 @@ export const useChangesStore = defineStore("changes", () => {
     return assignmentByPath.value.get(path) ?? activeListId.value;
   }
 
+  const filesByList = computed(() => {
+    const groups = new Map<string, FileChange[]>();
+    for (const file of changed.value) {
+      const id = listIdForPath(file.path);
+      let files = groups.get(id);
+      if (!files) groups.set(id, (files = []));
+      files.push(file);
+    }
+    return groups;
+  });
+
   function filesForChangelist(listId: string): FileChange[] {
-    const active = activeListId.value;
-    const map = assignmentByPath.value;
-    return changed.value.filter((f) => (map.get(f.path) ?? active) === listId);
+    return filesByList.value.get(listId) ?? [];
   }
 
   /** Paths that show checkboxes in a Changes section (changelist mode). */
@@ -186,15 +195,28 @@ export const useChangesStore = defineStore("changes", () => {
     return [];
   }
 
-  function checkStateForSection(section: ChangesSection): "none" | "all" | "partial" {
-    const paths = pathsForSection(section);
-    if (!paths.length) return "none";
-    const set = checkedSet.value;
-    let n = 0;
-    for (const p of paths) if (set.has(p)) n += 1;
-    if (n === 0) return "none";
-    if (n === paths.length) return "all";
-    return "partial";
+  type CheckState = "none" | "all" | "partial";
+  // Header rendering and scrolling read cached summaries. Only new status,
+  // assignments or a changed selection can invalidate them.
+  const sectionChecks = computed(() => {
+    const states = new Map<ChangesSection, CheckState>();
+    const checked = checkedSet.value;
+    if (!checked.size) return states;
+    function summarize(section: ChangesSection, files: FileChange[]) {
+      if (!files.length) return;
+      const first = checked.has(files[0]!.path);
+      const mixed = files.some((file) => checked.has(file.path) !== first);
+      states.set(section, mixed ? "partial" : first ? "all" : "none");
+    }
+    for (const [id, files] of filesByList.value) summarize(`changelist:${id}`, files);
+    summarize("unversioned", unversioned.value);
+    summarize("staged", staged.value);
+    summarize("unstaged", unstaged.value);
+    return states;
+  });
+
+  function checkStateForSection(section: ChangesSection): CheckState {
+    return sectionChecks.value.get(section) ?? "none";
   }
 
   function toggleCheckSection(section: ChangesSection) {

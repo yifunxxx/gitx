@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
-import { nextTick } from "vue";
+import { defineComponent, h, nextTick } from "vue";
 import VirtualList from "./VirtualList.vue";
 
 beforeEach(() => {
@@ -325,4 +325,53 @@ it("avoids redundant scrollTop writes when replacing items keeps the anchor at t
   expect(writes).toEqual([]);
   expect(port.scrollTop).toBe(440);
   wrapper.unmount();
+});
+
+
+it("keeps overlapping rows bound during small scrolls and reuses the window on large jumps", async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+  let renders = 0;
+  const Cell = defineComponent({
+    props: { row: { type: Number, required: true } },
+    setup: (props) => () => {
+      renders++;
+      return h("button", { "data-row": props.row }, String(props.row));
+    },
+  });
+  const wrapper = mount(VirtualList, {
+    props: {
+      items: Array.from({ length: 20000 }, (_, i) => i),
+      itemHeight: 20,
+      overscan: 16,
+      getKey: Number,
+      recycleKeys: true,
+    },
+    slots: { default: ({ item }) => h(Cell, { row: Number(item) }) },
+  });
+  try {
+    const port = wrapper.get(".overflow-auto").element;
+    const scroll = async (index: number) => {
+      port.scrollTop = 20 * index;
+      port.dispatchEvent(new Event("scroll"));
+      frames.splice(0).forEach((callback) => callback(0));
+      await nextTick();
+    };
+    await scroll(100);
+    const middle = wrapper.get("[data-row=\"110\"]").element;
+    const capacity = wrapper.findAll("button").length;
+    renders = 0;
+    for (let i = 1; i <= 12; i++) await scroll(100 + i);
+    expect(renders, `child renders moving 12 rows with ${capacity} rows mounted`).toBe(12);
+    expect(wrapper.get("[data-row=\"110\"]").element).toBe(middle);
+    const elements = new Set(wrapper.findAll("button").map((button) => button.element));
+    await scroll(8000);
+    const buttons = wrapper.findAll("button");
+    expect(buttons).toHaveLength(capacity);
+    expect(buttons.every((button) => elements.has(button.element))).toBe(true);
+    expect(buttons[0]!.text()).toBe("7984");
+    expect(buttons.at(-1)!.text()).toBe("8036");
+  } finally {
+    wrapper.unmount();
+  }
 });
