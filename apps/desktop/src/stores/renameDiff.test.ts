@@ -5,7 +5,7 @@ import { useDiffStore } from "./diffStore";
 const mocks = vi.hoisted(() => ({ diffFile: vi.fn(), diffFileAt: vi.fn() }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
 vi.mock("./workspaceStore", () => ({
-  useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo" }),
+  useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo", navigationToken: () => 1 }),
 }));
 vi.mock("./layoutStore", () => ({ useLayoutStore: () => ({ activeEditorKind: "welcome" }) }));
 
@@ -85,13 +85,15 @@ it("retains a historical rename's original path on a later refresh", async () =>
 
 it("keeps historical comparisons with different rename sources separate", async () => {
   const store = useDiffStore();
-  await store.openRevDiff("new.txt", "before", "after", "first.txt");
+  const before = "a".repeat(40);
+  const after = "b".repeat(40);
+  await store.openRevDiff("new.txt", before, after, "first.txt");
   const first = store.activeId;
-  await store.openRevDiff("new.txt", "before", "after", "second.txt");
+  await store.openRevDiff("new.txt", before, after, "second.txt");
   expect(store.activeId).not.toBe(first);
   expect(mocks.diffFileAt).toHaveBeenCalledTimes(2);
   expect(mocks.diffFileAt).toHaveBeenLastCalledWith(expect.objectContaining({ leftPath: "second.txt" }));
-  await store.openRevDiff("new.txt", "before", "after", "first.txt");
+  await store.openRevDiff("new.txt", before, after, "first.txt");
   expect(store.activeId).toBe(first);
   expect(mocks.diffFileAt).toHaveBeenCalledTimes(2);
   await store.setIgnoreWhitespace(first!, "all");
@@ -109,9 +111,11 @@ it("does not confuse colons in revisions with separators between revision and pa
 
 it("treats an unchanged original path like an omitted original path", async () => {
   const store = useDiffStore();
-  await store.openRevDiff("new.txt", "before", "after");
+  const before = "a".repeat(40);
+  const after = "b".repeat(40);
+  await store.openRevDiff("new.txt", before, after);
   const first = store.activeId;
-  await store.openRevDiff("new.txt", "before", "after", "new.txt");
+  await store.openRevDiff("new.txt", before, after, "new.txt");
   expect(store.activeId).toBe(first);
   expect(store.tabs).toHaveLength(1);
   expect(mocks.diffFileAt).toHaveBeenCalledTimes(1);

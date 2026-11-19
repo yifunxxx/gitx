@@ -6,6 +6,7 @@ import type { DiffFileResult, DiffSide, IgnoreWhitespace } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
 import { sameDiffResult } from "@/features/diff/sameDiffResult";
+import { isLiveComparison } from "@/features/diff/comparisonSources";
 import { diffViewKey, type DiffPaneSide, type DiffPaneSnapshot, type DiffPaneViewState } from "@/features/diff/diffViewState";
 
 export type DiffTab = {
@@ -43,7 +44,7 @@ export const useDiffStore = defineStore("diff", () => {
   let nextGeneration = 0;
   const workspace = useWorkspaceStore();
   watch(
-    () => workspace.repoPath,
+    () => [workspace.repoPath, workspace.repoId, workspace.navigationToken()],
     () => {
       loadGen.clear();
       paneStates.clear();
@@ -180,7 +181,10 @@ export const useDiffStore = defineStore("diff", () => {
     });
     activeId.value = id;
     useLayoutStore().activeEditorKind = "diff";
-    if (tab.result) return;
+    if (tab.result) {
+      if (isLiveComparison(tab)) await reloadTab(id, { soft: true });
+      return;
+    }
     await reloadTab(id);
   }
 
@@ -210,7 +214,7 @@ export const useDiffStore = defineStore("diff", () => {
       let result: DiffFileResult;
       // Re-read live fields after possible concurrent patches.
       const live = liveTab(id)!;
-      if ((live.leftRev && live.rightRev) || live.leftPath) {
+      if ((live.leftRev !== undefined && live.rightRev !== undefined) || live.leftPath) {
         result = await backend.diffFileAt({
           repoId: workspace.repoId,
           path: workspace.repoPath,

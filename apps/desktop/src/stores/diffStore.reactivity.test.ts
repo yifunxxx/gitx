@@ -35,6 +35,7 @@ vi.mock("./workspaceStore", () => ({
   useWorkspaceStore: () => ({
     repoPath: "/tmp/demo",
     repoId: "demo",
+    navigationToken: () => 1,
   }),
 }));
 

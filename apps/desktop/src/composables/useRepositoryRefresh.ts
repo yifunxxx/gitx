@@ -14,6 +14,7 @@ import { useJobsStore } from "@/stores/jobsStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { useSyncStore } from "@/stores/syncStore";
 import { formatErrorMessage } from "@/lib/errors";
+import { isLiveComparison } from "@/features/diff/comparisonSources";
 
 type ChangeKind = "worktree" | "index" | "refs" | "opState" | "ignore" | "metadata";
 type ChangedEvent = {
@@ -80,7 +81,14 @@ export function useRepositoryRefresh() {
     pending.clear();
     const version = generation;
     const path = ws.repoPath;
-    const current = () => !disposed && version === generation && path === ws.repoPath;
+    const repoId = ws.repoId;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      !disposed &&
+      version === generation &&
+      path === ws.repoPath &&
+      repoId === ws.repoId &&
+      navigation === ws.navigationToken();
     running = version;
     const tasks: Promise<unknown>[] = [];
     const run = (task: () => unknown) =>
@@ -110,7 +118,9 @@ export function useRepositoryRefresh() {
     // Other kinds still refresh, including .gitignore edits and mixed bursts.
     if ([...kinds].some((kind) => kind !== "metadata")) {
       for (const tab of diffs.tabs) {
-        if (tab.kind === "file") run(() => diffs.reloadTab(tab.id, { soft: true }));
+        if (tab.kind === "file" || isLiveComparison(tab)) {
+          run(() => diffs.reloadTab(tab.id, { soft: true }));
+        }
       }
     }
     const results = await Promise.allSettled(tasks);
@@ -160,7 +170,11 @@ export function useRepositoryRefresh() {
     if (document.visibilityState !== "hidden") schedule(allKinds);
   }
 
-  watch(() => [ws.repoPath, ws.isRepo, ws.roots] as const, configure, { flush: "sync" });
+  watch(
+    () => [ws.repoPath, ws.repoId, ws.isRepo, ws.roots, ws.navigationToken()] as const,
+    configure,
+    { flush: "sync" },
+  );
   onMounted(async () => {
     if (!isTauri()) return;
     try {

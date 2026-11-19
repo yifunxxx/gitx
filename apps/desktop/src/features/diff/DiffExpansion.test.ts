@@ -7,7 +7,7 @@ import { useDiffStore } from "@/stores/diffStore";
 
 const mocks = vi.hoisted(() => ({ diffFile: vi.fn(), diffFileAt: vi.fn() }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
-vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo" }) }));
+vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo", navigationToken: () => 1 }) }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => ({ activeEditorKind: "welcome" }) }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({}) }));
 vi.mock("@/composables/useConfirm", () => ({ promptDialog: vi.fn() }));

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     blobRead: vi.fn(),
     diffFile: vi.fn(),
   },
-  ws: {} as { repoPath: string | null; repoId: string | null },
+  ws: {} as { repoPath: string | null; repoId: string | null; navigationToken: () => number },
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks.backend }));
 vi.mock("./workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
@@ -52,7 +52,7 @@ function diff(text: string): DiffFileResult {
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  mocks.ws = reactive({ repoPath: "A", repoId: "A" });
+  mocks.ws = reactive({ repoPath: "A", repoId: "A", navigationToken: () => 1 });
 });
 
 describe("diff cache lifetime", () => {

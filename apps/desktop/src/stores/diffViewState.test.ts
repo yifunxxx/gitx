@@ -8,7 +8,7 @@ import { diffViewKey, type DiffPaneSnapshot } from "@/features/diff/diffViewStat
 
 const mocks = vi.hoisted(() => ({
   diffFile: vi.fn(),
-  workspace: {} as { repoPath: string; repoId: string },
+  workspace: {} as { repoPath: string; repoId: string; navigationToken: () => number },
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
 vi.mock("./workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
@@ -30,7 +30,7 @@ const result = (text = "first content") => ({
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  mocks.workspace = reactive({ repoPath: "A", repoId: "A" });
+  mocks.workspace = reactive({ repoPath: "A", repoId: "A", navigationToken: () => 1 });
   mocks.diffFile.mockImplementation(async () => result());
 });
 

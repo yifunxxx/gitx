@@ -5,7 +5,14 @@ import { useRepositoryRefresh } from "./useRepositoryRefresh";
 enableAutoUnmount(afterEach);
 
 const mocks = vi.hoisted(() => ({
-  ws: {} as { repoPath: string; repoId: string; isRepo: boolean; roots: unknown[] },
+  ws: {} as {
+    repoPath: string;
+    repoId: string;
+    isRepo: boolean;
+    roots: unknown[];
+    generation: number;
+    navigationToken: () => number;
+  },
   jobs: { count: 0 },
   sync: { updating: false, pulling: false, pushing: false },
   changes: { refresh: vi.fn() },
@@ -17,7 +24,10 @@ const mocks = vi.hoisted(() => ({
     loadingMore: false,
     loadingPrevious: false,
   },
-  diffs: { tabs: [] as { id: string; kind: "file" | "compare" }[], reloadTab: vi.fn() },
+  diffs: {
+    tabs: [] as { id: string; kind: "file" | "compare"; leftRev?: string; rightRev?: string }[],
+    reloadTab: vi.fn(),
+  },
   rewrite: { busy: false, refreshOpState: vi.fn() },
   conflicts: { refresh: vi.fn() },
   worktrees: { refresh: vi.fn() },
@@ -62,7 +72,16 @@ const emit = (repoId: string, kinds = ["worktree"]) =>
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
-  mocks.ws = reactive({ repoPath: "A", repoId: "A", isRepo: true, roots: [{ id: "A" }] });
+  mocks.ws = reactive({
+    repoPath: "A",
+    repoId: "A",
+    isRepo: true,
+    roots: [{ id: "A" }],
+    generation: 1,
+    navigationToken() {
+      return this.generation;
+    },
+  });
   mocks.jobs.count = 0;
   mocks.diffs.tabs = [];
   mocks.sync.updating = mocks.sync.pulling = mocks.sync.pushing = false;
@@ -106,7 +125,7 @@ it.each(["worktree", "index", "refs", "opState", "ignore"])(
     mocks.diffs.tabs = [
       { id: "visible-file", kind: "file" },
       { id: "hidden-file", kind: "file" },
-      { id: "fixed-comparison", kind: "compare" },
+      { id: "fixed-comparison", kind: "compare", leftRev: "EMPTY", rightRev: "a".repeat(40) },
     ];
     const host = mount(Host);
     await flushPromises();
@@ -178,6 +197,53 @@ it("releases its native watch on unmount without clearing a later mount", async 
   other.unmount();
   expect(mocks.backend.workspaceUnwatch).toHaveBeenLastCalledWith(second);
 });
+
+it.each(["same", "other"])(
+  "serializes navigation changes to the %s path and rejects obsolete native events",
+  async (destination) => {
+    const host = mount(Host);
+    try {
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(200);
+      const oldRegistration = mocks.backend.workspaceWatch.mock.lastCall![1];
+      const registration = deferred<null>();
+      mocks.backend.workspaceWatch.mockReturnValueOnce(registration.promise);
+      mocks.ws.generation++;
+      await flushPromises();
+      expect(mocks.backend.workspaceWatch).toHaveBeenCalledTimes(2);
+      mocks.ws.generation++;
+      if (destination === "other") mocks.ws.repoPath = mocks.ws.repoId = "B";
+      mocks.ws.roots = [{ id: mocks.ws.repoId }];
+      await flushPromises();
+      expect(mocks.backend.workspaceWatch).toHaveBeenCalledTimes(2);
+      registration.resolve(null);
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(mocks.backend.workspaceWatch).toHaveBeenCalledTimes(3);
+      expect(mocks.backend.workspaceWatch.mock.lastCall![0]).toEqual(mocks.ws.roots);
+      const latestRegistration = mocks.backend.workspaceWatch.mock.lastCall![1];
+      expect(latestRegistration).toBeGreaterThan(oldRegistration);
+      mocks.changes.refresh.mockClear();
+      const callback = mocks.listen.mock.lastCall![1];
+      callback({
+        payload: { repoId: mocks.ws.repoId, kinds: ["worktree"], watchGeneration: oldRegistration },
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(mocks.changes.refresh).not.toHaveBeenCalled();
+      callback({
+        payload: {
+          repoId: mocks.ws.repoId,
+          kinds: ["worktree"],
+          watchGeneration: latestRegistration,
+        },
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(mocks.changes.refresh).toHaveBeenCalledOnce();
+    } finally {
+      host.unmount();
+    }
+  },
+);
 
 it("retains refresh work while the window is hidden", async () => {
   const host = mount(Host);
