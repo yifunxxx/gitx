@@ -37,12 +37,19 @@ function confirm() {
 function cancel() {
   closeDialog(null);
 }
+
+function onEscape(event: KeyboardEvent) {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat) return;
+  event.preventDefault();
+  event.stopPropagation();
+  cancel();
+}
 </script>
 
 <template>
   <div
     class="fixed inset-0 z-[50] flex items-center justify-center bg-black/40 p-4 animate-in fade-in duration-100"
-    @keydown.esc="cancel"
+    @keydown.esc="onEscape"
   >
     <div
       class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg animate-in zoom-in-95 duration-100"

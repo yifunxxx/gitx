@@ -65,7 +65,7 @@ function onTab(event: KeyboardEvent) {
 }
 
 function onEscape(event: KeyboardEvent, id: number) {
-  if (event.defaultPrevented || event.isComposing) return;
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat) return;
   event.preventDefault();
   event.stopPropagation();
   // A child may already have handled Escape and closed itself. Never let that
