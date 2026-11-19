@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { handleAuthFailure } from "@/composables/useCredentials";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,9 @@ import { promptDialog } from "@/composables/useConfirm";
 import { formatErrorMessage } from "@/lib/errors";
 
 const { t } = useI18n();
-const dialogId = useDialogState().value?.id;
+const dialog = useDialogState();
+const dialogId = dialog.value?.id;
+const form = ref<HTMLFormElement | null>(null);
 const busy = ref(false);
 const cancelling = ref(false);
 const error = ref<string | null>(null);
@@ -41,6 +43,9 @@ function suggestDirectory() {
   if (name) dir.value = suggested = `${home.replace(/[/\\]$/, "")}/${name}`;
 }
 onMounted(async () => {
+  // Disabled controls can leave WebView focus on body, outside the overlay.
+  // Bubble after nested controls/hosts have had a chance to consume Escape.
+  document.addEventListener("keydown", onEscape);
   if (isTauri()) {
     try {
       const { homeDir } = await import("@tauri-apps/api/path");
@@ -52,6 +57,7 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => {
+  document.removeEventListener("keydown", onEscape);
   alive = false;
   ++generation;
   if (timer) clearTimeout(timer);
@@ -105,8 +111,19 @@ async function cancel() {
 }
 
 function onEscape(event: KeyboardEvent) {
-  if (event.isComposing || event.defaultPrevented) return;
+  if (
+    event.key !== "Escape" ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.repeat ||
+    event.defaultPrevented ||
+    !alive ||
+    dialogId === undefined ||
+    dialog.value?.id !== dialogId
+  )
+    return;
   event.preventDefault();
+  event.stopPropagation();
   void cancel();
 }
 
@@ -142,6 +159,12 @@ async function ok() {
   busy.value = true;
   error.value = null;
   cancelling.value = false;
+  void nextTick(() => {
+    if (alive && busy.value && !cancelling.value && dialog.value?.id === dialogId)
+      form.value
+        ?.querySelector<HTMLButtonElement>("[data-clone-cancel]")
+        ?.focus({ preventScroll: true });
+  });
   const request = {
     url: url.value.trim(),
     dir: dir.value.trim(),
@@ -202,6 +225,7 @@ async function ok() {
     @keydown.esc.stop="onEscape"
   >
     <form
+      ref="form"
       class="w-full max-w-lg rounded-lg border bg-popover p-4 shadow-lg"
       role="dialog"
       aria-modal="true"
@@ -265,9 +289,15 @@ async function ok() {
         {{ t(cancelling ? "clone.cancelling" : "clone.running") }}
       </p>
       <div class="mt-4 flex justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" :disabled="cancelling" @click="cancel">{{
-          t("clone.cancel")
-        }}</Button>
+        <Button
+          data-clone-cancel
+          type="button"
+          variant="ghost"
+          size="sm"
+          :disabled="cancelling"
+          @click="cancel"
+          >{{ t("clone.cancel") }}</Button
+        >
         <Button type="submit" size="sm" :disabled="busy || !url.trim() || !dir.trim()">{{
           t("clone.start")
         }}</Button>
