@@ -106,8 +106,12 @@ export function useRepositoryRefresh() {
       run(() => rewrite.refreshOpState());
       run(() => conflicts.refresh());
     }
-    for (const tab of diffs.tabs) {
-      if (kinds.size && tab.kind === "file") run(() => diffs.reloadTab(tab.id, { soft: true }));
+    // Gitx metadata changes affect Changes/Shelf, not the compared file contents.
+    // Other kinds still refresh, including .gitignore edits and mixed bursts.
+    if ([...kinds].some((kind) => kind !== "metadata")) {
+      for (const tab of diffs.tabs) {
+        if (tab.kind === "file") run(() => diffs.reloadTab(tab.id, { soft: true }));
+      }
     }
     const results = await Promise.allSettled(tasks);
     if (current()) {

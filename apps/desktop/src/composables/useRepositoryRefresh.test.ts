@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
     loadingMore: false,
     loadingPrevious: false,
   },
-  diffs: { tabs: [], reloadTab: vi.fn() },
+  diffs: { tabs: [] as { id: string; kind: "file" | "compare" }[], reloadTab: vi.fn() },
   rewrite: { busy: false, refreshOpState: vi.fn() },
   conflicts: { refresh: vi.fn() },
   worktrees: { refresh: vi.fn() },
@@ -64,6 +64,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.ws = reactive({ repoPath: "A", repoId: "A", isRepo: true, roots: [{ id: "A" }] });
   mocks.jobs.count = 0;
+  mocks.diffs.tabs = [];
   mocks.sync.updating = mocks.sync.pulling = mocks.sync.pushing = false;
   mocks.log.loading =
     mocks.log.locating =
@@ -78,6 +79,62 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+it("refreshes Changes and Shelf without reloading file diffs for metadata-only events", async () => {
+  mocks.diffs.tabs = [
+    { id: "visible-file", kind: "file" },
+    { id: "hidden-file", kind: "file" },
+  ];
+  const host = mount(Host);
+  await flushPromises();
+  await vi.advanceTimersByTimeAsync(200);
+  mocks.changes.refresh.mockClear();
+  mocks.stash.refresh.mockClear();
+  mocks.diffs.reloadTab.mockClear();
+  emit("A", ["metadata"]);
+  await vi.advanceTimersByTimeAsync(200);
+  host.unmount();
+  expect(mocks.changes.refresh).toHaveBeenCalledExactlyOnceWith(true);
+  expect(mocks.stash.refresh).toHaveBeenCalledOnce();
+  expect(mocks.diffs.reloadTab).not.toHaveBeenCalled();
+});
+
+it.each(["worktree", "index", "refs", "opState", "ignore"])(
+  "keeps diff refresh when metadata and %s events coalesce",
+  async (kind) => {
+    mocks.diffs.tabs = [
+      { id: "visible-file", kind: "file" },
+      { id: "hidden-file", kind: "file" },
+      { id: "fixed-comparison", kind: "compare" },
+    ];
+    const host = mount(Host);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(200);
+    mocks.diffs.reloadTab.mockClear();
+    emit("A", ["metadata"]);
+    emit("A", [kind]);
+    await vi.advanceTimersByTimeAsync(200);
+    host.unmount();
+    expect(mocks.diffs.reloadTab.mock.calls).toEqual([
+      ["visible-file", { soft: true }],
+      ["hidden-file", { soft: true }],
+    ]);
+  },
+);
+
+it("keeps focus refresh after a metadata-only event", async () => {
+  mocks.diffs.tabs = [{ id: "file", kind: "file" }];
+  const host = mount(Host);
+  await flushPromises();
+  await vi.advanceTimersByTimeAsync(200);
+  emit("A", ["metadata"]);
+  await vi.advanceTimersByTimeAsync(200);
+  mocks.diffs.reloadTab.mockClear();
+  window.dispatchEvent(new Event("focus"));
+  await vi.advanceTimersByTimeAsync(200);
+  host.unmount();
+  expect(mocks.diffs.reloadTab).toHaveBeenCalledExactlyOnceWith("file", { soft: true });
 });
 
 it("coalesces bursts, ignores other repositories and never overlaps refresh passes", async () => {
