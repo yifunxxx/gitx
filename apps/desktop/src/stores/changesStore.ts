@@ -16,8 +16,8 @@ function sameBranch(a: unknown, b: unknown): boolean {
   return keys.every((key) => left[key] === right[key]);
 }
 
-function sameStatusSnapshot(a: StatusSnapshot | null, b: StatusSnapshot): boolean {
-  if (!a || a.repoId !== b.repoId || !sameBranch(a.branch, b.branch)) return false;
+function sameStatusFiles(a: StatusSnapshot, b: StatusSnapshot): boolean {
+  if (a.repoId !== b.repoId) return false;
   if (a.files.length !== b.files.length) return false;
   for (let i = 0; i < a.files.length; i++) {
     const left = a.files[i]!;
@@ -143,11 +143,14 @@ export const useChangesStore = defineStore("changes", () => {
   const stagingMode = computed(() => useSettingsStore().settings?.stagingMode ?? false);
   const showIgnoredFiles = computed(() => useSettingsStore().settings?.showIgnoredFiles ?? false);
 
-  const staged = computed(() => snapshot.value?.files.filter(isStaged) ?? []);
-  const unstaged = computed(() => snapshot.value?.files.filter(isUnstaged) ?? []);
-  const unversioned = computed(() => snapshot.value?.files.filter(isUntracked) ?? []);
-  const ignored = computed(() => snapshot.value?.files.filter(isIgnored) ?? []);
-  const changed = computed(() => snapshot.value?.files.filter(isChanged) ?? []);
+  // A refs-only refresh can update branch metadata while sharing the same files.
+  // Depend on that stable array so classification and expanded trees stay cached.
+  const files = computed(() => snapshot.value?.files ?? []);
+  const staged = computed(() => files.value.filter(isStaged));
+  const unstaged = computed(() => files.value.filter(isUnstaged));
+  const unversioned = computed(() => files.value.filter(isUntracked));
+  const ignored = computed(() => files.value.filter(isIgnored));
+  const changed = computed(() => files.value.filter(isChanged));
 
   const activeListId = computed(() => {
     const lists = changelists.value?.lists ?? [];
@@ -315,7 +318,12 @@ export const useChangesStore = defineStore("changes", () => {
       if (!current()) return;
       if (next.version < localVersion.value) return;
       localVersion.value = next.version;
-      if (!sameStatusSnapshot(snapshot.value, next)) {
+      const previous = snapshot.value;
+      if (previous && sameStatusFiles(previous, next)) {
+        if (!sameBranch(previous.branch, next.branch)) {
+          snapshot.value = { ...next, files: previous.files };
+        }
+      } else {
         snapshot.value = next;
       }
       workspace.setBranch(next.branch);
