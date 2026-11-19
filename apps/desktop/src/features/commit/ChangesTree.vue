@@ -62,9 +62,7 @@ const collapsed = ref(new Set<string>());
 const currentKey = ref<string | null>(null);
 const anchorKey = ref<string | null>(null);
 
-const listMode = computed<ChangesListMode>(
-  () => settings.settings?.git?.changesListMode ?? "tree",
-);
+const listMode = computed<ChangesListMode>(() => settings.settings?.git?.changesListMode ?? "tree");
 
 // Building/sorting the path trees depends only on repository data, never on
 // scrolling, selection or expanding a folder.
@@ -90,16 +88,26 @@ const sections = computed(() => {
   if (changes.showIgnoredFiles)
     groups.push({ section: "ignored", label: t("changelist.ignored"), files: changes.ignored });
   return groups.map((group) => {
-    const metas: FileMeta[] = group.files.map((file) => ({
-      path: file.path,
-      origPath: file.origPath,
-      change: file,
-      directoryLeaf: file.path.endsWith("/") || file.path.endsWith("\\"),
-    }));
+    // Keep each status snapshot's model lazy. Header counts need no path tree,
+    // and a collapsed section must not block input elsewhere during refresh.
+    // Expanding uses the latest captured files; toggling folders reuses the model.
+    let metas: FileMeta[] | undefined;
+    let nodes: PathTreeNode<FileMeta>[] | undefined;
+    const getMetas = () =>
+      (metas ??= group.files.map((file) => ({
+        path: file.path,
+        origPath: file.origPath,
+        change: file,
+        directoryLeaf: file.path.endsWith("/") || file.path.endsWith("\\"),
+      })));
     return {
       ...group,
-      metas,
-      nodes: listMode.value === "tree" ? buildPathTree(metas) : [],
+      get metas() {
+        return getMetas();
+      },
+      get nodes() {
+        return (nodes ??= buildPathTree(getMetas()));
+      },
     };
   });
 });
@@ -477,7 +485,7 @@ function labelFor(node: PathTreeNode<FileMeta>) {
           :style="{
             paddingLeft: `${
               row.kind === 'header' ? 8 : listMode === 'flat' ? 20 : 20 + row.node.depth * 12
-            }px`
+            }px`,
           }"
           @click="onClick(row, $event)"
           @dblclick="onDblClick(row, $event)"

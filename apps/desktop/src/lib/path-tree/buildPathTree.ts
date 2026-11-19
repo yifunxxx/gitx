@@ -18,7 +18,7 @@ export type PathTreeNode<T extends PathTreeFileMeta = PathTreeFileMeta> = {
 };
 
 type FolderAcc<T extends PathTreeFileMeta> = {
-  children: Map<string, FolderAcc<T>>;
+  children?: Map<string, FolderAcc<T>>;
   file?: T;
 };
 
@@ -51,10 +51,10 @@ export function buildPathTree<T extends PathTreeFileMeta>(files: T[]): PathTreeN
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]!;
       const isLast = i === parts.length - 1;
-      if (!cur.children.has(part)) {
-        cur.children.set(part, { children: new Map() });
-      }
-      const next = cur.children.get(part)!;
+      // File leaves need no map; allocate one only when a path descends here.
+      const children = (cur.children ??= new Map());
+      let next = children.get(part);
+      if (!next) children.set(part, (next = {}));
       if (isLast) {
         next.file = { ...file, directoryLeaf: directoryLeaf || !!file.directoryLeaf };
       }
@@ -62,77 +62,42 @@ export function buildPathTree<T extends PathTreeFileMeta>(files: T[]): PathTreeN
     }
   }
 
-  // Materialize FolderAcc → PathTreeNode without recursion: process deepest
-  // folders first via an explicit stack, then attach into a parent→children map.
-  type Frame = { folder: FolderAcc<T>; id: string; name: string; depth: number; parentId: string | null };
-  const frames: Frame[] = [];
-  const seed: [string, FolderAcc<T>][] = [...root.children.entries()].sort(([a], [b]) =>
-    nameCollator.compare(a, b),
-  );
-  for (const [name, child] of seed) {
-    frames.push({ folder: child, id: name, name, depth: 0, parentId: null });
-  }
-
-  // Pre-order collect every folder/file frame so we can build bottom-up.
-  const order: Frame[] = [];
+  // Materialize directly into the output arrays. Only pending folders need a
+  // stack frame; there is no second full-tree order array or parent-id map.
+  const roots: PathTreeNode<T>[] = [];
+  type Frame = { folder: FolderAcc<T>; nodes: PathTreeNode<T>[]; id: string; depth: number };
+  const frames: Frame[] = [{ folder: root, nodes: roots, id: "", depth: 0 }];
   while (frames.length) {
-    const frame = frames.pop()!;
-    order.push(frame);
-    const nested = [...frame.folder.children.entries()].sort(([a], [b]) =>
-      nameCollator.compare(a, b),
-    );
-    // Push reversed so left-to-right pops in locale order.
-    for (let i = nested.length - 1; i >= 0; i--) {
-      const [childName, childFolder] = nested[i]!;
-      const childId = `${frame.id}/${childName}`;
-      frames.push({
-        folder: childFolder,
-        id: childId,
-        name: childName,
-        depth: frame.depth + 1,
-        parentId: frame.id,
-      });
+    const { folder, nodes, id, depth } = frames.pop()!;
+    for (const [name, child] of folder.children ?? []) {
+      if (child.children?.size) {
+        const childId = id ? `${id}/${name}` : name;
+        const children: PathTreeNode<T>[] = [];
+        nodes.push({
+          id: childId,
+          name,
+          kind: "folder",
+          depth,
+          children,
+          file: child.file?.directoryLeaf ? child.file : undefined,
+        });
+        frames.push({ folder: child, nodes: children, id: childId, depth: depth + 1 });
+      } else if (child.file) {
+        nodes.push({
+          id: child.file.path,
+          name,
+          kind: child.file.directoryLeaf ? "folder" : "file",
+          depth,
+          file: child.file,
+        });
+      }
     }
+    // Preserve the previous bottom-up tie order for locale-equivalent sibling
+    // names (e.g. composed/decomposed Unicode), while sorting each layer once.
+    if (depth) nodes.reverse();
+    nodes.sort(compareNodes);
   }
 
-  const childrenOf = new Map<string | null, PathTreeNode<T>[]>();
-
-  // Bottom-up: reverse pre-order so children exist before parents attach them.
-  for (let i = order.length - 1; i >= 0; i--) {
-    const frame = order[i]!;
-    const childNodes = childrenOf.get(frame.id) ?? [];
-    childNodes.sort(compareNodes);
-
-    let node: PathTreeNode<T>;
-    if (childNodes.length > 0) {
-      node = {
-        id: frame.id,
-        name: frame.name,
-        kind: "folder",
-        depth: frame.depth,
-        children: childNodes,
-        file: frame.folder.file?.directoryLeaf ? frame.folder.file : undefined,
-      };
-    } else if (frame.folder.file) {
-      const isDir = !!frame.folder.file.directoryLeaf;
-      node = {
-        id: frame.folder.file.path,
-        name: frame.name,
-        kind: isDir ? "folder" : "file",
-        depth: frame.depth,
-        file: frame.folder.file,
-      };
-    } else {
-      continue;
-    }
-
-    const siblings = childrenOf.get(frame.parentId) ?? [];
-    siblings.push(node);
-    childrenOf.set(frame.parentId, siblings);
-  }
-
-  const roots = childrenOf.get(null) ?? [];
-  roots.sort(compareNodes);
   return roots;
 }
 

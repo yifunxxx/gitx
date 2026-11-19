@@ -242,7 +242,6 @@ describe("Changes tree keyboard navigation", () => {
   });
 });
 
-
 it("keeps scroll work independent of offscreen files while a changelist header is visible", async () => {
   mocks.settings.settings.stagingMode = false;
   const frames: FrameRequestCallback[] = [];
@@ -252,10 +251,15 @@ it("keeps scroll work independent of offscreen files while a changelist header i
   const tail = store.snapshot!.files.at(-1)!;
   const path = tail.path;
   let reads = 0;
-  Object.defineProperty(tail, "path", { get() { reads++; return path; } });
+  Object.defineProperty(tail, "path", {
+    get() {
+      reads++;
+      return path;
+    },
+  });
   store.checkedPaths = [path];
   const wrapper = mount(ChangesTree);
-  const header = wrapper.get("[aria-level=\"1\"]");
+  const header = wrapper.get('[aria-level="1"]');
   expect(header.attributes("aria-checked")).toBe("mixed");
   const port = wrapper.get(".overflow-auto").element;
   reads = 0;
@@ -270,3 +274,38 @@ it("keeps scroll work independent of offscreen files while a changelist header i
   await nextTick();
   expect(header.attributes("aria-checked")).toBe("false");
 });
+
+it.each(["tree", "flat"])(
+  "does not prepare hidden %s sections until expanded after a status refresh",
+  async (mode) => {
+    mocks.settings.settings.git.changesListMode = mode;
+    const { wrapper, key, active } = fixture(["old.txt"]);
+    await key("ArrowLeft"); // staged header
+    await key("ArrowDown");
+    await key("ArrowLeft"); // unstaged header
+    let reads = 0;
+    setFiles(Array.from({ length: 2000 }, (_, i) => `src/f${String(i).padStart(4, "0")}.txt`));
+    const store = useChangesStore();
+    for (const file of store.snapshot!.files) {
+      const path = file.path;
+      Object.defineProperty(file, "path", {
+        get() {
+          reads++;
+          return path;
+        },
+      });
+    }
+    await nextTick();
+    expect(wrapper.findAll('[role="treeitem"]')).toHaveLength(3);
+    expect(wrapper.get('[data-section="unstaged"]').attributes("aria-label")).toBe(
+      "Unstaged (2000)",
+    );
+    expect(reads, "hidden section path reads during refresh").toBe(0);
+    await key("ArrowRight"); // reveal newest snapshot
+    await key("End");
+    await key("ArrowUp");
+    expect(active()?.getAttribute("data-path")).toBe("src/f1999.txt");
+    expect(store.selectedPaths).toEqual(["src/f1999.txt"]);
+    expect(wrapper.findAll('[role="treeitem"]').length).toBeLessThan(65);
+  },
+);
