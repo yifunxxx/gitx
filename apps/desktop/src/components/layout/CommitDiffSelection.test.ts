@@ -16,7 +16,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 vi.mock("@/stores/workspaceStore", () => ({
-  useWorkspaceStore: () => ({ repoPath: "repo", repoId: "repo", folderPath: "repo", isRepo: true, navigationToken: () => 1 }),
+  useWorkspaceStore: () => ({
+    repoPath: "repo",
+    repoId: "repo",
+    folderPath: "repo",
+    isRepo: true,
+    navigationToken: () => 1,
+  }),
 }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
@@ -99,6 +105,29 @@ async function open(entry: "tree" | "context" | "shortcut", section: ChangesSect
 }
 
 describe.each(["tree", "context", "shortcut"] as const)("%s change diff", (entry) => {
+  it.each(["UU", "AA", "UD", "DU"])(
+    "shows a read-only HEAD/worktree comparison for %s in every changes section",
+    async (status) => {
+      const change = {
+        path: "中文 added.txt",
+        kind: "unmerged",
+        indexStatus: status[0],
+        worktreeStatus: status[1],
+      };
+      mocks.changes.staged = [change];
+      mocks.changes.unstaged = [change];
+      for (const section of ["staged", "unstaged", "changelist:default"] as const) {
+        mocks.openFileDiff.mockClear();
+        await open(entry, section);
+        expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
+          "中文 added.txt",
+          "head",
+          "worktree",
+        );
+      }
+    },
+  );
+
   it.each(["R", "C"])(
     "compares the original HEAD path for staged %s changes",
     async (indexStatus) => {

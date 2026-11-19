@@ -5,10 +5,13 @@ import { useDiffStore } from "@/stores/diffStore";
 export function openChangeDiff(path: string, section: ChangesSection) {
   const changes = useChangesStore();
   const stagedChange = changes.staged.find((file) => file.path === path);
-  const stagedOnly =
-    section.startsWith("changelist:") &&
-    !!stagedChange &&
-    !changes.unstaged.some((file) => file.path === path);
+  const unstagedChange = changes.unstaged.find((file) => file.path === path);
+  if (stagedChange?.kind === "unmerged" || unstagedChange?.kind === "unmerged") {
+    // Conflicts have index stages 1/2/3, not the stage 0 used by normal Diff.
+    // Show Diff stays read-only; conflict editing remains in the Merge editor.
+    return useDiffStore().openFileDiff(path, "head", "worktree");
+  }
+  const stagedOnly = section.startsWith("changelist:") && !!stagedChange && !unstagedChange;
   if (section === "staged" || stagedOnly) {
     // Status origPath belongs to the HEAD side of a staged rename/copy.
     // The index and worktree already use the destination path.
