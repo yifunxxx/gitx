@@ -40,4 +40,6 @@ Enter监听仅绑定文本输入，四类拒绝事件及字段无效时直接返
 
 证据`qa043-program-20261120.json`、`qa043-after-{cancel,enter}-metadata-20261120.json`、`qa042-after-escape-metadata-20261120.json`及工具回传截图。两代程序共16个采样身份均退出，最终记录`qa043-final-exit-20261120.json`。fixture的HEAD、干净status、README和index哈希均保持基线；两个已创建名称保留为独立测试证据。设置只有recentWorkspaces被本轮操作改变，核对其他字段无变化后恢复原备份字节，SHA256回到`F160603B7BCE0F5CF7D07D6D1EAA088B6B69B79BB2F1FF83B855FB00E4F245C7`。
 
-物理IME候选/长按及真实凭据GUI未验证；synthetic keydown不产生浏览器可信默认click，测试将不拦截与显式click分开。本轮只将Prompt的Cancel/输入Enter和普通Escape记为原生通过，不扩大为所有输入法和凭据路径。安装版未更新，随本次独立提交推送，哈希及远端核对随后补记。
+物理IME候选/长按及真实凭据GUI未验证；synthetic keydown不产生浏览器可信默认click，测试将不拦截与显式click分开。本轮只将Prompt的Cancel/输入Enter和普通Escape记为原生通过，不扩大为所有输入法和凭据路径。安装版未更新。
+
+独立提交`21ced015ad751f8292bdd769dab9d4dd05224e90`推送成功（远端报告0e57390..21ced01）。随后三次独立ls-remote复核分别遇SSL连接重置10054、443连接约21秒超时，以及RPC连接重置/expected flush after ref listing，不能将复核失败写成推送失败；未出现凭据请求。交付记录单独提交，后续网络恢复时继续核对。
