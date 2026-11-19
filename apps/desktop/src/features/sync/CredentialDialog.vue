@@ -39,6 +39,7 @@ const password = ref("");
 const storeHelper = ref(settings.settings?.git?.useCredentialHelper ?? true);
 const userEl = ref<HTMLInputElement | null>(null);
 const passEl = ref<HTMLInputElement | null>(null);
+const canSubmit = computed(() => !!username.value.trim() && !!password.value);
 
 const displayTarget = computed(() => {
   if (props.url) return props.url;
@@ -56,13 +57,27 @@ onMounted(async () => {
 });
 
 function submit(retry: boolean) {
-  if (!username.value.trim() || !password.value) return;
+  if (!canSubmit.value) return;
   closeDialog({
     username: username.value.trim(),
     password: password.value,
     storeHelper: storeHelper.value,
     retry,
   } satisfies NonNullable<CredentialDialogResult>);
+}
+
+function onEnter(event: KeyboardEvent) {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.repeat ||
+    !canSubmit.value
+  )
+    return;
+  event.preventDefault();
+  event.stopPropagation();
+  submit(true);
 }
 
 function cancel() {
@@ -86,7 +101,6 @@ function onEscape(event: KeyboardEvent) {
       class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg animate-in zoom-in-95 duration-100"
       role="dialog"
       aria-modal="true"
-      @keydown.enter.prevent="submit(true)"
     >
       <h2 class="text-sm font-semibold">
         {{ props.title ?? t("auth.title") }}
@@ -115,6 +129,7 @@ function onEscape(event: KeyboardEvent) {
           v-model="username"
           type="text"
           autocomplete="username"
+          @keydown.enter="onEnter"
           class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </label>
@@ -125,6 +140,7 @@ function onEscape(event: KeyboardEvent) {
           v-model="password"
           type="password"
           autocomplete="current-password"
+          @keydown.enter="onEnter"
           class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </label>
@@ -141,7 +157,7 @@ function onEscape(event: KeyboardEvent) {
 
       <div class="mt-4 flex justify-end gap-2">
         <Button variant="ghost" size="sm" @click="cancel">{{ t("common.cancel") }}</Button>
-        <Button size="sm" :disabled="!username.trim() || !password" @click="submit(true)">
+        <Button size="sm" :disabled="!canSubmit" @click="submit(true)">
           {{ t("auth.saveAndRetry") }}
         </Button>
       </div>
