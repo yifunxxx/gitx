@@ -19,7 +19,17 @@ type OpenState = {
 // without carrying it into another Pinia instance or retaining closed instances.
 const states = new WeakMap<ReturnType<typeof useWorkspaceStore>, OpenState>();
 
-export function useWorkspaceOpen() {
+// Action enabled predicates read only the existing state. They must not create
+// controllers or initialize unrelated stores while rendering menus.
+export function isWorkspaceOpening() {
+  const workspace = useWorkspaceStore();
+  const operation = states.get(workspace)?.operation.value;
+  return !!operation && operation.navigation === workspace.navigationToken();
+}
+
+// Actions run outside component setup and supply the global translator; the
+// component wrapper below retains the local i18n scope.
+export function createWorkspaceOpen(t: (key: string) => string) {
   const workspace = useWorkspaceStore();
   let state = states.get(workspace);
   if (!state) {
@@ -31,7 +41,6 @@ export function useWorkspaceOpen() {
   // backend read may still be pending, but must not lock the new workspace.
   const pending = computed(() => operation.value?.navigation === workspace.navigationToken());
   const pendingPath = computed(() => (pending.value ? (operation.value?.path ?? null) : null));
-  const { t } = useI18n();
   const changes = useChangesStore();
   const log = useLogStore();
   const layout = useLayoutStore();
@@ -51,7 +60,7 @@ export function useWorkspaceOpen() {
     });
   }
 
-  async function open(kind: "recent" | "folder" | "create", initialPath?: string) {
+  async function open(kind: "recent" | "folder" | "create" | "enable", initialPath?: string) {
     if (pending.value) return;
     const id = Symbol("workspace open");
     let navigation = workspace.navigationToken();
@@ -65,7 +74,11 @@ export function useWorkspaceOpen() {
       if (!path || !current()) return;
       operation.value = { id, navigation, path };
       const opening =
-        kind === "create" ? workspace.initRepo(path, "main") : workspace.openFolder(path);
+        kind === "enable"
+          ? workspace.enableVcs("main")
+          : kind === "create"
+            ? workspace.initRepo(path, "main")
+            : workspace.openFolder(path);
       navigation = workspace.navigationToken();
       operation.value = { id, navigation, path };
       await opening;
@@ -73,7 +86,9 @@ export function useWorkspaceOpen() {
       opened = true;
       if (kind !== "recent") {
         toast({
-          title: t(kind === "create" ? "welcome.repoCreated" : "welcome.opened"),
+          title: t(
+            kind === "create" || kind === "enable" ? "welcome.repoCreated" : "welcome.opened",
+          ),
           description: path,
         });
       }
@@ -110,6 +125,12 @@ export function useWorkspaceOpen() {
   const openFolder = () => open("folder");
   const openRecent = (path: string) => open("recent", path);
   const createRepo = () => open("create");
+  const enableVcs = () =>
+    workspace.folderPath ? open("enable", workspace.folderPath) : Promise.resolve();
 
-  return { pending, pendingPath, error, openFolder, openRecent, createRepo };
+  return { pending, pendingPath, error, openFolder, openRecent, createRepo, enableVcs };
+}
+
+export function useWorkspaceOpen() {
+  return createWorkspaceOpen(useI18n().t);
 }

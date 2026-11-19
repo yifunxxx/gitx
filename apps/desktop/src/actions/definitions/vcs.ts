@@ -26,7 +26,8 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { getBackend } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
-import { isTauri } from "@/lib/utils";
+import { createWorkspaceOpen, isWorkspaceOpening } from "@/composables/useWorkspaceOpen";
+import { i18n } from "@/i18n";
 
 export function registerVcsActions() {
   registerAction({
@@ -91,28 +92,9 @@ export function registerVcsActions() {
       linux: ["mod+o"],
     },
     scope: "global",
+    enabled: () => !isWorkspaceOpening(),
     async run() {
-      let path: string | null = null;
-      if (isTauri()) {
-        const { open } = await import("@tauri-apps/plugin-dialog");
-        const selected = await open({ directory: true, multiple: false });
-        path = typeof selected === "string" ? selected : null;
-      } else {
-        path = await promptDialog({
-          title: "Open…",
-          placeholder: "Folder path",
-          allowEmpty: false,
-        });
-      }
-      if (!path) return;
-      const workspace = useWorkspaceStore();
-      await workspace.openFolder(path);
-      toast({ title: "Opened", description: path });
-      if (workspace.isRepo) {
-        await useChangesStore().refresh();
-        await useLogStore().load(true);
-        useLayoutStore().activeBottomTab = "log";
-      }
+      await createWorkspaceOpen(i18n.global.t).openFolder();
     },
   });
 
@@ -122,25 +104,9 @@ export function registerVcsActions() {
     description: "git init in a chosen directory",
     icon: GitBranchPlus,
     scope: "global",
+    enabled: () => !isWorkspaceOpening(),
     async run() {
-      let path: string | null = null;
-      if (isTauri()) {
-        const { open } = await import("@tauri-apps/plugin-dialog");
-        const selected = await open({ directory: true, multiple: false });
-        path = typeof selected === "string" ? selected : null;
-      } else {
-        path = await promptDialog({
-          title: "Create Git Repository…",
-          placeholder: "Directory for new repository",
-          allowEmpty: false,
-        });
-      }
-      if (!path) return;
-      const workspace = useWorkspaceStore();
-      await workspace.initRepo(path, "main");
-      toast({ title: "Repository created", description: path });
-      await useChangesStore().refresh();
-      await useLogStore().load(true);
+      await createWorkspaceOpen(i18n.global.t).createRepo();
     },
   });
 
@@ -150,12 +116,9 @@ export function registerVcsActions() {
     description: "Initialize Git in the current folder",
     icon: GitBranchPlus,
     scope: "global",
-    enabled: (ctx) => !!ctx.folderPath,
+    enabled: (ctx) => !!ctx.folderPath && !isWorkspaceOpening(),
     async run() {
-      const workspace = useWorkspaceStore();
-      await workspace.enableVcs("main");
-      toast({ title: "Git enabled" });
-      await useChangesStore().refresh();
+      await createWorkspaceOpen(i18n.global.t).enableVcs();
     },
   });
 
