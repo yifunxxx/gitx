@@ -363,15 +363,21 @@ export const useLogStore = defineStore("log", () => {
     }
   }
 
-  async function select(sha: string, multi = false, range = false) {
+  async function select(
+    sha: string,
+    multi = false,
+    range = false,
+    selectionOrder?: readonly string[],
+  ) {
     const isCurrentRepository = currentRepository();
     const gen = ++selectGen;
     if (range && selectionAnchor) {
-      const start = commits.value.findIndex((c) => c.sha === selectionAnchor);
-      const end = commits.value.findIndex((c) => c.sha === sha);
+      const order = selectionOrder ?? commits.value.map((commit) => commit.sha);
+      const start = order.indexOf(selectionAnchor);
+      const end = order.indexOf(sha);
       selectedShas.value =
         start >= 0 && end >= 0
-          ? commits.value.slice(Math.min(start, end), Math.max(start, end) + 1).map((c) => c.sha)
+          ? order.slice(Math.min(start, end), Math.max(start, end) + 1)
           : [sha];
       selectedSha.value = sha;
     } else if (multi) {

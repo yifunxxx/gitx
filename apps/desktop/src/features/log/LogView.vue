@@ -176,12 +176,19 @@ watch(
  * do not synchronously walk the whole history inside the scroll callback. */
 const treeRows = shallowRef<LogTreeRow[]>([]);
 let treeRaf = 0;
+const treeLayoutWaiters = new Set<() => void>();
+function finishTreeLayout() {
+  for (const resolve of treeLayoutWaiters) resolve();
+  treeLayoutWaiters.clear();
+}
 watch(
   () => [listMode.value, log.commits, t("log.treeOther")] as const,
   ([mode, commits, other]) => {
     if (treeRaf) cancelAnimationFrame(treeRaf);
+    treeRaf = 0;
     if (mode !== "tree") {
       treeRows.value = [];
+      finishTreeLayout();
       return;
     }
     treeRaf = requestAnimationFrame(() => {
@@ -189,10 +196,31 @@ watch(
       treeRows.value = timedSync(`log.treeRows n=${commits.length}`, () =>
         buildLogTreeRows(commits, String(other)),
       );
+      finishTreeLayout();
     });
   },
   { immediate: true },
 );
+
+// Reuse the rendered order for navigation and ranges. Tree headings occupy
+// virtual rows but are not selectable commits.
+const commitNavigation = computed(() => {
+  const shas: string[] = [];
+  const positions = new Map<string, { orderIndex: number; rowIndex: number }>();
+  function add(sha: string, rowIndex: number) {
+    positions.set(sha, { orderIndex: shas.length, rowIndex });
+    shas.push(sha);
+  }
+  if (listMode.value === "tree") {
+    treeRows.value.forEach((row, index) => {
+      if (row.kind === "commit") add(row.commit.sha, index);
+    });
+  } else {
+    log.commits.forEach((commit, index) => add(commit.sha, index));
+  }
+  return { shas, positions };
+});
+
 async function toggleChangedFilesListMode() {
   const next: ChangesListMode = changedFilesListMode.value === "tree" ? "flat" : "tree";
   const base = cloneJson(settings.settings ?? settings.emptySettings());
@@ -215,6 +243,8 @@ function scheduleLoadMore() {
 }
 onUnmounted(() => {
   if (treeRaf) cancelAnimationFrame(treeRaf);
+  treeRaf = 0;
+  finishTreeLayout();
   if (graphRaf) cancelAnimationFrame(graphRaf);
   if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
 });
@@ -288,7 +318,11 @@ watch(
 async function selectCommit(sha: string, multi = false, range = false) {
   const source = captureAction();
   try {
-    await log.select(sha, multi, range);
+    if (range && listMode.value === "tree") {
+      await log.select(sha, multi, range, commitNavigation.value.shas);
+    } else {
+      await log.select(sha, multi, range);
+    }
   } catch (error) {
     if (source.current()) toast({ title: t("log.failed"), description: formatErrorMessage(error) });
   }
@@ -296,47 +330,69 @@ async function selectCommit(sha: string, multi = false, range = false) {
 
 async function onCommitKeydown(sha: string, event: KeyboardEvent) {
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
-  const index = log.commits.findIndex((commit) => commit.sha === sha);
-  let target = index;
-  if (event.key === "ArrowDown") target++;
-  else if (event.key === "ArrowUp") target--;
-  else if (event.key === "Home") target = 0;
-  else if (event.key === "End") target = log.commits.length - 1;
+  const source = captureAction();
+  const navigation = commitNavigation.value;
+  const position = navigation.positions.get(sha);
+  if (!position) return;
+  let targetIndex = position.orderIndex;
+  let targetSha: string | undefined;
+  if (event.key === "ArrowDown") targetIndex++;
+  else if (event.key === "ArrowUp") targetIndex--;
+  else if (event.key === "Home") targetIndex = 0;
+  else if (event.key === "End") targetIndex = navigation.shas.length - 1;
   else if (event.key === "ArrowLeft") {
-    const parent = log.commits[index]?.parents[0];
+    const parent = log.commits.find((commit) => commit.sha === sha)?.parents[0];
     if (!parent) return;
     event.preventDefault();
-    target = log.commits.findIndex((commit) => commit.sha === parent);
-    if (target < 0) {
+    if (!log.commits.some((commit) => commit.sha === parent)) {
       log.goToInput = parent;
       try {
         const selected = await log.goToHashOrRef();
-        if (selected !== parent) return;
+        if (!source.current() || selected !== parent) return;
       } catch (error) {
-        toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+        if (source.current())
+          toast({ title: t("log.failed"), description: formatErrorMessage(error) });
         return;
       }
-      target = log.commits.findIndex((commit) => commit.sha === parent);
     }
-    if (target < 0) return;
+    targetSha = parent;
   } else if (event.key === "ArrowRight") {
     event.preventDefault();
-    target = log.commits.findIndex((commit) => commit.parents.includes(sha));
-    if (target < 0) return;
+    targetSha = log.commits.find((commit) => commit.parents.includes(sha))?.sha;
+    if (!targetSha) return;
   } else if (event.key === "Enter") {
     event.preventDefault();
     if (!event.repeat && !event.shiftKey) await openCommitChanges(sha);
     return;
   } else return;
   event.preventDefault();
-  const commit = log.commits[Math.max(0, Math.min(log.commits.length - 1, target))];
-  if (!commit) return;
-  void selectCommit(commit.sha, false, event.shiftKey);
-  commitListRef.value?.scrollToIndex?.(Math.max(0, target));
+  targetSha ??= navigation.shas[Math.max(0, Math.min(navigation.shas.length - 1, targetIndex))];
+  if (!targetSha) return;
+  void selectCommit(targetSha, false, event.shiftKey);
+  await scrollToCommit(targetSha, undefined, true);
+}
+
+async function scrollToCommit(sha: string, align?: "nearest" | "center", focus = false) {
+  const source = captureAction();
   await nextTick();
-  commitListRef.value?.el
-    ?.querySelector<HTMLElement>('[role="option"][tabindex="0"]')
-    ?.focus({ preventScroll: true });
+  // A new history window updates the store before its deferred tree rows.
+  // Wait on that existing layout job instead of rebuilding in the input path.
+  while (source.current() && listMode.value === "tree" && treeRaf) {
+    await new Promise<void>((resolve) => treeLayoutWaiters.add(resolve));
+    await nextTick();
+  }
+  if (!source.current() || log.selectedSha !== sha) return;
+  const position = commitNavigation.value.positions.get(sha);
+  if (!position) return;
+  if (align) commitListRef.value?.scrollToIndex?.(position.rowIndex, align);
+  else commitListRef.value?.scrollToIndex?.(position.rowIndex);
+  if (focus) {
+    await nextTick();
+    if (!source.current() || log.selectedSha !== sha) return;
+    commitListRef.value?.el
+      ?.querySelector<HTMLElement>('[role="option"][tabindex="0"]')
+      ?.focus({ preventScroll: true });
+  }
 }
 
 async function applySearch() {
@@ -361,14 +417,13 @@ async function clearSearch() {
 }
 
 async function goToCommit(reveal = false) {
+  const source = captureAction();
   try {
     const selected = reveal ? await log.revealNavigationTarget() : await log.goToHashOrRef();
-    if (!selected) return;
-    await nextTick();
-    const index = log.commits.findIndex((commit) => commit.sha === selected);
-    if (index >= 0) commitListRef.value?.scrollToIndex?.(index, "center");
+    if (!source.current() || !selected) return;
+    await scrollToCommit(selected, "center");
   } catch (error) {
-    toast({ title: t("log.failed"), description: formatErrorMessage(error) });
+    if (source.current()) toast({ title: t("log.failed"), description: formatErrorMessage(error) });
   }
 }
 
