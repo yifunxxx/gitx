@@ -60,7 +60,10 @@ export function createWorkspaceOpen(t: (key: string) => string) {
     });
   }
 
-  async function open(kind: "recent" | "folder" | "create" | "enable", initialPath?: string) {
+  async function open(
+    kind: "recent" | "folder" | "create" | "enable" | "clone",
+    initialPath?: string,
+  ) {
     if (pending.value) return;
     const id = Symbol("workspace open");
     let navigation = workspace.navigationToken();
@@ -84,7 +87,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
       await opening;
       if (!current()) return;
       opened = true;
-      if (kind !== "recent") {
+      if (kind !== "recent" && kind !== "clone") {
         toast({
           title: t(
             kind === "create" || kind === "enable" ? "welcome.repoCreated" : "welcome.opened",
@@ -124,11 +127,14 @@ export function createWorkspaceOpen(t: (key: string) => string) {
 
   const openFolder = () => open("folder");
   const openRecent = (path: string) => open("recent", path);
+  // CloneDialog already announces the completed clone; this phase only opens
+  // its result and shares the normal opening progress/error/navigation guards.
+  const openCloned = (path: string) => open("clone", path);
   const createRepo = () => open("create");
   const enableVcs = () =>
     workspace.folderPath ? open("enable", workspace.folderPath) : Promise.resolve();
 
-  return { pending, pendingPath, error, openFolder, openRecent, createRepo, enableVcs };
+  return { pending, pendingPath, error, openFolder, openRecent, openCloned, createRepo, enableVcs };
 }
 
 export function useWorkspaceOpen() {

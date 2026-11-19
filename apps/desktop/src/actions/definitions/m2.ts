@@ -1,26 +1,22 @@
-import {
-  CloudDownload,
-  Download,
-  GitBranch,
-  GitFork,
-  RefreshCw,
-  Upload,
-} from "@lucide/vue";
+import { CloudDownload, Download, GitBranch, GitFork, RefreshCw, Upload } from "@lucide/vue";
 import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useSyncStore } from "@/stores/syncStore";
-import { useChangesStore } from "@/stores/changesStore";
-import { useLogStore } from "@/stores/logStore";
-import { useLayoutStore } from "@/stores/layoutStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { openDialog } from "@/composables/useDialog";
 import { toast } from "@/composables/useToast";
+import { createWorkspaceOpen, isWorkspaceOpening } from "@/composables/useWorkspaceOpen";
+import { i18n } from "@/i18n";
 import CloneDialog from "@/features/welcome/CloneDialog.vue";
 import ManageRemotesDialog from "@/features/remotes/ManageRemotesDialog.vue";
 import PullDialog from "@/features/sync/PullDialog.vue";
 import PushDialog from "@/features/sync/PushDialog.vue";
 import UpdateProjectDialog from "@/features/sync/UpdateProjectDialog.vue";
+
+// A clone owns its dialog, not the workspace navigation lock. Other project
+// actions remain available while this potentially long-running task finishes.
+const cloning = new WeakSet<ReturnType<typeof useWorkspaceStore>>();
 
 export function registerM2Actions() {
   registerAction({
@@ -41,16 +37,21 @@ export function registerM2Actions() {
     description: "Clone a Git repository",
     icon: Download,
     scope: "global",
+    enabled: () => !isWorkspaceOpening() && !cloning.has(useWorkspaceStore()),
     async run() {
-      const path = await openDialog<string | null>(CloneDialog, {});
-      if (!path) return;
       const workspace = useWorkspaceStore();
-      await workspace.openFolder(path);
-      if (workspace.isRepo) {
-        await useChangesStore().refresh();
-        await useLogStore().load(true);
-        await useBranchesStore().refresh();
-        useLayoutStore().activeBottomTab = "log";
+      if (cloning.has(workspace) || isWorkspaceOpening()) return;
+      cloning.add(workspace);
+      try {
+        const navigation = workspace.navigationToken();
+        const opening = createWorkspaceOpen(i18n.global.t);
+        const path = await openDialog<string | null>(CloneDialog, {});
+        if (!path || workspace.navigationToken() !== navigation) return;
+        // A newer directory picker can own opening without changing navigation
+        // yet. The shared controller also rejects this pending auto-open.
+        await opening.openCloned(path);
+      } finally {
+        cloning.delete(workspace);
       }
     },
   });
