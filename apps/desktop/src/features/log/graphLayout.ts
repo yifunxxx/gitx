@@ -1,6 +1,12 @@
 import type { GraphRow } from "@/lib/backend";
 
 type Commit = { sha: string; shortSha: string; parents: string[]; refs: string[] };
+type CommitInput = {
+  readonly sha: string;
+  readonly shortSha: string;
+  readonly parents: readonly string[];
+  readonly refs: readonly string[];
+};
 type Lane = { sha: string; color: number; label: string };
 
 export type RenderGraphRow = {
@@ -20,12 +26,13 @@ export type GraphLayoutResult = {
 
 export type GraphLayoutOptions = { filtered?: boolean; firstParent?: boolean };
 
-/** Opaque cursor so `loadMore` can resume without rewalking prior rows. */
+/** Opaque cursor so `loadMore` can validate inputs without relaying out prior rows. */
 export type GraphLayoutCursor = {
   optionsKey: string;
   length: number;
   headSha: string | null;
   tailSha: string | null;
+  inputs: readonly CommitInput[];
   rows: RenderGraphRow[];
   maxLane: number;
   lanes: Array<Lane | undefined>;
@@ -127,12 +134,49 @@ function layoutRange(
 function canResume(commits: readonly Commit[], cursor: GraphLayoutCursor, key: string) {
   if (cursor.optionsKey !== key) return false;
   // Filtered layouts depend on the full visible set; appending can promote a
-  // previously-hidden parent into the window, so earlier rows must be rebuilt.
-  if (key.startsWith("1:")) return false;
-  if (cursor.length <= 0 || cursor.length > commits.length) return false;
-  if (commits[0]?.sha !== cursor.headSha) return false;
-  if (commits[cursor.length - 1]?.sha !== cursor.tailSha) return false;
+  // previously-hidden parent into the window. An unchanged window is reusable.
+  if (key.startsWith("1:") && cursor.length !== commits.length) return false;
+  if (cursor.length > commits.length) return false;
+  if ((commits[0]?.sha ?? null) !== cursor.headSha) return false;
+  if ((commits[cursor.length - 1]?.sha ?? null) !== cursor.tailSha) return false;
+  // Matching endpoints do not prove a matching prefix: a topological/date
+  // reorder can keep both endpoints, and refs/parent arrays may change in place.
+  // Compare only graph-driving values against owned snapshots. This validates
+  // a refreshed page without rebuilding its lane/edge objects when unchanged.
+  for (let i = 0; i < cursor.length; i++) {
+    const next = commits[i]!;
+    const prior = cursor.inputs[i]!;
+    if (
+      next.sha !== prior.sha ||
+      next.shortSha !== prior.shortSha ||
+      !sameStrings(next.parents, prior.parents) ||
+      !sameStrings(next.refs, prior.refs)
+    )
+      return false;
+  }
   return true;
+}
+
+function sameStrings(next: readonly string[], prior: readonly string[]) {
+  if (next.length !== prior.length) return false;
+  for (let i = 0; i < next.length; i++) {
+    if (next[i] !== prior[i]) return false;
+  }
+  return true;
+}
+
+function snapshotInputs(commits: readonly Commit[], from = 0): CommitInput[] {
+  const inputs: CommitInput[] = [];
+  for (let i = from; i < commits.length; i++) {
+    const commit = commits[i]!;
+    inputs.push({
+      sha: commit.sha,
+      shortSha: commit.shortSha,
+      parents: [...commit.parents],
+      refs: [...commit.refs],
+    });
+  }
+  return inputs;
 }
 
 /** Layout the loaded history as one sequence, including page boundaries.
@@ -164,11 +208,15 @@ export function layoutCommitGraphIncremental(
   if (previous && canResume(commits, previous, key) && commits.length >= previous.length) {
     if (commits.length === previous.length) {
       return {
-        layout: { rows: previous.rows, maxLane: previous.maxLane, colPx: colPxFor(previous.maxLane) },
+        layout: {
+          rows: previous.rows,
+          maxLane: previous.maxLane,
+          colPx: colPxFor(previous.maxLane),
+        },
         cursor: previous,
       };
     }
-    // canResume rejects filtered layouts, so `visible` is unused on this path.
+    // canResume rejects filtered appends, so `visible` is unused on this path.
     const resumed = layoutRange(
       commits,
       previous.length,
@@ -184,6 +232,7 @@ export function layoutCommitGraphIncremental(
       length: commits.length,
       headSha: commits[0]?.sha ?? null,
       tailSha: commits.at(-1)?.sha ?? null,
+      inputs: previous.inputs.concat(snapshotInputs(commits, previous.length)),
       rows,
       maxLane: resumed.maxLane,
       lanes: resumed.lanes,
@@ -200,6 +249,7 @@ export function layoutCommitGraphIncremental(
     length: commits.length,
     headSha: commits[0]?.sha ?? null,
     tailSha: commits.at(-1)?.sha ?? null,
+    inputs: snapshotInputs(commits),
     rows: full.rows,
     maxLane: full.maxLane,
     lanes: full.lanes,
