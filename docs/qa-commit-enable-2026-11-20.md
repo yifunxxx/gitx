@@ -50,4 +50,4 @@
 
 本轮初始化专用目录为新建测试数据，保留完成后的仓库作为证据。两目录都为 main、仅 sample.txt 未跟踪，内容逐字节符合 `initial sample\n`；两个专用程序已退出。设置比较确认只有 recentWorkspaces 因测试变化，按备份 `init-settings-before-20261120.json` 恢复后 SHA256 为 `F160603B7BCE0F5CF7D07D6D1EAA088B6B69B79BB2F1FF83B855FB00E4F245C7`。结束汇总 `init-native-end-20261120.json` 位于 test-results。
 
-此功能、回归和报告独立提交推送，结果由统一台账后续补记。安装路径 `D:/gitx/gitx.exe` 仍为0.1.35，未更新。QA-036 继续保留原生克隆取消/交叉导航边界，整体目标未完成。
+此功能、回归和报告已独立提交推送 `1f25a44ae37cb6408cd8a205bdf5b185cd4c0a25`，远端完整SHA核对一致。安装路径 `D:/gitx/gitx.exe` 仍为0.1.35，未更新。QA-036 继续保留原生克隆取消/交叉导航边界，整体目标未完成。

@@ -27,6 +27,102 @@ pub fn hide_console_tokio(cmd: &mut tokio::process::Command) {
 #[cfg(windows)]
 pub struct ProcessJob(std::os::windows::io::OwnedHandle);
 
+// PSS descriptors and walk markers have their own release functions; they are
+// not kernel handles and must not be wrapped in OwnedHandle/CloseHandle.
+#[cfg(windows)]
+mod thread_snapshot {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, HANDLE};
+    use windows_sys::Win32::System::{Diagnostics::ProcessSnapshotting::*, Threading::*};
+
+    struct Snapshot(HPSS);
+
+    impl Drop for Snapshot {
+        fn drop(&mut self) {
+            // The descriptor was allocated in this process, even though the
+            // captured threads belong to the child.
+            unsafe { PssFreeSnapshot(GetCurrentProcess(), self.0) };
+        }
+    }
+
+    struct WalkMarker(HPSSWALK);
+
+    impl Drop for WalkMarker {
+        fn drop(&mut self) {
+            unsafe { PssWalkMarkerFree(self.0) };
+        }
+    }
+
+    fn check(result: u32) -> std::io::Result<()> {
+        if result == ERROR_SUCCESS {
+            Ok(())
+        } else {
+            // PSS returns a Win32 error directly, not through GetLastError.
+            Err(std::io::Error::from_raw_os_error(result as i32))
+        }
+    }
+
+    pub(super) fn child_thread(process: HANDLE, pid: u32) -> std::io::Result<OwnedHandle> {
+        unsafe {
+            let mut raw = std::ptr::null_mut();
+            // Capture only this child's thread IDs. A ToolHelp thread snapshot
+            // enumerates the whole machine for every Git command.
+            check(PssCaptureSnapshot(
+                process,
+                PSS_CAPTURE_THREADS,
+                0,
+                &mut raw,
+            ))?;
+            let snapshot = Snapshot(raw);
+            let mut raw_marker = std::ptr::null_mut();
+            check(PssWalkMarkerCreate(std::ptr::null(), &mut raw_marker))?;
+            let marker = WalkMarker(raw_marker);
+            let mut entry: PSS_THREAD_ENTRY = std::mem::zeroed();
+            loop {
+                let result = PssWalkSnapshot(
+                    snapshot.0,
+                    PSS_WALK_THREADS,
+                    marker.0,
+                    (&mut entry as *mut PSS_THREAD_ENTRY).cast(),
+                    std::mem::size_of_val(&entry) as u32,
+                );
+                if result == ERROR_NO_MORE_ITEMS {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "suspended child thread unavailable",
+                    ));
+                }
+                check(result)?;
+                if entry.ProcessId != pid || entry.Flags & PSS_THREAD_FLAGS_TERMINATED != 0 {
+                    continue;
+                }
+                let raw_thread = OpenThread(
+                    THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                    0,
+                    entry.ThreadId,
+                );
+                if raw_thread.is_null() {
+                    return Err(std::io::Error::last_os_error());
+                }
+                let thread = OwnedHandle::from_raw_handle(raw_thread);
+                // A process may have been terminated externally after capture.
+                // Never resume a reused thread ID from another process.
+                let owner = GetProcessIdOfThread(thread.as_raw_handle());
+                if owner == 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if owner != pid {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "child thread owner changed",
+                    ));
+                }
+                return Ok(thread);
+            }
+        }
+    }
+}
+
 #[cfg(windows)]
 impl ProcessJob {
     pub fn new() -> std::io::Result<Self> {
@@ -60,9 +156,8 @@ impl ProcessJob {
     }
 
     pub fn attach_and_resume(&self, child: &tokio::process::Child) -> std::io::Result<()> {
-        use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-        use windows_sys::Win32::System::{Diagnostics::ToolHelp::*, JobObjects::*, Threading::*};
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::{JobObjects::*, Threading::*};
         let process = child
             .raw_handle()
             .ok_or_else(|| std::io::Error::other("child process unavailable"))?;
@@ -73,29 +168,11 @@ impl ProcessJob {
             if AssignProcessToJobObject(self.0.as_raw_handle(), process) == 0 {
                 return Err(std::io::Error::last_os_error());
             }
-            let raw = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-            if raw == INVALID_HANDLE_VALUE {
+            let thread = thread_snapshot::child_thread(process, pid)?;
+            if ResumeThread(thread.as_raw_handle()) == u32::MAX {
                 return Err(std::io::Error::last_os_error());
             }
-            let snapshot = OwnedHandle::from_raw_handle(raw);
-            let mut thread: THREADENTRY32 = std::mem::zeroed();
-            thread.dwSize = std::mem::size_of_val(&thread) as u32;
-            let mut found = Thread32First(snapshot.as_raw_handle(), &mut thread);
-            while found != 0 {
-                if thread.th32OwnerProcessID == pid {
-                    let raw = OpenThread(THREAD_SUSPEND_RESUME, 0, thread.th32ThreadID);
-                    if raw.is_null() {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    let handle = OwnedHandle::from_raw_handle(raw);
-                    if ResumeThread(handle.as_raw_handle()) == u32::MAX {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    return Ok(());
-                }
-                found = Thread32Next(snapshot.as_raw_handle(), &mut thread);
-            }
-            Err(std::io::Error::other("suspended child thread unavailable"))
+            Ok(())
         }
     }
 

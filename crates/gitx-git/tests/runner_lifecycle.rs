@@ -18,6 +18,167 @@ async fn a_cancelled_job_does_not_start_an_executable() {
 }
 
 #[test]
+#[ignore = "subprocess used by concurrent_commands_keep_their_own_results"]
+fn runner_result_fixture() {
+    use std::io::Write;
+    let Ok(marker) = std::env::var("GITX_RUNNER_RESULT") else {
+        return;
+    };
+    let code = std::env::var("GITX_RUNNER_EXIT")
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    println!("stdout:{marker}");
+    eprintln!("stderr:{marker}");
+    std::io::stdout().flush().unwrap();
+    std::io::stderr().flush().unwrap();
+    std::process::exit(code);
+}
+
+fn result_invocation(marker: &str, exit: i32) -> GitInvocation {
+    GitInvocation::new(
+        std::env::temp_dir(),
+        [
+            "--exact",
+            "runner_result_fixture",
+            "--ignored",
+            "--nocapture",
+        ],
+    )
+    .git_bin(std::env::current_exe().unwrap().to_string_lossy())
+    .env("GITX_RUNNER_RESULT", marker)
+    .env("GITX_RUNNER_EXIT", exit.to_string())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_commands_keep_their_own_results() {
+    // On Windows each command starts suspended. Concurrent snapshots must
+    // resume the matching child's thread, without mixing output or exit codes.
+    let mut tasks = tokio::task::JoinSet::new();
+    for index in 0..12 {
+        tasks.spawn(async move {
+            let marker = format!("invocation-{index}");
+            let exit = if index % 3 == 0 { 37 } else { 0 };
+            let result = GitRunner::default()
+                .run(result_invocation(&marker, exit), &CancellationToken::new())
+                .await;
+            if exit == 0 {
+                let output = result.unwrap();
+                assert_eq!(output.exit_code, 0);
+                assert!(String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .any(|line| line == format!("stdout:{marker}")));
+                assert_eq!(
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                    format!("stderr:{marker}")
+                );
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.code, gitx_core::ErrorCode::GitCommandFailed);
+                assert_eq!(error.exit_code, Some(exit));
+                assert_eq!(
+                    error.git_stderr.as_deref(),
+                    Some(format!("stderr:{marker}").as_str())
+                );
+            }
+        });
+    }
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while let Some(result) = tasks.join_next().await {
+            result.unwrap();
+        }
+    })
+    .await
+    .expect("concurrent suspended children did not finish");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "isolated subprocess used by windows_runner_releases_process_handles"]
+fn runner_handle_fixture() {
+    if std::env::var("GITX_RUNNER_HANDLES").as_deref() != Ok("1") {
+        return;
+    }
+    fn handle_count() -> u32 {
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+        let mut count = 0;
+        assert_ne!(
+            unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count) },
+            0
+        );
+        count
+    }
+    // Run alone in a subprocess: unrelated parallel tests would otherwise
+    // open handles while this assertion measures completed invocations.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let runner = GitRunner::default();
+        let cancel = CancellationToken::new();
+        runner
+            .run(result_invocation("warmup", 0), &cancel)
+            .await
+            .unwrap();
+        let initial = handle_count();
+        let mut samples = Vec::new();
+        for batch in 0..3 {
+            for index in 0..8 {
+                let exit = if index % 2 == 0 { 0 } else { 23 };
+                let result = runner
+                    .run(
+                        result_invocation(&format!("{batch}-{index}"), exit),
+                        &cancel,
+                    )
+                    .await;
+                assert_eq!(result.is_ok(), exit == 0);
+            }
+            // Failure before attachment must also release the new Job object.
+            let error = runner
+                .run(
+                    GitInvocation::new(std::env::temp_dir(), ["unused"])
+                        .git_bin("gitx-nonexistent-executable"),
+                    &cancel,
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, gitx_core::ErrorCode::FsError);
+            let count = handle_count();
+            samples.push(count);
+            assert!(
+                count <= initial + 2,
+                "handles grew: initial={initial}, samples={samples:?}"
+            );
+        }
+        println!("runner handles: initial={initial}, samples={samples:?}");
+    });
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_runner_releases_process_handles() {
+    let output = GitRunner::default()
+        .run(
+            GitInvocation::new(
+                std::env::temp_dir(),
+                [
+                    "--exact",
+                    "runner_handle_fixture",
+                    "--ignored",
+                    "--nocapture",
+                ],
+            )
+            .git_bin(std::env::current_exe().unwrap().to_string_lossy())
+            .env("GITX_RUNNER_HANDLES", "1"),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&output.stdout).contains("runner handles:"));
+}
+
+#[test]
 #[ignore = "child process used by pipe_deadlock_regression"]
 fn runner_pipe_fixture() {
     use std::io::{Read, Write};
