@@ -34,6 +34,8 @@ Node 24.22.1，同进程加载远端基线与修改后的实际函数，各预�
 
 与 QA-036 合并验证：完整前端 131 文件 / 1113 项通过，类型检查、Vite 生产构建、Windows 原生构建和相关 Oxlint 通过。最终日志为 `E:/IDEAproject/gitx/test-results/continue-0140-final-{tests,web,native}-20261119.log`。未改 Rust 产品代码，不重复运行此前整套 Rust 工作区回归。
 
-原生最终程序为 `E:/IDEAproject/gitx/test-results/isolated-target/debug/gitx-tree-open-final-0140-20261119.exe`，SHA256 `542832D52768CA1D9A222D6BA230A5D4FC30AF8FE47C4A064EA20CC48CF7BAF5`。已从最近项目载入专用仓库 `tree-refresh-20261119`，正确显示 Unstaged (2000)、文件树、Log 和加载结束状态。后续界面操作检测到用户输入，暂停自动输入，收起刷新/末尾键盘场景尚待继续；不将此阶段写成完整滚动验收。
+原生最终程序为 `E:/IDEAproject/gitx/test-results/isolated-target/debug/gitx-tree-open-final-0140-20261119.exe`，SHA256 `542832D52768CA1D9A222D6BA230A5D4FC30AF8FE47C4A064EA20CC48CF7BAF5`。已从最近项目载入专用仓库 `tree-refresh-20261119`，正确显示 Unstaged (2000)、文件树、Log 和加载结束状态；自动点选 file-0312.txt 后呈现对应差异，Home 回到首行。收起 Unstaged 后暂时将 file-1999.txt 恢复为 HEAD，后台更新标题为 1999，再恢复其原修改，标题回到 2000；分组始终保持收起。末尾键盘场景因持续检测到用户输入暂未完成，不将此阶段写成完整滚动验收。
 
-用户安装路径 `D:/gitx/gitx.exe` 未替换，仍为 0.1.35。QA-034 保持部分完成。源码将独立提交推送，哈希与远端核对结果记入统一台账。
+第一轮专用进程已退出，测试仓库 HEAD、2001 个文件内容与 status 恢复一致；index 字节哈希因状态刷新/恢复变化，另外逐一比较确认 2000 个暂存条目的文件模式、blob ID 与基线 HEAD 一致，没有暂存内容改变。结果见 `tree-refresh-after-20261119.json`。用户设置原文件也已按字节恢复，SHA256 `F160603B7BCE0F5CF7D07D6D1EAA088B6B69B79BB2F1FF83B855FB00E4F245C7`；启动时设置 APPDATA 未能隔离 Windows Known Folder，后续实际使用备份/临时设置/恢复流程，不能声称设置始终隔离。
+
+用户安装路径 `D:/gitx/gitx.exe` 未替换，仍为 0.1.35。QA-034 保持部分完成。源码已独立提交 `50d865f`，首次推送因 GitHub 凭据不可用失败，后续授权和推送核对记入统一台账。

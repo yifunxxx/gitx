@@ -3,6 +3,7 @@ import {
   Check,
   CloudDownload,
   FolderOpen,
+  LoaderCircle,
   GitBranch,
   History,
   Menu,
@@ -23,24 +24,19 @@ import { runAction } from "@/actions";
 import type { ActionContext } from "@/actions";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { isTauri } from "@/lib/utils";
-import { toast } from "@/composables/useToast";
-import { promptDialog } from "@/composables/useConfirm";
-import { useChangesStore } from "@/stores/changesStore";
-import { useLogStore } from "@/stores/logStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSyncStore } from "@/stores/syncStore";
+import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
 import { useUpdateStore } from "@/stores/updateStore";
 
 const { t } = useI18n();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
 const branches = useBranchesStore();
-const changes = useChangesStore();
-const log = useLogStore();
 const settings = useSettingsStore();
 const sync = useSyncStore();
 const updates = useUpdateStore();
+const { pending: opening, pendingPath, openFolder } = useWorkspaceOpen();
 
 const ctx = computed<ActionContext>(() => ({
   repoIds: workspace.toplevel ? [workspace.toplevel] : [],
@@ -83,32 +79,6 @@ const isDark = computed(() => {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 });
 
-async function openFolder() {
-  let path: string | null = null;
-  if (isTauri()) {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({ directory: true, multiple: false });
-    path = typeof selected === "string" ? selected : null;
-  } else {
-    path = await promptDialog({
-      title: t("welcome.openFolder"),
-      defaultValue: workspace.folderPath ?? "",
-      placeholder: t("welcome.folderPrompt"),
-      allowEmpty: false,
-    });
-  }
-  if (!path) return;
-  await workspace.openFolder(path);
-  toast({ title: t("welcome.opened"), description: path });
-  if (workspace.isRepo) {
-    await changes.refresh();
-    await log.load(true);
-    await branches.refresh();
-    layout.activeBottomTab = "log";
-  }
-  await runAction("Git.RefreshStatus", { ...ctx.value, folderPath: path, source: "toolbar" });
-}
-
 async function run(id: string, source: ActionContext["source"] = "toolbar") {
   await runAction(id, { ...ctx.value, source, place: source });
 }
@@ -132,13 +102,23 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
     </Tip>
 
     <Tip :text="t('toolbar.openFolder')">
-      <Button variant="ghost" size="sm" class="gap-1.5" @click="openFolder">
-        <FolderOpen class="h-3.5 w-3.5" />
+      <Button
+        variant="ghost"
+        size="sm"
+        class="gap-1.5"
+        :disabled="opening"
+        :aria-busy="opening"
+        @click="openFolder"
+      >
+        <LoaderCircle v-if="opening" class="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+        <FolderOpen v-else class="h-3.5 w-3.5" />
         <span class="max-w-[160px] truncate">
           {{
-            workspace.folderPath
-              ? workspace.folderPath.split(/[\\/]/).pop()
-              : t("welcome.openFolder")
+            opening
+              ? `${t("common.loading")}${pendingPath ? ` ${pendingPath.split(/[\\/]/).pop()}` : ""}`
+              : workspace.folderPath
+                ? workspace.folderPath.split(/[\\/]/).pop()
+                : t("welcome.openFolder")
           }}
         </span>
       </Button>

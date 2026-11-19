@@ -1,71 +1,17 @@
 <script setup lang="ts">
-import { Download, FolderGit2, FolderOpen, GitBranchPlus } from "@lucide/vue";
+import { Download, FolderGit2, FolderOpen, GitBranchPlus, LoaderCircle } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useChangesStore } from "@/stores/changesStore";
-import { useLogStore } from "@/stores/logStore";
-import { useLayoutStore } from "@/stores/layoutStore";
-import { useBranchesStore } from "@/stores/branchesStore";
-import { isTauri } from "@/lib/utils";
-import { toast } from "@/composables/useToast";
-import { promptDialog } from "@/composables/useConfirm";
+import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
 import { runAction } from "@/actions";
 
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
-const changes = useChangesStore();
-const log = useLogStore();
-const layout = useLayoutStore();
-const branches = useBranchesStore();
-
-async function pickDirectory(): Promise<string | null> {
-  if (isTauri()) {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({ directory: true, multiple: false });
-    return typeof selected === "string" ? selected : null;
-  }
-  return promptDialog({
-    title: t("welcome.openFolder"),
-    defaultValue: workspace.folderPath ?? "",
-    placeholder: t("welcome.folderPrompt"),
-    allowEmpty: false,
-  });
-}
-
-async function afterOpen() {
-  layout.leftOpen = true;
-  layout.bottomOpen = true;
-  layout.activeBottomTab = "log";
-  if (workspace.isRepo) {
-    await changes.refresh();
-    await log.load(true);
-    await branches.refresh();
-  }
-}
-
-async function openFolder() {
-  const path = await pickDirectory();
-  if (!path) return;
-  await workspace.openFolder(path);
-  toast({ title: t("welcome.opened"), description: path });
-  await afterOpen();
-}
-
-async function openRecent(path: string) {
-  await workspace.openFolder(path);
-  await afterOpen();
-}
-
-async function createRepo() {
-  const path = await pickDirectory();
-  if (!path) return;
-  await workspace.initRepo(path, "main");
-  toast({ title: t("welcome.repoCreated"), description: path });
-  await afterOpen();
-}
+const { pending, pendingPath, error, openFolder, openRecent, createRepo } = useWorkspaceOpen();
 
 async function cloneRepo() {
+  if (pending.value) return;
   await runAction("Git.Clone", {
     repoIds: [],
     selection: {},
@@ -76,7 +22,10 @@ async function cloneRepo() {
 </script>
 
 <template>
-  <div class="welcome-root flex h-full min-w-0 flex-col overflow-auto bg-dbx-content p-6">
+  <div
+    class="welcome-root flex h-full min-w-0 flex-col overflow-auto bg-dbx-content p-6"
+    :aria-busy="pending"
+  >
     <div class="welcome-panel m-auto w-full min-w-0 max-w-3xl shrink-0">
       <div class="mb-8">
         <div class="welcome-brand text-3xl font-semibold tracking-tight">gitx</div>
@@ -84,6 +33,19 @@ async function cloneRepo() {
           {{ t("welcome.tagline") }}
         </p>
       </div>
+
+      <div
+        v-if="pending"
+        role="status"
+        class="mb-4 flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
+      >
+        <LoaderCircle class="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" />
+        <span class="shrink-0">{{ t("common.loading") }}</span>
+        <span v-if="pendingPath" class="truncate font-mono text-xs" :title="pendingPath">{{
+          pendingPath
+        }}</span>
+      </div>
+      <p v-if="error" role="alert" class="mb-4 break-words text-sm text-destructive">{{ error }}</p>
 
       <div class="welcome-columns grid gap-6">
         <div class="min-w-0 space-y-2">
@@ -100,8 +62,9 @@ async function cloneRepo() {
             v-for="path in workspace.recent"
             :key="path"
             type="button"
-            class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+            class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
             :title="path"
+            :disabled="pending"
             @click="openRecent(path)"
           >
             <FolderGit2 class="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -113,6 +76,7 @@ async function cloneRepo() {
           <Button
             class="justify-start gap-2 transition-transform active:scale-[0.98]"
             size="lg"
+            :disabled="pending"
             @click="openFolder"
           >
             <FolderOpen class="h-4 w-4" />
@@ -121,6 +85,7 @@ async function cloneRepo() {
           <Button
             class="justify-start gap-2 transition-transform active:scale-[0.98]"
             size="lg"
+            :disabled="pending"
             variant="outline"
             @click="cloneRepo"
           >
@@ -130,6 +95,7 @@ async function cloneRepo() {
           <Button
             class="justify-start gap-2 transition-transform active:scale-[0.98]"
             size="lg"
+            :disabled="pending"
             variant="outline"
             @click="createRepo"
           >
