@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Plus, Minus, RefreshCw, ListPlus, List, ListTree } from "@lucide/vue";
+import { Plus, Minus, RefreshCw, ListPlus, List, ListTree, LoaderCircle } from "@lucide/vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import Skeleton from "@/components/common/Skeleton.vue";
@@ -26,6 +26,7 @@ import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { getBackend, type ChangesListMode } from "@/lib/backend";
 import { runAction } from "@/actions";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
+import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
 import { openDialog } from "@/composables/useDialog";
 import StopTrackingDialog from "@/features/commit/StopTrackingDialog.vue";
 import RollbackChangesDialog from "@/features/commit/RollbackChangesDialog.vue";
@@ -42,6 +43,7 @@ const rewrite = useRewriteStore();
 const stashShelf = useStashShelfStore();
 const files = useFileViewerStore();
 const history = useHistoryStore();
+const { pending: openingWorkspace, enableVcs } = useWorkspaceOpen();
 
 const changesListMode = computed<ChangesListMode>(
   () => settings.settings?.git?.changesListMode ?? "tree",
@@ -135,12 +137,6 @@ watch(
     }
   },
 );
-
-async function enableVcs() {
-  await workspace.enableVcs("main");
-  toast({ title: t("empty.enableVcs"), description: t("welcome.repoCreated") });
-  await changes.refresh();
-}
 
 function openDiff(path: string, section: ChangesSection) {
   void openChangeDiff(path, section);
@@ -529,7 +525,21 @@ async function runCtx(action: string) {
       :title="t('empty.notVcs')"
       :description="t('empty.notVcsHint')"
     >
-      <Button size="sm" @click="enableVcs">{{ t("empty.enableVcs") }}</Button>
+      <Button
+        size="sm"
+        class="gap-2"
+        :disabled="openingWorkspace"
+        :aria-busy="openingWorkspace"
+        :aria-label="t('empty.enableVcs')"
+        @click="enableVcs"
+      >
+        <LoaderCircle
+          v-if="openingWorkspace"
+          class="h-4 w-4 animate-spin motion-reduce:animate-none"
+        />
+        <span v-if="openingWorkspace" role="status">{{ t("common.loading") }}</span>
+        <span v-else>{{ t("empty.enableVcs") }}</span>
+      </Button>
     </EmptyState>
     <ErrorState v-else-if="changes.error" :message="t('empty.statusFailed')" :title="changes.error">
       <Button size="sm" variant="outline" @click="changes.refresh()">{{ t("empty.retry") }}</Button>

@@ -36,6 +36,7 @@ vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => ({}) }));
 vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({}) }));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({}) }));
 vi.mock("@/stores/logStore", () => ({ useLogStore: () => ({}) }));
+vi.mock("@/stores/branchesStore", () => ({ useBranchesStore: () => ({}) }));
 vi.mock("@/stores/compareStore", () => ({ useCompareStore: () => ({}) }));
 vi.mock("@/stores/repoAtRevStore", () => ({ useRepoAtRevStore: () => ({}) }));
 vi.mock("@/composables/useToast", () => ({ toast: vi.fn() }));

@@ -26,6 +26,8 @@ vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
+vi.mock("@/stores/logStore", () => ({ useLogStore: () => ({}) }));
+vi.mock("@/stores/branchesStore", () => ({ useBranchesStore: () => ({}) }));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({ refreshOpState: vi.fn() }) }));
