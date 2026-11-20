@@ -138,10 +138,43 @@ impl TerminalSession {
         // Wake both an idle consumer and a producer blocked by backpressure.
         self.output.finish(None, None);
         let _ = self.killer.lock().unwrap().kill();
+        self.close_pty();
+    }
+
+    fn close_pty(&self) {
+        // Unix writers own another master fd and send EOF when dropped. Keep
+        // that ordering; dropping the control handle alone cannot cancel them.
+        #[cfg(not(windows))]
         self.writer.lock().unwrap().take();
-        // Closing ConPTY also releases attached console processes. Do this on a
-        // worker, never the WebView/UI thread (ClosePseudoConsole may wait).
-        self.master.lock().unwrap().take();
+        // On Windows a full input pipe can block write_all while it holds the
+        // writer lock. Close ConPTY first to release that write and its clients.
+        // Drop outside the mutex: older Windows may wait for output to drain,
+        // and an explicit stop must remain able to wake the output queue.
+        let master = self.master.lock().unwrap().take();
+        drop(master);
+        #[cfg(windows)]
+        self.writer.lock().unwrap().take();
+    }
+}
+
+fn read_pty_output(reader: &mut dyn Read, output: &OutputQueue) -> Option<String> {
+    let mut buffer = [0; 8192];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => return None,
+            Ok(count) => {
+                // ClosePseudoConsole can wait for its final screen updates to
+                // be consumed. Once stopped, keep draining Windows output to
+                // EOF without retaining it in the closed frontend queue.
+                if !output.push(&buffer[..count]) && !cfg!(windows) {
+                    return None;
+                }
+            }
+            // PTYs on Unix report EIO when the slave closes.
+            Err(e) if cfg!(unix) && e.raw_os_error() == Some(5) => return None,
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => return None,
+            Err(e) => return Some(e.to_string()),
+        }
     }
 }
 
@@ -200,22 +233,7 @@ impl TerminalManager {
         let worker = std::thread::Builder::new()
             .name("gitx-terminal-output".into())
             .spawn(move || {
-                let mut buffer = [0; 8192];
-                let mut error = None;
-                loop {
-                    match reader.read(&mut buffer) {
-                        Ok(0) => break,
-                        Ok(count) if !output.push(&buffer[..count]) => break,
-                        Ok(_) => {}
-                        // PTYs on Unix report EIO when the slave closes.
-                        Err(e) if cfg!(unix) && e.raw_os_error() == Some(5) => break,
-                        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => break,
-                        Err(e) => {
-                            error = Some(e.to_string());
-                            break;
-                        }
-                    }
-                }
+                let error = read_pty_output(&mut reader, &output);
                 drop(reader);
                 let code = {
                     let mut state = output.state.lock().unwrap();
@@ -242,11 +260,10 @@ impl TerminalManager {
                     state.process_done = true;
                     waiting.output.changed.notify_all();
                 }
-                waiting.writer.lock().unwrap().take();
                 // ConPTY can keep its output pipe open after the shell exits.
                 // Closing the master on a separate thread lets the reader drain
                 // the final screen updates before reporting EOF to the frontend.
-                waiting.master.lock().unwrap().take();
+                waiting.close_pty();
             });
         if let Err(error) = waiter {
             session.stop();
@@ -396,6 +413,62 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn closed_output_keeps_draining_the_pty_without_retaining_bytes() {
+        let output = OutputQueue::default();
+        output.push(b"queued before close");
+        output.finish(Some(7), None);
+        let mut reader = std::io::Cursor::new(vec![1; 3 * 8192 + 1]);
+
+        assert!(read_pty_output(&mut reader, &output).is_none());
+        assert_eq!(reader.position(), (3 * 8192 + 1) as u64);
+        let tail = output.read();
+        assert_eq!(tail.data, b"queued before close");
+        assert!(tail.exited);
+        assert_eq!(tail.exit_code, Some(7));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn close_releases_conpty_before_waiting_for_an_inflight_writer() {
+        let manager = Arc::new(TerminalManager::default());
+        let cwd = tempfile::tempdir().unwrap();
+        let info = manager
+            .open("main".into(), cwd.path(), TerminalShell::Cmd, 80, 24)
+            .unwrap();
+        let session = manager.get("main", &info.id).unwrap();
+        // An in-flight write holds this lock until ConPTY closes its input.
+        // Holding it here reproduces the dependency without an unbounded
+        // native write: release it before asserting, including on regression.
+        let writer = session.writer.lock().unwrap();
+        let closing = manager.clone();
+        let id = info.id.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let closer = std::thread::spawn(move || tx.send(closing.close("main", &id)));
+        let start = std::time::Instant::now();
+        let mut conpty_released = false;
+        while start.elapsed() < Duration::from_secs(3) {
+            if session
+                .master
+                .try_lock()
+                .is_ok_and(|master| master.is_none())
+            {
+                conpty_released = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        drop(writer);
+        rx.recv_timeout(Duration::from_secs(3))
+            .expect("close must complete after the writer is released")
+            .unwrap();
+        closer.join().unwrap().unwrap();
+        assert!(conpty_released, "close waited for the writer before ConPTY");
+        assert!(session.writer.lock().unwrap().is_none());
+        assert!(manager.get("main", &info.id).is_err());
+    }
+
+    #[test]
     fn rejects_invalid_startup_and_shutdown_rejects_new_sessions() {
         let manager = TerminalManager::default();
         assert!(manager
@@ -470,9 +543,9 @@ mod tests {
         });
         session
             .write(if cfg!(windows) {
-                "echo GITX_PTY_OK\rcd\rexit 7\r"
+                "echo GITX_PTY_OK\rcd\rset GITX_TEST_TAIL=GITX_PTY_\recho %GITX_TEST_TAIL%FINAL_TAIL\rexit 7\r"
             } else {
-                "echo GITX_PTY_OK; pwd; exit 7\n"
+                "echo GITX_PTY_OK; pwd; printf '%s%s\\n' GITX_PTY_ FINAL_TAIL; exit 7\n"
             })
             .unwrap();
         let result = rx.recv_timeout(Duration::from_secs(15));
@@ -481,6 +554,9 @@ mod tests {
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("GITX_PTY_OK"), "{text}");
         assert!(text.contains("gitx terminal"), "{text}");
+        // The full marker is absent from the input, so terminal echo alone
+        // cannot satisfy the assertion that the final command output drained.
+        assert!(text.contains("GITX_PTY_FINAL_TAIL"), "{text}");
         assert_eq!(code, Some(7));
         manager.close("main", &info.id).unwrap();
     }
