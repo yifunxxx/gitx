@@ -361,3 +361,66 @@ it("handles synchronous refresh failures without reporting a committed change as
   expect(mocks.toast).toHaveBeenCalledOnce();
   expect(mocks.toast.mock.calls[0][0].title).toBe("Committed");
 });
+
+it("dialog commits use their own message and files while preserving panel drafts and selection", async () => {
+  const store = useCommitStore();
+  store.message = "panel draft";
+  store.amend = true;
+  mocks.backend.commitCreate.mockResolvedValue(committed);
+  expect(
+    await store.commitFiles(["selected.txt", "selected.txt"], "dialog subject\n\nbody", false),
+  ).toEqual(committed);
+  expect(mocks.backend.commitCreate).toHaveBeenCalledExactlyOnceWith({
+    repoId: "id-A",
+    path: "A",
+    message: "dialog subject\n\nbody",
+    amend: false,
+    noVerify: true,
+    paths: ["selected.txt"],
+  });
+  expect(store.message).toBe("panel draft");
+  expect(localStorage.getItem(key("A"))).toBe("panel draft");
+  expect(store.amend).toBe(true);
+  expect(mocks.changes.setChecked).not.toHaveBeenCalled();
+  expect(mocks.changes.refresh).toHaveBeenCalledOnce();
+});
+
+it("shares the submission lock between dialog and panel and releases it after a rejected hook", async () => {
+  const store = useCommitStore();
+  store.message = "panel draft";
+  const pending = deferred<typeof committed>();
+  mocks.backend.commitCreate.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(committed);
+  const operation = store.commitFiles(["selected.txt"], "dialog message");
+  await store.commitFiles(["another.txt"], "duplicate");
+  await store.commit();
+  expect(mocks.backend.commitCreate).toHaveBeenCalledOnce();
+  pending.reject(new Error("hook rejected"));
+  await expect(operation).rejects.toThrow("hook rejected");
+  expect(store.committing).toBe(false);
+  expect(mocks.changes.refresh).not.toHaveBeenCalled();
+  expect(store.message).toBe("panel draft");
+  expect(await store.commitFiles(["selected.txt"], "retry")).toEqual(committed);
+});
+
+it("does not refresh or notify an old dialog commit after repository navigation", async () => {
+  const store = useCommitStore();
+  const pending = deferred<typeof committed>();
+  mocks.backend.commitCreate.mockReturnValue(pending.promise);
+  const operation = store.commitFiles(["selected.txt"], "old dialog");
+  mocks.workspace.navigation++;
+  store.message = "new draft";
+  pending.resolve(committed);
+  expect(await operation).toEqual(committed);
+  expect(mocks.toast).not.toHaveBeenCalled();
+  expect(mocks.changes.refresh).not.toHaveBeenCalled();
+  expect(store.message).toBe("new draft");
+});
+
+it("keeps dialog commit success even when subsequent refresh fails", async () => {
+  const store = useCommitStore();
+  mocks.backend.commitCreate.mockResolvedValue(committed);
+  mocks.changes.refresh.mockRejectedValue(new Error("refresh failed"));
+  expect(await store.commitFiles(["selected.txt"], "dialog")).toEqual(committed);
+  expect(mocks.toast).toHaveBeenCalledOnce();
+  expect(store.committing).toBe(false);
+});

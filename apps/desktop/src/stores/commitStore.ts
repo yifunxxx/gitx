@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, reactive, ref, watch } from "vue";
-import { getBackend } from "@/lib/backend";
+import { getBackend, type CommitResult } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { toast } from "@/composables/useToast";
@@ -98,6 +98,56 @@ export const useCommitStore = defineStore("commit", () => {
   const captureOperation = useRepositoryAction(resetSession);
   resetSession();
 
+  function notifyCommitted(result: CommitResult) {
+    toast({
+      title: result.amended ? "Amended" : "Committed",
+      description: result.warning || `${result.sha.slice(0, 7)} ${result.subject}`,
+      persistent: !!result.warning,
+    });
+  }
+
+  async function refreshAfterCommit(source: ReturnType<typeof captureOperation>) {
+    // A refresh/storage failure must never turn a successful commit into a retry prompt.
+    await Promise.allSettled(
+      [
+        () => changes.refresh(),
+        () => useRewriteStore().refreshOpState(),
+        () => useBranchesStore().refresh(),
+        () => useLogStore().load(true, true),
+      ].map((refresh) =>
+        Promise.resolve().then(async () => {
+          if (source.current()) await refresh();
+        }),
+      ),
+    );
+  }
+
+  // Dialog submissions own their message and file selection. They share the
+  // repository lock and refresh flow without replacing the panel's draft.
+  async function commitFiles(paths: string[], text: string, hooks = true) {
+    if (committing.value || useRewriteStore().busy || !paths.length || !text.trim()) return;
+    const source = captureOperation();
+    if (!source.current() || !source.path || !source.repoId) return;
+    pendingPaths.add(source.path);
+    try {
+      const result = await getBackend().commitCreate({
+        repoId: source.repoId,
+        path: source.path,
+        message: text,
+        amend: false,
+        noVerify: !hooks,
+        paths: [...new Set(paths)],
+      });
+      if (source.current()) {
+        notifyCommitted(result);
+        await refreshAfterCommit(source);
+      }
+      return result;
+    } finally {
+      pendingPaths.delete(source.path);
+    }
+  }
+
   async function setAmend(value: boolean) {
     if (committing.value || useRewriteStore().busy) return;
     if (value === amend.value && (!value || !amendError.value)) return;
@@ -157,11 +207,7 @@ export const useCommitStore = defineStore("commit", () => {
         paths,
       });
       if (!source.current()) return result;
-      toast({
-        title: result.amended ? "Amended" : "Committed",
-        description: result.warning || `${result.sha.slice(0, 7)} ${result.subject}`,
-        persistent: !!result.warning,
-      });
+      notifyCommitted(result);
       if (revision === messageRevision) {
         const nextDraft = wasAmend ? ordinaryDraft : "";
         showMessage(nextDraft);
@@ -170,19 +216,7 @@ export const useCommitStore = defineStore("commit", () => {
       amend.value = false;
       ++amendRequest;
       if (selection === selectionRevision) changes.setChecked([]);
-      // A refresh/storage failure must never turn a successful commit into a retry prompt.
-      await Promise.allSettled(
-        [
-          () => changes.refresh(),
-          () => useRewriteStore().refreshOpState(),
-          () => useBranchesStore().refresh(),
-          () => useLogStore().load(true, true),
-        ].map((refresh) =>
-          Promise.resolve().then(async () => {
-            if (source.current()) await refresh();
-          }),
-        ),
-      );
+      await refreshAfterCommit(source);
       return result;
     } catch (e) {
       if (!source.current()) throw e;
@@ -215,5 +249,6 @@ export const useCommitStore = defineStore("commit", () => {
     amendError,
     setAmend,
     commit,
+    commitFiles,
   };
 });

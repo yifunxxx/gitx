@@ -336,13 +336,13 @@ async function moveFocus(event: KeyboardEvent, index: number) {
       <VirtualList
         ref="list"
         :items="rows"
-        :item-height="36"
+        :item-height="24"
         :get-key="(row: Row) => row.key"
         preserve-scroll-anchor
       >
         <template #default="{ item: row, index }">
           <div
-            class="flex h-full cursor-pointer items-center gap-2 px-2 text-xs hover:bg-accent focus-within:bg-accent"
+            class="flex h-full cursor-pointer items-center gap-1 px-2 text-xs hover:bg-accent focus-within:bg-accent"
             :title="row.file?.origPath ? `${row.file.origPath} → ${row.path}` : row.path"
             :style="treeMode ? { paddingLeft: `${8 + row.depth * 16}px` } : undefined"
             :role="treeMode ? 'treeitem' : undefined"
@@ -367,7 +367,7 @@ async function moveFocus(event: KeyboardEvent, index: number) {
               </button>
               <span v-else class="h-4 w-4 shrink-0" />
             </template>
-            <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+            <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5">
               <IndeterminateCheckbox
                 :checked="checkState(row) === true"
                 :indeterminate="checkState(row) === 'mixed'"
@@ -385,12 +385,14 @@ async function moveFocus(event: KeyboardEvent, index: number) {
                 :kind="row.folder || /[\\/]$/.test(row.path) ? 'folder' : 'file'"
                 :expanded="row.expanded"
               />
-              <span v-if="!row.folder" class="w-6 shrink-0 font-mono text-muted-foreground">{{
-                row.file?.status || "·"
-              }}</span>
-              <span class="truncate font-mono"
+              <span class="min-w-0 flex-1 truncate font-mono"
                 ><template v-if="row.file?.origPath">{{ row.file.origPath }} → </template
                 >{{ row.name }}</span
+              >
+              <span
+                v-if="!row.folder && row.file?.status"
+                class="shrink-0 font-mono text-[10px] text-muted-foreground"
+                >{{ row.file.status }}</span
               >
             </label>
           </div>

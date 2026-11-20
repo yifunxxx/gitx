@@ -324,16 +324,20 @@ it("Commit Files… stages unstaged paths then focuses the commit UI", async () 
   expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
 });
 
-it("Commit Files… checks paths in changelist mode and focuses the commit UI", async () => {
+it("Commit Files… opens the same dialog in changelist mode without changing panel state", async () => {
   mocks.dialog.mockResolvedValue({ paths: ["first.txt", "second.txt"] });
   mocks.changes.stagingMode = false;
   mocks.changes.selectedSection = "changelist:default";
   mocks.changes.selectedPaths = ["first.txt", "second.txt"];
   await openMenu();
   await click("commitTw.commitFiles");
-  expect(mocks.changes.setChecked).toHaveBeenCalledWith(["first.txt", "second.txt"]);
+  expect(mocks.dialog.mock.calls[0]?.[1]).toEqual({
+    initialPaths: ["first.txt", "second.txt"],
+    section: "changelist:default",
+  });
+  expect(mocks.changes.setChecked).not.toHaveBeenCalled();
   expect(mocks.changes.stage).not.toHaveBeenCalled();
-  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+  expect(mocks.focusCommitUi).not.toHaveBeenCalled();
 });
 
 it("Commit Files… does not stage already-staged paths", async () => {
@@ -342,7 +346,7 @@ it("Commit Files… does not stage already-staged paths", async () => {
   await click("commitTw.commitFiles");
   expect(mocks.changes.stage).not.toHaveBeenCalled();
   expect(mocks.changes.add).not.toHaveBeenCalled();
-  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+  expect(mocks.focusCommitUi).not.toHaveBeenCalled();
 });
 
 it("Commit Files… stops after navigation invalidates staging", async () => {
@@ -358,7 +362,7 @@ it("Commit Files… stops after navigation invalidates staging", async () => {
   expect(mocks.focusCommitUi).not.toHaveBeenCalled();
 });
 
-it("Commit Files… uses only confirmed original paths still present after refresh", async () => {
+it("Commit Files… keeps the captured selection in the dialog and does not stage after it closes", async () => {
   const answer = deferred<{ paths: string[] }>();
   mocks.dialog.mockReturnValue(answer.promise);
   mocks.changes.stagingMode = false;
@@ -373,8 +377,8 @@ it("Commit Files… uses only confirmed original paths still present after refre
   mocks.changes.pathsForSection.mockReturnValue(["second.txt", "unrelated.txt"]);
   answer.resolve({ paths: ["first.txt", "second.txt", "unrelated.txt", "second.txt"] });
   await flushPromises();
-  expect(mocks.changes.setChecked).toHaveBeenCalledExactlyOnceWith(["second.txt"]);
-  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+  expect(mocks.changes.setChecked).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).not.toHaveBeenCalled();
 });
 
 it.each(["cancel", "empty", "navigation", "mode"])(
@@ -396,12 +400,12 @@ it.each(["cancel", "empty", "navigation", "mode"])(
   },
 );
 
-it("Commit Files… stages only the confirmed subset without clearing the existing index", async () => {
+it("Commit Files… leaves staging to the dialog's explicit commit action", async () => {
   mocks.changes.selectedSection = "unstaged";
   mocks.dialog.mockResolvedValue({ paths: ["second.txt"] });
   await openMenu();
   await click("commitTw.commitFiles");
-  expect(mocks.changes.stage).toHaveBeenCalledExactlyOnceWith(["second.txt"]);
+  expect(mocks.changes.stage).not.toHaveBeenCalled();
   expect(mocks.changes.unstage).not.toHaveBeenCalled();
-  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+  expect(mocks.focusCommitUi).not.toHaveBeenCalled();
 });

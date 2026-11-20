@@ -344,23 +344,15 @@ async function createPatchSelected(target: ChangesTarget) {
   });
 }
 
-/** Commit Files… — include selected paths in the next commit and focus the message box. */
+/** Multi-file commits own their message and selection in the shared file-picker dialog. */
 async function commitFilesSelected(target: ChangesTarget) {
   if (!target.current() || !target.paths.length || !target.section) return;
   if (target.paths.length > 1) {
-    const choice = await openDialog<{ paths: string[] } | null>(CommitFilesDialog, {
+    await openDialog(CommitFilesDialog, {
       initialPaths: [...target.paths],
       section: target.section,
     });
-    if (!choice?.paths.length || !target.current() || changes.stagingMode !== target.stagingMode)
-      return;
-    const original = new Set(target.paths);
-    const available = new Set(changes.pathsForSection(target.section));
-    const paths = [...new Set(choice.paths)].filter(
-      (path) => original.has(path) && available.has(path),
-    );
-    if (!paths.length) return;
-    target = { ...target, paths };
+    return;
   }
   if (target.stagingMode) {
     if (target.section === "unversioned") await changes.add(target.paths);
