@@ -10,6 +10,18 @@ use gitx_core::{
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
+struct CommitIndexLock {
+    path: std::path::PathBuf,
+    file: Option<std::fs::File>,
+}
+
+impl Drop for CommitIndexLock {
+    fn drop(&mut self) {
+        self.file.take();
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 impl GitRunner {
     pub async fn status_get(
         &self,
@@ -391,17 +403,118 @@ impl GitRunner {
         }
         if let Some(paths) = paths {
             if !paths.is_empty() {
-                // Add untracked first, then commit --only.
-                let _ = self.add_paths(cwd, paths, false, cancel).await;
                 args.push("--only".into());
                 args.push("--".into());
                 args.extend(paths.iter().cloned());
+                let result = self.commit_paths(cwd, args, paths, amend, cancel).await;
+                let _ = std::fs::remove_file(&msg_path);
+                let result = result?;
+                if result.warning.is_some() {
+                    return Ok(result);
+                }
+                return Ok(self.restore_after_commit(cwd, result).await);
             }
         }
 
         let result = self.run_commit_and_result(cwd, args, amend, cancel).await;
         let _ = std::fs::remove_file(&msg_path);
         Ok(self.restore_after_commit(cwd, result?).await)
+    }
+
+    async fn commit_paths(
+        &self,
+        cwd: &Path,
+        args: Vec<String>,
+        paths: &[String],
+        amend: bool,
+        cancel: &CancellationToken,
+    ) -> Result<CommitResult, AppError> {
+        let git_dir = self.git_dir(cwd, cancel).await?;
+        let index = git_dir.join("index");
+        let lock_path = git_dir.join("index.lock");
+        let lock = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+            .map_err(|e| AppError::new(ErrorCode::FsError, format!("lock index: {e}")))?;
+        let _lock = CommitIndexLock {
+            path: lock_path,
+            file: Some(lock),
+        };
+        let temporary = tempfile::Builder::new()
+            .prefix("commit-index-")
+            .tempfile_in(git_dir.join("gitx"))
+            .map_err(|e| AppError::new(ErrorCode::FsError, format!("create commit index: {e}")))?
+            .into_temp_path();
+        let _temporary_lock = CommitIndexLock {
+            path: std::path::PathBuf::from(format!("{}.lock", temporary.display())),
+            file: None,
+        };
+        // Work on a private copy under the real index lock. Git's --only keeps
+        // unrelated staged entries, but adding untracked paths before it must
+        // not alter the user's index when a hook or commit fails.
+        match std::fs::copy(&index, &temporary) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && !index.exists() => {
+                std::fs::remove_file(&temporary).map_err(|e| {
+                    AppError::new(
+                        ErrorCode::FsError,
+                        format!("prepare empty commit index: {e}"),
+                    )
+                })?;
+            }
+            Err(e) => {
+                return Err(AppError::new(
+                    ErrorCode::FsError,
+                    format!("copy index: {e}"),
+                ))
+            }
+        }
+        let invocation = |args: Vec<String>| {
+            GitInvocation::new(cwd, args)
+                .kind(OpKind::Write)
+                .git_bin(self.git_bin.clone())
+                .env("GIT_INDEX_FILE", temporary.to_string_lossy())
+                .env("GIT_LITERAL_PATHSPECS", "1")
+        };
+        self.run(
+            invocation(vec![
+                "add".into(),
+                "-A".into(),
+                "--pathspec-from-file=-".into(),
+                "--pathspec-file-nul".into(),
+            ])
+            .stdin(pathspec_nul(paths)),
+            cancel,
+        )
+        .await?;
+        self.run(
+            invocation(args).timeout(Some(std::time::Duration::from_secs(120))),
+            cancel,
+        )
+        .await
+        .map_err(classify_commit_error)?;
+
+        // The commit already exists: finish publishing its index even if the
+        // caller cancels now, and report recovery trouble as success + warning.
+        let warning = match temporary.persist(&index) {
+            Ok(()) => None,
+            Err(error) => {
+                let detail = error.error.to_string();
+                let recovery = match error.path.keep() {
+                    Ok(path) => format!("Prepared index retained at {}", path.display()),
+                    Err(error) => format!("Could not retain the prepared index: {error}"),
+                };
+                Some(format!(
+                    "Commit succeeded, but the index could not be updated: {detail}. {recovery}"
+                ))
+            }
+        };
+        let mut result = self
+            .commit_result_from_head(cwd, amend, &CancellationToken::new())
+            .await?;
+        result.warning = warning;
+        Ok(result)
     }
 
     async fn commit_partial(
@@ -600,28 +713,7 @@ impl GitRunner {
             .git_bin(self.git_bin.clone())
             .timeout(Some(std::time::Duration::from_secs(120)));
 
-        match self.run(inv, cancel).await {
-            Ok(_) => {}
-            Err(err) => {
-                let stderr = err.git_stderr.clone().unwrap_or_default();
-                if stderr.contains("nothing to commit") {
-                    return Err(AppError::new(
-                        ErrorCode::NothingToCommit,
-                        "nothing to commit",
-                    ));
-                }
-                if stderr.to_lowercase().contains("hook")
-                    || stderr.contains("pre-commit")
-                    || stderr.contains("commit-msg")
-                {
-                    return Err(AppError::new(ErrorCode::HookFailed, err.message)
-                        .with_stderr(stderr)
-                        .with_command(err.command.unwrap_or_default())
-                        .with_exit_code(err.exit_code.unwrap_or(1)));
-                }
-                return Err(err);
-            }
-        }
+        self.run(inv, cancel).await.map_err(classify_commit_error)?;
         self.commit_result_from_head(cwd, amend, cancel).await
     }
 
@@ -1213,6 +1305,23 @@ pub(crate) fn pathspec_nul(paths: &[String]) -> Vec<u8> {
         buf.push(0);
     }
     buf
+}
+
+fn classify_commit_error(err: AppError) -> AppError {
+    let stderr = err.git_stderr.clone().unwrap_or_default();
+    if stderr.contains("nothing to commit") {
+        return AppError::new(ErrorCode::NothingToCommit, "nothing to commit");
+    }
+    if stderr.to_lowercase().contains("hook")
+        || stderr.contains("pre-commit")
+        || stderr.contains("commit-msg")
+    {
+        return AppError::new(ErrorCode::HookFailed, err.message)
+            .with_stderr(stderr)
+            .with_command(err.command.unwrap_or_default())
+            .with_exit_code(err.exit_code.unwrap_or(1));
+    }
+    err
 }
 
 fn looks_like_sha(s: &str) -> bool {
