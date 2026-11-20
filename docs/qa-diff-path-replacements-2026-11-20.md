@@ -18,6 +18,6 @@ Windows原生构建通过（qa059-native-build-20261120.log，1分36秒）。专
 
 专用主进程3384（19:32:25.104 +08:00）及其conhost17724退出，未将共享WebView算作专有进程。fixture HEAD/status/index树和两个工作区文件哈希全部保持；设置测试后与准备值语义一致，精确恢复到原字节SHA256 6DD5D73EAD1F19D1860AE9B143659A0753756E82DFF7B5F5FCCB588693F05335。cleanup.json保留核对结果。用户安装版0.1.41未替换。
 
-检查中另发现Combined Diff用unwrap_or(None)吞掉所有读取错误，登记QA060待核查，留待独立复现和处理，不混入本项修复。独立提交及推送结果随后补记。
+检查中另发现Combined Diff用unwrap_or(None)吞掉所有读取错误，登记QA060待核查，留待独立复现和处理，不混入本项修复。独立提交8f6a78160614b860899d1397ef178231971b581a已推送，独立ls-remote返回完整SHA一致，首次成功且无凭据提示。
 
 提交前再次fetch成功，master仍efc2a8afe17af6f4c937c8c95c8f7e58dc834b0a、交付分支仍7ed1ee22dc319f6e9e16faec0a23f54dcd1579cb，均为当前HEAD祖先，无新增远端改动。
