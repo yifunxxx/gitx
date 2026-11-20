@@ -755,6 +755,8 @@ function onCommitContext(sha: string, e: MouseEvent) {
                           :lane-labels="graphLayout.rows[idx]!.laneLabels"
                           :node-label="graphLayout.rows[idx]!.nodeLabel"
                           :lane-width="14"
+                          :viewport-left="graphOffset"
+                          :viewport-width="graphColumnWidth"
                           :style="{ transform: `translateX(${-graphOffset}px)` }"
                         />
                       </span>

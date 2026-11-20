@@ -168,3 +168,36 @@ it("disconnects size observers when results disappear and on unmount", async () 
   wrapper.unmount();
   expect(Observer.instances[1]!.disconnect).toHaveBeenCalledOnce();
 });
+
+it("shares the graph viewport with every cell during pan, resize and selected-node reveal", async () => {
+  const assertViewport = () => {
+    const cells = wrapper.findAllComponents(CommitGraphCell);
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell.props("viewportLeft")).toBe(offset());
+      expect(cell.props("viewportWidth")).toBe(graphWidth());
+    }
+  };
+  assertViewport();
+  await slider().setValue("200");
+  assertViewport();
+  Observer.instances[0]!.resize(800);
+  await flushPromises();
+  assertViewport();
+  mocks.log.selectedSha = "side-39";
+  await flushPromises();
+  assertViewport();
+  const selected = wrapper.findAllComponents(CommitGraphCell)[40]!;
+  const nodeX = 6 + (selected.props("graph").lane + 0.5) * 14;
+  const viewportLeft = selected.props("viewportLeft")!;
+  const viewportWidth = selected.props("viewportWidth")!;
+  expect(nodeX).toBeGreaterThanOrEqual(viewportLeft);
+  expect(nodeX).toBeLessThanOrEqual(viewportLeft + viewportWidth);
+  const beforeListScroll = offset();
+  wrapper.findComponent(VirtualList).vm.$emit("scroll", {
+    target: { scrollLeft: 75, scrollHeight: 1000, scrollTop: 0, clientHeight: 400 },
+  });
+  await flushPromises();
+  assertViewport();
+  expect(offset()).toBe(beforeListScroll);
+});

@@ -18,6 +18,9 @@ const props = defineProps<{
   /** Label for this commit's node (refs on the commit). */
   nodeLabel?: string;
   hiddenParents?: string[];
+  /** Visible horizontal interval in this SVG's original coordinate space. */
+  viewportLeft?: number;
+  viewportWidth?: number;
 }>();
 
 const H = computed(() => props.rowHeight ?? 22);
@@ -43,10 +46,11 @@ function tipForLane(lane: number) {
   return props.laneLabels?.[lane] ?? "";
 }
 
-type Seg =
+type Seg = { key: number } & (
   | { kind: "through"; lane: number; color: number }
   | { kind: "down"; lane: number; color: number }
-  | { kind: "curve"; from: number; to: number; color: number };
+  | { kind: "curve"; from: number; to: number; color: number }
+);
 
 const segments = computed(() => {
   const segs: Seg[] = [];
@@ -57,16 +61,40 @@ const segments = computed(() => {
     const color = props.edgeColors[i] ?? props.graph.color;
     if (e.fromLane === e.toLane) {
       if (e.fromLane === node) {
-        segs.push({ kind: "down", lane: e.fromLane, color });
+        segs.push({ key: i, kind: "down", lane: e.fromLane, color });
       } else if (!seenThrough.has(e.fromLane)) {
         seenThrough.add(e.fromLane);
-        segs.push({ kind: "through", lane: e.fromLane, color });
+        segs.push({ key: i, kind: "through", lane: e.fromLane, color });
       }
     } else {
-      segs.push({ kind: "curve", from: e.fromLane, to: e.toLane, color });
+      segs.push({ key: i, kind: "curve", from: e.fromLane, to: e.toLane, color });
     }
   });
   return segs;
+});
+
+const visibleSegments = computed(() => {
+  const left = props.viewportLeft;
+  const viewportWidth = props.viewportWidth;
+  if (
+    left === undefined ||
+    viewportWidth === undefined ||
+    !Number.isFinite(left) ||
+    !Number.isFinite(viewportWidth) ||
+    viewportWidth <= 0
+  )
+    return segments.value;
+  // Include the 2px stroke, round caps and a conservative antialiasing margin.
+  const minimum = left - 2;
+  const maximum = left + viewportWidth + 2;
+  return segments.value.filter((segment) => {
+    const x1 = cx(segment.kind === "curve" ? segment.from : segment.lane);
+    const x2 = cx(segment.kind === "curve" ? segment.to : segment.lane);
+    // curvePath's control points use only x1 and x2. Its x range is bounded by
+    // those endpoints; a curve crossing the viewport must remain even when
+    // both endpoints lie outside it. Keep each original key while panning.
+    return Math.max(x1, x2) >= minimum && Math.min(x1, x2) <= maximum;
+  });
 });
 
 function curvePath(from: number, to: number) {
@@ -94,8 +122,8 @@ const tip = computed(() => props.nodeLabel || tipForLane(props.graph.lane) || ""
     <title v-if="tip">{{ tip }}</title>
     <g fill="none" stroke-width="2" stroke-linecap="round">
       <path
-        v-for="(s, i) in segments"
-        :key="i"
+        v-for="s in visibleSegments"
+        :key="s.key"
         :stroke="laneColor(s.color)"
         :d="
           s.kind === 'curve'
