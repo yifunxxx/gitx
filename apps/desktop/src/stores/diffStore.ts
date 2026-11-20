@@ -41,12 +41,17 @@ export const useDiffStore = defineStore("diff", () => {
   }>();
   /** Per-tab load generation — stale responses are dropped. */
   const loadGen = new Map<string, number>();
+  // Hidden tabs keep their paint and coalesce repository events into one read
+  // when shown again. A Set avoids reactive churn for every hidden tab.
+  const staleTabs = new Set<string>();
   let nextGeneration = 0;
   const workspace = useWorkspaceStore();
+  const layout = useLayoutStore();
   watch(
     () => [workspace.repoPath, workspace.repoId, workspace.navigationToken()],
     () => {
       loadGen.clear();
+      staleTabs.clear();
       paneStates.clear();
       tabs.value = [];
       activeId.value = null;
@@ -76,6 +81,28 @@ export const useDiffStore = defineStore("diff", () => {
   function liveTab(id: string): DiffTab | undefined {
     return tabs.value.find((t) => t.id === id);
   }
+
+  function refreshVisibleTab() {
+    const id = activeId.value;
+    if (layout.activeEditorKind !== "diff" ||
+      (layout.bottomOpen && layout.bottomMaximized) || !id || !staleTabs.has(id)) return;
+    return reloadTab(id, { soft: true });
+  }
+
+  /** Repository events invalidate live sources; only the visible tab reads now. */
+  function refreshLiveTabs() {
+    for (const tab of tabs.value) {
+      if (tab.kind === "file" || isLiveComparison(tab)) staleTabs.add(tab.id);
+    }
+    return refreshVisibleTab();
+  }
+
+  watch(
+    () => [activeId.value, layout.activeEditorKind, layout.bottomOpen, layout.bottomMaximized],
+    () => { void refreshVisibleTab(); },
+    // Mark the revealed cached tab loading before its write controls render.
+    { flush: "sync" },
+  );
 
   function savePaneViewState(id: string, snapshot: DiffPaneSnapshot) {
     const tab = liveTab(id);
@@ -142,12 +169,15 @@ export const useDiffStore = defineStore("diff", () => {
       collapseUnchanged: true,
       kind: "file",
     });
+    const refresh = !!opts?.force || staleTabs.has(id);
+    // This entry point owns the read; activation must not also start one.
+    if (refresh || !tab.result) staleTabs.delete(id);
     activeId.value = id;
-    useLayoutStore().activeEditorKind = "diff";
+    layout.activeEditorKind = "diff";
 
-    // Instant reactivation from cache. Soft refresh only when forced (e.g. after stage).
+    // Fresh cached tabs reactivate instantly; invalidated tabs catch up once.
     if (tab.result) {
-      if (opts?.force) await reloadTab(id, { soft: true });
+      if (refresh) await reloadTab(id, { soft: true });
       return;
     }
     await reloadTab(id);
@@ -179,10 +209,12 @@ export const useDiffStore = defineStore("diff", () => {
       collapseUnchanged: true,
       kind: "compare",
     });
+    const refresh = isLiveComparison(tab) || staleTabs.has(id);
+    if (refresh || !tab.result) staleTabs.delete(id);
     activeId.value = id;
-    useLayoutStore().activeEditorKind = "diff";
+    layout.activeEditorKind = "diff";
     if (tab.result) {
-      if (isLiveComparison(tab)) await reloadTab(id, { soft: true });
+      if (refresh) await reloadTab(id, { soft: true });
       return;
     }
     await reloadTab(id);
@@ -198,6 +230,8 @@ export const useDiffStore = defineStore("diff", () => {
     const tab = liveTab(id);
     if (!tab) return;
 
+    // Consume only events known at start; events during this read stay pending.
+    staleTabs.delete(id);
     const gen = bumpGen(id);
     // Keep existing paint during refresh, but always expose the pending state.
     patchTab(id, { loading: true, error: null });
@@ -265,6 +299,7 @@ export const useDiffStore = defineStore("diff", () => {
 
   function closeTab(id: string) {
     bumpGen(id);
+    staleTabs.delete(id);
     paneStates.delete(id);
     tabs.value = tabs.value.filter((t) => t.id !== id);
     loadGen.delete(id);
@@ -344,5 +379,6 @@ export const useDiffStore = defineStore("diff", () => {
     stageHunks,
     unstageHunks,
     reloadTab,
+    refreshLiveTabs,
   };
 });

@@ -86,7 +86,7 @@ afterEach(() => {
 });
 
 it.each(["worktree", "index", "refs", "opState", "ignore", "focus"])(
-  "refreshes mutable comparisons on %s while keeping fixed revision results",
+  "refreshes visible and reactivated mutable comparisons on %s while keeping fixed revisions",
   async (event) => {
     const store = useDiffStore();
     await store.openRevDiff("local.txt", sha, "WORKTREE", "original.txt");
@@ -97,11 +97,20 @@ it.each(["worktree", "index", "refs", "opState", "ignore", "focus"])(
     const host = mount(Host);
     await flushPromises();
     await vi.advanceTimersByTimeAsync(200);
+    store.activeId = store.tabs[0]!.id;
+    await flushPromises();
     mocks.backend.diffFileAt.mockClear();
     revision = "new";
     if (event === "focus") window.dispatchEvent(new Event("focus"));
     else mocks.listen.mock.lastCall![1]({ payload: { repoId: "fixture", kinds: [event] } });
     await vi.advanceTimersByTimeAsync(200);
+    expect(mocks.backend.diffFileAt.mock.calls.map(([request]) => request.filePath)).toEqual(["local.txt"]);
+    expect(store.tabs.slice(1).map((tab) => tab.result?.rightText)).toEqual(["old", "old", "old", "old"]);
+    // Hidden sources catch up on activation, including INDEX and symbolic refs.
+    for (const tab of store.tabs.slice(1)) {
+      store.activeId = tab.id;
+      await flushPromises();
+    }
     host.unmount();
     expect(mocks.backend.diffFileAt.mock.calls.map(([request]) => request.filePath)).toEqual([
       "local.txt",

@@ -165,6 +165,24 @@ it("switches cached comparisons to the correct content", async () => {
   );
 });
 
+it("shows refresh feedback and withholds staging while a dirty tab catches up", async () => {
+  const { store, wrapper, id } = await setup();
+  await store.openFileDiff("B.txt");
+  await store.refreshLiveTabs();
+  let finish!: (value: DiffFileResult) => void;
+  mocks.backend.diffFile.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  store.activeId = id;
+  await flushPromises();
+  expect(wrapper.text()).toContain("diff.refreshing");
+  expect(wrapper.text()).not.toContain("diff.stageSelectedLines");
+  expect(wrapper.get<HTMLTextAreaElement>('[data-side="right"]').element.value).toContain("new value");
+  finish(result("A.txt", "updated after activation"));
+  await flushPromises();
+  expect(wrapper.text()).not.toContain("diff.refreshing");
+  expect(wrapper.text()).toContain("diff.stageSelectedLines");
+  expect(wrapper.get<HTMLTextAreaElement>('[data-side="right"]').element.value).toContain("updated after activation");
+});
+
 it("passes the outgoing pane snapshot back to the same tab on reactivation", async () => {
   const { store, wrapper, id } = await setup();
   const right = wrapper
