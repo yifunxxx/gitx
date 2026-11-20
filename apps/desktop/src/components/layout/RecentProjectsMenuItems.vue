@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { DropdownMenuItem as MenuItem } from "reka-ui";
 import { Check, FolderOpen } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
 
+const props = defineProps<{ submenu?: boolean }>();
+const itemComponent = computed(() => (props.submenu ? MenuItem : "button"));
 const emit = defineEmits<{ close: [] }>();
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
@@ -42,15 +45,18 @@ async function choose(path?: string) {
 </script>
 
 <template>
-  <button
+  <component
+    :is="itemComponent"
+    :as="submenu ? 'button' : undefined"
     type="button"
     role="menuitem"
     :disabled="pending"
     class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-accent focus-visible:bg-accent disabled:opacity-50"
-    @click="choose()"
+    @click="!submenu && choose()"
+    @select="choose()"
   >
     <FolderOpen class="h-4 w-4 shrink-0" />{{ t("welcome.open") }}
-  </button>
+  </component>
   <div role="separator" class="my-1 border-t" />
   <div class="px-2 py-1 text-[11px] font-medium text-muted-foreground">
     {{ t("toolbar.recentProjects") }}
@@ -58,7 +64,9 @@ async function choose(path?: string) {
   <p v-if="!recent.length" class="px-2 py-3 text-xs text-muted-foreground">
     {{ t("welcome.noRecent") }}
   </p>
-  <button
+  <component
+    :is="itemComponent"
+    :as="submenu ? 'button' : undefined"
     v-for="path in recent"
     :key="path"
     type="button"
@@ -68,7 +76,8 @@ async function choose(path?: string) {
     :aria-label="path"
     :title="path"
     class="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent focus-visible:bg-accent disabled:opacity-60"
-    @click="choose(path)"
+    @click="!submenu && choose(path)"
+    @select="choose(path)"
   >
     <FolderOpen class="h-4 w-4 shrink-0 text-muted-foreground" />
     <span class="min-w-0 flex-1"
@@ -80,5 +89,5 @@ async function choose(path?: string) {
       class="h-3.5 w-3.5 shrink-0"
       :aria-label="t('toolbar.currentProject')"
     />
-  </button>
+  </component>
 </template>
