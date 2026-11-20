@@ -958,7 +958,10 @@
   "clone": {
     "title": "Clone Repository",
     "url": "Repository URL",
-    "directory": "Destination directory",
+    "directory": "Parent directory",
+    "folderName": "Repository folder",
+    "destination": "Clone into: {path}",
+    "invalidFolderName": "Enter a single folder name without path separators or reserved characters.",
     "browse": "Browse…",
     "shallow": "Shallow clone, depth",
     "depth": "Clone depth",

@@ -9,17 +9,23 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   close: vi.fn(),
   toast: vi.fn(),
+  prompt: vi.fn(),
+  native: vi.fn(),
+  directoryPicker: vi.fn(),
+  home: vi.fn(),
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
-vi.mock("@/lib/utils", async (original) => ({ ...(await original<any>()), isTauri: () => false }));
+vi.mock("@/lib/utils", async (original) => ({ ...(await original<any>()), isTauri: mocks.native }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.directoryPicker }));
+vi.mock("@tauri-apps/api/path", () => ({ homeDir: mocks.home }));
 vi.mock("@/composables/useCredentials", () => ({ handleAuthFailure: mocks.auth }));
 vi.mock("@/composables/useDialog", () => ({
   closeDialog: mocks.close,
   useDialogState: () => ({ value: { id: 23 } }),
 }));
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
-vi.mock("@/composables/useConfirm", () => ({ promptDialog: vi.fn() }));
+vi.mock("@/composables/useConfirm", () => ({ promptDialog: mocks.prompt }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -34,6 +40,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
   mocks.jobCancel.mockResolvedValue(true);
+  mocks.native.mockReturnValue(false);
 });
 enableAutoUnmount(afterEach);
 afterEach(() => vi.useRealTimers());
@@ -218,4 +225,61 @@ it("does not treat composing Escape as a cancellation", async () => {
   expect(mocks.jobCancel).toHaveBeenCalledTimes(1);
   pending.reject({ code: "cancelled" });
   await flushPromises();
+});
+
+it("creates a repository subfolder under the selected parent and submits a full clone by default", async () => {
+  mocks.prompt.mockResolvedValue("E:\\IDEAproject");
+  mocks.cloneRun.mockResolvedValue({ path: "E:\\IDEAproject\\diss" });
+  const wrapper = mount(CloneDialog);
+  await wrapper.get("#clone-url").setValue("https://git.example.test/xinding334/diss.git");
+  await wrapper.findAll("button").find((button) => button.text() === "clone.browse")!.trigger("click");
+  await flushPromises();
+  expect(wrapper.get<HTMLInputElement>("#clone-directory").element.value).toBe("E:\\IDEAproject");
+  expect(wrapper.get<HTMLInputElement>("#clone-folder-name").element.value).toBe("diss");
+  await submit(wrapper);
+  await flushPromises();
+  expect(mocks.cloneRun).toHaveBeenCalledWith(expect.objectContaining({
+    dir: "E:\\IDEAproject\\diss", depth: null, openAfter: true,
+  }));
+  expect(mocks.close).toHaveBeenCalledWith("E:\\IDEAproject\\diss", 23);
+});
+
+it("updates an inferred name after URL changes while preserving the chosen parent and custom name", async () => {
+  const wrapper = mount(CloneDialog);
+  await wrapper.get("#clone-directory").setValue("/projects");
+  await wrapper.get("#clone-url").setValue("git@host:team/first.git");
+  await wrapper.get("#clone-url").setValue("git@host:team/second.git");
+  expect(wrapper.get<HTMLInputElement>("#clone-folder-name").element.value).toBe("second");
+  expect(wrapper.get<HTMLInputElement>("#clone-directory").element.value).toBe("/projects");
+  await wrapper.get("#clone-folder-name").setValue("my-work");
+  await wrapper.get("#clone-url").setValue("https://host/third.git");
+  expect(wrapper.get<HTMLInputElement>("#clone-folder-name").element.value).toBe("my-work");
+});
+
+it("never submits an invalid child name that could escape the parent directory", async () => {
+  const wrapper = mount(CloneDialog);
+  await wrapper.get("#clone-url").setValue("https://host/diss.git");
+  await wrapper.get("#clone-directory").setValue("E:/IDEAproject");
+  await wrapper.get("#clone-folder-name").setValue("../outside");
+  expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
+  expect(wrapper.get("#clone-folder-name").attributes("aria-invalid")).toBe("true");
+  await submit(wrapper);
+  expect(mocks.cloneRun).not.toHaveBeenCalled();
+});
+
+it("treats the native directory picker as the parent and ignores a late home lookup", async () => {
+  mocks.native.mockReturnValue(true);
+  const home = deferred<string>();
+  mocks.home.mockReturnValue(home.promise);
+  mocks.directoryPicker.mockResolvedValue("E:\\IDEAproject");
+  mocks.cloneRun.mockResolvedValue({ path: "E:\\IDEAproject\\diss" });
+  const wrapper = mount(CloneDialog);
+  await wrapper.get("#clone-url").setValue("https://host/diss.git");
+  await wrapper.findAll("button").find((button) => button.text() === "clone.browse")!.trigger("click");
+  await flushPromises();
+  home.resolve("C:\\Users\\Tester\\");
+  await flushPromises();
+  expect(wrapper.get<HTMLInputElement>("#clone-directory").element.value).toBe("E:\\IDEAproject");
+  await submit(wrapper);
+  expect(mocks.cloneRun).toHaveBeenCalledWith(expect.objectContaining({ dir: "E:\\IDEAproject\\diss" }));
 });

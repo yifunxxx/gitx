@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { handleAuthFailure } from "@/composables/useCredentials";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
 import { formatErrorMessage } from "@/lib/errors";
+import { cloneDestination, cloneFolderName, validCloneFolderName } from "./cloneDestination";
 
 const { t } = useI18n();
 const dialog = useDialogState();
@@ -19,10 +20,11 @@ const cancelling = ref(false);
 const error = ref<string | null>(null);
 let generation = 0;
 let alive = true;
-let home = "";
 let suggested = "";
 const url = ref("");
 const dir = ref("");
+const folderName = ref("");
+const destination = computed(() => cloneDestination(dir.value, folderName.value));
 const shallow = ref(false);
 const depth = ref(1);
 const openAfter = ref(true);
@@ -33,14 +35,8 @@ let activeJobId: string | null = null;
 let cancelRetryDelay = 50;
 
 function suggestDirectory() {
-  if (!home || (dir.value && dir.value !== suggested)) return;
-  const name = url.value
-    .trim()
-    .replace(/\/$/, "")
-    .replace(/\.git$/, "")
-    .split(/[/:]/)
-    .pop();
-  if (name) dir.value = suggested = `${home.replace(/[/\\]$/, "")}/${name}`;
+  if (folderName.value && folderName.value !== suggested) return;
+  folderName.value = suggested = cloneFolderName(url.value);
 }
 onMounted(async () => {
   // Disabled controls can leave WebView focus on body, outside the overlay.
@@ -49,8 +45,8 @@ onMounted(async () => {
   if (isTauri()) {
     try {
       const { homeDir } = await import("@tauri-apps/api/path");
-      home = await homeDir();
-      if (alive) suggestDirectory();
+      const home = await homeDir();
+      if (alive && !dir.value) dir.value = home;
     } catch {
       // The destination remains editable if the home directory is unavailable.
     }
@@ -71,6 +67,7 @@ watch(url, (v) => {
   const gen = ++generation;
   urlOk.value = null;
   if (timer) clearTimeout(timer);
+  suggestDirectory();
   if (!v.trim()) return;
   timer = setTimeout(async () => {
     try {
@@ -80,7 +77,6 @@ watch(url, (v) => {
       if (alive && gen === generation) urlOk.value = false;
     }
   }, 600);
-  suggestDirectory();
 });
 
 async function browse() {
@@ -152,7 +148,7 @@ async function ok() {
   if (
     busy.value ||
     !url.value.trim() ||
-    !dir.value.trim() ||
+    !destination.value ||
     (shallow.value && (!Number.isInteger(depth.value) || depth.value < 1))
   )
     return;
@@ -167,7 +163,7 @@ async function ok() {
   });
   const request = {
     url: url.value.trim(),
-    dir: dir.value.trim(),
+    dir: destination.value,
     depth: shallow.value ? depth.value : null,
     branch: null,
     openAfter: openAfter.value,
@@ -264,6 +260,21 @@ async function ok() {
           t("clone.browse")
         }}</Button>
       </div>
+      <label for="clone-folder-name" class="mt-3 block text-[11px] text-muted-foreground">{{
+        t("clone.folderName")
+      }}</label>
+      <input
+        id="clone-folder-name"
+        v-model="folderName"
+        :disabled="busy"
+        :aria-invalid="!!folderName && !validCloneFolderName(folderName)"
+        aria-describedby="clone-destination"
+        class="mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm font-mono"
+      />
+      <p id="clone-destination" class="mt-2 break-all text-[11px] text-muted-foreground">
+        <template v-if="destination">{{ t("clone.destination", { path: destination }) }}</template>
+        <template v-else-if="folderName && !validCloneFolderName(folderName)">{{ t("clone.invalidFolderName") }}</template>
+      </p>
       <label class="mt-3 flex items-center gap-2 text-xs">
         <input v-model="shallow" type="checkbox" :disabled="busy" /> {{ t("clone.shallow") }}
         <input
@@ -298,7 +309,7 @@ async function ok() {
           @click="cancel"
           >{{ t("clone.cancel") }}</Button
         >
-        <Button type="submit" size="sm" :disabled="busy || !url.trim() || !dir.trim()">{{
+        <Button type="submit" size="sm" :disabled="busy || !url.trim() || !destination">{{
           t("clone.start")
         }}</Button>
       </div>

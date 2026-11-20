@@ -958,7 +958,10 @@
   "clone": {
     "title": "克隆仓库",
     "url": "仓库地址",
-    "directory": "目标目录",
+    "directory": "父目录",
+    "folderName": "仓库文件夹",
+    "destination": "将克隆到：{path}",
+    "invalidFolderName": "请输入单个文件夹名称，不要包含路径分隔符或保留字符。",
     "browse": "浏览…",
     "shallow": "浅克隆，深度",
     "depth": "克隆深度",
