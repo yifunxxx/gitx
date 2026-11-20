@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, ref, shallowReactive, watch } from
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { Plus, Trash2, Copy, ClipboardPaste, Eraser, Terminal as TerminalIcon } from "@lucide/vue";
+import {
+  Plus, Trash2, Copy, ClipboardPaste, Eraser, LoaderCircle, Terminal as TerminalIcon,
+} from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isTauri } from "@/lib/utils";
@@ -25,6 +27,12 @@ const host = ref<HTMLElement | null>(null);
 const activeId = ref(0);
 const profile = ref<TerminalShell>("default");
 const error = ref("");
+const pasting = ref(false);
+let pasteGeneration = 0;
+function invalidatePaste() {
+  ++pasteGeneration;
+  pasting.value = false;
+}
 const menu = ref<{ key: number; x: number; y: number } | null>(null);
 const menuActions = ["copy", "paste", "selectAll", "clear"] as const;
 function openMenu(event: MouseEvent | KeyboardEvent) {
@@ -157,6 +165,7 @@ async function create(cwd = directory.value, current: () => boolean = () => true
       update(session, { label: info.shell, cwd: info.cwd, status: "running" });
     },
     exited: (code) => {
+      if (active.value === session) invalidatePaste();
       update(session, { status: "exited", code });
       terminal.options.disableStdin = true;
     },
@@ -168,7 +177,14 @@ async function create(cwd = directory.value, current: () => boolean = () => true
   const inputSubscription = terminal.onData((data) => session.connection.write(data));
   session.cancel.push(() => inputSubscription.dispose());
   terminal.attachCustomKeyEventHandler((event) => {
-    if (event.type !== "keydown" || event.isComposing) return true;
+    if (event.type !== "keydown") return true;
+    const pasteShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey &&
+      !event.altKey && event.code === "KeyV";
+    // New keyboard input changes the shell's insertion point. Parser replies
+    // arrive through onData too, so they must not invalidate clipboard reads.
+    if (!pasteShortcut && !["Control", "Shift", "Alt", "Meta", "CapsLock"].includes(event.key))
+      invalidatePaste();
+    if (event.isComposing) return true;
     if (isTerminalToggle(event)) return false;
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
       void openMenu(event);
@@ -228,14 +244,29 @@ async function copy(session = active.value) {
   }
 }
 async function paste(session = active.value) {
-  if (!session || session.status !== "running") return;
+  if (!session || session.status !== "running" || disposed || !props.visible ||
+    active.value !== session || pasting.value) return;
+  const request = ++pasteGeneration;
+  const opener = document.activeElement;
+  const current = () => {
+    const focused = document.activeElement;
+    return !disposed && request === pasteGeneration && props.visible &&
+      active.value === session && sessions.includes(session) && session.status === "running" &&
+      (focused === opener || focused === document.body ||
+        (focused !== null && session.element.contains(focused)));
+  };
+  pasting.value = true;
+  error.value = "";
   try {
     const text = await navigator.clipboard.readText();
-    if (disposed || !sessions.includes(session) || session.status !== "running") return;
+    if (!current()) return;
     session.terminal.paste(text);
     session.terminal.focus();
   } catch (reason) {
-    showError(reason);
+    if (current()) showError(reason);
+  } finally {
+    // A canceled read may settle after another session starts a new request.
+    if (request === pasteGeneration) pasting.value = false;
   }
 }
 function clear() {
@@ -261,6 +292,14 @@ function sessionKey(event: KeyboardEvent, index: number) {
     ?.querySelector<HTMLButtonElement>(`[data-session-key="${sessions[next]!.key}"]`)
     ?.focus();
 }
+watch(
+  () => [activeId.value, props.visible, directory.value, workspace.navigationToken()] as const,
+  () => {
+    invalidatePaste();
+    menu.value = null;
+  },
+  { flush: "sync" },
+);
 watch(
   host,
   (element) => {
@@ -308,6 +347,7 @@ watch(
 );
 onBeforeUnmount(() => {
   disposed = true;
+  invalidatePaste();
   observer?.disconnect();
   themeObserver?.disconnect();
   if (frame) cancelAnimationFrame(frame);
@@ -382,11 +422,13 @@ onBeforeUnmount(() => {
         type="button"
         :title="t('terminal.paste')"
         :aria-label="t('terminal.paste')"
+        :aria-busy="pasting"
         class="rounded p-1 hover:bg-accent disabled:opacity-40"
-        :disabled="active?.status !== 'running'"
+        :disabled="active?.status !== 'running' || pasting"
         @click="paste()"
       >
-        <ClipboardPaste class="size-3.5" />
+        <LoaderCircle v-if="pasting" class="size-3.5 animate-spin motion-reduce:animate-none" />
+        <ClipboardPaste v-else class="size-3.5" />
       </button>
       <button
         type="button"
@@ -435,6 +477,9 @@ onBeforeUnmount(() => {
       data-terminal-host
       class="min-h-0 flex-1 overflow-hidden p-1"
       @contextmenu="openMenu"
+      @compositionstart.capture="invalidatePaste"
+      @beforeinput.capture="invalidatePaste"
+      @paste.capture="invalidatePaste"
     />
     <ContextMenuSurface
       :label="t('toolWindows.terminal')"
@@ -454,7 +499,7 @@ onBeforeUnmount(() => {
           class="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none disabled:opacity-40"
           :disabled="
             action === 'paste'
-              ? active?.status !== 'running'
+              ? active?.status !== 'running' || pasting
               : action === 'copy'
                 ? !active?.terminal.hasSelection()
                 : !active

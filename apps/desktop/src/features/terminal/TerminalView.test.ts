@@ -82,7 +82,10 @@ it("refreshes terminal colors when the material changes without a dark/light cha
 beforeEach(() => {
   terminalDirectoryRequests.value = [];
   mocks.terminals.length = mocks.connections.length = 0;
-  mocks.workspace = reactive({ repoPath: "C:/first", folderPath: "C:/first" });
+  mocks.workspace = reactive({
+    repoPath: "C:/first", folderPath: "C:/first", openGeneration: 0,
+    navigationToken: () => mocks.workspace.openGeneration,
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -205,6 +208,169 @@ it("updates ready and exit controls without needing another UI interaction", asy
   expect(wrapper.get('[role="tab"]').text()).toContain("terminal.exited");
   expect(paste.attributes("disabled")).toBeDefined();
   expect(mocks.terminals[0].options.disableStdin).toBe(true);
+});
+
+function delayedClipboard() {
+  let resolve!: (text: string) => void;
+  let reject!: (reason: unknown) => void;
+  vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(new Promise<string>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  }));
+  return { resolve, reject };
+}
+
+async function runningTerminal() {
+  const wrapper = mount(TerminalView, { props: { visible: true }, attachTo: document.body });
+  await flushPromises();
+  mocks.connections[0].sink.opened({ shell: "PowerShell", cwd: "C:/first", id: "one" });
+  await flushPromises();
+  return wrapper;
+}
+
+it.each(["switch", "switch-back", "hide", "hide-show", "navigate", "reopen"])(
+  "discards pending terminal paste after %s instead of sending it to a stale context",
+  async (change) => {
+    const wrapper = await runningTerminal();
+    const pending = delayedClipboard();
+    await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+    if (change.startsWith("switch")) {
+      await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+      await flushPromises();
+      if (change === "switch-back") await wrapper.findAll('[role="tab"]')[0]!.trigger("click");
+    } else if (change.startsWith("hide")) {
+      await wrapper.setProps({ visible: false });
+      if (change === "hide-show") await wrapper.setProps({ visible: true });
+    } else if (change === "navigate") mocks.workspace.repoPath = "D:/second";
+    else mocks.workspace.openGeneration = 1;
+    await flushPromises();
+    mocks.terminals[0].focus.mockClear();
+    pending.resolve("delayed input\r");
+    await flushPromises();
+    expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+    expect(mocks.terminals[0].focus).not.toHaveBeenCalled();
+    expect(mocks.connections[0].close).not.toHaveBeenCalled();
+  },
+);
+
+it("allows only one clipboard read until the pending paste completes", async () => {
+  const wrapper = await runningTerminal();
+  const pending = delayedClipboard();
+  const paste = wrapper.get('[aria-label="terminal.paste"]');
+  await paste.trigger("click");
+  expect(paste.attributes("disabled")).toBeDefined();
+  mocks.terminals[0].handler(new KeyboardEvent("keydown", {
+    key: "V", code: "KeyV", ctrlKey: true, shiftKey: true,
+  }));
+  await flushPromises();
+  expect(navigator.clipboard.readText).toHaveBeenCalledTimes(1);
+  pending.resolve("once");
+  await flushPromises();
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("once");
+  expect(paste.attributes("disabled")).toBeUndefined();
+});
+
+it.each(["typing", "composition", "native-paste"])(
+  "does not append delayed clipboard text after intervening %s",
+  async (input) => {
+    const wrapper = await runningTerminal();
+    const pending = delayedClipboard();
+    await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+    if (input === "typing") mocks.terminals[0].handler(new KeyboardEvent("keydown", { key: "x", code: "KeyX" }));
+    else await wrapper.get('[data-terminal-host]').trigger(input === "composition" ? "compositionstart" : "paste");
+    pending.resolve("old clipboard");
+    await flushPromises();
+    expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+  },
+);
+
+it("ignores a stale clipboard failure after changing terminal context", async () => {
+  const wrapper = await runningTerminal();
+  const pending = delayedClipboard();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  await wrapper.setProps({ visible: false });
+  pending.reject(new Error("old permission denial"));
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+});
+
+it("keeps a newer paste busy when an invalidated clipboard read settles", async () => {
+  const wrapper = await runningTerminal();
+  const old = delayedClipboard();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  await wrapper.setProps({ visible: false });
+  await wrapper.setProps({ visible: true });
+  const current = delayedClipboard();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  old.resolve("stale");
+  await flushPromises();
+  expect(wrapper.get('[aria-label="terminal.paste"]').attributes("aria-busy")).toBe("true");
+  expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+  current.resolve("new");
+  await flushPromises();
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("new");
+  expect(wrapper.get('[aria-label="terminal.paste"]').attributes("aria-busy")).toBe("false");
+});
+
+it("reports a current clipboard failure, clears waiting state and allows retry", async () => {
+  const wrapper = await runningTerminal();
+  const pending = delayedClipboard();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  pending.reject(new Error("clipboard unavailable"));
+  await flushPromises();
+  expect(wrapper.get('[role="alert"]').text()).toContain("clipboard unavailable");
+  const paste = wrapper.get('[aria-label="terminal.paste"]');
+  expect(paste.attributes("disabled")).toBeUndefined();
+  await paste.trigger("click");
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("paste me");
+});
+
+it.each(["close", "unmount", "exit", "external-focus"])(
+  "does not paste or steal focus after %s while reading the clipboard",
+  async (change) => {
+    const wrapper = await runningTerminal();
+    const pending = delayedClipboard();
+    await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+    const otherInput = document.createElement("input");
+    document.body.append(otherInput);
+    try {
+      if (change === "close") await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+      if (change === "unmount") wrapper.unmount();
+      if (change === "exit") mocks.connections[0].sink.exited(0);
+      if (change === "external-focus") otherInput.focus();
+      await flushPromises();
+      mocks.terminals[0].focus.mockClear();
+      pending.resolve("obsolete");
+      await flushPromises();
+      expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+      expect(mocks.terminals[0].focus).not.toHaveBeenCalled();
+      if (change === "external-focus") expect(document.activeElement).toBe(otherInput);
+    } finally { otherInput.remove(); }
+  },
+);
+
+it("does not cancel clipboard input when the terminal sends a parser reply", async () => {
+  const wrapper = await runningTerminal();
+  const pending = delayedClipboard();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  mocks.terminals[0].input("\x1b[1;1R");
+  pending.resolve("paste after output");
+  await flushPromises();
+  expect(mocks.connections[0].write).toHaveBeenCalledWith("\x1b[1;1R");
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("paste after output");
+});
+
+it("dismisses a terminal menu when a directory request selects a new session", async () => {
+  const wrapper = await runningTerminal();
+  await wrapper.get('[data-terminal-host]').trigger("contextmenu", { clientX: 40, clientY: 60 });
+  await flushPromises();
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  requestTerminalDirectory("C:/first/src", () => true);
+  await flushPromises();
+  expect(mocks.connections).toHaveLength(2);
+  expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
 it("retains sessions while hidden and starts a new session in the newly selected repository", async () => {
