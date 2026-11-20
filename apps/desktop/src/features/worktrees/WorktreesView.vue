@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from "vue";
+import { Loader2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { useWorktreesStore } from "@/stores/worktreesStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -106,9 +107,17 @@ function shortHead(sha: string) {
       <Button size="xs" variant="ghost" :disabled="store.busy" @click="store.openRefOpen = true">
         {{ t("worktrees.openRef") }}
       </Button>
-      <Button size="xs" variant="ghost" :disabled="store.busy" @click="store.prune()">{{
-        t("worktrees.prune")
-      }}</Button>
+      <Button
+        size="xs"
+        variant="ghost"
+        :disabled="store.busy"
+        :aria-busy="store.pruning"
+        @click="store.prune()"
+      >
+        <Loader2 v-if="store.pruning" class="mr-1 h-3 w-3 animate-spin" aria-hidden="true" />
+        {{ t("worktrees.prune") }}
+        <span v-if="store.pruning" class="sr-only" role="status">{{ t("common.loading") }}</span>
+      </Button>
       <Button
         size="xs"
         variant="ghost"

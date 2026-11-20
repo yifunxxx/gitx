@@ -21,8 +21,9 @@ export const useWorktreesStore = defineStore("worktrees", () => {
   const userOpened = ref(false);
   let refreshGeneration = 0;
   let repositoryGeneration = 0;
-  const pendingPaths = ref(new Set<string>());
+  const pendingPaths = ref(new Map<string, "mutation" | "prune">());
   const busy = computed(() => pendingPaths.value.has(workspace().repoPath ?? ""));
+  const pruning = computed(() => pendingPaths.value.get(workspace().repoPath ?? "") === "prune");
   watch(
     () => workspace().repoPath,
     () => {
@@ -47,16 +48,22 @@ export const useWorktreesStore = defineStore("worktrees", () => {
       items.value = [];
       return;
     }
+    const path = ws.repoPath;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      generation === refreshGeneration &&
+      path === ws.repoPath &&
+      navigation === ws.navigationToken();
     loading.value = true;
     error.value = null;
     try {
-      const result = await getBackend().worktreeList({ path: ws.repoPath });
-      if (generation === refreshGeneration) {
+      const result = await getBackend().worktreeList({ path });
+      if (current()) {
         items.value = result;
         if (!result.some((item) => item.path === selectedPath.value)) selectedPath.value = null;
       }
     } catch (e) {
-      if (generation === refreshGeneration) error.value = formatErrorMessage(e);
+      if (current()) error.value = formatErrorMessage(e);
     } finally {
       if (generation === refreshGeneration) loading.value = false;
     }
@@ -77,7 +84,7 @@ export const useWorktreesStore = defineStore("worktrees", () => {
       generation === repositoryGeneration &&
       path === ws.repoPath &&
       navigation === ws.navigationToken();
-    pendingPaths.value.add(path);
+    pendingPaths.value.set(path, "mutation");
     error.value = null;
     try {
       const result = await operation(path);
@@ -170,10 +177,19 @@ export const useWorktreesStore = defineStore("worktrees", () => {
     const ws = workspace();
     const path = ws.repoPath;
     const generation = repositoryGeneration;
-    if (!path || busy.value) return;
+    if (!path || !ws.isRepo || pendingPaths.value.has(path)) return;
+    const navigation = ws.navigationToken();
+    const current = () =>
+      generation === repositoryGeneration &&
+      path === ws.repoPath &&
+      navigation === ws.navigationToken();
+    // Own the whole preview/confirmation/write lifecycle, including the time
+    // spent waiting for the user's confirmation. Other mutations must wait too.
+    pendingPaths.value.set(path, "prune");
+    error.value = null;
     try {
       const preview = await getBackend().worktreePrunePreview({ path });
-      if (generation !== repositoryGeneration) return;
+      if (!current()) return;
       if (preview.paths.length === 0 && !preview.dryRunOutput.trim()) {
         toast({ title: t("worktrees.nothingToPrune") });
         return;
@@ -183,13 +199,15 @@ export const useWorktreesStore = defineStore("worktrees", () => {
         message: `${t("worktrees.pruneConfirm")}\n\n${preview.dryRunOutput || preview.paths.join("\n")}`,
         destructive: true,
       });
-      if (!ok || generation !== repositoryGeneration) return;
-      await mutate(
-        (repoPath) => getBackend().worktreePrune({ path: repoPath }),
-        "worktrees.pruned",
-      );
+      if (!ok || !current()) return;
+      await getBackend().worktreePrune({ path });
+      if (!current()) return;
+      toast({ title: t("worktrees.pruned") });
+      await refresh();
     } catch (e) {
-      if (generation === repositoryGeneration) error.value = formatErrorMessage(e);
+      if (current()) error.value = formatErrorMessage(e);
+    } finally {
+      pendingPaths.value.delete(path);
     }
   }
 
@@ -217,6 +235,7 @@ export const useWorktreesStore = defineStore("worktrees", () => {
     items,
     loading,
     busy,
+    pruning,
     repositoryToken: () => `${repositoryGeneration}:${workspace().navigationToken()}`,
     error,
     selectedPath,
