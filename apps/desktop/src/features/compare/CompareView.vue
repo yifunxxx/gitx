@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { Loader2 } from "@lucide/vue";
 import { Pane, Splitpanes } from "splitpanes";
 import { useCompareStore } from "@/stores/compareStore";
 import { Button } from "@/components/ui/button";
@@ -41,12 +42,22 @@ function openCompareFile(f: ChangedFile) {
       <span class="font-mono text-muted-foreground">{{ tab.left }} → {{ tab.right }}</span>
       <div class="flex-1" />
       <Button size="xs" variant="ghost" @click="compare.swap(tab.id)">Swap</Button>
-      <Button size="xs" variant="outline" @click="compare.showCombined(tab)">
+      <Button
+        size="xs"
+        variant="outline"
+        :disabled="tab.loading || tab.combinedLoading"
+        :aria-busy="tab.combinedLoading"
+        @click="compare.showCombined(tab)"
+      >
+        <Loader2 v-if="tab.combinedLoading" class="h-3 w-3 animate-spin" aria-hidden="true" />
         Show Combined Diff
       </Button>
       <Button size="xs" variant="ghost" @click="compare.reload(tab)">Refresh</Button>
     </div>
     <div v-if="tab.loading" class="p-4 text-xs text-muted-foreground">Loading…</div>
+    <div v-else-if="tab.combinedLoading" role="status" class="p-4 text-xs text-muted-foreground">
+      Loading combined diff…
+    </div>
     <div v-else-if="tab.error" class="p-4 text-xs text-destructive">{{ tab.error }}</div>
     <Splitpanes v-else class="min-h-0 flex-1">
       <Pane v-if="tab.mode === 'refs'" :size="36" min-size="20">

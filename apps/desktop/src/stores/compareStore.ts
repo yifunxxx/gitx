@@ -18,6 +18,7 @@ export type CompareTab = {
   leftOnly: LogCommit[];
   rightOnly: LogCommit[];
   loading: boolean;
+  combinedLoading: boolean;
   error: string | null;
   combined: CombinedDiffResult | null;
 };
@@ -39,6 +40,7 @@ export const useCompareStore = defineStore("compare", () => {
     requests.set(tab, state);
     const generation = ++state.load;
     ++state.combined;
+    tab.combinedLoading = false;
     const source = capture();
     return { ...source, current: () => source.current() && live(tab) && generation === state.load };
   }
@@ -59,6 +61,7 @@ export const useCompareStore = defineStore("compare", () => {
         leftOnly: [],
         rightOnly: [],
         loading: true,
+        combinedLoading: false,
         error: null,
         combined: null,
       };
@@ -95,6 +98,7 @@ export const useCompareStore = defineStore("compare", () => {
         leftOnly: [],
         rightOnly: [],
         loading: true,
+        combinedLoading: false,
         error: null,
         combined: null,
       };
@@ -170,7 +174,15 @@ export const useCompareStore = defineStore("compare", () => {
 
   async function showCombined(tab: CompareTab) {
     const source = capture();
-    if (!source.current() || !source.path || !source.repoId || !live(tab) || tab.loading) return;
+    if (
+      !source.current() ||
+      !source.path ||
+      !source.repoId ||
+      !live(tab) ||
+      tab.loading ||
+      tab.combinedLoading
+    )
+      return;
     const state = requests.get(tab);
     if (!state) return;
     const generation = ++state.combined;
@@ -183,6 +195,7 @@ export const useCompareStore = defineStore("compare", () => {
       tab.right === right;
     tab.error = null;
     tab.combined = null;
+    tab.combinedLoading = true;
     try {
       // The combined endpoint takes the destination first, including WORKTREE.
       const result = await getBackend().diffCombined({
@@ -195,6 +208,8 @@ export const useCompareStore = defineStore("compare", () => {
       if (current()) tab.combined = result;
     } catch (e) {
       if (current()) tab.error = formatErrorMessage(e);
+    } finally {
+      if (current()) tab.combinedLoading = false;
     }
   }
 

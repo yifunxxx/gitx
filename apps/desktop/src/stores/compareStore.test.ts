@@ -179,6 +179,109 @@ it("clears a previous combined result before retry and keeps the backend error u
   expect(tab.combined).toEqual(combined);
 });
 
+it("starts only one combined read while busy and allows retry after failure", async () => {
+  const store = useCompareStore();
+  const tab = (await store.compareVersions("a", "b"))!;
+  const first = deferred<any>();
+  m.diffCombined.mockReturnValueOnce(first.promise);
+  const pending = store.showCombined(tab);
+  await store.showCombined(tab);
+  expect(m.diffCombined).toHaveBeenCalledTimes(1);
+  expect(tab.combinedLoading).toBe(true);
+  first.reject(new Error("read failed"));
+  await pending;
+  expect(tab.combinedLoading).toBe(false);
+  expect(tab.error).toBe("read failed");
+  m.diffCombined.mockResolvedValueOnce({ files: [] });
+  await store.showCombined(tab);
+  expect(m.diffCombined).toHaveBeenCalledTimes(2);
+  expect(tab.error).toBeNull();
+  expect(tab.combinedLoading).toBe(false);
+});
+
+it.each(["reload", "swap"] as const)(
+  "invalidates combined busy state on %s without letting old completion clear a new request",
+  async (operation) => {
+    const store = useCompareStore();
+    const tab = (await store.compareVersions("a", "b"))!;
+    const old = deferred<any>();
+    const latest = deferred<any>();
+    m.diffCombined.mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
+    const previous = store.showCombined(tab);
+    await (operation === "reload" ? store.reload(tab) : store.swap(tab.id));
+    expect(tab.combinedLoading).toBe(false);
+    const next = store.showCombined(tab);
+    old.reject(new Error("stale error"));
+    await previous;
+    expect(tab.combinedLoading).toBe(true);
+    expect(tab.error).toBeNull();
+    latest.resolve({ files: [] });
+    await next;
+    expect(tab.combinedLoading).toBe(false);
+    expect(tab.combined).toEqual({ files: [] });
+  },
+);
+
+it("does not transfer combined busy state or errors to a reopened tab", async () => {
+  const store = useCompareStore();
+  const tab = (await store.compareVersions("a", "b"))!;
+  const old = deferred<any>();
+  const latest = deferred<any>();
+  m.diffCombined.mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
+  const previous = store.showCombined(tab);
+  store.closeTab(tab.id);
+  const replacement = (await store.compareVersions("a", "b"))!;
+  expect(replacement.combinedLoading).toBe(false);
+  const next = store.showCombined(replacement);
+  old.reject(new Error("closed"));
+  await previous;
+  expect(replacement.combinedLoading).toBe(true);
+  expect(replacement.error).toBeNull();
+  latest.resolve({ files: [] });
+  await next;
+  expect(replacement.combinedLoading).toBe(false);
+});
+
+it("lets different comparison tabs load independently", async () => {
+  const store = useCompareStore();
+  const first = (await store.compareVersions("a", "b"))!;
+  const second = (await store.compareVersions("a", "c"))!;
+  const one = deferred<any>();
+  const two = deferred<any>();
+  m.diffCombined.mockReturnValueOnce(one.promise).mockReturnValueOnce(two.promise);
+  const p1 = store.showCombined(first);
+  const p2 = store.showCombined(second);
+  expect(m.diffCombined).toHaveBeenCalledTimes(2);
+  one.resolve({ files: [] });
+  await p1;
+  expect(first.combinedLoading).toBe(false);
+  expect(second.combinedLoading).toBe(true);
+  two.resolve({ files: [] });
+  await p2;
+  expect(second.combinedLoading).toBe(false);
+});
+
+it.each(["navigation", "identity", "reopen", "dispose"])(
+  "discards a pending combined failure on %s",
+  async (change) => {
+    const store = useCompareStore();
+    const tab = (await store.compareVersions("a", "b"))!;
+    const response = deferred<any>();
+    m.diffCombined.mockReturnValueOnce(response.promise);
+    const pending = store.showCombined(tab);
+    expect(tab.combinedLoading).toBe(true);
+    if (change === "navigation") m.ws.repoPath = "B";
+    else if (change === "identity") m.ws.repoId = "other-A";
+    else if (change === "reopen") ++m.ws.generation;
+    else store.$dispose();
+    response.reject(new Error("previous workspace"));
+    await pending;
+    expect(tab.error).toBeNull();
+    expect(tab.combined).toBeNull();
+    if (change !== "dispose") expect(store.tabs).toEqual([]);
+  },
+);
+
 it("does not switch editors after a delayed file diff completes", async () => {
   const store = useCompareStore();
   await store.compareVersions("a", "b");
