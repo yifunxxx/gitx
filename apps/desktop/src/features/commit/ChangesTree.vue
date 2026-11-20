@@ -202,6 +202,38 @@ const activeDescendant = computed(() =>
 );
 const selected = computed(() => new Set(changes.selectedPaths));
 const checked = computed(() => new Set(changes.checkedPaths));
+const folderChecks = computed(() => {
+  const states = new Map<PathTreeNode<FileMeta>, boolean | "mixed">();
+  if (changes.stagingMode || listMode.value !== "tree" || !checked.value.size) return states;
+  for (const group of sections.value) {
+    // Keep hidden sections lazy. Summarize an expanded section once when its
+    // data or checks change, never by scanning descendants during row rendering.
+    if (group.section === "ignored" || collapsed.value.has(JSON.stringify([group.section])))
+      continue;
+    const stack = group.nodes.map((node) => ({ node, visited: false }));
+    while (stack.length) {
+      const { node, visited } = stack.pop()!;
+      if (node.children?.length && !visited) {
+        stack.push({ node, visited: true });
+        for (const child of node.children) stack.push({ node: child, visited: false });
+        continue;
+      }
+      let any = false;
+      let all = true;
+      if (node.file) {
+        any = checked.value.has(node.file.change.path);
+        all = any;
+      }
+      for (const child of node.children ?? []) {
+        const state = states.get(child) ?? false;
+        any ||= state !== false;
+        all &&= state === true;
+      }
+      states.set(node, all ? true : any ? "mixed" : false);
+    }
+  }
+  return states;
+});
 
 watch(
   [() => workspace.repoPath, () => changes.stagingMode],
@@ -289,12 +321,15 @@ function showCheckbox(row: Row) {
   return (
     !changes.stagingMode &&
     row.section !== "ignored" &&
-    (row.kind === "header" ? row.count > 0 : !!filePath(row))
+    (row.kind === "header" ? row.count > 0 : !!row.node.file || !!row.node.children?.length)
   );
 }
 function checkState(row: Row): boolean | "mixed" | undefined {
   if (!showCheckbox(row)) return undefined;
-  if (row.kind === "file") return checked.value.has(filePath(row)!);
+  if (row.kind === "file")
+    return row.node.children?.length
+      ? (folderChecks.value.get(row.node) ?? false)
+      : checked.value.has(filePath(row)!);
   const state = changes.checkStateForSection(row.section);
   return state === "partial" ? "mixed" : state === "all";
 }
@@ -302,7 +337,20 @@ function toggleCheck(row: Row) {
   focusRow(row);
   if (!showCheckbox(row)) return;
   if (row.kind === "header") changes.toggleCheckSection(row.section);
-  else changes.toggleChecked(filePath(row)!);
+  else if (row.node.children?.length) {
+    const remove = checkState(row) === true;
+    const next = new Set(checked.value);
+    const stack = [row.node];
+    while (stack.length) {
+      const node = stack.pop()!;
+      if (node.file) {
+        if (remove) next.delete(node.file.change.path);
+        else next.add(node.file.change.path);
+      }
+      for (const child of node.children ?? []) stack.push(child);
+    }
+    changes.setChecked([...next]);
+  } else changes.toggleChecked(filePath(row)!);
 }
 function isSelected(row: Row) {
   const path = filePath(row);
@@ -519,15 +567,14 @@ function labelFor(node: PathTreeNode<FileMeta>) {
             <span class="text-muted-foreground">({{ row.count }})</span>
           </template>
           <template v-else>
-            <input
+            <IndeterminateCheckbox
               v-if="showCheckbox(row)"
-              type="checkbox"
               tabindex="-1"
-              class="mr-0.5 cursor-pointer accent-foreground"
+              class="mr-0.5"
               :checked="checkState(row) === true"
+              :indeterminate="checkState(row) === 'mixed'"
               :aria-label="labelFor(row.node)"
               @mousedown.prevent
-              @click.stop
               @change="toggleCheck(row)"
             />
             <FileTypeIcon :name="row.node.name" :kind="row.node.kind" :expanded="row.expanded" />
