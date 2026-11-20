@@ -274,7 +274,7 @@ watch(
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class", "data-palette", "style"],
+      attributeFilter: ["class", "data-theme", "data-palette", "style"],
     });
   },
   { flush: "post" },

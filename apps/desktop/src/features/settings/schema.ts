@@ -35,7 +35,7 @@ export const SETTINGS_PAGES: SettingPage[] = [
       {
         id: "theme",
         titleKey: "settings.fields.theme",
-        keywords: ["theme", "dark", "light", "主题", "暗色", "亮色"],
+        keywords: ["theme", "dark", "light", "glass", "主题", "暗色", "亮色", "液态", "玻璃"],
         path: "appearance.theme",
         control: {
           kind: "select",
@@ -43,6 +43,9 @@ export const SETTINGS_PAGES: SettingPage[] = [
             { value: "system", labelKey: "settings.theme.system" },
             { value: "light", labelKey: "settings.theme.light" },
             { value: "dark", labelKey: "settings.theme.dark" },
+            { value: "liquid-glass", labelKey: "settings.theme.glass" },
+            { value: "liquid-glass-light", labelKey: "settings.theme.glassLight" },
+            { value: "liquid-glass-dark", labelKey: "settings.theme.glassDark" },
           ],
         },
         scope: "app",

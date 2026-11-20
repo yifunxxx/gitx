@@ -49,7 +49,7 @@ const classes = computed(() =>
 </script>
 
 <template>
-  <button :type="type" :class="classes" :disabled="disabled">
+  <button :type="type" :class="classes" :disabled="disabled" data-ui-button :data-variant="variant ?? 'default'">
     <slot />
   </button>
 </template>

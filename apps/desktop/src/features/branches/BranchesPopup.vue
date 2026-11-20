@@ -260,13 +260,18 @@ async function onPullUsing(entry: RefEntry, rebase: boolean) {
       aria-label="Branches"
     >
       <div class="flex items-center gap-2 border-b px-3 py-2">
-        <Search class="h-3.5 w-3.5 text-muted-foreground" />
-        <input
-          v-model="branches.search"
-          class="h-7 flex-1 bg-transparent text-sm outline-none"
-          placeholder="Search branches…"
-          autofocus
-        />
+        <label
+          class="branch-search flex min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background/40 px-2.5 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/30"
+        >
+          <Search class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <input
+            v-model="branches.search"
+            class="h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            placeholder="Search branches…"
+            aria-label="Search branches"
+            autofocus
+          />
+        </label>
         <Button variant="ghost" size="icon" title="Fetch" @click="onFetch">
           <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': branches.loading }" />
         </Button>

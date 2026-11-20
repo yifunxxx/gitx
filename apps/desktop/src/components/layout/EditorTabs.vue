@@ -185,7 +185,7 @@ function showWorkspace() {
   <section class="flex h-full min-h-0 flex-col bg-dbx-content">
     <div
       ref="tabBar"
-      class="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b bg-dbx-chrome px-1 text-xs"
+      class="glass-tabbar flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b bg-dbx-chrome px-1 text-xs"
     >
       <EditorTabButton
         tab-key="workspace"

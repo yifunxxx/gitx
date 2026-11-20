@@ -18,6 +18,7 @@ const props = withDefaults(
 <template>
   <DropdownMenuPortal>
     <DropdownMenuContent
+      class="dbx-floating-surface"
       v-bind="props"
       :class="
         cn(

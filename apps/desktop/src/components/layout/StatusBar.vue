@@ -41,7 +41,7 @@ function toggleJobsPopup(event: MouseEvent) {
 
 <template>
   <footer
-    class="flex h-6 shrink-0 items-center gap-3 border-t bg-dbx-chrome px-2 text-[11px] text-muted-foreground"
+    class="glass-chrome flex h-6 shrink-0 items-center gap-3 border-t bg-dbx-chrome px-2 text-[11px] text-muted-foreground"
   >
     <button
       type="button"

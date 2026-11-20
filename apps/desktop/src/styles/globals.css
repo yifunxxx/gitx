@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./tokens.css";
 @import "./vcs-tokens.css";
+@import "./liquid-glass.css";
 
 @theme inline {
   --color-background: rgb(var(--background));
@@ -44,6 +45,48 @@
 
 * {
   border-color: rgb(var(--border));
+}
+
+/* Keep native scrolling/dragging; only replace the platform's square chrome. */
+@media not (forced-colors: active) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--muted-foreground) / 0.45) transparent;
+  }
+  @supports selector(::-webkit-scrollbar) {
+    /* Standard scrollbar properties override WebKit thumb geometry in Chromium. */
+    * {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      min-height: 28px;
+      min-width: 28px;
+      border: 3px solid transparent;
+      border-radius: 999px;
+      background: rgb(var(--muted-foreground) / 0.42);
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: rgb(var(--muted-foreground) / 0.64);
+    }
+    ::-webkit-scrollbar-thumb:active {
+      background-color: rgb(var(--muted-foreground) / 0.8);
+    }
+    ::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+  }
 }
 
 html,

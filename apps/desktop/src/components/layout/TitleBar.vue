@@ -92,12 +92,7 @@ const branchTitle = computed(() => {
   return `${up}\n${fetched}`;
 });
 
-const isDark = computed(() => {
-  const theme = settings.settings?.appearance.theme ?? "system";
-  if (theme === "dark") return true;
-  if (theme === "light") return false;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-});
+const isDark = computed(() => settings.appearanceDark);
 
 async function run(id: string, source: ActionContext["source"] = "toolbar") {
   await runAction(id, { ...ctx.value, source, place: source });
@@ -106,7 +101,7 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
 
 <template>
   <header
-    class="flex h-10 shrink-0 items-center gap-1 border-b bg-dbx-chrome px-2"
+    class="glass-chrome flex h-10 shrink-0 items-center gap-1 border-b bg-dbx-chrome px-2"
     data-tauri-drag-region
   >
     <Tip :text="t('toolbar.menu')">
@@ -125,7 +120,7 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
       <Button
         variant="ghost"
         size="sm"
-        class="gap-1.5"
+        class="glass-control gap-1.5"
         :disabled="opening"
         :aria-busy="opening"
         :aria-label="t('toolbar.recentProjects')"
@@ -151,7 +146,7 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
     <Tip :text="branchTitle" side="bottom">
       <button
         type="button"
-        class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-hover-surface hover:text-foreground hover:shadow-sm disabled:opacity-50"
+        class="glass-control flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-hover-surface hover:text-foreground hover:shadow-sm disabled:opacity-50"
         :disabled="!workspace.isRepo"
         @click="branches.openPopup()"
       >
@@ -163,7 +158,7 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
 
     <div class="flex-1" data-tauri-drag-region />
 
-    <div class="flex items-center gap-0.5">
+    <div class="glass-toolbar flex items-center gap-0.5">
       <Tip v-if="updates.updateAvailable" :text="updates.toolbarTooltip" side="bottom">
         <button
           type="button"

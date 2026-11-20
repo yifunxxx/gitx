@@ -88,3 +88,58 @@ it("keeps a newer preview when an older preview is disposed", () => {
   newer.end();
   expect(document.documentElement.lang).toBe("en");
 });
+
+it("previews glass with system appearance and removes its surface when cancelled", () => {
+  const draft = store.emptySettings();
+  draft.appearance.theme = "liquid-glass";
+  const preview = store.beginAppearancePreview(draft);
+  expect(document.documentElement.dataset.theme).toBe("liquid-glass");
+  expect(store.appearanceDark).toBe(false);
+  dark = true;
+  listeners.forEach(callback => callback());
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+  expect(store.appearanceDark).toBe(true);
+  preview.end();
+  expect(document.documentElement.dataset.theme).toBe("standard");
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+  expect(backend.settingsSet).not.toHaveBeenCalled();
+});
+
+it.each(["liquid-glass-light", "liquid-glass-dark"] as const)("persists explicit %s and keeps it across system changes", async (theme) => {
+  await store.setTheme(theme);
+  expect(backend.settingsSet.mock.lastCall![0].appearance.theme).toBe(theme);
+  dark = theme.endsWith("light");
+  listeners.forEach(callback => callback());
+  expect(store.appearanceDark).toBe(theme.endsWith("dark"));
+  expect(document.documentElement.dataset.theme).toBe("liquid-glass");
+  backend.settingsGet.mockResolvedValue(store.settings);
+  await store.load();
+  expect(store.settings!.appearance.theme).toBe(theme);
+  expect(document.documentElement.classList.contains("dark")).toBe(theme.endsWith("dark"));
+});
+
+it("toggles glass brightness without leaving the glass theme", async () => {
+  await store.setTheme("liquid-glass");
+  await store.toggleTheme();
+  expect(store.settings!.appearance.theme).toBe("liquid-glass-dark");
+  expect(store.appearanceDark).toBe(true);
+  await store.toggleTheme();
+  expect(store.settings!.appearance.theme).toBe("liquid-glass-light");
+  expect(store.appearanceDark).toBe(false);
+  expect(document.documentElement.dataset.theme).toBe("liquid-glass");
+});
+
+it("restores applied glass after previewing standard appearance or a failed save", async () => {
+  await store.setTheme("liquid-glass-dark");
+  const draft = store.emptySettings();
+  draft.appearance.theme = "light";
+  draft.appearance.cornerStyle = "none";
+  const preview = store.beginAppearancePreview(draft);
+  expect(document.documentElement.dataset.theme).toBe("standard");
+  backend.settingsSet.mockRejectedValueOnce(new Error("disk full"));
+  await expect(store.save(draft)).rejects.toThrow("disk full");
+  preview.end();
+  expect(document.documentElement.dataset.theme).toBe("liquid-glass");
+  expect(store.appearanceDark).toBe(true);
+  expect(document.documentElement.dataset.cornerStyle).toBe("small");
+});

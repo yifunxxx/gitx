@@ -68,6 +68,17 @@ vi.mock("./terminalConnection", () => ({
 }));
 
 enableAutoUnmount(afterEach);
+it("refreshes terminal colors when the material changes without a dark/light change", async () => {
+  mount(TerminalView, { props: { visible: true }, attachTo: document.body });
+  await flushPromises();
+  const terminal = mocks.terminals[0];
+  const original = terminal.options.theme;
+  document.documentElement.dataset.theme = "liquid-glass";
+  await flushPromises();
+  expect(terminal.options.theme).not.toBe(original);
+  delete document.documentElement.dataset.theme;
+  await flushPromises();
+});
 beforeEach(() => {
   terminalDirectoryRequests.value = [];
   mocks.terminals.length = mocks.connections.length = 0;

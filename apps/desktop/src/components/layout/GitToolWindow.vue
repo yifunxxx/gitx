@@ -65,12 +65,13 @@ const tabs = computed(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-sidebar">
-    <div class="flex h-8 items-center gap-1 border-b px-1">
+    <div class="glass-tabbar flex h-8 items-center gap-1 border-b px-1">
       <button
         v-for="tab in tabs"
         :key="tab.id"
         type="button"
-        class="rounded px-2 py-1 text-xs"
+        class="glass-tab rounded px-2 py-1 text-xs"
+        :data-active="layout.activeBottomTab === tab.id"
         :class="
           layout.activeBottomTab === tab.id
             ? 'bg-background text-foreground ring-1 ring-border'

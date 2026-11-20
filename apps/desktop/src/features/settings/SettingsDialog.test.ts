@@ -59,6 +59,23 @@ it("restores unsaved appearance when the host closes the dialog", async () => {
   expect(backend.settingsSet).not.toHaveBeenCalled();
 });
 
+it("previews, cancels and saves Liquid Glass in the existing appearance selector", async () => {
+  await theme("liquid-glass-light");
+  expect(document.documentElement.dataset.theme).toBe("liquid-glass");
+  expect(host.text()).toContain("Soft highlights");
+  expect(store.settings!.appearance.theme).toBe("dark");
+  await button("Cancel").trigger("click");
+  await flushPromises();
+  expect(document.documentElement.dataset.theme).toBe("standard");
+  await open();
+  await theme("liquid-glass-dark");
+  await button("OK").trigger("click");
+  await flushPromises();
+  expect(store.settings!.appearance.theme).toBe("liquid-glass-dark");
+  expect(document.documentElement.dataset.theme).toBe("liquid-glass");
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+});
+
 it("does not close a newer dialog after a delayed OK completes", async () => {
   const pending = deferred<AppSettings>();
   backend.settingsSet.mockReturnValue(pending.promise);

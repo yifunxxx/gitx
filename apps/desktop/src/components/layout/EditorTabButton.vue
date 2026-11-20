@@ -66,7 +66,8 @@ function restoreFocus(event: Event) {
   <ContextMenuRoot v-model:open="open" :modal="false">
     <ContextMenuTrigger as-child :disabled="busy">
       <div
-        class="group flex shrink-0 items-center rounded-sm"
+        class="glass-tab group flex shrink-0 items-center rounded-sm"
+        :data-active="active"
         :class="
           active
             ? 'bg-background text-foreground ring-1 ring-border'
@@ -109,10 +110,10 @@ function restoreFocus(event: Event) {
     <ContextMenuPortal>
       <ContextMenuContent
         data-editor-tab-menu
+        class="dbx-floating-surface z-[9999] min-w-44 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10"
         loop
         :collision-padding="8"
         :aria-label="t('editorTabs.menu')"
-        class="z-[9999] min-w-44 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10"
         :style="{ maxHeight: 'var(--reka-context-menu-content-available-height)' }"
         @close-auto-focus="restoreFocus"
       >

@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<SelectContentProps & { class?: string }>(
 <template>
   <SelectPortal>
     <SelectContent
+      class="dbx-floating-surface"
       v-bind="props"
       :class="
         cn(

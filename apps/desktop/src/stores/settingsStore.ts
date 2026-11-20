@@ -4,10 +4,12 @@ import type { AppSettings } from "@/lib/backend";
 import { getBackend } from "@/lib/backend";
 import { i18n } from "@/i18n";
 import { cloneJson } from "@/lib/clone";
+import { isGlassTheme, isDarkTheme, type Theme } from "@/lib/appearance";
 
 export const useSettingsStore = defineStore("settings", () => {
   let mediaQueryUnsub: (() => void) | null = null;
   const settings = ref<AppSettings | null>(null);
+  const appearanceDark = ref(false);
   const previews = new Map<symbol, AppSettings>();
   let saveQueue: Promise<unknown> = Promise.resolve();
 
@@ -112,8 +114,10 @@ export const useSettingsStore = defineStore("settings", () => {
     const root = document.documentElement;
     const theme = appearance.theme;
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const dark = theme === "dark" || (theme === "system" && prefersDark);
+    const dark = isDarkTheme(theme, prefersDark);
+    appearanceDark.value = dark;
     root.classList.toggle("dark", dark);
+    root.dataset.theme = isGlassTheme(theme) ? "liquid-glass" : "standard";
     root.dataset.cornerStyle = appearance.cornerStyle || "small";
     root.dataset.palette = appearance.palette || "pearl";
   }
@@ -131,7 +135,7 @@ export const useSettingsStore = defineStore("settings", () => {
     previews.clear();
   });
 
-  async function setTheme(theme: "light" | "dark" | "system") {
+  async function setTheme(theme: Theme) {
     const base = cloneJson(settings.value ?? emptySettings());
     await save({
       ...base,
@@ -142,8 +146,10 @@ export const useSettingsStore = defineStore("settings", () => {
   async function toggleTheme() {
     const current = settings.value?.appearance.theme ?? "system";
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const effectivelyDark = current === "dark" || (current === "system" && prefersDark);
-    await setTheme(effectivelyDark ? "light" : "dark");
+    const effectivelyDark = isDarkTheme(current, prefersDark);
+    await setTheme(isGlassTheme(current)
+      ? effectivelyDark ? "liquid-glass-light" : "liquid-glass-dark"
+      : effectivelyDark ? "light" : "dark");
   }
 
   async function setLocale(locale: "zh-CN" | "en") {
@@ -153,6 +159,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   return {
     settings,
+    appearanceDark,
     load,
     save,
     emptySettings,
