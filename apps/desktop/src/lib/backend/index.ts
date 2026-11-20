@@ -184,6 +184,7 @@ import type {
 import { commands } from "./bindings";
 import { mockBackend } from "./mock";
 import { isTauri } from "@/lib/utils";
+import { withBackendActivity } from "./activity";
 
 export type Backend = {
   appInfo(): Promise<AppInfo>;
@@ -511,9 +512,11 @@ export const tauriBackend: Backend = {
   credentialSessionClear: () => commands.credentialSessionClear(),
 };
 
+const trackedTauriBackend = withBackendActivity(tauriBackend);
+const trackedMockBackend = withBackendActivity(mockBackend);
+
 export function getBackend(): Backend {
-  if (isTauri()) return tauriBackend;
-  return mockBackend;
+  return isTauri() ? trackedTauriBackend : trackedMockBackend;
 }
 
 export * from "./bindings";

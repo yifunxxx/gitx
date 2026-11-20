@@ -66,6 +66,7 @@ const ctx = computed<ActionContext>(() => ({
 }));
 
 const branchLabel = computed(() => {
+  if (branches.checkingOut) return `${t("operations.checkout")} · ${branches.checkoutTargetName ?? "…"}`;
   if (!workspace.isRepo) return "—";
   const b = workspace.branch;
   if (!b) return "…";
@@ -154,7 +155,8 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
         :disabled="!workspace.isRepo"
         @click="branches.openPopup()"
       >
-        <GitBranch class="h-3.5 w-3.5" />
+        <LoaderCircle v-if="branches.checkingOut" class="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+        <GitBranch v-else class="h-3.5 w-3.5" />
         <span>{{ branchLabel }}</span>
       </button>
     </Tip>

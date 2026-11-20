@@ -1,6 +1,8 @@
-import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { defineStore, getActivePinia } from "pinia";
+import { computed, onScopeDispose, ref } from "vue";
 import { getBackend } from "@/lib/backend";
+import { observeBackendActivity } from "@/lib/backend/activity";
+import { i18n } from "@/i18n";
 
 export type JobUi = {
   id: string;
@@ -22,8 +24,22 @@ export const useJobsStore = defineStore("jobs", () => {
   let knownNativeIds = new Set<string>();
   let eventVersion = 0;
   let refreshing = false;
+  let nextUiId = 0;
+
+  const stopObserving = observeBackendActivity(getActivePinia()!, (operation) => {
+    const label = i18n.global.t(operation.titleKey);
+    const id = begin(operation.target ? `${label} · ${operation.target}` : label, operation.path);
+    return () => finished(id);
+  });
+  onScopeDispose(stopObserving);
 
   const count = computed(() => running.value.length);
+
+  function begin(title: string, message?: string) {
+    const id = `ui-operation-${++nextUiId}`;
+    started({ id, title, message, cancellable: false });
+    return id;
+  }
 
   function started(
     job: Omit<JobUi, "startedAt"> & { startedAt?: number },
@@ -111,6 +127,7 @@ export const useJobsStore = defineStore("jobs", () => {
     anchorX,
     anchorY,
     started,
+    begin,
     progress,
     finished,
     openPopup,

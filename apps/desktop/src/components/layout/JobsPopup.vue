@@ -56,10 +56,10 @@ async function onCancel(id: string) {
       :key="job.id"
       class="flex items-start gap-2 rounded px-2 py-1.5"
     >
-      <LoaderCircle class="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+      <LoaderCircle class="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin motion-reduce:animate-none text-muted-foreground" />
       <div class="min-w-0 flex-1">
-        <div class="truncate text-[13px] leading-4 text-foreground">{{ job.title }}</div>
-        <div class="mt-0.5 truncate text-[11px] text-muted-foreground">
+        <div class="truncate text-[13px] leading-4 text-foreground" :title="job.title">{{ job.title }}</div>
+        <div class="mt-0.5 truncate text-[11px] text-muted-foreground" :title="detailFor(job)">
           {{ detailFor(job) }}
         </div>
         <div

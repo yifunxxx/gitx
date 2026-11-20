@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
 import JobsPopup from "./JobsPopup.vue";
 import { useJobsStore } from "@/stores/jobsStore";
+vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),

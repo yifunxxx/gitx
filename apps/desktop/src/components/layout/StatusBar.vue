@@ -20,7 +20,7 @@ const branchText = computed(() => {
 });
 
 const busyText = computed(() =>
-  jobs.count ? t("status.busy", { count: jobs.count }) : t("status.idle"),
+  jobs.count ? jobs.running[0]!.title : t("status.idle"),
 );
 
 function toggleJobsPopup(event: MouseEvent) {
@@ -45,13 +45,15 @@ function toggleJobsPopup(event: MouseEvent) {
   >
     <button
       type="button"
-      class="flex items-center gap-1 rounded px-1 hover:bg-accent/60 hover:text-foreground"
+      class="flex min-w-0 max-w-[45%] items-center gap-1 rounded px-1 hover:bg-accent/60 hover:text-foreground"
       :aria-expanded="jobs.popupOpen"
       :aria-label="t('status.jobsTitle')"
+      :title="jobs.running.map(job => job.title + (job.message ? ` — ${job.message}` : '')).join('\n') || busyText"
       @click="toggleJobsPopup"
     >
-      <LoaderCircle v-if="jobs.count" class="h-3 w-3 animate-spin" />
-      <span>{{ busyText }}</span>
+      <LoaderCircle v-if="jobs.count" class="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none" />
+      <span class="truncate" role="status" aria-live="polite">{{ busyText }}</span>
+      <span v-if="jobs.count > 1" class="shrink-0">({{ jobs.count }})</span>
     </button>
     <div class="h-3 w-px bg-border" />
     <button

@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
 import { useBranchesStore } from "./branchesStore";
+import { useJobsStore } from "./jobsStore";
 import type { RefEntry } from "@/lib/backend";
 
 const mocks = vi.hoisted(() => ({
@@ -48,6 +49,44 @@ const deferred = () => {
   });
   return { promise, resolve };
 };
+
+it("keeps one checkout job through the refresh and removes it after navigation", async () => {
+  const pending = deferred();
+  const refresh = deferred();
+  mocks.ws.multiRoot = false;
+  mocks.backend.branchCheckout.mockReturnValue(pending.promise);
+  mocks.changes.refresh.mockReturnValue(refresh.promise);
+  const store = useBranchesStore(), jobs = useJobsStore();
+  const result = store.checkout(entry);
+  expect(jobs.count).toBe(1);
+  expect(jobs.running[0]!.title).toContain("shared");
+  expect(store.checkoutTargetName).toBe("shared");
+  expect(await store.checkout(entry)).toBe(false);
+  expect(jobs.count).toBe(1);
+  pending.resolve();
+  await vi.waitFor(() => expect(mocks.changes.refresh).toHaveBeenCalledOnce());
+  expect(jobs.count).toBe(1);
+  mocks.ws.generation++;
+  refresh.resolve();
+  expect(await result).toBe(false);
+  expect(jobs.count).toBe(0);
+  expect(store.checkoutTargetName).toBeNull();
+});
+
+it("cleans up failed checkout jobs and tracks a rollback retry independently", async () => {
+  mocks.backend.multiRootCheckout.mockResolvedValue(failed());
+  const recovery = deferred();
+  mocks.backend.multiRootRollback.mockReturnValue(recovery.promise);
+  const store = useBranchesStore(), jobs = useJobsStore();
+  expect(await store.checkout(entry)).toBe(false);
+  expect(jobs.count).toBe(0);
+  mocks.toast.mock.calls[0]![0].action.onClick();
+  expect(jobs.count).toBe(1);
+  expect(jobs.running[0]!.title).toBe("operations.rollbackCheckout");
+  recovery.resolve(failed());
+  await vi.waitFor(() => expect(store.checkingOut).toBe(false));
+  expect(jobs.count).toBe(0);
+});
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());

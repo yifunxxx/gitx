@@ -24,6 +24,7 @@ export const useBranchesStore = defineStore("branches", () => {
   const lastFetchAt = ref<number | null>(null);
   const fetching = ref(false);
   const checkingOut = ref(false);
+  const checkoutTargetName = ref<string | null>(null);
   const selectedFullName = ref<string | null>(null);
 
   const workspace = () => useWorkspaceStore();
@@ -192,6 +193,9 @@ export const useBranchesStore = defineStore("branches", () => {
               onClick: () => {
                 if (!current() || checkingOut.value) return false;
                 checkingOut.value = true;
+                checkoutTargetName.value = checkoutTarget;
+                const jobs = useJobsStore();
+                const recoveryJob = jobs.begin(i18n.global.t("operations.rollbackCheckout"), path);
                 void (async () => {
                   try {
                     const recovery = await getBackend().multiRootRollback({ steps: result.steps });
@@ -202,8 +206,13 @@ export const useBranchesStore = defineStore("branches", () => {
                   } catch (reason) {
                     reportFailure(result, reason);
                   } finally {
-                    await refreshCurrent();
-                    checkingOut.value = false;
+                    try {
+                      await refreshCurrent();
+                    } finally {
+                      checkingOut.value = false;
+                      checkoutTargetName.value = null;
+                      jobs.finished(recoveryJob);
+                    }
                   }
                 })().catch((reason) => {
                   checkingOut.value = false;
@@ -219,6 +228,9 @@ export const useBranchesStore = defineStore("branches", () => {
       });
     };
     checkingOut.value = true;
+    checkoutTargetName.value = checkoutTarget;
+    const jobs = useJobsStore();
+    const checkoutJob = jobs.begin(`${i18n.global.t("operations.checkout")} · ${checkoutTarget}`, path);
     try {
       if (allRoots) {
         const result = await getBackend().multiRootCheckout({
@@ -256,6 +268,8 @@ export const useBranchesStore = defineStore("branches", () => {
         await refreshCurrent();
       } finally {
         checkingOut.value = false;
+        checkoutTargetName.value = null;
+        jobs.finished(checkoutJob);
       }
     }
     return current();
@@ -429,6 +443,7 @@ export const useBranchesStore = defineStore("branches", () => {
     lastFetchAt,
     fetching,
     checkingOut,
+    checkoutTargetName,
     selectedFullName,
     filteredLocal,
     filteredRemote,
