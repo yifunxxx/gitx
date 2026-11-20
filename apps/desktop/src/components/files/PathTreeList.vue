@@ -128,7 +128,7 @@ function labelFor(node: PathTreeNode<T>) {
     :items="rows"
     :item-height="ROW_H"
     :overscan="16"
-    :get-key="(row) => row.node.id"
+    :get-key="(row) => `${row.node.kind}:${row.node.id}`"
     recycle-keys
   >
     <template #default="{ item: row }">

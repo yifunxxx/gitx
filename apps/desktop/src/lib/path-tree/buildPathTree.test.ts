@@ -83,4 +83,55 @@ describe("buildPathTree", () => {
     expect(flat.at(-1)!.node).toMatchObject({ id: path, depth: 4000, file: { origPath: "final" } });
     expect(flattenPathTree(tree, new Set(["!d"]))).toHaveLength(1);
   });
+
+  it.each([false, true])(
+    "keeps file/directory replacements in either input order (reverse=%s)",
+    (reverse) => {
+      const files = [
+        { path: "src/replacement", status: "D", origPath: null },
+        { path: "src/replacement/new.txt", status: "A", origPath: "moved.txt" },
+        { path: "src/replacement/deep/file.txt", status: "A", origPath: null },
+      ];
+      const tree = buildPathTree(reverse ? files.slice().reverse() : files);
+      const flat = flattenPathTree(tree, new Set());
+      expect(flat.flatMap(({ node }) => (node.file ? [node.file.path] : [])).sort()).toEqual(
+        files.map((file) => file.path).sort(),
+      );
+      const siblings = tree[0]!.children!;
+      expect(siblings.map((node) => [node.name, node.kind])).toEqual([
+        ["replacement", "folder"],
+        ["replacement", "file"],
+      ]);
+      expect(siblings[1]!.file).toMatchObject(files[0]!);
+      expect(siblings[1]!.depth).toBe(1);
+      expect(
+        flattenPathTree(tree, new Set(["!src/replacement"]))
+          .map(({ node }) => node.file?.path)
+          .filter(Boolean),
+      ).toEqual(["src/replacement"]);
+    },
+  );
+
+  it.each([false, true])(
+    "retains a real directory leaf beside a deleted file (reverse=%s)",
+    (reverse) => {
+      const files = [
+        { path: "replacement", status: "D" },
+        { path: "replacement/", status: "?" },
+      ];
+      for (const withChild of [false, true]) {
+        const candidates = withChild
+          ? [...files, { path: "replacement/child.txt", status: "A" }]
+          : files;
+        const tree = buildPathTree(reverse ? candidates.slice().reverse() : candidates);
+        const flat = flattenPathTree(tree, new Set());
+        expect(flat.flatMap(({ node }) => (node.file ? [node.file.path] : [])).sort()).toEqual(
+          candidates.map((file) => file.path).sort(),
+        );
+        expect(tree.map((node) => node.kind)).toEqual(["folder", "file"]);
+        expect(tree[0]!.file).toMatchObject(files[1]!);
+        expect(tree[1]!.file).toMatchObject(files[0]!);
+      }
+    },
+  );
 });

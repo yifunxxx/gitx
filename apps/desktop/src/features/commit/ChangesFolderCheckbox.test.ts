@@ -193,3 +193,56 @@ it("does not scan offscreen descendants while scrolling checked directories", as
   expect(reads).toBe(0);
   expect(wrapper.findAll('[role="treeitem"]').length).toBeLessThan(65);
 });
+
+it("separates same-name file and folder checks, focus, context and range selection", async () => {
+  const { wrapper, store } = fixture(["src/replacement", "src/replacement/new.txt", "z.txt"]);
+  const tree = wrapper.get('[role="tree"]');
+  const dir = () => wrapper.get('[role="treeitem"][aria-label="replacement"][aria-expanded]');
+  const old = () => wrapper.get('[data-path="src/replacement"]');
+  const child = () => wrapper.get('[data-path="src/replacement/new.txt"]');
+  const ids = wrapper.findAll('[role="treeitem"]').map((row) => row.attributes("id"));
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(old().attributes("data-path")).toBe("src/replacement");
+  await dir().get("input").setValue(true);
+  expect(store.checkedPaths).toEqual(["src/replacement/new.txt"]);
+  expect(old().attributes("aria-checked")).toBe("false");
+  await old().get("input").setValue(true);
+  expect(new Set(store.checkedPaths)).toEqual(
+    new Set(["src/replacement", "src/replacement/new.txt"]),
+  );
+  await dir().get("input").setValue(false);
+  expect(store.checkedPaths).toEqual(["src/replacement"]);
+  await child().trigger("click");
+  await old().trigger("click", { shiftKey: true });
+  expect(new Set(store.selectedPaths)).toEqual(
+    new Set(["src/replacement/new.txt", "src/replacement"]),
+  );
+  await dir().get("button").trigger("click");
+  expect(wrapper.find('[data-path="src/replacement/new.txt"]').exists()).toBe(false);
+  await old().trigger("click");
+  expect(tree.attributes("aria-activedescendant")).toBe(old().attributes("id"));
+  await tree.trigger("keydown", { key: "F10", shiftKey: true });
+  expect(wrapper.emitted("context")?.at(-1)).toMatchObject([
+    { path: "src/replacement", header: false },
+  ]);
+  expect(wrapper.emitted("context")?.at(-1)?.[0]).not.toHaveProperty("directory");
+  await tree.trigger("keydown", { key: "ArrowUp" });
+  expect(tree.attributes("aria-activedescendant")).toBe(dir().attributes("id"));
+  await tree.trigger("keydown", { key: "F10", shiftKey: true });
+  expect(wrapper.emitted("context")?.at(-1)).toMatchObject([
+    { path: "src/replacement", directory: true },
+  ]);
+  await tree.trigger("keydown", { key: "ArrowRight" });
+  await tree.trigger("keydown", { key: "ArrowRight" });
+  expect(store.selectedPaths).toEqual(["src/replacement/new.txt"]);
+  await tree.trigger("keydown", { key: "ArrowDown" });
+  expect(store.selectedPaths).toEqual(["src/replacement"]);
+  expect(wrapper.emitted("openDiff")?.at(-1)).toEqual(["src/replacement", "changelist:default"]);
+  mocks.settings.settings.git.changesListMode = "flat";
+  await nextTick();
+  expect(old().attributes("aria-checked")).toBe("true");
+  expect(old().attributes("aria-selected")).toBe("true");
+  mocks.settings.settings.git.changesListMode = "tree";
+  await nextTick();
+  expect(old().attributes("aria-selected")).toBe("true");
+});

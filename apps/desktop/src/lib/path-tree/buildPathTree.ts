@@ -8,6 +8,7 @@ export type PathTreeFileMeta = {
 };
 
 export type PathTreeNode<T extends PathTreeFileMeta = PathTreeFileMeta> = {
+  /** Path identity; combine with kind when keying rows across file/directory replacements. */
   id: string;
   name: string;
   kind: "folder" | "file";
@@ -20,6 +21,7 @@ export type PathTreeNode<T extends PathTreeFileMeta = PathTreeFileMeta> = {
 type FolderAcc<T extends PathTreeFileMeta> = {
   children?: Map<string, FolderAcc<T>>;
   file?: T;
+  directory?: T;
 };
 
 function splitPath(path: string): { parts: string[]; directoryLeaf: boolean } {
@@ -56,7 +58,10 @@ export function buildPathTree<T extends PathTreeFileMeta>(files: T[]): PathTreeN
       let next = children.get(part);
       if (!next) children.set(part, (next = {}));
       if (isLast) {
-        next.file = { ...file, directoryLeaf: directoryLeaf || !!file.directoryLeaf };
+        const isDirectory = directoryLeaf || !!file.directoryLeaf;
+        const meta = { ...file, directoryLeaf: isDirectory };
+        if (isDirectory) next.directory = meta;
+        else next.file = meta;
       }
       cur = next;
     }
@@ -79,14 +84,25 @@ export function buildPathTree<T extends PathTreeFileMeta>(files: T[]): PathTreeN
           kind: "folder",
           depth,
           children,
-          file: child.file?.directoryLeaf ? child.file : undefined,
+          file: child.directory,
         });
         frames.push({ folder: child, nodes: children, id: childId, depth: depth + 1 });
-      } else if (child.file) {
+      } else if (child.directory) {
+        nodes.push({
+          id: child.directory.path,
+          name,
+          kind: "folder",
+          depth,
+          file: child.directory,
+        });
+      }
+      // Diffs can contain an old file beside a new directory (or the reverse).
+      // Keep that file as a sibling, outside the directory's selectable range.
+      if (child.file) {
         nodes.push({
           id: child.file.path,
           name,
-          kind: child.file.directoryLeaf ? "folder" : "file",
+          kind: "file",
           depth,
           file: child.file,
         });

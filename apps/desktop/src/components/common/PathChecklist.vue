@@ -60,40 +60,6 @@ const treeModel = computed(() => {
   const entries: TreeEntry[] = [];
   const paths: string[] = [];
   const roots = buildPathTree(filtered.value);
-  const represented = new Set<string>();
-  const childrenByPath = new Map<string, PathTreeNode<PathChecklistItem>[]>([["", roots]]);
-  const pending = roots.slice();
-  while (pending.length) {
-    const node = pending.pop()!;
-    if (node.file) represented.add(node.file.path);
-    if (node.children) {
-      childrenByPath.set(node.id, node.children);
-      for (const child of node.children) pending.push(child);
-    }
-  }
-  // A deleted file can be replaced by a directory with the same name. The
-  // shared display tree keeps the directory; the picker must also retain the
-  // old file as an independently selectable sibling outside that folder's range.
-  const repaired = new Set<PathTreeNode<PathChecklistItem>[]>();
-  for (const file of filtered.value) {
-    if (represented.has(file.path)) continue;
-    const parts = file.path.replace(/\\/g, "/").split("/").filter(Boolean);
-    const name = parts.pop() ?? file.path;
-    const siblings = childrenByPath.get(parts.join("/")) ?? roots;
-    siblings.push({
-      id: file.path,
-      name,
-      kind: /[\\/]$/.test(file.path) ? "folder" : "file",
-      depth: parts.length,
-      file,
-    });
-    represented.add(file.path);
-    repaired.add(siblings);
-  }
-  for (const siblings of repaired)
-    siblings.sort((a, b) =>
-      a.kind !== b.kind ? (a.kind === "folder" ? -1 : 1) : a.name.localeCompare(b.name),
-    );
   type Visit = { node: PathTreeNode<PathChecklistItem>; parent: string | null };
   const stack: (Visit | { exit: TreeEntry })[] = roots
     .slice()

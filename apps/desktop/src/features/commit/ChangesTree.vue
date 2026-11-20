@@ -140,7 +140,7 @@ const rows = computed<Row[]>(() => {
         const name = meta.path.replace(/\\/g, "/");
         out.push({
           kind: "file",
-          key: JSON.stringify([group.section, meta.path]),
+          key: JSON.stringify([group.section, meta.directoryLeaf ? "folder" : "file", meta.path]),
           section: group.section,
           node: {
             id: meta.path,
@@ -172,7 +172,7 @@ const rows = computed<Row[]>(() => {
       const node = frame.nodes[frame.index]!;
       const position = frame.index + 1;
       frame.index += 1;
-      const rowKey = JSON.stringify([group.section, node.id]);
+      const rowKey = JSON.stringify([group.section, node.kind, node.id]);
       const isFolder = !!node.children?.length;
       const expanded = isFolder && !collapsed.value.has(rowKey);
       out.push({
