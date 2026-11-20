@@ -440,6 +440,8 @@
     "clear": "清除"
   },
   "toolbar": {
+    "recentProjects": "最近项目",
+    "currentProject": "当前项目",
     "menu": "VCS 操作菜单",
     "openFolder": "打开文件夹",
     "branches": "分支",

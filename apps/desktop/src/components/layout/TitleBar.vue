@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Check,
+  ChevronDown,
   CloudDownload,
   FolderOpen,
   LoaderCircle,
@@ -22,12 +23,14 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { runAction } from "@/actions";
 import type { ActionContext } from "@/actions";
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSyncStore } from "@/stores/syncStore";
 import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
 import { useUpdateStore } from "@/stores/updateStore";
+import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
+import RecentProjectsMenuItems from "./RecentProjectsMenuItems.vue";
 
 const { t } = useI18n();
 const layout = useLayoutStore();
@@ -36,7 +39,23 @@ const branches = useBranchesStore();
 const settings = useSettingsStore();
 const sync = useSyncStore();
 const updates = useUpdateStore();
-const { pending: opening, pendingPath, openFolder } = useWorkspaceOpen();
+const { pending: opening, pendingPath } = useWorkspaceOpen();
+const projectMenuOpen = ref(false);
+const projectAnchor = ref({ x: 48, y: 40 });
+watch(
+  () => workspace.navigationToken(),
+  () => {
+    projectMenuOpen.value = false;
+  },
+);
+function openProjectMenu(event: MouseEvent) {
+  if (opening.value) return;
+  if (event.currentTarget instanceof HTMLElement) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    projectAnchor.value = { x: rect.left, y: rect.bottom + 4 };
+  }
+  projectMenuOpen.value = !projectMenuOpen.value;
+}
 
 const ctx = computed<ActionContext>(() => ({
   repoIds: workspace.toplevel ? [workspace.toplevel] : [],
@@ -101,14 +120,17 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
       </Button>
     </Tip>
 
-    <Tip :text="t('toolbar.openFolder')">
+    <Tip :text="t('toolbar.recentProjects')">
       <Button
         variant="ghost"
         size="sm"
         class="gap-1.5"
         :disabled="opening"
         :aria-busy="opening"
-        @click="openFolder"
+        :aria-label="t('toolbar.recentProjects')"
+        aria-haspopup="menu"
+        :aria-expanded="projectMenuOpen"
+        @click="openProjectMenu"
       >
         <LoaderCircle v-if="opening" class="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
         <FolderOpen v-else class="h-3.5 w-3.5" />
@@ -121,6 +143,7 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
                 : t("welcome.openFolder")
           }}
         </span>
+        <ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
       </Button>
     </Tip>
 
@@ -231,4 +254,15 @@ async function run(id: string, source: ActionContext["source"] = "toolbar") {
 
     <WindowControls />
   </header>
+  <ContextMenuSurface
+    :label="t('toolbar.recentProjects')"
+    :open="projectMenuOpen"
+    :anchor-x="projectAnchor.x"
+    :anchor-y="projectAnchor.y"
+    :width="360"
+    :estimated-height="Math.min(20, workspace.recent.length) * 48 + 80"
+    @close="projectMenuOpen = false"
+  >
+    <RecentProjectsMenuItems @close="projectMenuOpen = false" />
+  </ContextMenuSurface>
 </template>

@@ -440,6 +440,8 @@
     "clear": "Clear"
   },
   "toolbar": {
+    "recentProjects": "Recent projects",
+    "currentProject": "Current project",
     "menu": "VCS operations menu",
     "openFolder": "Open folder",
     "branches": "Branches",

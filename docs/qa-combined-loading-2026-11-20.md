@@ -15,3 +15,5 @@
 修复版原生：Show All Changes正常打开；点击Show Combined Diff后两次均观察到转圈、disabled按钮及Loading combined diff…，结束后恢复可用且显示正确差异。期间Refresh正常恢复，再次计算成功。截图与UIA存在不同采样时点，原生没有精确证明刷新点击瞬间旧计算尚未结束，因此旧finally与新请求并发隔离仍以自动回归为证据。旧程序对照截图在计算中没有反馈，但同次UIA已采到完成内容，不当作时长或并发请求证据。new-pending.txt/new-refresh.txt/new-completed.txt保存UIA；防重复后端调用计数来自真实store/组件回归。
 
 最终二进制SHA256为AA337B59BFA37127EE0EE50C3FEE5EC4167DC32B4AC16FCE076037D6CDA7B91A，源码身份见new-build.json。两个测试主进程2536/5104已退出；50文件SHA256、HEAD、index tree和clean status一致，设置精确恢复备份，见cleanup.json。用户安装版未替换。提交前fetch成功，远端master efc2a8a和交付分支dee2722均已包含；提交推送随后补记。
+
+9ae5fdfb413bb89168278a3ca29924fa9d1ed803已推送并经ls-remote核对一致，首次成功且无凭据提示。

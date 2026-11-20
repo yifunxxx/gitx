@@ -37,6 +37,9 @@ vi.mock("@/stores/syncStore", () => ({ useSyncStore: () => ({}) }));
 vi.mock("@/stores/updateStore", () => ({ useUpdateStore: () => ({}) }));
 vi.mock("@/actions", () => ({ runAction: mocks.action }));
 enableAutoUnmount(afterEach);
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 function deferred<T = unknown>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -222,10 +225,15 @@ it("shares busy state with the title bar and completes reads after Welcome unmou
 
 it("title-bar opens use the same single refresh path and remain retryable on failure", async () => {
   const host = mount(TitleBar, {
+    attachTo: document.body,
     global: { stubs: { WindowControls: true, Tip: { inheritAttrs: false, template: "<slot />" } } },
   });
   mocks.pick.mockResolvedValueOnce("A");
   await button(host, "welcome.openFolder").trigger("click");
+  await flushPromises();
+  Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+    .find((b) => b.textContent?.includes("welcome.open"))!
+    .click();
   await flushPromises();
   expect(mocks.open).toHaveBeenCalledExactlyOnceWith("A");
   expect(mocks.refresh).toHaveBeenCalledOnce();
@@ -236,8 +244,61 @@ it("title-bar opens use the same single refresh path and remain retryable on fai
   mocks.open.mockRejectedValueOnce(new Error("B is unavailable"));
   await button(host, "A").trigger("click");
   await flushPromises();
+  Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+    .find((b) => b.textContent?.includes("welcome.open"))!
+    .click();
+  await flushPromises();
   expect(mocks.toast).toHaveBeenLastCalledWith({ title: "B is unavailable" });
   expect(button(host, "A").attributes("disabled")).toBeUndefined();
+});
+
+it("opens recent projects with the title menu keyboard and closes on navigation", async () => {
+  const host = mount(TitleBar, {
+    attachTo: document.body,
+    global: { stubs: { WindowControls: true, Tip: { inheritAttrs: false, template: "<slot />" } } },
+  });
+  await host.get('[aria-label="toolbar.recentProjects"]').trigger("click");
+  await flushPromises();
+  const target = document.querySelector<HTMLButtonElement>('[aria-label="B"]')!;
+  target.focus();
+  target.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+  );
+  await flushPromises();
+  expect(mocks.open).toHaveBeenCalledExactlyOnceWith("B");
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await host.get('[aria-label="toolbar.recentProjects"]').trigger("click");
+  await flushPromises();
+  ++mocks.workspace.token;
+  await flushPromises();
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+it("deduplicates Windows recent paths and marks the current project", async () => {
+  mocks.workspace.folderPath = "C:/Work/Repo";
+  mocks.workspace.recent = [
+    "C:\\Work\\Repo",
+    "c:/work/repo/",
+    "D:/Work/Repo",
+    "/tmp/Repo",
+    "/tmp/repo",
+  ];
+  const host = mount(TitleBar, {
+    attachTo: document.body,
+    global: { stubs: { WindowControls: true, Tip: { inheritAttrs: false, template: "<slot />" } } },
+  });
+  await host.get('[aria-label="toolbar.recentProjects"]').trigger("click");
+  await flushPromises();
+  const paths = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="menuitem"][aria-label]'),
+  );
+  expect(paths).toHaveLength(4);
+  expect(paths[0]!.getAttribute("aria-current")).toBe("page");
+  expect(paths[0]!.disabled).toBe(true);
+  expect(paths[1]!.disabled).toBe(false);
+  paths[1]!.click();
+  await flushPromises();
+  expect(mocks.open).toHaveBeenCalledExactlyOnceWith("D:/Work/Repo");
 });
 
 it("keeps progress until all initial reads settle and reports a refresh failure after opening", async () => {
