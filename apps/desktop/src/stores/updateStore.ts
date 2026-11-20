@@ -30,6 +30,10 @@ export const useUpdateStore = defineStore("update", () => {
   let periodTimer: ReturnType<typeof setInterval> | undefined;
   let started = false;
   let downloadToken = 0;
+  let downloadCancellation = 0;
+  let downloadPromise: Promise<string | null> | undefined;
+  let downloadVersion: string | undefined;
+  let installPromise: Promise<void> | undefined;
   let unlistenProgress: (() => void) | undefined;
   let centerOpen = false;
 
@@ -57,7 +61,9 @@ export const useUpdateStore = defineStore("update", () => {
     return String(i18n.global.t("updates.statusAvailable", { version }));
   });
 
-  const toolbarTooltip = computed(() => statusText.value || String(i18n.global.t("updates.openCenter")));
+  const toolbarTooltip = computed(
+    () => statusText.value || String(i18n.global.t("updates.openCenter")),
+  );
 
   const primaryActionLabel = computed(() => {
     if (phase.value === "ready" || phase.value === "installing") {
@@ -107,6 +113,7 @@ export const useUpdateStore = defineStore("update", () => {
       /* ignore */
     }
     downloadToken += 1;
+    downloadCancellation += 1;
     if (phase.value === "downloading" || phase.value === "available") {
       phase.value = "idle";
       downloadProgress.value = null;
@@ -153,16 +160,22 @@ export const useUpdateStore = defineStore("update", () => {
     }
   }
 
-  async function ensureProgressListener() {
+  async function ensureProgressListener(token: number) {
     if (!isTauri() || unlistenProgress) return;
     const { listen } = await import("@tauri-apps/api/event");
-    unlistenProgress = await listen<{
+    if (token !== downloadToken) return;
+    const cleanup = await listen<{
       version: string;
       downloaded: number;
       total: number | null;
     }>("update://progress", (event) => {
       const payload = event.payload;
-      if (!latest.value || payload.version !== latest.value.latestVersion) return;
+      if (
+        phase.value !== "downloading" ||
+        !latest.value ||
+        payload.version !== latest.value.latestVersion
+      )
+        return;
       if (payload.total && payload.total > 0) {
         downloadProgress.value = Math.min(
           99,
@@ -170,90 +183,127 @@ export const useUpdateStore = defineStore("update", () => {
         );
       }
     });
+    if (token !== downloadToken) cleanup();
+    else unlistenProgress = cleanup;
   }
 
   function preferredInstallerUrl(info: AppUpdateInfo = latest.value!): string | null {
     return info.nsisUrl || info.msiUrl || null;
   }
 
-  async function downloadUpdate(opts: { installAfter?: boolean } = {}) {
+  async function downloadUpdate(opts: { installAfter?: boolean } = {}): Promise<string | null> {
+    // Installation owns its download too, so repeated install requests cannot
+    // each continue from a shared download and launch separate installers.
+    if (opts.installAfter) {
+      await installUpdate();
+      return downloadedPath.value;
+    }
     const info = latest.value;
     if (!info?.newer) return null;
+    if (downloadPromise) {
+      if (downloadVersion === info.latestVersion) return downloadPromise;
+      // The backend writes one installer file per release. Finish the older
+      // transfer before starting the newly discovered release, never reuse its path.
+      const cancellation = downloadCancellation;
+      await downloadPromise.catch(() => null);
+      if (
+        cancellation !== downloadCancellation ||
+        latest.value?.latestVersion !== info.latestVersion
+      )
+        return null;
+      return downloadUpdate();
+    }
     const url = preferredInstallerUrl(info);
     if (!url) {
       error.value = String(i18n.global.t("updates.noInstaller"));
       phase.value = "error";
       throw new Error(error.value);
     }
-    if (
-      downloadedPath.value &&
-      downloadedVersion.value === info.latestVersion &&
-      phase.value === "ready"
-    ) {
-      if (opts.installAfter) await installUpdate();
+    if (downloadedPath.value && downloadedVersion.value === info.latestVersion) {
       return downloadedPath.value;
     }
     const token = ++downloadToken;
     phase.value = "downloading";
     downloadProgress.value = null;
     error.value = null;
-    await ensureProgressListener();
-    try {
-      const result = await getBackend().appDownloadUpdate({
-        url,
-        version: info.latestVersion,
-      });
-      if (token !== downloadToken) return null;
-      downloadedPath.value = result.path;
-      downloadedVersion.value = result.version;
-      downloadProgress.value = 100;
-      phase.value = "ready";
-      if (opts.installAfter) await installUpdate();
-      return result.path;
-    } catch (reason) {
-      if (token !== downloadToken) return null;
-      const message = formatErrorMessage(reason);
-      error.value = message;
-      phase.value = "error";
-      throw reason;
-    }
+    downloadVersion = info.latestVersion;
+    const current = () => {
+      if (token !== downloadToken) return false;
+      if (latest.value?.latestVersion === info.latestVersion) return true;
+      phase.value = updateAvailable.value ? "available" : "idle";
+      downloadProgress.value = null;
+      return false;
+    };
+    downloadPromise = (async () => {
+      try {
+        await ensureProgressListener(token);
+        if (!current()) return null;
+        const result = await getBackend().appDownloadUpdate({
+          url,
+          version: info.latestVersion,
+        });
+        if (!current()) return null;
+        downloadedPath.value = result.path;
+        downloadedVersion.value = result.version;
+        downloadProgress.value = 100;
+        phase.value = "ready";
+        return result.path;
+      } catch (reason) {
+        if (!current()) return null;
+        error.value = formatErrorMessage(reason);
+        phase.value = "error";
+        throw reason;
+      }
+    })().finally(() => {
+      downloadPromise = undefined;
+      downloadVersion = undefined;
+    });
+    return downloadPromise;
   }
 
-  async function installUpdate() {
+  async function installUpdate(): Promise<void> {
+    if (installPromise) return installPromise;
     const info = latest.value;
     if (!info?.newer) return;
-    let path = downloadedPath.value;
-    if (!path || downloadedVersion.value !== info.latestVersion) {
-      path = await downloadUpdate();
-    }
-    if (!path) return;
-    phase.value = "installing";
-    try {
-      await getBackend().appInstallUpdate({ path });
-      // On Windows the process exits; elsewhere surface a clear message.
-      toast({
-        title: String(i18n.global.t("updates.installStartedTitle")),
-        description: String(i18n.global.t("updates.installStartedBody")),
-      });
-      phase.value = "ready";
-    } catch (reason) {
-      const message = formatErrorMessage(reason);
-      error.value = message;
-      phase.value = "error";
-      toast({
-        title: String(i18n.global.t("updates.installFailed")),
-        description: message,
-      });
-      throw reason;
-    }
+    installPromise = (async () => {
+      let path = downloadedPath.value;
+      if (!path || downloadedVersion.value !== info.latestVersion) {
+        path = await downloadUpdate();
+      }
+      if (
+        !path ||
+        latest.value?.latestVersion !== info.latestVersion ||
+        downloadedVersion.value !== info.latestVersion
+      )
+        return;
+      phase.value = "installing";
+      error.value = null;
+      try {
+        await getBackend().appInstallUpdate({ path });
+        // On Windows the process exits; elsewhere surface a clear message.
+        toast({
+          title: String(i18n.global.t("updates.installStartedTitle")),
+          description: String(i18n.global.t("updates.installStartedBody")),
+        });
+        phase.value = "ready";
+      } catch (reason) {
+        const message = formatErrorMessage(reason);
+        error.value = message;
+        phase.value = "error";
+        toast({
+          title: String(i18n.global.t("updates.installFailed")),
+          description: message,
+        });
+        throw reason;
+      }
+    })().finally(() => {
+      installPromise = undefined;
+    });
+    return installPromise;
   }
 
   async function primaryAction() {
-    if (phase.value === "ready" || phase.value === "installing") {
-      await installUpdate();
-      return;
-    }
-    await downloadUpdate({ installAfter: true });
+    await installUpdate();
   }
 
   async function checkForUpdates(opts: { manual?: boolean; quiet?: boolean } = {}) {
@@ -274,7 +324,11 @@ export const useUpdateStore = defineStore("update", () => {
           phase.value !== "installing"
         ) {
           phase.value = "ready";
-        } else if (phase.value !== "downloading" && phase.value !== "ready") {
+        } else if (
+          phase.value !== "downloading" &&
+          phase.value !== "ready" &&
+          phase.value !== "installing"
+        ) {
           phase.value = "available";
         }
         const shouldNotify = opts.manual || ignored !== info.latestVersion;
@@ -338,12 +392,9 @@ export const useUpdateStore = defineStore("update", () => {
     autoTimer = setTimeout(() => {
       void checkForUpdates({ quiet: true }).catch(() => {});
     }, STARTUP_DELAY_MS);
-    periodTimer = setInterval(
-      () => {
-        void checkForUpdates({ quiet: true }).catch(() => {});
-      },
-      AUTO_INTERVAL_MS,
-    );
+    periodTimer = setInterval(() => {
+      void checkForUpdates({ quiet: true }).catch(() => {});
+    }, AUTO_INTERVAL_MS);
   }
 
   function stopAutoChecks() {
@@ -353,6 +404,7 @@ export const useUpdateStore = defineStore("update", () => {
     periodTimer = undefined;
     started = false;
     downloadToken += 1;
+    downloadCancellation += 1;
     unlistenProgress?.();
     unlistenProgress = undefined;
   }

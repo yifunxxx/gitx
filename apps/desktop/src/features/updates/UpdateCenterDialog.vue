@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, useId } from "vue";
+import { computed, onBeforeUnmount, ref, useId } from "vue";
 import { useI18n } from "vue-i18n";
-import { X } from "@lucide/vue";
+import { Loader2, X } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { closeDialog, useDialogStack, useDialogState } from "@/composables/useDialog";
 import { useUpdateStore } from "@/stores/updateStore";
@@ -13,6 +13,7 @@ const stack = useDialogStack();
 const dialogId = dialog.value?.id;
 const titleId = useId();
 let disposed = false;
+const acting = ref(false);
 
 const present = () => !disposed && stack.value.some((entry) => entry.id === dialogId);
 const current = () => present() && dialog.value?.id === dialogId;
@@ -44,6 +45,7 @@ const notes = computed(() => {
 
 const busy = computed(
   () =>
+    acting.value ||
     updates.checking ||
     updates.phase === "downloading" ||
     updates.phase === "installing",
@@ -73,11 +75,14 @@ async function openDownloadPage() {
 }
 
 async function runPrimary() {
-  if (!current() || updates.phase === "downloading") return;
+  if (!current() || busy.value) return;
+  acting.value = true;
   try {
     await updates.primaryAction();
   } catch {
     // Store surfaces toast / status; keep dialog open for retry.
+  } finally {
+    acting.value = false;
   }
 }
 </script>
@@ -157,9 +162,11 @@ async function runPrimary() {
         </Button>
         <Button
           size="sm"
-          :disabled="!updates.updateAvailable || updates.phase === 'downloading'"
+          :disabled="!updates.updateAvailable || busy"
+          :aria-busy="busy"
           @click="runPrimary"
         >
+          <Loader2 v-if="busy" class="mr-1 h-3 w-3 animate-spin" aria-hidden="true" />
           {{ updates.primaryActionLabel }}
         </Button>
       </div>

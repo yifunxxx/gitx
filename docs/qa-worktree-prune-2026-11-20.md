@@ -20,14 +20,20 @@ Worktree 清理仅在最终写入时使用共享 busy：预览和确认期间按
 
 最终17项测试对旧 store/view 的隔离加载为 **12失败/5通过**（`prune-final-before-17.log`，12:52:36）；修复后 **17项全部通过，相关3文件/55项通过**（`prune-final-after-55.log`，12:53:42）。旧实现由 `git show HEAD` 导出并通过 Vite pre-transform 加载，未交换活动源码。包括真实 Pinia/workspaceStore 与 WorktreesView 按钮检查，以及延迟预览、确认、写入、列表请求的导航边界。
 
-类型检查、Vite生产构建、修改文件Oxlint和diff检查通过。构建仍有原有的大chunk提示。初次构建在最后两项refresh保护前执行，最终类型检查及55项定向测试已覆盖该补充；最终组合构建/原生复查结果另补记。`prune-before-with-view.log` 实际是中途修后结果，不作旧基线。
+类型检查、Vite生产构建、修改文件Oxlint和diff检查通过。构建仍有原有的大chunk提示。初次构建在最后两项refresh保护前执行；最终组合148文件/1399项、类型检查、Vite和Windows原生构建全部通过，覆盖最终refresh保护。组合日志为 `E:/IDEAproject/gitx/test-results/qa049-050-final-{tests,web,native}-20261120.log`。`prune-before-with-view.log` 实际是中途修后结果，不作旧基线。
 
 独立审阅未发现阻塞问题，并指出后续refresh边界；该边界已由两项失败测试复现并修复。
 
 ## 验收与交付边界
 
-代码与自动回归已完成；原生GUI等待/取消待本轮组合构建复查。没有执行用户仓库清理，没有替换用户安装版。安装路径原观察为0.1.41，不等于包含本修复。
+代码与自动回归已完成；最终0.1.41组合程序完成原生GUI预览、等待、取消与重试复查。专用仓库 `E:/IDEAproject/gitx/test-results/repos/prune-lifetime-20261120` 的测试指针临时指向不存在位置，确认框列出预期的失效worktree；此时Prune显示spinner，New Worktree、Open Ref、Prune、Refresh Status均禁用。点击Cancel恢复按钮；再次打开后Escape也恢复，列表条目保持。没有确认实际清理，跨导航及写入失败仍以自动回归为证据。
 
-功能单独提交推送，哈希及远端核对随后记录。总体七项目标仍在进行；本项不代表全局滚动性能问题已经解决。
+原生证据在 `E:/IDEAproject/gitx/test-results/qa049-050-native-20261120/`。程序 `gitx-wait-actions-0141-20261120.exe` 的SHA256为 `9BB5065B7C02E3F77C0E04ECC70203CA00183E47395D37E0278D6D21D4E8DEC4`，源码身份为a8e0b7f加当时未提交QA-050。`prune-confirm.txt`、`prune-cancel.txt`、`prune-retry.txt` 和 `prune-escape-settled.txt`记录原生状态；Escape紧接的首次UIA仍是旧树，随后刷新及截图确认已关闭，不将缓存延迟记为产品缺陷。
+
+测试主进程30872已退出，未逐一追踪子进程。fixture的HEAD、refs、status、index、两个readme及临时gitdir指针哈希与测试前一致；随后恢复原worktree指针并移除本次专用gc配置，两个worktree均正常列出。设置仅recentWorkspaces变化（加入本次仓库并触发20项截断），核对后按字节恢复，SHA256为 `6DD5D73EAD1F19D1860AE9B143659A0753756E82DFF7B5F5FCCB588693F05335`。记录见fixture-after/restored和restoration.json。用户安装路径 `D:/gitx/gitx.exe` 仍为0.1.41（08:26:54修改），本轮未替换，不能认为包含本分支修复。
+
+总体七项目标仍在进行；本项不代表全局滚动性能问题已经解决。
 
 提交前再次fetch：期间443超时/SSL连接重置，重试后成功，远端master与交付分支仍为上述SHA，均已包含于HEAD；无新提交需要整合。
+
+功能提交 `a8e0b7faa5c613b1fb8d117f8a7df90c91b266a3` 已推送：首次443连接超时，第二次成功；独立 `ls-remote` 核对完整SHA一致，未触发凭据提示。
