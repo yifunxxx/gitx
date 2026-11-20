@@ -259,7 +259,10 @@ pub fn run() {
             submodule_update,
             credential_session_set,
             credential_session_clear,
-        ]);
+        ])
+        // Frontend callers expect rejected promises for AppError and catch them.
+        // Keep explicit exports consistent with that invoke contract.
+        .error_handling(tauri_specta::ErrorHandlingMode::Throw);
 
     #[cfg(debug_assertions)]
     match bindings_export::export_when_requested(std::env::var_os("GITX_EXPORT_BINDINGS"), || {
