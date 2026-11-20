@@ -83,11 +83,11 @@ async fn conflict_head_worktree_diff_supports_missing_head_and_deleted_worktree_
         ("du.txt", None, Some(theirs)),
     ] {
         let head = runner
-            .read_blob_at(cwd, "HEAD", path, &cancel)
+            .read_diff_blob_at(cwd, "HEAD", path, &cancel)
             .await
             .unwrap();
         let worktree = runner
-            .read_blob_at(cwd, "WORKTREE", path, &cancel)
+            .read_diff_blob_at(cwd, "WORKTREE", path, &cancel)
             .await
             .unwrap();
         let left = decode_lossy(head.as_deref());
@@ -107,7 +107,7 @@ async fn conflict_head_worktree_diff_supports_missing_head_and_deleted_worktree_
         // conflicted index: the UI must choose real sides, not hide this error.
         assert!(
             runner
-                .read_blob_at(cwd, "INDEX", path, &cancel)
+                .read_diff_blob_at(cwd, "INDEX", path, &cancel)
                 .await
                 .is_err(),
             "INDEX for {path}"

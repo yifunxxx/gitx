@@ -58,7 +58,7 @@ async fn real_staged_rename_retains_both_paths_and_reads_equal_blobs() {
     assert_eq!(renamed.index_status, "R");
     assert_eq!(renamed.worktree_status, ".");
     let old = runner
-        .read_blob_at(
+        .read_diff_blob_at(
             repo.path(),
             "HEAD",
             renamed.orig_path.as_deref().unwrap(),
@@ -67,7 +67,7 @@ async fn real_staged_rename_retains_both_paths_and_reads_equal_blobs() {
         .await
         .unwrap();
     let new = runner
-        .read_blob_at(repo.path(), "INDEX", &renamed.path, &cancel)
+        .read_diff_blob_at(repo.path(), "INDEX", &renamed.path, &cancel)
         .await
         .unwrap();
     assert!(old.is_some());

@@ -125,8 +125,8 @@ pub async fn diff_file_at(
     let right_rev = req.right_rev.clone();
 
     let (left_bytes, right_bytes) = tokio::try_join!(
-        git.read_blob_at(&cwd, &left_rev, &left_path, &cancel),
-        git.read_blob_at(&cwd, &right_rev, &right_path, &cancel),
+        git.read_diff_blob_at(&cwd, &left_rev, &left_path, &cancel),
+        git.read_diff_blob_at(&cwd, &right_rev, &right_path, &cancel),
     )?;
 
     let binary = left_bytes.as_ref().is_some_and(|b| is_probably_binary(b))

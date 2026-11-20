@@ -21,12 +21,12 @@ async fn compares_initial_commit_and_local_changes_with_an_empty_tree() {
     assert_eq!(added.len(), deleted.len());
     assert!(deleted.iter().all(|file| file.status == "D"));
     assert!(runner
-        .read_blob_at(cwd, "EMPTY", &added[0].path, &cancel)
+        .read_diff_blob_at(cwd, "EMPTY", &added[0].path, &cancel)
         .await
         .expect("absent file")
         .is_none());
     assert!(runner
-        .read_blob_at(cwd, "HEAD", &added[0].path, &cancel)
+        .read_diff_blob_at(cwd, "HEAD", &added[0].path, &cancel)
         .await
         .expect("committed file")
         .is_some());

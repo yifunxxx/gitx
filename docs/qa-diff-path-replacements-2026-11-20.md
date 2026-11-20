@@ -1,0 +1,23 @@
+# QA059 文件与目录互换时的差异读取
+
+来源：QA056最终原生程序在真实双向替换fixture中，Changes点击新增replacement文件、Log打开已删除replacement文件的Show Diff，分别报git cat-file HEAD:replacement及历史提交:replacement的bad file。UI选中的路径和版本正确。旧原生证据保存在test-results/qa056-native-20261120的commit-file-after-collapse.txt、log-file-context-diff.txt。
+
+开始前fetch两次网络失败后重试成功，工作基线7ed1ee22dc319f6e9e16faec0a23f54dcd1579cb已包含master efc2a8afe17af6f4c937c8c95c8f7e58dc834b0a和交付分支。QA056推送重试成功，独立ls-remote确认一致。未在同步失败期间开始新产品修改。
+
+旧实现将目录端点作为blob读取；历史目录及暂存区目录报Git错误，Windows工作区目录报拒绝访问。新增真实Git回归使用旧入口运行，4项失败、5项对照通过，日志qa059-before-20261120.log。
+
+增加仅供差异显示的read_diff_blob_at，接入普通Diff和历史/Compare单文件Diff。成功读取仍只调用一次Git；失败后复用字面路径、NUL分隔的树/索引查询。历史端点必须是同路径tree且对象类型可读取，索引端点必须仅有该路径下的后代、没有任意stage的同路径条目；工作区只将确认的目录或父级已变文件视为无文件内容。权限/共享锁、无效修订、缺失对象、损坏索引、冲突stage与gitlink保持错误。显式文件预览和部分暂存继续使用严格read_blob_at/read_blob_side，不放宽写入契约。
+
+新增9项测试及相关6个测试目标共41项通过，日志qa059-targeted-final-20261120.log。初次修后测试为8通过/1失败，原因是新增测试将Windows非法文件名*.txt当成不存在文件；已调整为保留该错误，Git字面路径查询仍验证通配符不展开。冲突、空树和重命名已有Diff测试已接入实际新读取入口；history_read_errors中的17项严格读取契约保留并通过。
+
+完整Rust工作区回归80个测试/文档目标，508项通过、7项辅助ignored、0失败（qa059-rust-full-20261120.log）。后续代码复核将失败读取后的目录确认改为symlink_metadata，避免跟随符号链接后将其误判为空文件侧；该一行保护及Unix回归随后追加，完整508项不记作这行变更后的重跑。Windows最终定向26项通过（qa059-final-guard-20261120.log）；Unix专有符号链接回归在本机不执行。原生构建结果随后补记。
+
+Windows原生构建通过（qa059-native-build-20261120.log，1分36秒）。专用程序gitx-diff-replacements-0142-20261120.exe，SHA256 A70AEA473077214691D443B0278416E9B8327D669E75D58367D94F5AD15B29F4，基线7ed1ee2及本项最终产品源码哈希记在qa059-native-20261120/binary.json。此项没有修改前端布局，沿用QA056最终前端产物。
+
+同一真实fixture的Changes四项HEAD→Staged差异全部通过：replacement新增显示pending reverse replacement，replacement/new.txt删除显示new directory child，reverse/next.txt新增显示pending next child，reverse删除显示new replacement file；对应另一侧为空。Log四项7c9e7f5→6ba4d40历史差异也全部通过：replacement删除、reverse新增、reverse/old.txt删除、replacement/new.txt新增，分别显示正确历史文本。原失败的历史replacement通过右键Show Diff重验，其余历史项双击打开；目录折叠后独立文件仍可点选。各项UIA文本保存在qa059-native-20261120目录，已查看实际红/绿差异截图。工作区未暂存组合与异常路径以真实Git自动回归为证据，没有逐项原生重跑；未操作部分暂存或修改测试文件。
+
+专用主进程3384（19:32:25.104 +08:00）及其conhost17724退出，未将共享WebView算作专有进程。fixture HEAD/status/index树和两个工作区文件哈希全部保持；设置测试后与准备值语义一致，精确恢复到原字节SHA256 6DD5D73EAD1F19D1860AE9B143659A0753756E82DFF7B5F5FCCB588693F05335。cleanup.json保留核对结果。用户安装版0.1.41未替换。
+
+检查中另发现Combined Diff用unwrap_or(None)吞掉所有读取错误，登记QA060待核查，留待独立复现和处理，不混入本项修复。独立提交及推送结果随后补记。
+
+提交前再次fetch成功，master仍efc2a8afe17af6f4c937c8c95c8f7e58dc834b0a、交付分支仍7ed1ee22dc319f6e9e16faec0a23f54dcd1579cb，均为当前HEAD祖先，无新增远端改动。

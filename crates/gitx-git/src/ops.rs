@@ -22,6 +22,55 @@ impl Drop for CommitIndexLock {
     }
 }
 
+fn read_worktree_blob(
+    cwd: &Path,
+    path: &str,
+    directories_absent: bool,
+) -> Result<Option<Vec<u8>>, AppError> {
+    let full = cwd.join(path);
+    match std::fs::read(&full) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error)
+            if directories_absent
+                && (error.kind() == std::io::ErrorKind::NotADirectory
+                    || std::fs::symlink_metadata(&full)
+                        .is_ok_and(|metadata| metadata.is_dir())) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(AppError::new(
+            ErrorCode::FsError,
+            format!("read worktree file: {error}"),
+        )),
+    }
+}
+
+fn lookup_is_directory(output: &[u8], rev: &str, path: &str) -> bool {
+    let path = path.as_bytes();
+    let mut records = output
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+        .peekable();
+    if records.peek().is_none() {
+        return false;
+    }
+    records.all(|entry| {
+        let Some(tab) = entry.iter().position(|byte| *byte == b'\t') else {
+            return false;
+        };
+        let name = &entry[tab + 1..];
+        if rev.is_empty() {
+            // The index has no ordinary directory entries. Only descendants,
+            // with no exact entry at any stage, prove there is no file here.
+            name.strip_prefix(path)
+                .is_some_and(|suffix| suffix.starts_with(b"/"))
+        } else {
+            name == path && entry[..tab].starts_with(b"040000 tree ")
+        }
+    })
+}
+
 impl GitRunner {
     pub async fn status_get(
         &self,
@@ -193,19 +242,9 @@ impl GitRunner {
             return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
         }
         match side {
-            DiffSide::Worktree => {
-                let full = cwd.join(path);
-                match std::fs::read(&full) {
-                    Ok(bytes) => Ok(Some(bytes)),
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                    Err(error) => Err(AppError::new(
-                        ErrorCode::FsError,
-                        format!("read worktree file: {error}"),
-                    )),
-                }
-            }
-            DiffSide::Index => self.read_git_blob(cwd, "", path, cancel).await,
-            DiffSide::Head => self.read_git_blob(cwd, "HEAD", path, cancel).await,
+            DiffSide::Worktree => read_worktree_blob(cwd, path, false),
+            DiffSide::Index => self.read_git_blob(cwd, "", path, false, cancel).await,
+            DiffSide::Head => self.read_git_blob(cwd, "HEAD", path, false, cancel).await,
         }
     }
 
@@ -216,6 +255,7 @@ impl GitRunner {
         cwd: &Path,
         rev: &str,
         path: &str,
+        directories_absent: bool,
         cancel: &CancellationToken,
     ) -> Result<Option<Vec<u8>>, AppError> {
         let spec = if rev.is_empty() {
@@ -248,6 +288,22 @@ impl GitRunner {
         };
         match self.run(GitInvocation::new(cwd, args), cancel).await {
             Ok(out) if out.stdout.is_empty() => Ok(None),
+            Ok(out) if directories_absent && lookup_is_directory(&out.stdout, rev, path) => {
+                if !rev.is_empty() {
+                    // ls-tree can list an entry whose object is missing. Confirm
+                    // the tree exists before treating this endpoint as no file.
+                    let kind = self
+                        .run(
+                            GitInvocation::new(cwd, ["cat-file", "-t", "--", &spec]),
+                            cancel,
+                        )
+                        .await?;
+                    if kind.stdout != b"tree\n" {
+                        return Err(error);
+                    }
+                }
+                Ok(None)
+            }
             // Existing entries include unmerged index stages and non-blob
             // objects. Neither is a deleted file; retain the original error.
             Ok(_) => Err(error),
@@ -953,7 +1009,34 @@ impl GitRunner {
                 .read_blob_side(cwd, path, DiffSide::Index, cancel)
                 .await;
         }
-        self.read_git_blob(cwd, rev, path, cancel).await
+        self.read_git_blob(cwd, rev, path, false, cancel).await
+    }
+
+    /// Read one file endpoint for display-only diffs. A directory at the same
+    /// path has no file content, as does a child blocked by a replacement file.
+    /// Explicit previews and partial writes keep the strict blob reader above.
+    pub async fn read_diff_blob_at(
+        &self,
+        cwd: &Path,
+        rev: &str,
+        path: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<Vec<u8>>, AppError> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new(ErrorCode::Cancelled, "operation cancelled"));
+        }
+        if rev == "EMPTY" {
+            return Ok(None);
+        }
+        if rev.eq_ignore_ascii_case("WORKTREE") || rev.is_empty() {
+            return read_worktree_blob(cwd, path, true);
+        }
+        let git_rev = if rev.eq_ignore_ascii_case("INDEX") || rev == ":0" {
+            ""
+        } else {
+            rev
+        };
+        self.read_git_blob(cwd, git_rev, path, true, cancel).await
     }
 
     pub async fn file_history(
