@@ -21,6 +21,7 @@ export function cloneFolderName(source: string): string {
 
 /** One portable folder name; it must never escape the selected parent. */
 export function validCloneFolderName(name: string): boolean {
+  // eslint-disable-next-line no-control-regex -- Control characters are invalid in Windows folder names.
   return !!name && name === name.trim() && !/[<>:"/\\|?*\u0000-\u001f]/.test(name)
     && !/[. ]$/.test(name) && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name);
 }

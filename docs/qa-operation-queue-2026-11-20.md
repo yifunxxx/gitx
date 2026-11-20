@@ -21,3 +21,5 @@
 ## 交付
 
 最终定向 31 项、类型检查及 Vite 生产构建通过；提交前 fetch 成功，master/交付分支均无新提交。本功能独立提交并推送，SHA 随后记录。
+
+2026-11-20 原生补验：专用polish程序（SHA256 26A1E035…）在自建glass-queue fixture main→feature/glass-preview→main的checkout中，标题栏和状态栏显示正在检出及目标；将本地post-checkout测试hook临时延长至sleep90后，实际截图看到队列详情包含“正在检出 · main”和完整仓库路径，随后变为空闲/没有正在运行的进程。运行中截图保留在本会话工具记录；稍后的UIA文本已是完成状态，文件命名为checkout-queue-polish-completed.txt，不冒充运行中证据。hook最终恢复sleep10，fixture四文件/HEAD/index/status保持，程序退出；真实并发和失败边界以既有组件回归为证据。功能8ed80c9e47e74ac16d81f9d669849b28b7353676此前已独立推送，用户安装版未替换。

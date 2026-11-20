@@ -13,3 +13,5 @@
 验证：4 文件 57 项前端定向通过（包括真实原生目录选择接口的 mock、取消和 Escape），类型与 Vite 构建通过。已有真实 Git 浅克隆测试 1 项通过。原生界面将在主题返工组合程序中复核；用户安装版尚未更新，未对用户截图的实际仓库执行克隆。
 
 本功能独立提交推送；完整 SHA 和远端核对结果在后续台账补记。
+
+2026-11-20 原生补验：b507cef + 主题返工的专用程序从本地 diss.git 完整克隆到已含 keep-existing.txt 的父目录。GUI 创建 diss 子目录并自动打开；磁盘核实 HEAD 为75c64ae7bd4ad0bbd87b22114e3b74e129c76f2d，4个跟踪文件完整，工作区干净，is-shallow-repository=false；父目录已有文件SHA256仍为DD5F9CB45CA607E4C0C066EC7EB1C4E1CD9DF271F4848A5D39782AFD6D73E5D8。证据目录qa062-064-native-20261120，fixture为clone-parent-glass-20261120/diss。本功能b507cef0a950ac5f871db6e401311d2e2951c516已推送且远端核对一致；后续仅补控制字符正则的lint说明，无行为变化。用户安装版未替换，线上diss未实际克隆。

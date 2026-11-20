@@ -37,3 +37,5 @@
 完整前端156文件/1536项通过（qa062-064-polish-full-20261120.log）；最终仅调整CSS作用域/优先级后，类型/Vite和Windows原生重新构建通过（qa062-064-final-{build,native}-20261120.log）。Oxlint通过。最终程序gitx-glass-final-0142-20261120.exe SHA256=F19081D6D15BA9C3A0C7F8A235BE283F6CF5AC3425848C23E9699E254C380532；原生深/浅菜单和搜索容器、输入glass过滤、滚轮和thumb拖动通过。首次polish程序上的黑底/焦点问题已由此最终程序取代，不能引用首轮截图作为最终效果。
 
 最终程序退出；settings只有appearance、locale、recentWorkspaces与原备份不同，按已知测试值逐字段恢复，语义比较无剩余差异；未覆盖其他字段。fixture恢复main及原sleep10 hook，四文件哈希/HEAD/index tree/status保持。安装版未替换；减少透明度/减少动效/高对比/系统跟随以CSS与自动测试为证据，未分别切换系统设置实测。用户尚未最终确认重做风格，保留QA064为待用户复看；持续滚动性能目标仍开放。
+
+交付：d509bfaa78511c5b3b24810b47314a753a600aba 已推送到 codex/checkout-target-safety，独立 ls-remote 完整 SHA 一致。
