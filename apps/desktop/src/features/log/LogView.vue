@@ -147,6 +147,7 @@ let graphRaf = 0;
 watch(
   () =>
     [
+      listMode.value,
       log.commits,
       log.filters.text,
       log.filters.authors,
@@ -158,6 +159,15 @@ watch(
     ] as const,
   () => {
     if (graphRaf) cancelAnimationFrame(graphRaf);
+    graphRaf = 0;
+    // Tree rows do not display graph lanes. Release the old graph and avoid
+    // laying out every hidden edge on refresh; returning to flat schedules
+    // the current history before graph cells are shown again.
+    if (listMode.value !== "flat") {
+      graphCursor.value = null;
+      graphLayout.value = { rows: [], maxLane: 0, colPx: 48 };
+      return;
+    }
     // Yield past the IPC/Pinia turn so scroll input can be processed first.
     graphRaf = requestAnimationFrame(() => {
       graphRaf = 0;
