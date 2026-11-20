@@ -1,7 +1,6 @@
 use crate::state::AppState;
 use gitx_core::{
-    AppError, CombinedDiffFile, CombinedDiffResult, DiffFileResult, DiffRefsResult, ErrorCode,
-    IgnoreWhitespace,
+    AppError, CombinedDiffResult, DiffFileResult, DiffRefsResult, ErrorCode, IgnoreWhitespace,
 };
 use gitx_diff::{
     compute_hunks, decode_lossy, eol_mismatch as texts_eol_mismatch, is_probably_binary, too_large,
@@ -200,49 +199,15 @@ pub async fn diff_combined(
         .clone()
         .unwrap_or_else(|| format!("{}^", req.left));
 
-    let files = git
-        .diff_refs_name_status(&cwd, &right, &left, &cancel)
-        .await?;
-    let limit = req.limit.clamp(1, 200) as usize;
-    let mut out_files = Vec::new();
-    for f in files.into_iter().take(limit) {
-        let left_path = f.orig_path.as_deref().unwrap_or(&f.path);
-        let left_bytes = git
-            .read_blob_at(&cwd, &right, left_path, &cancel)
-            .await
-            .unwrap_or(None);
-        let right_bytes = git
-            .read_blob_at(&cwd, &left, &f.path, &cancel)
-            .await
-            .unwrap_or(None);
-        let binary = left_bytes.as_ref().is_some_and(|b| is_probably_binary(b))
-            || right_bytes.as_ref().is_some_and(|b| is_probably_binary(b));
-        let hunks =
-            if binary || too_large(left_bytes.as_deref()) || too_large(right_bytes.as_deref()) {
-                Vec::new()
-            } else {
-                compute_hunks(
-                    decode_lossy(left_bytes.as_deref()).as_deref(),
-                    decode_lossy(right_bytes.as_deref()).as_deref(),
-                    &DiffComputeOptions {
-                        ignore_whitespace: req.ignore_whitespace,
-                    },
-                )
-            };
-        out_files.push(CombinedDiffFile {
-            path: f.path,
-            status: f.status,
-            orig_path: f.orig_path,
-            hunks,
-            binary,
-        });
-    }
-
-    Ok(CombinedDiffResult {
-        left,
-        right,
-        files: out_files,
-    })
+    git.combined_diff(
+        &cwd,
+        &left,
+        &right,
+        req.ignore_whitespace,
+        req.limit,
+        &cancel,
+    )
+    .await
 }
 
 fn rev_label(rev: &str) -> String {

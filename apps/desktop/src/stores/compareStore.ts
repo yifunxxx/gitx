@@ -182,6 +182,7 @@ export const useCompareStore = defineStore("compare", () => {
       tab.left === left &&
       tab.right === right;
     tab.error = null;
+    tab.combined = null;
     try {
       // The combined endpoint takes the destination first, including WORKTREE.
       const result = await getBackend().diffCombined({

@@ -157,6 +157,28 @@ it("records current combined failures on the tab without rejecting the UI event"
   expect(tab.error).toBe("combined failed");
 });
 
+it("clears a previous combined result before retry and keeps the backend error until success", async () => {
+  const store = useCompareStore();
+  await store.compareVersions("a", "b");
+  const tab = store.tabs[0]!;
+  const combined = { left: "b", right: "a", files: [] };
+  m.diffCombined.mockResolvedValueOnce(combined);
+  await store.showCombined(tab);
+  expect(tab.combined).toEqual(combined);
+  const retry = deferred<any>();
+  m.diffCombined.mockReturnValueOnce(retry.promise);
+  const pending = store.showCombined(tab);
+  expect(tab.combined).toBeNull();
+  retry.reject({ code: "fsError", message: "Could not read a.txt (WORKTREE): access denied" });
+  await pending;
+  expect(tab.combined).toBeNull();
+  expect(tab.error).toBe("Could not read a.txt (WORKTREE): access denied");
+  m.diffCombined.mockResolvedValueOnce(combined);
+  await store.showCombined(tab);
+  expect(tab.error).toBeNull();
+  expect(tab.combined).toEqual(combined);
+});
+
 it("does not switch editors after a delayed file diff completes", async () => {
   const store = useCompareStore();
   await store.compareVersions("a", "b");

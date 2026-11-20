@@ -3,6 +3,7 @@
 #![allow(clippy::result_large_err)]
 
 mod clone_ops;
+mod compare_ops;
 mod conflict_ops;
 mod detect;
 mod head_state;
