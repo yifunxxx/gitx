@@ -30,6 +30,7 @@ import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
 import { openDialog } from "@/composables/useDialog";
 import StopTrackingDialog from "@/features/commit/StopTrackingDialog.vue";
 import RollbackChangesDialog from "@/features/commit/RollbackChangesDialog.vue";
+import CommitFilesDialog from "@/features/commit/CommitFilesDialog.vue";
 import MoveToChangelistDialog from "@/features/commit/MoveToChangelistDialog.vue";
 import { formatErrorMessage } from "@/lib/errors";
 import { cloneJson } from "@/lib/clone";
@@ -93,7 +94,8 @@ watch(
         ? changes.ignored.map((file) => file.path)
         : changes.pathsForSection(menu.section);
     if (menu.directory) {
-      if (!available.some((path) => path === menu.path || path.startsWith(`${menu.path}/`))) closeCtx();
+      if (!available.some((path) => path === menu.path || path.startsWith(`${menu.path}/`)))
+        closeCtx();
     } else if (menu.target.paths.some((path) => !available.includes(path))) closeCtx();
   },
 );
@@ -344,7 +346,22 @@ async function createPatchSelected(target: ChangesTarget) {
 
 /** Commit Files… — include selected paths in the next commit and focus the message box. */
 async function commitFilesSelected(target: ChangesTarget) {
-  if (!target.current() || !target.paths.length) return;
+  if (!target.current() || !target.paths.length || !target.section) return;
+  if (target.paths.length > 1) {
+    const choice = await openDialog<{ paths: string[] } | null>(CommitFilesDialog, {
+      initialPaths: [...target.paths],
+      section: target.section,
+    });
+    if (!choice?.paths.length || !target.current() || changes.stagingMode !== target.stagingMode)
+      return;
+    const original = new Set(target.paths);
+    const available = new Set(changes.pathsForSection(target.section));
+    const paths = [...new Set(choice.paths)].filter(
+      (path) => original.has(path) && available.has(path),
+    );
+    if (!paths.length) return;
+    target = { ...target, paths };
+  }
   if (target.stagingMode) {
     if (target.section === "unversioned") await changes.add(target.paths);
     else if (target.section !== "staged" && target.section !== "ignored") {
@@ -413,7 +430,8 @@ async function runCtx(action: string) {
   if (
     menu.directory &&
     !["openExplorer", "openTerminal", "copyPath", "copyRelative", "refresh"].includes(action)
-  ) return;
+  )
+    return;
   const path = target.paths[0];
   try {
     switch (action) {
@@ -699,7 +717,9 @@ async function runCtx(action: string) {
           {{ t("actions.addToVcs") }}
         </button>
       </template>
-      <template v-if="!ctxMenu?.directory && (ctxShowMoveChangelist || (!changes.stagingMode && ctxMenu))">
+      <template
+        v-if="!ctxMenu?.directory && (ctxShowMoveChangelist || (!changes.stagingMode && ctxMenu))"
+      >
         <button
           role="menuitem"
           v-if="ctxShowMoveChangelist"

@@ -52,7 +52,9 @@ vi.mock("@/lib/utils", async (importOriginal) => ({
   isTauri: () => true,
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir: mocks.reveal }));
-vi.mock("@/lib/backend/bindings", () => ({ commands: { workspaceOpenDirectory: mocks.openDirectory } }));
+vi.mock("@/lib/backend/bindings", () => ({
+  commands: { workspaceOpenDirectory: mocks.openDirectory },
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -93,6 +95,7 @@ beforeEach(() => {
     ignored: [],
     changelists: { lists: [] },
     checkedPaths: [],
+    pathsForSection: vi.fn(() => ["first.txt", "second.txt"]),
     refresh: vi.fn(),
     stage: vi.fn(),
     unstage: vi.fn(),
@@ -145,13 +148,19 @@ it("opens the actually clicked file location when multiple files are selected", 
   mocks.ws.repoPath = "C:/repo";
   mocks.changes.selectedPaths = ["first/a.txt", "second/O'Brien & $x.txt"];
   wrapper.findComponent(ChangesTree).vm.$emit("context", {
-    path: "second/O'Brien & $x.txt", section: "staged", x: 10, y: 10,
+    path: "second/O'Brien & $x.txt",
+    section: "staged",
+    x: 10,
+    y: 10,
   });
   await flushPromises();
   await click("commitTw.openExplorer");
   expect(mocks.reveal).toHaveBeenCalledWith("C:/repo/second/O'Brien & $x.txt");
   wrapper.findComponent(ChangesTree).vm.$emit("context", {
-    path: "second/O'Brien & $x.txt", section: "staged", x: 10, y: 10,
+    path: "second/O'Brien & $x.txt",
+    section: "staged",
+    x: 10,
+    y: 10,
   });
   await flushPromises();
   await click("commitTw.openTerminal");
@@ -164,11 +173,26 @@ it("opens the actually clicked file location when multiple files are selected", 
 it("offers directory location and copy actions without file mutations", async () => {
   mocks.ws.repoPath = "C:/repo";
   mocks.changes.stagingMode = false;
-  const context = { path: "src/nested", directory: true, section: "changelist:default", x: 10, y: 10 };
+  const context = {
+    path: "src/nested",
+    directory: true,
+    section: "changelist:default",
+    x: 10,
+    y: 10,
+  };
   wrapper.findComponent(ChangesTree).vm.$emit("context", context);
   await flushPromises();
-  expect(wrapper.get("[data-menu]").findAll("button").map((button) => button.text())).toEqual([
-    "commitTw.openExplorer", "commitTw.openTerminal", "commitTw.copyPath", "commitTw.copyRelativePath", "actions.refreshStatus",
+  expect(
+    wrapper
+      .get("[data-menu]")
+      .findAll("button")
+      .map((button) => button.text()),
+  ).toEqual([
+    "commitTw.openExplorer",
+    "commitTw.openTerminal",
+    "commitTw.copyPath",
+    "commitTw.copyRelativePath",
+    "actions.refreshStatus",
   ]);
   await click("commitTw.openExplorer");
   expect(mocks.openDirectory).toHaveBeenCalledWith("C:/repo/src/nested");
@@ -301,6 +325,7 @@ it("Commit Files… stages unstaged paths then focuses the commit UI", async () 
 });
 
 it("Commit Files… checks paths in changelist mode and focuses the commit UI", async () => {
+  mocks.dialog.mockResolvedValue({ paths: ["first.txt", "second.txt"] });
   mocks.changes.stagingMode = false;
   mocks.changes.selectedSection = "changelist:default";
   mocks.changes.selectedPaths = ["first.txt", "second.txt"];
@@ -312,6 +337,7 @@ it("Commit Files… checks paths in changelist mode and focuses the commit UI", 
 });
 
 it("Commit Files… does not stage already-staged paths", async () => {
+  mocks.dialog.mockResolvedValue({ paths: ["first.txt", "second.txt"] });
   await openMenu();
   await click("commitTw.commitFiles");
   expect(mocks.changes.stage).not.toHaveBeenCalled();
@@ -330,4 +356,52 @@ it("Commit Files… stops after navigation invalidates staging", async () => {
   pending.resolve();
   await flushPromises();
   expect(mocks.focusCommitUi).not.toHaveBeenCalled();
+});
+
+it("Commit Files… uses only confirmed original paths still present after refresh", async () => {
+  const answer = deferred<{ paths: string[] }>();
+  mocks.dialog.mockReturnValue(answer.promise);
+  mocks.changes.stagingMode = false;
+  mocks.changes.selectedSection = "changelist:default";
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.dialog.mock.calls[0]?.[1]).toEqual({
+    initialPaths: ["first.txt", "second.txt"],
+    section: "changelist:default",
+  });
+  mocks.changes.selectedPaths = ["unrelated.txt"];
+  mocks.changes.pathsForSection.mockReturnValue(["second.txt", "unrelated.txt"]);
+  answer.resolve({ paths: ["first.txt", "second.txt", "unrelated.txt", "second.txt"] });
+  await flushPromises();
+  expect(mocks.changes.setChecked).toHaveBeenCalledExactlyOnceWith(["second.txt"]);
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
+});
+
+it.each(["cancel", "empty", "navigation", "mode"])(
+  "Commit Files… aborts without staging or focusing on %s",
+  async (kind) => {
+    const answer = deferred<{ paths: string[] } | null>();
+    mocks.dialog.mockReturnValue(answer.promise);
+    mocks.changes.selectedSection = "unstaged";
+    await openMenu();
+    await click("commitTw.commitFiles");
+    if (kind === "navigation") mocks.ws.generation++;
+    if (kind === "mode") mocks.changes.stagingMode = false;
+    answer.resolve(kind === "cancel" ? null : { paths: kind === "empty" ? [] : ["second.txt"] });
+    await flushPromises();
+    expect(mocks.changes.stage).not.toHaveBeenCalled();
+    expect(mocks.changes.add).not.toHaveBeenCalled();
+    expect(mocks.changes.setChecked).not.toHaveBeenCalled();
+    expect(mocks.focusCommitUi).not.toHaveBeenCalled();
+  },
+);
+
+it("Commit Files… stages only the confirmed subset without clearing the existing index", async () => {
+  mocks.changes.selectedSection = "unstaged";
+  mocks.dialog.mockResolvedValue({ paths: ["second.txt"] });
+  await openMenu();
+  await click("commitTw.commitFiles");
+  expect(mocks.changes.stage).toHaveBeenCalledExactlyOnceWith(["second.txt"]);
+  expect(mocks.changes.unstage).not.toHaveBeenCalled();
+  expect(mocks.focusCommitUi).toHaveBeenCalledOnce();
 });
