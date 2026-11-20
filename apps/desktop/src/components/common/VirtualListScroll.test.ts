@@ -120,3 +120,65 @@ it("cancels pending work and ignores released gestures after unmount", async () 
   expect(wrapper.emitted("scroll")).toBeUndefined();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it.each([
+  { label: "an inserted item", inserted: ["new-file"] },
+  { label: "expanded children", inserted: ["child-a", "child-b", "child-c"] },
+])(
+  "preserves the visible row when $label precede it after an unchanged head",
+  async ({ inserted }) => {
+    const { wrapper, port } = list();
+    try {
+      await wrapper.setProps({ preserveScrollAnchor: true });
+      port.element.scrollTop = 11007;
+      await port.trigger("scroll");
+      await paint();
+      const items = [...(wrapper.props("items") as string[])];
+      items.splice(20, 0, ...inserted);
+      await wrapper.setProps({ items });
+      await nextTick();
+      expect(port.element.scrollTop).toBe(11007 + inserted.length * 22);
+      expect(wrapper.findAll(".cell").map((row) => row.text())).toContain("row-500");
+    } finally {
+      wrapper.unmount();
+    }
+  },
+);
+
+it("keeps append anchoring bounded without scanning all existing row keys", async () => {
+  const { wrapper, port } = list();
+  try {
+    const items = Array.from({ length: 20000 }, (_, i) => `row-${i}`);
+    const getKey = vi.fn((item: unknown) => String(item));
+    await wrapper.setProps({ items, getKey, preserveScrollAnchor: true });
+    port.element.scrollTop = 220007;
+    await port.trigger("scroll");
+    await paint();
+    getKey.mockClear();
+    await wrapper.setProps({ items: [...items, "appended"] });
+    await nextTick();
+    expect(port.element.scrollTop).toBe(220007);
+    expect(wrapper.findAll(".cell").map((row) => row.text())).toContain("row-10000");
+    // Includes visible row rendering; a prefix verification or findIndex scan
+    // through the 10,000-row anchor would violate this bounded work check.
+    expect(getKey.mock.calls.length).toBeLessThan(100);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+it("keeps pixel scrolling when anchoring is disabled and rows grow before the viewport", async () => {
+  const { wrapper, port } = list();
+  try {
+    port.element.scrollTop = 11007;
+    await port.trigger("scroll");
+    await paint();
+    const items = [...(wrapper.props("items") as string[])];
+    items.splice(20, 0, "new-file");
+    await wrapper.setProps({ items });
+    await nextTick();
+    expect(port.element.scrollTop).toBe(11007);
+  } finally {
+    wrapper.unmount();
+  }
+});

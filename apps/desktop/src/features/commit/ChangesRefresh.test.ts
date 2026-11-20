@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { nextTick, reactive } from "vue";
 import type { StatusSnapshot } from "@/lib/backend";
@@ -101,5 +101,38 @@ it.each([
     await tree.trigger("keydown", { key: "End" });
     await tree.trigger("keydown", { key: "ArrowUp" });
     expect(store.selectedPaths).toEqual(["src/new.ts"]);
+  },
+);
+
+it.each(["flat", "tree"])(
+  "preserves the visible file when a background refresh inserts a preceding file in %s mode",
+  async (mode) => {
+    mocks.settings.settings.git.changesListMode = mode;
+    const paths = Array.from(
+      { length: 100 },
+      (_, index) => `src/file-${String(index).padStart(3, "0")}.ts`,
+    );
+    mocks.backend.statusGet
+      .mockResolvedValueOnce(snapshot(1, 0, paths))
+      .mockResolvedValueOnce(snapshot(2, 0, ["src/added.ts", ...paths]));
+    const store = useChangesStore();
+    await store.refresh();
+    const wrapper = mount(ChangesTree);
+    const list = wrapper.getComponent(VirtualList);
+    const anchorIndex = () =>
+      (
+        list.props() as { items: { section: string; node?: { file?: { path: string } } }[] }
+      ).items.findIndex(
+        (row) => row.section === "staged" && row.node?.file?.path === "src/file-050.ts",
+      );
+    const before = anchorIndex();
+    expect(before).toBeGreaterThan(0);
+    const port = list.get(".overflow-auto").element as HTMLElement;
+    const pixelOffset = 7;
+    port.scrollTop = before * 22 + pixelOffset;
+    await store.refresh(true);
+    await flushPromises();
+    expect(anchorIndex()).toBe(before + 1);
+    expect(port.scrollTop).toBe(anchorIndex() * 22 + pixelOffset);
   },
 );

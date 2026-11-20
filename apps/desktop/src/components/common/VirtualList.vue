@@ -277,18 +277,14 @@ watch(
     if (pointerDown.value) return;
     const previousTop = root.value?.scrollTop ?? scrollTop.value;
     const generation = scrollGeneration;
-    const headSame =
-      previous.length > 0 &&
-      items.length > 0 &&
-      props.getKey(previous[0] as T, 0) === props.getKey(items[0] as T, 0);
-    // Append-only growth (loadMore): pixel scrollTop stays valid — skip O(n) findIndex.
-    // Same-length replacements (variable row height) must still re-anchor.
-    const appendOnly = headSame && items.length > previous.length;
-    const oldIndex = appendOnly ? -1 : rowAt(previousTop, oldOffsets, oldHeight);
+    // An unchanged first row does not imply append-only growth: new files or
+    // expanded groups may insert rows before the viewport. Check its actual
+    // anchor; the same-index shortcut below keeps true appends O(1).
+    const oldIndex = rowAt(previousTop, oldOffsets, oldHeight);
     const oldItem = oldIndex >= 0 ? previous[oldIndex] : undefined;
     const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
     const newIndex =
-      !appendOnly && props.preserveScrollAnchor && key !== null
+      props.preserveScrollAnchor && key !== null
         ? oldIndex >= 0 && oldIndex < items.length && props.getKey(items[oldIndex]!, oldIndex) === key
           ? oldIndex
           : items.findIndex((item, index) => props.getKey(item, index) === key)
