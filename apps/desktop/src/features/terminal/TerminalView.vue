@@ -13,6 +13,10 @@ import { TerminalConnection } from "./terminalConnection";
 import { isTerminalToggle } from "./terminalShortcut";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import { markContextHandled } from "@/lib/contextMenu";
+import {
+  terminalDirectoryRequests,
+  takeTerminalDirectoryRequest,
+} from "./terminalDirectoryRequest";
 
 const props = defineProps<{ visible: boolean }>();
 const { t } = useI18n();
@@ -107,8 +111,12 @@ async function activate(key: number, focus = true) {
   fitActive();
   if (focus && props.visible) active.value?.terminal.focus();
 }
-async function create() {
-  if (!desktop || !directory.value || !host.value || sessions.length >= 16 || disposed) return;
+async function create(cwd = directory.value, current: () => boolean = () => true) {
+  if (!desktop || !cwd || !host.value || disposed || !current()) return;
+  if (sessions.length >= 16) {
+    error.value = t("terminal.sessionLimit");
+    return;
+  }
   error.value = "";
   const element = document.createElement("div");
   const shell = profile.value;
@@ -132,7 +140,7 @@ async function create() {
   terminal.open(element);
   const session = shallowReactive<Session>({
     key: ++serial,
-    cwd: directory.value,
+    cwd,
     label: windows ? (profile.value === "cmd" ? "cmd" : "PowerShell") : "Shell",
     status: "starting",
     code: null,
@@ -186,6 +194,10 @@ async function create() {
   });
   sessions.push(session);
   await activate(session.key);
+  if (!current()) {
+    await close(session);
+    return;
+  }
   if (!disposed && sessions.includes(session)) {
     void session.connection.start({
       cwd: session.cwd,
@@ -267,14 +279,28 @@ watch(
   },
   { flush: "post" },
 );
+let openingRequested = false;
 watch(
-  () => [props.visible, directory.value, host.value] as const,
+  () => [props.visible, directory.value, host.value, terminalDirectoryRequests.value] as const,
   async ([visible]) => {
     if (!visible) {
       menu.value = null;
       return;
     }
     await nextTick();
+    if (disposed || !props.visible || !host.value || openingRequested) return;
+    if (terminalDirectoryRequests.value.length) {
+      openingRequested = true;
+      try {
+        while (terminalDirectoryRequests.value.length && !disposed && props.visible) {
+          const request = takeTerminalDirectoryRequest();
+          if (request?.current()) await create(request.cwd, request.current);
+        }
+      } finally {
+        openingRequested = false;
+      }
+      return;
+    }
     if (!sessions.length) await create();
     else await activate(activeId.value);
   },
@@ -338,7 +364,7 @@ onBeforeUnmount(() => {
         :aria-label="t('terminal.new')"
         class="rounded p-1 hover:bg-accent disabled:opacity-40"
         :disabled="!desktop || !directory || sessions.length >= 16"
-        @click="create"
+        @click="create()"
       >
         <Plus class="size-4" />
       </button>
@@ -404,7 +430,12 @@ onBeforeUnmount(() => {
     <div v-else-if="!sessions.length" class="p-4 text-muted-foreground">
       {{ t("terminal.empty") }}
     </div>
-    <div ref="host" data-terminal-host class="min-h-0 flex-1 overflow-hidden p-1" @contextmenu="openMenu" />
+    <div
+      ref="host"
+      data-terminal-host
+      class="min-h-0 flex-1 overflow-hidden p-1"
+      @contextmenu="openMenu"
+    />
     <ContextMenuSurface
       :label="t('toolWindows.terminal')"
       :open="!!menu"

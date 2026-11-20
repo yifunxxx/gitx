@@ -69,7 +69,9 @@ use commands::terminal::{
     terminal_close, terminal_open, terminal_read, terminal_resize, terminal_write,
 };
 use commands::watch::{workspace_unwatch, workspace_watch};
-use commands::workspace::{init_run, status_probe, vcs_enable, workspace_open, workspace_recent};
+use commands::workspace::{
+    init_run, status_probe, vcs_enable, workspace_open, workspace_open_directory, workspace_recent,
+};
 use commands::worktree::{
     worktree_add, worktree_default_path, worktree_list, worktree_lock, worktree_open_ref,
     worktree_prune, worktree_prune_preview, worktree_remove, worktree_unlock,
@@ -107,6 +109,7 @@ pub fn run() {
             terminal_resize,
             terminal_close,
             workspace_open,
+            workspace_open_directory,
             workspace_watch,
             workspace_unwatch,
             workspace_recent,

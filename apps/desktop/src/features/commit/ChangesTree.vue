@@ -31,6 +31,7 @@ const emit = defineEmits<{
       x: number;
       y: number;
       header: boolean;
+      directory?: boolean;
     },
   ];
 }>();
@@ -278,6 +279,9 @@ function toggle(row: Row) {
 function filePath(row: Row) {
   return row.kind === "file" && !row.node.children?.length ? row.node.file?.change.path : undefined;
 }
+function directoryPath(row: Row) {
+  return row.kind === "file" && row.node.kind === "folder" ? row.node.id : undefined;
+}
 function selectRow(
   row: Row,
   event: Pick<MouseEvent, "shiftKey" | "ctrlKey" | "metaKey">,
@@ -374,6 +378,18 @@ function openContext(row: Row, x: number, y: number) {
     });
     return;
   }
+  const directory = directoryPath(row);
+  if (directory) {
+    emit("context", {
+      path: directory,
+      section: row.section,
+      x,
+      y,
+      header: false,
+      directory: true,
+    });
+    return;
+  }
   const path = filePath(row);
   if (!path) return;
   if (!isSelected(row)) {
@@ -385,7 +401,7 @@ function openContext(row: Row, x: number, y: number) {
 function onContext(row: Row, event: MouseEvent) {
   if (row.kind === "header") {
     if (!row.section.startsWith("changelist:")) return;
-  } else if (!filePath(row)) {
+  } else if (!directoryPath(row) && !filePath(row)) {
     return;
   }
   markContextHandled(event);
@@ -434,7 +450,9 @@ function onKeydown(event: KeyboardEvent) {
     ((event.key === "F10" && event.shiftKey) || (event.key === "ContextMenu" && !event.shiftKey));
   if (
     contextKey &&
-    (filePath(row) || (row.kind === "header" && row.section.startsWith("changelist:")))
+    (directoryPath(row) ||
+      filePath(row) ||
+      (row.kind === "header" && row.section.startsWith("changelist:")))
   ) {
     event.preventDefault();
     event.stopPropagation();

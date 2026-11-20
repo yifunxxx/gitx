@@ -3,6 +3,7 @@ import { flushPromises, shallowMount } from "@vue/test-utils";
 import { reactive } from "vue";
 import CommitToolWindow from "./CommitToolWindow.vue";
 import ChangesTree from "@/features/commit/ChangesTree.vue";
+import { terminalDirectoryRequests } from "@/features/terminal/terminalDirectoryRequest";
 
 const mocks = vi.hoisted(() => ({
   ws: {} as any,
@@ -21,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   patch: vi.fn(),
   dialog: vi.fn(),
   focusCommitUi: vi.fn(),
+  reveal: vi.fn(),
+  openDirectory: vi.fn(),
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
@@ -44,6 +47,12 @@ vi.mock("@/composables/useConfirm", () => ({
 vi.mock("@/composables/useDialog", () => ({ openDialog: mocks.dialog }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => ({ checkoutPathFromRev: mocks.checkout }) }));
 vi.mock("@/actions", () => ({ runAction: mocks.patch }));
+vi.mock("@/lib/utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/utils")>()),
+  isTauri: () => true,
+}));
+vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir: mocks.reveal }));
+vi.mock("@/lib/backend/bindings", () => ({ commands: { workspaceOpenDirectory: mocks.openDirectory } }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -55,6 +64,7 @@ function deferred<T>() {
 let wrapper: ReturnType<typeof shallowMount>;
 beforeEach(() => {
   vi.resetAllMocks();
+  terminalDirectoryRequests.value = [];
   mocks.ws = reactive({
     repoPath: "A",
     repoId: "A",
@@ -130,6 +140,43 @@ async function click(label: string) {
     .trigger("click");
   await flushPromises();
 }
+
+it("opens the actually clicked file location when multiple files are selected", async () => {
+  mocks.ws.repoPath = "C:/repo";
+  mocks.changes.selectedPaths = ["first/a.txt", "second/O'Brien & $x.txt"];
+  wrapper.findComponent(ChangesTree).vm.$emit("context", {
+    path: "second/O'Brien & $x.txt", section: "staged", x: 10, y: 10,
+  });
+  await flushPromises();
+  await click("commitTw.openExplorer");
+  expect(mocks.reveal).toHaveBeenCalledWith("C:/repo/second/O'Brien & $x.txt");
+  wrapper.findComponent(ChangesTree).vm.$emit("context", {
+    path: "second/O'Brien & $x.txt", section: "staged", x: 10, y: 10,
+  });
+  await flushPromises();
+  await click("commitTw.openTerminal");
+  expect(terminalDirectoryRequests.value[0]?.cwd).toBe("C:/repo/second");
+  expect(mocks.layout).toMatchObject({ bottomOpen: true, activeBottomTab: "terminal" });
+  mocks.ws.generation++;
+  expect(terminalDirectoryRequests.value[0]?.current()).toBe(false);
+});
+
+it("offers directory location and copy actions without file mutations", async () => {
+  mocks.ws.repoPath = "C:/repo";
+  mocks.changes.stagingMode = false;
+  const context = { path: "src/nested", directory: true, section: "changelist:default", x: 10, y: 10 };
+  wrapper.findComponent(ChangesTree).vm.$emit("context", context);
+  await flushPromises();
+  expect(wrapper.get("[data-menu]").findAll("button").map((button) => button.text())).toEqual([
+    "commitTw.openExplorer", "commitTw.openTerminal", "commitTw.copyPath", "commitTw.copyRelativePath", "actions.refreshStatus",
+  ]);
+  await click("commitTw.openExplorer");
+  expect(mocks.openDirectory).toHaveBeenCalledWith("C:/repo/src/nested");
+  wrapper.findComponent(ChangesTree).vm.$emit("context", context);
+  await flushPromises();
+  await click("commitTw.openTerminal");
+  expect(terminalDirectoryRequests.value[0]?.cwd).toBe("C:/repo/src/nested");
+});
 
 it.each(["repository", "navigation", "selection", "section"])(
   "closes an open menu after %s changes",

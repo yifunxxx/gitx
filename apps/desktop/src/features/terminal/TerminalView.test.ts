@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import TerminalView from "./TerminalView.vue";
 import { isTerminalToggle } from "./terminalShortcut";
+import { requestTerminalDirectory, terminalDirectoryRequests } from "./terminalDirectoryRequest";
 
 const mocks = vi.hoisted(() => ({
   workspace: {} as any,
@@ -68,6 +69,7 @@ vi.mock("./terminalConnection", () => ({
 
 enableAutoUnmount(afterEach);
 beforeEach(() => {
+  terminalDirectoryRequests.value = [];
   mocks.terminals.length = mocks.connections.length = 0;
   mocks.workspace = reactive({ repoPath: "C:/first", folderPath: "C:/first" });
   vi.stubGlobal(
@@ -86,6 +88,80 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it("consumes a directory request on lazy mount without opening an extra root terminal", async () => {
+  requestTerminalDirectory("C:/first/src/O'Brien & $x", () => true);
+  mount(TerminalView, { props: { visible: true } });
+  await flushPromises();
+  expect(mocks.connections).toHaveLength(1);
+  expect(mocks.connections[0].start).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "C:/first/src/O'Brien & $x" }),
+  );
+  expect(mocks.connections[0].write).not.toHaveBeenCalled();
+  expect(terminalDirectoryRequests.value).toHaveLength(0);
+});
+
+it("opens fresh sessions for repeated requests without changing existing shells", async () => {
+  const wrapper = mount(TerminalView, { props: { visible: true } });
+  await flushPromises();
+  await wrapper.setProps({ visible: false });
+  requestTerminalDirectory("C:/first/src", () => true);
+  requestTerminalDirectory("C:/first/src", () => true);
+  await flushPromises();
+  expect(mocks.connections).toHaveLength(1);
+  await wrapper.setProps({ visible: true });
+  await flushPromises();
+  expect(mocks.connections).toHaveLength(3);
+  expect(mocks.connections[1].start).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "C:/first/src" }),
+  );
+  expect(mocks.connections[2].start).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "C:/first/src" }),
+  );
+  expect(mocks.connections[0].write).not.toHaveBeenCalled();
+  expect(mocks.connections[0].close).not.toHaveBeenCalled();
+});
+
+it("discards requests invalidated before the terminal is mounted", async () => {
+  let current = true;
+  requestTerminalDirectory("C:/first/stale", () => current);
+  current = false;
+  mount(TerminalView, { props: { visible: true } });
+  await flushPromises();
+  expect(
+    mocks.connections.every((connection) =>
+      connection.start.mock.calls.every(([req]: any[]) => req.cwd !== "C:/first/stale"),
+    ),
+  ).toBe(true);
+  expect(terminalDirectoryRequests.value).toHaveLength(0);
+});
+
+it("cancels a requested session if navigation changes while its terminal is activating", async () => {
+  const current = vi
+    .fn()
+    .mockReturnValueOnce(true)
+    .mockReturnValueOnce(true)
+    .mockReturnValueOnce(true)
+    .mockReturnValue(false);
+  requestTerminalDirectory("C:/first/stale", current);
+  mount(TerminalView, { props: { visible: true } });
+  await flushPromises();
+  expect(mocks.connections[0].start).not.toHaveBeenCalled();
+  expect(mocks.connections[0].close).toHaveBeenCalledOnce();
+  expect(mocks.terminals[0].dispose).toHaveBeenCalledOnce();
+});
+
+it("reports the session limit and consumes requests without writing shell commands", async () => {
+  const wrapper = mount(TerminalView, { props: { visible: true } });
+  await flushPromises();
+  for (let index = 0; index < 16; index++)
+    requestTerminalDirectory(`C:/first/${index}`, () => true);
+  await flushPromises();
+  expect(mocks.connections).toHaveLength(16);
+  expect(wrapper.get('[role="alert"]').text()).toBe("terminal.sessionLimit");
+  expect(terminalDirectoryRequests.value).toHaveLength(0);
+  expect(mocks.connections.every((connection) => !connection.write.mock.calls.length)).toBe(true);
+});
 
 it("offers terminal context actions and restores focus on Escape", async () => {
   const wrapper = mount(TerminalView, { props: { visible: true }, attachTo: document.body });

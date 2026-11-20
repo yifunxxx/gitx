@@ -6,12 +6,29 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceOpenReq {
     pub path: String,
+}
+
+/// Open a directory in the system file manager without allowing file execution.
+#[tauri::command]
+#[specta::specta]
+pub fn workspace_open_directory(app: AppHandle, path: String) -> Result<(), AppError> {
+    let directory = PathBuf::from(&path);
+    if !directory.is_absolute() || !directory.is_dir() {
+        return Err(AppError::new(
+            ErrorCode::FsError,
+            format!("not an absolute directory: {path}"),
+        ));
+    }
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|error| AppError::new(ErrorCode::FsError, error.to_string()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

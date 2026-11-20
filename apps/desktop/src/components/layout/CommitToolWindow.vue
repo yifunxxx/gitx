@@ -33,6 +33,11 @@ import RollbackChangesDialog from "@/features/commit/RollbackChangesDialog.vue";
 import MoveToChangelistDialog from "@/features/commit/MoveToChangelistDialog.vue";
 import { formatErrorMessage } from "@/lib/errors";
 import { cloneJson } from "@/lib/clone";
+import { commands } from "@/lib/backend/bindings";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { isTauri } from "@/lib/utils";
+import { changeLocation } from "@/features/commit/changeLocation";
+import { requestTerminalDirectory } from "@/features/terminal/terminalDirectoryRequest";
 
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
@@ -70,6 +75,7 @@ const ctxMenu = ref<{
   path: string | null;
   section: ChangesSection;
   header: boolean;
+  directory: boolean;
   target: ChangesTarget;
 } | null>(null);
 
@@ -86,7 +92,9 @@ watch(
       menu.section === "ignored"
         ? changes.ignored.map((file) => file.path)
         : changes.pathsForSection(menu.section);
-    if (menu.target.paths.some((path) => !available.includes(path))) closeCtx();
+    if (menu.directory) {
+      if (!available.some((path) => path === menu.path || path.startsWith(`${menu.path}/`))) closeCtx();
+    } else if (menu.target.paths.some((path) => !available.includes(path))) closeCtx();
   },
 );
 
@@ -98,6 +106,7 @@ const ctxIsTrackedChange = computed(
   () =>
     !!ctxMenu.value &&
     !ctxMenu.value.header &&
+    !ctxMenu.value.directory &&
     ctxMenu.value.section !== "unversioned" &&
     ctxMenu.value.section !== "ignored",
 );
@@ -108,6 +117,7 @@ const ctxChangelistId = computed(() => {
 const ctxCanDeleteChangelist = computed(
   () =>
     !!ctxMenu.value &&
+    !ctxMenu.value.directory &&
     !changes.stagingMode &&
     !!ctxChangelistId.value &&
     ctxChangelistId.value !== "default",
@@ -115,6 +125,7 @@ const ctxCanDeleteChangelist = computed(
 const ctxShowMoveChangelist = computed(
   () =>
     !!ctxMenu.value &&
+    !ctxMenu.value.directory &&
     !changes.stagingMode &&
     !ctxIsUnversioned.value &&
     ctxMenu.value.section !== "ignored" &&
@@ -352,7 +363,11 @@ function onContext(payload: {
   x: number;
   y: number;
   header?: boolean;
+  directory?: boolean;
 }) {
+  if (payload.directory && payload.path) {
+    payload = { ...payload, path: payload.path.replace(/[\\/]+$/, "") };
+  }
   layout.vcsPopupOpen = false;
   const header = !!payload.header || !payload.path;
   let paths: string[];
@@ -362,6 +377,7 @@ function onContext(payload: {
         ? [...changes.selectedPaths]
         : changes.pathsForSection(payload.section);
   } else if (
+    !payload.directory &&
     changes.selectedSection === payload.section &&
     payload.path &&
     changes.selectedPaths.includes(payload.path)
@@ -379,6 +395,7 @@ function onContext(payload: {
     path: payload.path,
     section: payload.section,
     header,
+    directory: !!payload.directory,
     target,
   };
 }
@@ -393,9 +410,31 @@ async function runCtx(action: string) {
   closeCtx();
   const target = menu.target;
   if (!target.current()) return;
+  if (
+    menu.directory &&
+    !["openExplorer", "openTerminal", "copyPath", "copyRelative", "refresh"].includes(action)
+  ) return;
   const path = target.paths[0];
   try {
     switch (action) {
+      case "openExplorer":
+      case "openTerminal": {
+        if (!menu.path || !target.path) break;
+        if (!isTauri()) {
+          toast({ title: t("terminal.desktopOnly") });
+          break;
+        }
+        const location = changeLocation(target.path, menu.path, menu.directory);
+        if (action === "openExplorer") {
+          if (menu.directory) await commands.workspaceOpenDirectory(location.path);
+          else await revealItemInDir(location.path);
+        } else {
+          requestTerminalDirectory(location.cwd, target.current);
+          layout.bottomOpen = true;
+          layout.activeBottomTab = "terminal";
+        }
+        break;
+      }
       case "showDiff":
         if (path && target.section) await openChangeDiff(path, target.section);
         break;
@@ -571,6 +610,25 @@ async function runCtx(action: string) {
           role="menuitem"
           type="button"
           class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('openExplorer')"
+        >
+          {{ t("commitTw.openExplorer") }}
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
+          @click="runCtx('openTerminal')"
+        >
+          {{ t("commitTw.openTerminal") }}
+        </button>
+        <div class="my-1 h-px bg-border" />
+      </template>
+      <template v-if="ctxMenu && !ctxMenu.header && !ctxMenu.directory">
+        <button
+          role="menuitem"
+          type="button"
+          class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
           @click="runCtx('showDiff')"
         >
           {{ t("commitTw.showDiff") }}
@@ -593,7 +651,7 @@ async function runCtx(action: string) {
         </button>
         <div class="my-1 h-px bg-border" />
       </template>
-      <template v-if="ctxMenu && !ctxMenu.header">
+      <template v-if="ctxMenu && !ctxMenu.header && !ctxMenu.directory">
         <button
           role="menuitem"
           v-if="ctxMenu.section !== 'ignored'"
@@ -641,7 +699,7 @@ async function runCtx(action: string) {
           {{ t("actions.addToVcs") }}
         </button>
       </template>
-      <template v-if="ctxShowMoveChangelist || (!changes.stagingMode && ctxMenu)">
+      <template v-if="!ctxMenu?.directory && (ctxShowMoveChangelist || (!changes.stagingMode && ctxMenu))">
         <button
           role="menuitem"
           v-if="ctxShowMoveChangelist"
@@ -670,7 +728,7 @@ async function runCtx(action: string) {
           {{ t("changelist.delete") }}
         </button>
       </template>
-      <template v-if="ctxMenu && !ctxMenu.header">
+      <template v-if="ctxMenu && !ctxMenu.header && !ctxMenu.directory">
         <div class="my-1 h-px bg-border" />
         <button
           role="menuitem"
@@ -717,6 +775,8 @@ async function runCtx(action: string) {
           {{ t("commitTw.untrack") }}
         </button>
         <div class="my-1 h-px bg-border" />
+      </template>
+      <template v-if="ctxMenu && !ctxMenu.header">
         <button
           role="menuitem"
           type="button"
