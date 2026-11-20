@@ -63,4 +63,4 @@ Windows原生构建通过（2分27秒），日志 `qa046-final-native-20261120.l
 - `flood-8192-final-1/result.json`、`flood-shell-exited-final-1/result.json`、`flood-shutdown-final-1/result.json`：最终产品源码副本的关闭、shell已退出和多会话清理。
 - `flood-8192-final-identity/`、`flood-shell-exited-final-identity/`、`flood-shutdown-final-identity/`、`idle-8192-final-identity/`：四场重复验证、PID与创建时间核对；`final-source-evidence.json`：最终源码一致性。
 
-功能提交和推送状态待实际完成后写入统一台账。
+功能已独立提交并推送 `97656faa043437d04a25da894b909640b833ecb3`，独立ls-remote核对完整SHA一致。此次推送未出现凭据请求。
