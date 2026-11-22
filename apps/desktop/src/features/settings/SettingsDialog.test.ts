@@ -62,7 +62,8 @@ it("restores unsaved appearance when the host closes the dialog", async () => {
 it("previews, cancels and saves Liquid Glass in the existing appearance selector", async () => {
   await theme("liquid-glass-light");
   expect(document.documentElement.dataset.theme).toBe("liquid-glass");
-  expect(host.text()).toContain("Soft highlights");
+  expect(host.text()).not.toContain("Soft highlights");
+  expect(host.text()).not.toContain("柔和高光");
   expect(store.settings!.appearance.theme).toBe("dark");
   await button("Cancel").trigger("click");
   await flushPromises();
