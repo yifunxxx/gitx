@@ -605,7 +605,6 @@
       "glassLight": "液态玻璃 · 浅色",
       "glassDark": "液态玻璃 · 深色"
     },
-    "glassDescription": "柔和高光、通透浮层与轻盈动效；代码和列表保持清晰底色，并遵循系统减少动态效果设置。",
     "locale": {
       "zhCN": "简体中文",
       "en": "English"
