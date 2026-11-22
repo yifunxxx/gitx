@@ -89,8 +89,8 @@ pub fn run() {
         )
         .init();
 
-    let specta_builder =
-        tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
+    let specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
+        .commands(tauri_specta::collect_commands![
             app_info,
             app_check_for_updates,
             app_download_update,
