@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { textViewportTheme } from "@/features/editor/editorThemes";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -56,21 +57,7 @@ onMounted(() => {
           source = sourceText(update.state);
           emit("update:text", source);
         }),
-        EditorView.theme({
-          "&": { height: "100%", fontSize: "12px", backgroundColor: "transparent" },
-          ".cm-scroller": {
-            overflow: "auto",
-            fontFamily: "var(--font-mono, monospace)",
-            lineHeight: "20px",
-          },
-          ".cm-content": { padding: "8px 0" },
-          ".cm-gutters": {
-            backgroundColor: "transparent",
-            color: "var(--color-muted-foreground)",
-            borderRight: "1px solid var(--color-border)",
-          },
-          "&.cm-focused": { outline: "none" },
-        }),
+        textViewportTheme,
       ],
     }),
   });

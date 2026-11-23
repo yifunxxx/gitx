@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { consoleTheme } from "@/features/editor/editorThemes";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { EditorState, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, EditorView, type DecorationSet } from "@codemirror/view";
@@ -75,13 +76,7 @@ onMounted(() => {
         EditorView.lineWrapping,
         marks,
         EditorView.contentAttributes.of({ "aria-label": "Git console", tabindex: "0" }),
-        EditorView.theme({
-          "&": { height: "100%", fontSize: "11px" },
-          ".cm-scroller": { overflow: "auto", fontFamily: "ui-monospace, monospace" },
-          ".cm-content": { padding: "8px" },
-          ".console-cmd": { color: "var(--color-info)" },
-          ".console-stderr": { color: "var(--color-destructive)" },
-        }),
+        consoleTheme,
       ],
     }),
   });

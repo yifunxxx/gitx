@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shelfPatchTheme } from "@/features/editor/editorThemes";
 import { onBeforeUnmount, ref, watch } from "vue";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -37,32 +38,7 @@ watch(
           keymap.of(defaultKeymap),
           ...editorChrome({ caret: false }),
           patchHighlights,
-          EditorView.theme({
-            "&": {
-              height: "100%",
-              fontSize: "12px",
-              backgroundColor: "var(--color-background)",
-              color: "var(--color-foreground)",
-            },
-            ".cm-scroller": {
-              overflow: "auto",
-              fontFamily: "var(--font-mono, monospace)",
-              lineHeight: "20px",
-            },
-            ".cm-gutters": {
-              backgroundColor: "var(--color-background)",
-              color: "var(--color-muted-foreground)",
-              borderRight: "1px solid var(--color-border)",
-            },
-            ".cm-patch-added": {
-              backgroundColor:
-                "color-mix(in oklab, var(--color-success, #16a34a) 20%, transparent)",
-            },
-            ".cm-patch-removed": {
-              backgroundColor: "color-mix(in oklab, var(--color-destructive) 18%, transparent)",
-            },
-            ".cm-patch-header": { color: "var(--color-muted-foreground)", fontWeight: "600" },
-          }),
+          shelfPatchTheme,
         ],
       }),
     });

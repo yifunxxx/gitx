@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { diffTheme } from "@/features/editor/editorThemes";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { EditorState, RangeSetBuilder } from "@codemirror/state";
 import {
@@ -216,53 +217,6 @@ function unifiedText(hunks: DiffHunk[]): string {
   return hunks.map((h) => `${h.header}\n${h.lines.join("\n")}`).join("\n");
 }
 
-function theme() {
-  return EditorView.theme({
-    "&": {
-      height: "100%",
-      fontSize: "12px",
-      backgroundColor: "var(--color-background)",
-      color: "var(--color-foreground)",
-    },
-    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.45" },
-    ".cm-gutters": {
-      backgroundColor: "var(--color-background)",
-      color: "var(--color-muted-foreground)",
-      borderRight: "1px solid var(--color-border)",
-    },
-    ".cm-diff-insert": {
-      backgroundColor: "rgb(var(--diff-insert-bg) / 0.9)",
-    },
-    ".cm-diff-delete": {
-      backgroundColor: "rgb(var(--diff-delete-bg) / 0.9)",
-    },
-    ".cm-diff-word-insert": {
-      backgroundColor: "rgb(var(--diff-word-insert) / 1)",
-      borderRadius: "2px",
-    },
-    ".cm-diff-word-delete": {
-      backgroundColor: "rgb(var(--diff-word-delete) / 1)",
-      borderRadius: "2px",
-    },
-    ".cm-diff-change-gutter": {
-      width: "4px",
-      minWidth: "4px",
-    },
-    ".cm-diff-gutter-insert": {
-      width: "3px",
-      height: "100%",
-      marginLeft: "1px",
-      backgroundColor: "rgb(var(--gutter-added) / 1)",
-    },
-    ".cm-diff-gutter-delete": {
-      width: "3px",
-      height: "100%",
-      marginLeft: "1px",
-      backgroundColor: "rgb(var(--gutter-deleted) / 1)",
-    },
-  });
-}
-
 function fingerprint(): string {
   const content = contentForProps();
   return contentFingerprint({
@@ -373,7 +327,7 @@ function mountNow() {
         // commands/input transactions must still allow selection and scrolling.
         EditorState.changeFilter.of(() => false),
         ...editorChrome({ caret: false }),
-        theme(),
+        diffTheme,
         EditorView.decorations.of(deco),
       ],
     }),

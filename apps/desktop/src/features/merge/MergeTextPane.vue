@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mergeTheme } from "@/features/editor/editorThemes";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -37,63 +38,7 @@ function config() {
     EditorView.updateListener.of((update) => {
       if (props.editable) emit("change", props.ownerId, update.state, update.docChanged);
     }),
-    EditorView.theme({
-      "&": {
-        height: "100%",
-        fontSize: "12px",
-        backgroundColor: "var(--color-background)",
-        color: "var(--color-foreground)",
-      },
-      ".cm-scroller": {
-        overflow: "auto",
-        fontFamily: "var(--font-mono, monospace)",
-        lineHeight: "22px",
-      },
-      ".cm-content": { padding: "8px 0" },
-      ".cm-gutters": {
-        backgroundColor: "var(--color-background)",
-        color: "var(--color-muted-foreground)",
-        borderColor: "var(--color-border)",
-      },
-      "&.cm-focused": { outline: "none" },
-      ".cm-merge-pending": {
-        backgroundColor: "rgb(var(--diff-conflict-bg))",
-        boxShadow: "inset 3px 0 var(--color-warning)",
-      },
-      ".cm-merge-accepted": {
-        backgroundColor: "rgb(var(--diff-insert-bg))",
-        boxShadow: "inset 3px 0 var(--color-success)",
-      },
-      ".cm-merge-ignored": { opacity: "0.55" },
-      ".cm-merge-manual": {
-        backgroundColor: "rgb(var(--diff-conflict-bg))",
-        boxShadow: "inset 3px 0 var(--color-info)",
-      },
-      ".cm-merge-actions": { minWidth: "48px", color: "var(--color-foreground)" },
-      ".cm-merge-actions .cm-gutterElement": { padding: "0 2px" },
-      ".merge-actions": { display: "inline-flex", gap: "2px", verticalAlign: "top" },
-      ".merge-action": {
-        width: "21px",
-        height: "21px",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: "3px",
-        cursor: "pointer",
-        color: "var(--color-foreground)",
-        backgroundColor: "var(--color-muted)",
-        border: "1px solid var(--color-border)",
-        padding: "0",
-        fontSize: "15px",
-      },
-      ".merge-action:hover:not(:disabled)": { backgroundColor: "var(--color-accent)" },
-      ".merge-action:focus-visible": {
-        outline: "2px solid var(--color-ring)",
-        outlineOffset: "1px",
-      },
-      ".merge-action:disabled": { cursor: "default", opacity: "0.45" },
-      ".merge-action[data-decided=accept]": { color: "var(--color-success)" },
-    }),
+    mergeTheme,
   ];
 }
 onMounted(() => {

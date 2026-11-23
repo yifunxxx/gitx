@@ -1,9 +1,7 @@
 import type { Extension } from "@codemirror/state";
 import { EditorView, drawSelection } from "@codemirror/view";
 
-/** Shared CM selection + caret chrome for dark/light themes. */
-export function editorChrome(opts?: { caret?: boolean }): Extension[] {
-  const caret = opts?.caret !== false;
+function createChrome(caret: boolean): readonly Extension[] {
   return [
     drawSelection(),
     EditorView.theme({
@@ -22,4 +20,13 @@ export function editorChrome(opts?: { caret?: boolean }): Extension[] {
       },
     }),
   ];
+}
+
+// Style modules stay mounted after a view is destroyed; there are only two variants.
+const visibleCaret = createChrome(true);
+const hiddenCaret = createChrome(false);
+
+/** Shared CM selection + caret chrome for dark/light themes. */
+export function editorChrome(opts?: { caret?: boolean }): readonly Extension[] {
+  return opts?.caret === false ? hiddenCaret : visibleCaret;
 }

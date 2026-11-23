@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fileTheme } from "@/features/editor/editorThemes";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -214,26 +215,7 @@ function mount() {
         ]),
         EditorView.editable.of(!!current.editable),
         ...editorChrome({ caret: !!current.editable }),
-        EditorView.theme({
-          "&": {
-            height: "100%",
-            fontSize: "12.5px",
-            backgroundColor: "var(--color-background)",
-            color: "var(--color-foreground)",
-          },
-          ".cm-scroller": { overflow: "auto", fontFamily: "var(--font-mono, monospace)" },
-          ".cm-gutters": {
-            backgroundColor: "var(--color-background)",
-            color: "var(--color-muted-foreground)",
-            borderRight: "1px solid var(--color-border)",
-          },
-          ".cm-diff-insert": {
-            backgroundColor: "color-mix(in oklab, var(--color-success, #16a34a) 22%, transparent)",
-          },
-          ".cm-file-modified": {
-            backgroundColor: "color-mix(in oklab, var(--color-warning, #ca8a04) 22%, transparent)",
-          },
-        }),
+        fileTheme,
         highlights.of(fileChangeHighlights(hunks)),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
