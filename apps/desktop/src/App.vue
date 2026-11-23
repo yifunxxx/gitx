@@ -94,8 +94,8 @@ onMounted(async () => {
     }
   }
   if (disposed) return;
-  await workspace.loadRecent();
-  if (disposed) return;
+  // Git detection depends on settings, not on the recent-project menu.
+  void workspace.loadRecent();
   try {
     await workspace.detectGit();
     if (disposed) return;

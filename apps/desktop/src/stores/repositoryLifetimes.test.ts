@@ -240,6 +240,30 @@ describe("repository identity and late responses", () => {
     expect(ws.recent).toEqual(["current"]);
   });
 
+  it("finishes worktree removal and refreshes its list without waiting for recent projects", async () => {
+    const ws = useWorkspaceStore();
+    await ws.openFolder("A");
+    ws.recent = ["removed", "A"];
+    const recent = deferred<{ paths: string[] }>();
+    mocks.backend.workspaceRecent.mockReturnValueOnce(recent.promise);
+    mocks.backend.worktreeList.mockResolvedValueOnce([]);
+    const worktrees = useWorktreesStore();
+    let finished = false;
+    const removing = worktrees.remove("removed", false).then(() => { finished = true; });
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(mocks.backend.worktreeRemove).toHaveBeenCalledOnce();
+      expect(mocks.backend.worktreeList).toHaveBeenCalledOnce();
+      expect(mocks.toast).toHaveBeenCalledWith({ title: "worktrees.removed" });
+      expect(finished).toBe(true);
+      expect(ws.recent).toEqual(["removed", "A"]);
+    } finally {
+      recent.resolve({ paths: ["A"] });
+      await removing;
+    }
+    expect(ws.recent).toEqual(["A"]);
+  });
+
   it("keeps undo disabled during refresh and after repository navigation", async () => {
     const ws = useWorkspaceStore();
     await ws.openFolder("A");

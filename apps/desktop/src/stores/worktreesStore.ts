@@ -147,8 +147,9 @@ export const useWorktreesStore = defineStore("worktrees", () => {
         force,
       });
       // Recent repositories are shared across workspaces. Refresh them even
-      // if navigation happened while this removal was running.
-      await workspace().loadRecent();
+      // if navigation happened while this removal was running, without delaying
+      // the worktree list or completion feedback for this successful removal.
+      void workspace().loadRecent();
     }, "worktrees.removed");
   }
 

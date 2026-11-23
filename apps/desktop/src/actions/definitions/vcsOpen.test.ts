@@ -232,6 +232,46 @@ it("reports a readable action failure in the shared welcome state and permits re
   expect(useWorkspaceStore().folderPath).toBe("missing");
 });
 
+it.each(["folder", "create", "recent", "clone"] as const)(
+  "%s starts and completes primary reads while the recent-project list is still pending",
+  async (kind) => {
+    const recent = deferred<{ paths: string[] }>();
+    const files = deferred<void>();
+    m.workspaceRecent.mockReturnValueOnce(recent.promise);
+    m.refresh.mockReturnValueOnce(files.promise);
+    m.pick.mockResolvedValue("opened repo");
+    const workspace = useWorkspaceStore();
+    workspace.recent = ["previous repo"];
+    const entry = componentEntry();
+    const opening = track(
+      kind === "folder" ? entry.openFolder()
+        : kind === "create" ? entry.createRepo()
+          : kind === "recent" ? entry.openRecent("opened repo")
+            : entry.openCloned("opened repo"),
+    );
+    let finished = false;
+    void opening.then(() => { finished = true; });
+    await flushPromises();
+    expect(workspace.repoPath).toBe("opened repo");
+    expect(workspace.recent).toEqual(["previous repo"]);
+    expect(m.refresh).toHaveBeenCalledOnce();
+    expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+    expect(m.branches).toHaveBeenCalledOnce();
+    expect(useLayoutStore().activeBottomTab).toBe("log");
+    expect(entry.pending.value).toBe(true);
+    files.resolve();
+    await flushPromises();
+    expect(finished).toBe(true);
+    expect(entry.pending.value).toBe(false);
+    expect(isEnabled(getAction("File.OpenFolder")!, context())).toBe(true);
+    recent.resolve({ paths: ["opened repo", "previous repo"] });
+    await opening;
+    await flushPromises();
+    expect(workspace.recent).toEqual(["opened repo", "previous repo"]);
+    expect(m.refresh).toHaveBeenCalledOnce();
+  },
+);
+
 it("prevents duplicate enable-VCS requests and blocks other entry points", async () => {
   const enabling = deferred<ReturnType<typeof result>>();
   useWorkspaceStore().folderPath = "folder";
@@ -249,6 +289,32 @@ it("prevents duplicate enable-VCS requests and blocks other entry points", async
   await Promise.all([first, second, opening]);
   expect(entry.pending.value).toBe(false);
 });
+
+it.each(["success", "failure"] as const)(
+  "ignores late recent-list %s after a second project opens",
+  async (outcome) => {
+    const old = deferred<{ paths: string[] }>();
+    m.workspaceRecent.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ paths: ["B", "A"] });
+    const entry = componentEntry();
+    let firstFinished = false;
+    const first = track(entry.openRecent("A").then(() => { firstFinished = true; }));
+    await flushPromises();
+    expect(firstFinished).toBe(true);
+    await track(entry.openRecent("B"));
+    expect(useWorkspaceStore().repoPath).toBe("B");
+    expect(useWorkspaceStore().recent).toEqual(["B", "A"]);
+    const reads = m.refresh.mock.calls.length;
+    if (outcome === "success") old.resolve({ paths: ["A"] });
+    else old.reject(new Error("Old recent-list failure"));
+    await first;
+    await flushPromises();
+    expect(useWorkspaceStore().recent).toEqual(["B", "A"]);
+    expect(useWorkspaceStore().repoPath).toBe("B");
+    expect(m.toast).not.toHaveBeenCalled();
+    expect(m.refresh).toHaveBeenCalledTimes(reads);
+    expect(entry.pending.value).toBe(false);
+  },
+);
 
 it("drops obsolete enable-VCS success feedback after navigation", async () => {
   const enabling = deferred<ReturnType<typeof result>>();

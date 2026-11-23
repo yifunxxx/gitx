@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, onScopeDispose, ref } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { BranchInfo, RepoRoot, WslPathInfo } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
@@ -24,6 +24,11 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const openGeneration = ref(0);
   let rootsGeneration = 0;
   let recentGeneration = 0;
+  let disposed = false;
+  onScopeDispose(() => {
+    disposed = true;
+    ++recentGeneration;
+  });
 
   const activeRoot = computed(
     () => roots.value.find((r) => r.id === activeRepoId.value) ?? roots.value[0] ?? null,
@@ -88,6 +93,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   async function loadRecent() {
+    if (disposed) return;
     const generation = ++recentGeneration;
     try {
       const res = await getBackend().workspaceRecent();
@@ -109,7 +115,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     const res = await backend.workspaceOpen({ path });
     if (generation !== openGeneration.value) return res;
     applyOpenRes(res);
-    await loadRecent();
+    // Recent projects are auxiliary. Their IPC must not delay the initial
+    // repository reads; loadRecent handles errors and obsolete completions.
+    void loadRecent();
     return res;
   }
 
@@ -150,7 +158,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     const res = await backend.initRun({ path, initialBranch });
     if (generation !== openGeneration.value) return res;
     applyOpenRes(res);
-    await loadRecent();
+    void loadRecent();
     return res;
   }
 
