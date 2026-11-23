@@ -13,6 +13,10 @@ Built with Tauri 2 + Vue 3 + Rust. Default UI language is English; 简体中文 
 - Native desktop shell (Tauri) with a real Git engine, not a thin wrapper around a browser tab
 - Inspired by IntelliJ IDEA’s Git tooling — aimed at day-to-day local workflow
 
+## Download
+
+Windows installers (NSIS `.exe` / MSI): **[latest Release](https://github.com/yifunxxx/gitx/releases/latest)**.
+
 ## Get started
 
 Requires Node ≥ 22.13, pnpm 10, Rust (see `rust-toolchain.toml`), and system `git`.

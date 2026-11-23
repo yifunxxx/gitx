@@ -13,6 +13,10 @@
 - 原生桌面壳（Tauri）+ 真实 Git 引擎，不是浏览器页套壳
 - 对标 IDEA 内置 Git 体验，面向日常本地工作流
 
+## 下载
+
+Windows 安装包（NSIS `.exe` / MSI）：**[最新 Release](https://github.com/yifunxxx/gitx/releases/latest)**。
+
 ## 如何启动
 
 需要 Node ≥ 22.13、pnpm 10、Rust（见 `rust-toolchain.toml`）和系统 `git`。
