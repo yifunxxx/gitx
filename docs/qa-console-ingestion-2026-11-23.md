@@ -35,4 +35,4 @@ Windows专用程序`gitx-console-ring-0144-20261123.exe`的SHA256为`77D8CF7AA48
 
 证据目录为`E:/IDEAproject/gitx/test-results/qa072-console-native-20261123`，包含启动身份、两张控制台截图与恢复记录。正常关闭后七个观察身份全部退出；2000文件全量哈希、HEAD、index tree和status保持，设置变化严格符合预期最近项目插入后恢复本轮备份，哈希`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`。
 
-提交前再次fetch成功，master42df3f7及交付35f9a7c均已包含，没有新提交遗漏。提交推送结果待补记。用户安装版未替换。QA-034/008/040资源与持续滚轮验收单独继续，不能用本项基准代替。
+提交前再次fetch成功，master42df3f7及交付35f9a7c均已包含，没有新提交遗漏。功能提交`d031ff1be4b33e9fb1e99d8a729c3839b9f51680`首次推送成功，独立ls-remote核对交付分支完整SHA一致，无凭据问题；master未变。交付记录前再次fetch成功，远端无新增产品提交。用户安装版未替换。QA-034/008/040资源与持续滚轮验收单独继续，不能用本项基准代替。
