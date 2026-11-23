@@ -5,6 +5,7 @@ import { useChangesStore } from "@/stores/changesStore";
 import { useLogStore } from "@/stores/logStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useBranchesStore } from "@/stores/branchesStore";
+import { useJobsStore } from "@/stores/jobsStore";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
@@ -45,6 +46,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
   const log = useLogStore();
   const layout = useLayoutStore();
   const branches = useBranchesStore();
+  const jobs = useJobsStore();
 
   async function pickDirectory(): Promise<string | null> {
     if (isTauri()) {
@@ -71,6 +73,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
     error.value = null;
     const current = () => operation.value?.id === id && navigation === workspace.navigationToken();
     let opened = false;
+    let loadingJob: string | null = null;
     try {
       const path = initialPath ?? (await pickDirectory());
       // A title-bar or shortcut navigation can finish while the picker is open.
@@ -99,6 +102,10 @@ export function createWorkspaceOpen(t: (key: string) => string) {
       layout.bottomOpen = true;
       layout.activeBottomTab = "log";
       if (workspace.isRepo) {
+        // The backend opening task has finished, but the user is still waiting
+        // for these initial reads. Keep one task for this phase, owned by this
+        // request so a late completion cannot remove a newer navigation's task.
+        loadingJob = jobs.begin(t("operations.open"), path);
         // These independent reads should not make the user wait for one another.
         const results = await Promise.allSettled([
           changes.refresh(),
@@ -120,6 +127,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
         error.value = message;
       }
     } finally {
+      if (loadingJob !== null) jobs.finished(loadingJob);
       // An obsolete completion cannot clear a newer operation's loading state.
       if (operation.value?.id === id) operation.value = null;
     }

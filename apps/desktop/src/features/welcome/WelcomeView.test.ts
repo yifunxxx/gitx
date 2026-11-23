@@ -21,6 +21,9 @@ vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.works
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ refresh: mocks.refresh }) }));
 vi.mock("@/stores/logStore", () => ({ useLogStore: () => ({ load: mocks.log }) }));
+vi.mock("@/stores/jobsStore", () => ({
+  useJobsStore: () => ({ begin: vi.fn(() => "initial-reads"), finished: vi.fn() }),
+}));
 vi.mock("@/stores/branchesStore", () => ({
   useBranchesStore: () => ({ refresh: mocks.branches }),
 }));
