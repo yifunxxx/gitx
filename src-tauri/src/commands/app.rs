@@ -333,7 +333,23 @@ pub async fn settings_set(
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<AppSettings, AppError> {
-    save_app_settings(&state.settings_path, &settings)?;
+    persist_preferences(&state.settings_path, &state.settings, &state.git, settings).await
+}
+
+async fn persist_preferences(
+    path: &Path,
+    current: &tokio::sync::RwLock<AppSettings>,
+    git: &tokio::sync::RwLock<gitx_git::GitRunner>,
+    mut settings: AppSettings,
+) -> Result<AppSettings, AppError> {
+    // Other commands may hold a Git read guard while reading settings. Keep
+    // that lock order, and do not persist a draft while still waiting for Git.
+    let mut git = git.write().await;
+    let mut current = current.write().await;
+    // Opening/removing a workspace owns this list. A preferences dialog can
+    // have an older copy even when its editable fields are still valid.
+    settings.recent_workspaces = current.recent_workspaces.clone();
+    save_app_settings(path, &settings)?;
     match settings
         .git_executable
         .as_deref()
@@ -341,14 +357,14 @@ pub async fn settings_set(
         .filter(|s| !s.is_empty())
     {
         Some(bin) => {
-            *state.git.write().await = gitx_git::GitRunner::new(bin.to_string());
+            *git = gitx_git::GitRunner::new(bin.to_string());
         }
         None => {
             // Empty = auto-detect; rebind runner to whatever is found now.
             if let Ok(detected) = detect_git(None) {
-                *state.git.write().await = gitx_git::GitRunner::new(detected.path);
+                *git = gitx_git::GitRunner::new(detected.path);
             } else {
-                *state.git.write().await = gitx_git::GitRunner::new("git");
+                *git = gitx_git::GitRunner::new("git");
             }
         }
     }
@@ -363,14 +379,24 @@ pub async fn settings_set(
             },
         );
     }
-    *state.settings.write().await = settings.clone();
+    *current = settings.clone();
     Ok(settings)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn settings_reload(state: State<'_, AppState>) -> Result<AppSettings, AppError> {
-    let settings = load_app_settings(&state.settings_path)?;
+    reload_preferences(&state.settings_path, &state.settings).await
+}
+
+async fn reload_preferences(
+    path: &Path,
+    current: &tokio::sync::RwLock<AppSettings>,
+) -> Result<AppSettings, AppError> {
+    // Read disk under the same guard used by saves and recent-list updates;
+    // a reload must not publish an earlier disk snapshot after a newer write.
+    let mut current = current.write().await;
+    let settings = load_app_settings(path)?;
     unsafe {
         std::env::set_var(
             "GITX_USE_CREDENTIAL_HELPER",
@@ -381,7 +407,7 @@ pub async fn settings_reload(state: State<'_, AppState>) -> Result<AppSettings, 
             },
         );
     }
-    *state.settings.write().await = settings.clone();
+    *current = settings.clone();
     Ok(settings)
 }
 
@@ -400,6 +426,187 @@ pub async fn log_frontend(level: String, message: String) -> Result<(), AppError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::future::Future;
+    use std::task::Poll;
+    use tokio::sync::RwLock;
+
+    struct SettingsFixture {
+        _dir: tempfile::TempDir,
+        path: PathBuf,
+        current: RwLock<AppSettings>,
+        git: RwLock<gitx_git::GitRunner>,
+    }
+
+    impl SettingsFixture {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("settings.json");
+            let initial = AppSettings {
+                git_executable: Some("git".into()),
+                recent_workspaces: vec!["repo-old".into(), "worktree-removed".into()],
+                ..AppSettings::default()
+            };
+            save_app_settings(&path, &initial).unwrap();
+            Self {
+                _dir: dir,
+                path,
+                current: RwLock::new(initial),
+                git: RwLock::new(gitx_git::GitRunner::new("git")),
+            }
+        }
+
+        async fn save(&self, next: AppSettings) -> AppSettings {
+            persist_preferences(&self.path, &self.current, &self.git, next)
+                .await
+                .unwrap()
+        }
+
+        async fn assert_published(&self, expected: &AppSettings) {
+            let expected = serde_json::to_value(expected).unwrap();
+            assert_eq!(
+                serde_json::to_value(self.current.read().await.clone()).unwrap(),
+                expected
+            );
+            assert_eq!(
+                serde_json::to_value(load_app_settings(&self.path).unwrap()).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn preferences_preserve_recent_projects_opened_after_the_draft() {
+        let fixture = SettingsFixture::new();
+        let mut draft = fixture.current.read().await.clone();
+        {
+            let mut current = fixture.current.write().await;
+            current.recent_workspaces.insert(0, "repo-new".into());
+            save_app_settings(&fixture.path, &current).unwrap();
+        }
+        draft.locale = "zh-CN".into();
+        let saved = fixture.save(draft).await;
+        assert_eq!(
+            saved.recent_workspaces,
+            ["repo-new", "repo-old", "worktree-removed"]
+        );
+        assert_eq!(saved.locale, "zh-CN");
+        fixture.assert_published(&saved).await;
+    }
+
+    #[tokio::test]
+    async fn preferences_do_not_resurrect_removed_worktrees_from_a_stale_draft() {
+        let fixture = SettingsFixture::new();
+        let mut draft = fixture.current.read().await.clone();
+        {
+            let mut current = fixture.current.write().await;
+            current
+                .recent_workspaces
+                .retain(|path| path != "worktree-removed");
+            save_app_settings(&fixture.path, &current).unwrap();
+        }
+        draft.show_ignored_files = true;
+        let saved = fixture.save(draft).await;
+        assert_eq!(saved.recent_workspaces, ["repo-old"]);
+        assert!(saved.show_ignored_files);
+        fixture.assert_published(&saved).await;
+    }
+
+    #[tokio::test]
+    async fn preferences_do_not_accept_client_replacement_of_backend_recent_order() {
+        let fixture = SettingsFixture::new();
+        let initial = fixture.current.read().await.clone();
+        for paths in [vec![], vec!["unrelated-client-path".into()]] {
+            let mut draft = initial.clone();
+            draft.recent_workspaces = paths;
+            draft.staging_mode = true;
+            let saved = fixture.save(draft).await;
+            assert_eq!(saved.recent_workspaces, initial.recent_workspaces);
+            assert!(saved.staging_mode);
+            fixture.assert_published(&saved).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn preferences_waiting_for_git_do_not_publish_disk_early_or_lose_new_recents() {
+        let fixture = SettingsFixture::new();
+        let initial = fixture.current.read().await.clone();
+        let mut draft = initial.clone();
+        draft.locale = "zh-CN".into();
+        let git_reader = fixture.git.read().await;
+        let save = persist_preferences(&fixture.path, &fixture.current, &fixture.git, draft);
+        tokio::pin!(save);
+        std::future::poll_fn(|cx| {
+            assert!(matches!(save.as_mut().poll(cx), Poll::Pending));
+            Poll::Ready(())
+        })
+        .await;
+        fixture.assert_published(&initial).await;
+        {
+            let mut current = fixture.current.write().await;
+            current
+                .recent_workspaces
+                .insert(0, "opened-during-save".into());
+            save_app_settings(&fixture.path, &current).unwrap();
+        }
+        drop(git_reader);
+        let saved = save.await.unwrap();
+        assert_eq!(saved.recent_workspaces[0], "opened-during-save");
+        assert_eq!(saved.locale, "zh-CN");
+        fixture.assert_published(&saved).await;
+    }
+
+    #[tokio::test]
+    async fn preferences_failed_persistence_keeps_committed_memory_and_disk() {
+        let fixture = SettingsFixture::new();
+        let initial = fixture.current.read().await.clone();
+        let mut draft = initial.clone();
+        draft.locale = "zh-CN".into();
+        let blocked = fixture._dir.path().join("blocked.json");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(
+            persist_preferences(&blocked, &fixture.current, &fixture.git, draft)
+                .await
+                .is_err()
+        );
+        fixture.assert_published(&initial).await;
+        assert!(blocked.is_dir());
+    }
+
+    #[tokio::test]
+    async fn preferences_reload_reads_after_an_in_progress_recent_update() {
+        let fixture = SettingsFixture::new();
+        let mut writer = fixture.current.write().await;
+        let reload = reload_preferences(&fixture.path, &fixture.current);
+        tokio::pin!(reload);
+        std::future::poll_fn(|cx| {
+            assert!(matches!(reload.as_mut().poll(cx), Poll::Pending));
+            Poll::Ready(())
+        })
+        .await;
+        writer
+            .recent_workspaces
+            .insert(0, "opened-before-reload".into());
+        save_app_settings(&fixture.path, &writer).unwrap();
+        drop(writer);
+        let loaded = reload.await.unwrap();
+        assert_eq!(loaded.recent_workspaces[0], "opened-before-reload");
+        fixture.assert_published(&loaded).await;
+    }
+
+    #[tokio::test]
+    async fn preferences_failed_reload_keeps_the_last_memory_snapshot() {
+        let fixture = SettingsFixture::new();
+        let initial = fixture.current.read().await.clone();
+        std::fs::write(&fixture.path, b"invalid settings").unwrap();
+        assert!(reload_preferences(&fixture.path, &fixture.current)
+            .await
+            .is_err());
+        assert_eq!(
+            serde_json::to_value(fixture.current.read().await.clone()).unwrap(),
+            serde_json::to_value(initial).unwrap()
+        );
+        assert_eq!(std::fs::read(&fixture.path).unwrap(), b"invalid settings");
+    }
 
     #[test]
     fn semver_compare_ignores_v_prefix() {

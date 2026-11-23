@@ -763,7 +763,10 @@ export const mockBackend: Backend = {
     return JSON.parse(JSON.stringify(settings));
   },
   async settingsSet(next) {
-    settings = JSON.parse(JSON.stringify(next));
+    settings = JSON.parse(JSON.stringify({
+      ...next,
+      recentWorkspaces: settings.recentWorkspaces ?? [],
+    }));
     return JSON.parse(JSON.stringify(settings));
   },
   async jobList() {
