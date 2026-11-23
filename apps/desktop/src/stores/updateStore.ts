@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, onScopeDispose, ref } from "vue";
 import { defineStore } from "pinia";
 import { getBackend, type AppUpdateInfo } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
@@ -29,13 +29,21 @@ export const useUpdateStore = defineStore("update", () => {
   let autoTimer: ReturnType<typeof setTimeout> | undefined;
   let periodTimer: ReturnType<typeof setInterval> | undefined;
   let started = false;
+  let lifecycle = 0;
+  let disposed = false;
   let downloadToken = 0;
   let downloadCancellation = 0;
   let downloadPromise: Promise<string | null> | undefined;
   let downloadVersion: string | undefined;
+  let downloadRequestCancellation = 0;
   let installPromise: Promise<void> | undefined;
   let unlistenProgress: (() => void) | undefined;
   let centerOpen = false;
+
+  onScopeDispose(() => {
+    disposed = true;
+    stopAutoChecks();
+  });
 
   const updateAvailable = computed(() => {
     const info = latest.value;
@@ -130,8 +138,11 @@ export const useUpdateStore = defineStore("update", () => {
   }
 
   async function ensureCurrentVersion() {
+    if (disposed) return null;
     if (currentVersion.value) return currentVersion.value;
+    const generation = lifecycle;
     const info = await getBackend().appInfo();
+    if (disposed || generation !== lifecycle) return null;
     currentVersion.value = info.version;
     return info.version;
   }
@@ -162,6 +173,7 @@ export const useUpdateStore = defineStore("update", () => {
 
   async function ensureProgressListener(token: number) {
     if (!isTauri() || unlistenProgress) return;
+    const generation = lifecycle;
     const { listen } = await import("@tauri-apps/api/event");
     if (token !== downloadToken) return;
     const cleanup = await listen<{
@@ -171,6 +183,8 @@ export const useUpdateStore = defineStore("update", () => {
     }>("update://progress", (event) => {
       const payload = event.payload;
       if (
+        disposed ||
+        generation !== lifecycle ||
         phase.value !== "downloading" ||
         !latest.value ||
         payload.version !== latest.value.latestVersion
@@ -201,9 +215,13 @@ export const useUpdateStore = defineStore("update", () => {
     const info = latest.value;
     if (!info?.newer) return null;
     if (downloadPromise) {
-      if (downloadVersion === info.latestVersion) return downloadPromise;
-      // The backend writes one installer file per release. Finish the older
-      // transfer before starting the newly discovered release, never reuse its path.
+      if (
+        downloadVersion === info.latestVersion &&
+        downloadRequestCancellation === downloadCancellation
+      )
+        return downloadPromise;
+      // Finish an older or cancelled transfer before retrying. The backend
+      // writes one file per release, so even same-version retries must serialize.
       const cancellation = downloadCancellation;
       await downloadPromise.catch(() => null);
       if (
@@ -227,6 +245,7 @@ export const useUpdateStore = defineStore("update", () => {
     downloadProgress.value = null;
     error.value = null;
     downloadVersion = info.latestVersion;
+    downloadRequestCancellation = downloadCancellation;
     const current = () => {
       if (token !== downloadToken) return false;
       if (latest.value?.latestVersion === info.latestVersion) return true;
@@ -307,12 +326,17 @@ export const useUpdateStore = defineStore("update", () => {
   }
 
   async function checkForUpdates(opts: { manual?: boolean; quiet?: boolean } = {}) {
+    if (disposed) return null;
     if (checking.value) return latest.value;
+    const generation = lifecycle;
+    const current = () => !disposed && generation === lifecycle;
     checking.value = true;
     error.value = null;
     try {
       await ensureCurrentVersion();
+      if (!current()) return null;
       const info = await getBackend().appCheckForUpdates();
+      if (!current()) return null;
       latest.value = info;
       rememberCheck();
       const ignored = ignoredVersion.value;
@@ -369,6 +393,7 @@ export const useUpdateStore = defineStore("update", () => {
       }
       return info;
     } catch (reason) {
+      if (!current()) return null;
       const message = formatErrorMessage(reason);
       error.value = message;
       if (opts.manual) {
@@ -379,12 +404,12 @@ export const useUpdateStore = defineStore("update", () => {
       }
       throw reason;
     } finally {
-      checking.value = false;
+      if (current()) checking.value = false;
     }
   }
 
   function startAutoChecks() {
-    if (started) return;
+    if (disposed || started) return;
     started = true;
     // Always quiet-check ~8s after each launch (docs/in-app-update-check.md).
     // Do not gate on lastCheckedAt — that skipped startup checks for a full day
@@ -398,6 +423,10 @@ export const useUpdateStore = defineStore("update", () => {
   }
 
   function stopAutoChecks() {
+    // Retire version/check IPC too: a late result must not persist state or
+    // start a new download/listener after the application has stopped.
+    ++lifecycle;
+    checking.value = false;
     if (autoTimer) clearTimeout(autoTimer);
     if (periodTimer) clearInterval(periodTimer);
     autoTimer = undefined;
@@ -405,6 +434,10 @@ export const useUpdateStore = defineStore("update", () => {
     started = false;
     downloadToken += 1;
     downloadCancellation += 1;
+    if (phase.value === "downloading") {
+      phase.value = updateAvailable.value ? "available" : "idle";
+      downloadProgress.value = null;
+    }
     unlistenProgress?.();
     unlistenProgress = undefined;
   }
