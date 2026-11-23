@@ -26,7 +26,9 @@
 
 Windows 原生 `cargo build --offline -p gitx --features tauri/custom-protocol` 成功，退出码0；构建使用 `E:/IDEAproject/gitx/test-results/isolated-target`，没有替换安装版。未修改Rust逻辑，本轮没有额外重复整套Rust测试。
 
-日志分别为 `E:/IDEAproject/gitx/test-results/qa069-recent-targeted.log`、`qa069-recent-full.log`、`qa069-recent-build.log`、`qa069-recent-native-build.log`。提交前再次 fetch 成功，master/交付分支均无新提交且已包含于 HEAD；功能提交与远端核对结果随后补记。
+日志分别为 `E:/IDEAproject/gitx/test-results/qa069-recent-targeted.log`、`qa069-recent-full.log`、`qa069-recent-build.log`、`qa069-recent-native-build.log`。提交前再次 fetch 成功，master/交付分支均无新提交且已包含于 HEAD。
+
+功能提交 `4b678040265a0ea4a853c06978e67a0598d31302` 首次推送成功，独立 `ls-remote` 核对 `codex/checkout-target-safety` 完整 SHA 一致，master仍为42df3f7。无凭据提示。交付记录提交前再次fetch成功，两条远端均已包含，无需额外合并。
 
 ## 验收边界
 
