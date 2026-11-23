@@ -24,4 +24,4 @@ store scope销毁统一停止定时器、注销监听并失效下载，禁止通
 
 Windows custom-protocol构建通过，53.69秒，日志 `qa076-update-check-native-build.log`。原生停止/销毁竞态没有自然触发证据，本项以真实store受控回归为主要证据；不将此前更新设置普通检查的GUI记录当作本次竞态验证，也不替换用户安装版。
 
-提交前再次fetch成功，master仍为42df3f730be8ddd157a6aaca8d9a2b908638c950，交付仍为fc71cdfad7105a3f5b40b3ecab6498f6c6786ea2，两者均已包含于当前基线。提交/推送结果随后补记；本轮新增并解决QA-076，仍11项已知未关闭，整体七项目标继续。
+提交前再次fetch成功，master仍为42df3f730be8ddd157a6aaca8d9a2b908638c950，交付仍为fc71cdfad7105a3f5b40b3ecab6498f6c6786ea2，两者均已包含于当前基线。独立功能提交 `9fe2da222251994547d16b129a9f78cde816db54` 首次推送成功，ls-remote核对完整SHA一致，无凭据提示；补记交付记录前再次fetch成功，无新远端提交。本轮新增并解决QA-076，仍11项已知未关闭，整体七项目标继续。
