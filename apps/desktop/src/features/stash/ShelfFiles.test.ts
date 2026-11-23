@@ -17,14 +17,16 @@ afterEach(() => vi.unstubAllGlobals());
 it("bounds mounted rows for large shelves and reaches the first and last path by keyboard", async () => {
   const paths = Array.from({ length: 10000 }, (_, i) => `目录 ${i}/file ${i}.txt`);
   const wrapper = mount(ShelfFiles, { props: { paths, label: "Saved files" } });
-  expect(wrapper.findAll('[role="listitem"]').length).toBeLessThan(30);
+  // Layoutless tests use VirtualList's 400px fallback viewport: at most
+  // three viewports of 24px rows plus one boundary row remain mounted.
+  expect(wrapper.findAll('[role="listitem"]').length).toBeLessThanOrEqual(52);
   expect(wrapper.get('[role="listitem"]').attributes("title")).toBe(paths[0]);
   await wrapper.trigger("keydown", { key: "End" });
   const last = wrapper.findAll('[role="listitem"]').at(-1)!;
   expect(last.attributes("title")).toBe(paths.at(-1));
   expect(last.attributes("aria-posinset")).toBe("10000");
   expect(last.attributes("aria-setsize")).toBe("10000");
-  expect(wrapper.findAll('[role="listitem"]').length).toBeLessThan(30);
+  expect(wrapper.findAll('[role="listitem"]').length).toBeLessThanOrEqual(52);
   await wrapper.trigger("keydown", { key: "Home" });
   expect(wrapper.get('[role="listitem"]').attributes("title")).toBe(paths[0]);
 });

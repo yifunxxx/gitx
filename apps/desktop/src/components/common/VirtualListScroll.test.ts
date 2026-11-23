@@ -42,6 +42,114 @@ async function paint() {
   await nextTick();
 }
 
+it.each([-400, 400])("keeps a native %spx move covered before its scroll event", async (delta) => {
+  const { wrapper, port } = list();
+  try {
+    port.element.scrollTop = 11000;
+    await port.trigger("scroll");
+    await paint();
+    // The compositor can move the viewport before the main-thread scroll
+    // handler runs. The previous row window must already cover this position.
+    port.element.scrollTop += delta;
+    const rows = wrapper.findAll(".cell").map((row) => Number(row.text().slice(4)));
+    expect(rows[0]! * 22).toBeLessThanOrEqual(port.element.scrollTop);
+    expect((rows.at(-1)! + 1) * 22).toBeGreaterThanOrEqual(port.element.scrollTop + 400);
+    expect(rows.length).toBeLessThan(60);
+    expect(new Set(rows).size).toBe(rows.length);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+it("buffers variable-height rows by viewport pixels while keeping tall rows bounded", async () => {
+  const { wrapper, port } = list();
+  try {
+    const items = Array.from({ length: 10000 }, (_, i) => `row-${i}`);
+    await wrapper.setProps({ items, getItemHeight: () => 200 });
+    port.element.scrollTop = 10000;
+    await port.trigger("scroll");
+    await paint();
+    const rows = wrapper.findAll(".cell").map((row) => Number(row.text().slice(4)));
+    expect(rows[0]! * 200).toBeLessThanOrEqual(9600);
+    expect((rows.at(-1)! + 1) * 200).toBeGreaterThanOrEqual(10800);
+    expect(rows.length).toBeLessThan(10);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+it("resizes the buffer and recycled pool without losing or duplicating destination rows", async () => {
+  let resize: (() => void) | undefined;
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: () => void) {
+        resize = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const { wrapper, port } = list();
+  try {
+    port.element.scrollTop = 11000;
+    await port.trigger("scroll");
+    await paint();
+    for (const height of [704, 220]) {
+      Object.defineProperty(port.element, "clientHeight", { configurable: true, value: height });
+      resize!();
+      await nextTick();
+      const rows = wrapper.findAll(".cell").map((row) => Number(row.text().slice(4)));
+      expect(rows[0]! * 22).toBeLessThanOrEqual(11000 - height);
+      expect((rows.at(-1)! + 1) * 22).toBeGreaterThanOrEqual(11000 + 2 * height);
+      expect(rows.length).toBeLessThanOrEqual(3 * Math.ceil(height / 22) + 1);
+      expect(new Set(rows).size).toBe(rows.length);
+    }
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+it.each([false, true])(
+  "updates exposed rows before the next animation frame (dragging=%s)",
+  async (dragging) => {
+    const { wrapper, port } = list();
+    try {
+      if (dragging) await port.trigger("pointerdown", { button: 0 });
+      // Native scrolling has already moved beyond the old overscan. Holding
+      // rAF must not leave the destination empty until parent pagination runs.
+      port.element.scrollTop = 11000;
+      await port.trigger("scroll");
+      expect(wrapper.findAll(".cell").map((row) => row.text())).toContain("row-500");
+      expect(wrapper.findAll(".cell").length).toBeLessThan(60);
+      expect(wrapper.emitted("scroll")).toBeUndefined();
+      expect(frames).toHaveLength(1);
+      await paint();
+      expect(wrapper.emitted("scroll")?.length ?? 0).toBe(dragging ? 0 : 1);
+    } finally {
+      wrapper.unmount();
+    }
+  },
+);
+
+it("renders the latest of coalesced scroll events before parent notification", async () => {
+  const { wrapper, port } = list();
+  try {
+    for (const top of [440, 2200, 11000]) {
+      port.element.scrollTop = top;
+      port.element.dispatchEvent(new Event("scroll"));
+    }
+    await nextTick();
+    expect(wrapper.findAll(".cell").map((row) => row.text())).toContain("row-500");
+    expect(wrapper.emitted("scroll")).toBeUndefined();
+    expect(frames).toHaveLength(1);
+    await paint();
+    expect(wrapper.emitted("scroll")).toHaveLength(1);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
 it("renders the destination during a held scrollbar drag", async () => {
   const { wrapper, port } = list();
   try {
@@ -50,7 +158,7 @@ it("renders the destination during a held scrollbar drag", async () => {
     await port.trigger("scroll");
     await paint();
     expect(wrapper.findAll(".cell").map((row) => row.text())).toContain("row-500");
-    expect(wrapper.findAll(".cell").length).toBeLessThan(30);
+    expect(wrapper.findAll(".cell").length).toBeLessThan(60);
   } finally {
     wrapper.unmount();
   }

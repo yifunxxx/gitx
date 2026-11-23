@@ -7,6 +7,7 @@ const props = withDefaults(
     items: T[];
     itemHeight: number;
     getItemHeight?: (item: T, index: number) => number;
+    /** Minimum extra rows; also keep a viewport of pixels on either side. */
     overscan?: number;
     preserveScrollAnchor?: boolean;
     /** Reuse a bounded pool of row elements across scroll windows. */
@@ -66,10 +67,25 @@ const rowHeight = (index: number) =>
   offsets.value ? offsets.value[index + 1]! - offsets.value[index]! : props.itemHeight;
 const totalH = computed(() => offsets.value?.at(-1) ?? props.items.length * props.itemHeight);
 
-const start = computed(() => Math.max(0, rowAt(scrollTop.value) - props.overscan));
+// Native compositor scrolling can show a new position before JS receives the
+// scroll event. Keep a viewport ready in both directions, including reversals.
+// Row-count overscan remains a minimum; variable-height rows use pixel offsets
+// so a few tall rows do not multiply the buffer unnecessarily.
+const start = computed(() =>
+  Math.max(
+    0,
+    Math.min(rowAt(scrollTop.value) - props.overscan, rowAt(scrollTop.value - viewportH.value)),
+  ),
+);
 
 const end = computed(() =>
-  Math.min(props.items.length, rowAt(scrollTop.value + viewportH.value) + 1 + props.overscan),
+  Math.min(
+    props.items.length,
+    Math.max(
+      rowAt(scrollTop.value + viewportH.value) + 1 + props.overscan,
+      rowAt(scrollTop.value + 2 * viewportH.value) + 1,
+    ),
+  ),
 );
 
 const visible = computed(() => {
@@ -81,9 +97,12 @@ const visible = computed(() => {
   return out;
 });
 
-// A fixed-height window spans at most ceil(viewport / row) + 1 rows plus overscan.
+// A fixed-height window spans the viewport plus its largest buffer on each side.
 // Indexing the pool by absolute row preserves overlapping cells on a one-row scroll.
-const poolSize = computed(() => Math.ceil(viewportH.value / props.itemHeight) + 1 + 2 * props.overscan);
+const poolSize = computed(() => {
+  const viewportRows = Math.ceil(viewportH.value / props.itemHeight);
+  return viewportRows + 1 + 2 * Math.max(props.overscan, viewportRows);
+});
 function rowKey(item: T, index: number, slot: number) {
   if (!props.recycleKeys) return props.getKey(item, index);
   return props.getItemHeight ? slot : index % poolSize.value;
@@ -117,10 +136,8 @@ function flushScroll() {
   pendingScroll = null;
   if (!el) return;
   const top = el.scrollTop;
-  // Native scrolling moves the viewport immediately. Keep its bounded row
-  // window in sync once per frame, including while the scrollbar is held.
-  // Delaying rows by 50ms or until release exposes an empty part of the spacer.
-  // Only defer parent work (such as pagination that changes scrollHeight).
+  // Re-read for programmatic moves since the last event. Row rendering already
+  // follows native scroll events; only parent work is deferred to this frame.
   if (pointerDown.value) {
     scrollTop.value = top;
     return;
@@ -198,6 +215,11 @@ function clearScrolling() {
 }
 
 function onScroll(e: Event) {
+  // The compositor can scroll past the old overscan before our next rAF.
+  // Publish the current position now so Vue can patch rows at this event's
+  // microtask checkpoint. Burst events still share Vue's queued update, and
+  // pagination remains coalesced below (and paused while the thumb is held).
+  if (root.value) scrollTop.value = root.value.scrollTop;
   markScrolling();
   ++scrollGeneration;
   pendingScroll = e;
@@ -285,7 +307,9 @@ watch(
     const key = oldItem === undefined ? null : props.getKey(oldItem, oldIndex);
     const newIndex =
       props.preserveScrollAnchor && key !== null
-        ? oldIndex >= 0 && oldIndex < items.length && props.getKey(items[oldIndex]!, oldIndex) === key
+        ? oldIndex >= 0 &&
+          oldIndex < items.length &&
+          props.getKey(items[oldIndex]!, oldIndex) === key
           ? oldIndex
           : items.findIndex((item, index) => props.getKey(item, index) === key)
         : -1;
@@ -350,12 +374,14 @@ defineExpose({
         (the classic native-scrollbar thumb "stick" with transform-only lists).
       -->
       <div class="relative w-full" :style="{ height: `${totalH}px` }">
+        <!-- Keep rows in the scroller's paint layer. A translated promoted
+             window can expose unpainted raster content during fast scrolling. -->
         <div
           ref="windowEl"
-          class="vl-window absolute left-0 right-0 top-0 will-change-transform"
+          class="vl-window absolute left-0 right-0"
           data-vl-window
           :data-scrolling="scrolling ? '' : undefined"
-          :style="{ transform: `translate3d(0, ${offsetY}px, 0)` }"
+          :style="{ top: `${offsetY}px` }"
         >
           <div
             v-for="(row, slot) in visible"

@@ -240,14 +240,13 @@ describe.each([
       port.element.scrollTop = top;
       await port.trigger("scroll");
       for (const callback of frames.splice(0)) callback(0);
-      // VirtualList gates wheel applies (~50ms); advance past the gate.
-      await new Promise((resolve) => setTimeout(resolve, 55));
-      for (const callback of frames.splice(0)) callback(0);
       await flushPromises();
     };
-    expect(wrapper.findAll("button[title]").length).toBeLessThan(40);
+    // Count row wrappers: title attributes are intentionally suppressed while
+    // scrolling and cannot establish the mounted-row bound.
+    expect(wrapper.get("[data-vl-window]").element.childElementCount).toBeLessThan(50);
     await scroll(3000 * 28);
-    expect(wrapper.findAll("button[title]").length).toBeLessThan(40);
+    expect(wrapper.get("[data-vl-window]").element.childElementCount).toBeLessThan(50);
     const target = wrapper.get('button[aria-label="origin/remote/1000"]');
     await target.trigger("click", { detail: 1 });
     if (kind === "pane")
@@ -257,7 +256,7 @@ describe.each([
     expect(wrapper.findComponent({ name: "ContextMenuSurface" }).props("open")).toBe(true);
     await scroll(6003 * 28 - 400);
     expect(wrapper.find('button[aria-label="v/1999"]').exists()).toBe(true);
-    expect(wrapper.findAll("button[title]").length).toBeLessThan(40);
+    expect(wrapper.get("[data-vl-window]").element.childElementCount).toBeLessThan(50);
     mocks.branches.filteredLocal = [mocks.branches.filteredLocal[1999]];
     mocks.branches.filteredRemote = [];
     mocks.branches.filteredTags = [];

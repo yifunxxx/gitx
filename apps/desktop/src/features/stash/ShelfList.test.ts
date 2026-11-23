@@ -376,7 +376,8 @@ it("bounds thousands of shelves and keeps offscreen navigation, expansion and me
   await last.trigger("keydown", { key: "ArrowRight" });
   await flushPromises();
   expect(last.attributes("aria-expanded")).toBe("true");
-  expect(wrapper.findAll('[role="listitem"]').length).toBeLessThan(30);
+  // The nested file list includes a viewport of buffered rows on each side.
+  expect(wrapper.findAll('[role="listitem"]').length).toBeLessThanOrEqual(52);
   await last.trigger("keydown", { key: "ContextMenu" });
   await flushPromises();
   menuItems()
