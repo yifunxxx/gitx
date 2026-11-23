@@ -27,4 +27,15 @@
 - 既有真实Git测试`remote_fetch_push_update_roundtrip`通过，含本地附注标签创建及refs列出，日志`qa078-tag-git-20261123.log`。不把它写成新弹窗推送失败重试的原生证据。
 - Windows custom-protocol构建通过（54.18秒），日志`qa078-native-build-20261123.log`。无Rust实现修改，未重复完整Rust回归。
 
-原生GUI普通操作计划与QA079合并在最终构建复查；本项竞态和失败推送以受控测试为证据。没有向用户仓库或线上仓库创建标签，未更新用户安装版。提交前再fetch，单独提交推送，结果补记到台账。
+## 交付与原生复查
+
+功能提交`83bd1ebe3f9f1e923b3962584069a49e58bdb1e1`已独立推送，ls-remote完整SHA一致，无凭据提示。提交前及开始QA079前fetch成功，包含master`42df3f730be8ddd157a6aaca8d9a2b908638c950`及最新交付分支。
+
+2026-11-23与QA079组合原生复查使用独立程序`gitx-branch-dialog-0144-20261123.exe`，SHA256 `BE5D809FCB2A864B82269F2C6EF9A8F27AE8AB04F61EB744192AEF92BC874BB8`，PID28596，启动UTC`14:07:59.7138507Z`。独立WebView profile；证据目录`E:/IDEAproject/gitx/test-results/qa-branch-dialog-native-20261123`。
+
+- 新建隔离repo/main、topic和本地bare remote。专用pre-receive钩子拒绝推送。GUI输入qa-native-tag并勾选推送，实际观察Creating tag及任务队列；失败后明确提示本地已创建、名称/选项锁定、Close和Retry push可用。
+- Git核对本地标签为`d363a2b5ac14d47d338cf7a0ce916b4142ec1f1a`，远程没有此标签。移走本轮创建的拒绝钩子，GUI重试显示Pushing tag和队列，完成后窗口关闭。local/remote标签均为同一SHA，本地标签没有重新创建报错；结束队列为No running processes。重试只调用tagPush的次数断言仍以组件回归为证据。
+- `tag-before-retry.json`、`tag-after-retry.json`和两阶段UIA记录保留；截图实际观察正常，但工具UIA与截图偶有采样时差，不用其测量延迟。
+- 正常退出后7个已观察进程身份均退出。fixture文件/status/HEAD保持，refs仅增加预期标签；设置在独占核对仅预期最近项目插入后恢复原字节，SHA256 `1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`。首次退出检查脚本字符串比较不适合PowerShell自动DateTime反序列化，最终重查按时间ticks并记录PID不存在，使用`observed-identities-after-exit-final.json`及`restoration.json`为证。
+
+原生验证补齐真实Git失败/重试普通路径；跨仓库、迟到完成和精确防重时序仍为受控回归。没有向用户仓库或线上仓库创建标签，未更新用户安装版。

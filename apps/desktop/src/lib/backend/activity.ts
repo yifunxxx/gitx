@@ -8,6 +8,7 @@ export const operationTitles = {
   branchCreate: "branchCreate", branchRename: "branchRename",
   branchDelete: "branchDelete", branchRestore: "branchRestore", branchUpdate: "branchUpdate",
   tagCreate: "tagCreate", tagDelete: "tagDelete", tagPush: "tagPush",
+  compareBranches: "compareBranches",
   remoteAdd: "remoteEdit", remoteEdit: "remoteEdit", remoteRemove: "remoteEdit",
   remoteDeleteBranch: "branchDelete", unshallowRun: "unshallow",
   stagePaths: "stage", addPaths: "stage", stageHunks: "stage", stageLines: "stage",

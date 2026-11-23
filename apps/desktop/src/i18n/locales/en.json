@@ -501,6 +501,7 @@
     "branchRestore": "Restoring branch",
     "branchUpdate": "Updating branch",
     "tagCreate": "Creating tag",
+    "compareBranches": "Comparing branches",
     "tagDelete": "Deleting tag",
     "tagPush": "Pushing tag",
     "remoteEdit": "Updating remote configuration",
@@ -902,6 +903,12 @@
     "storeHint": "After saving, later fetch / pull / push / Update Project can reuse them without prompting again.",
     "saveAndRetry": "Save and Retry",
     "enterCredentials": "Enter credentials…"
+  },
+  "branchCompare": {
+    "swap": "Swap",
+    "retry": "Retry",
+    "unique": "In {in} not in {notIn}",
+    "empty": "No unique commits"
   },
   "tagDialog": {
     "title": "New Tag",

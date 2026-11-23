@@ -501,6 +501,7 @@
     "branchRestore": "正在恢复分支",
     "branchUpdate": "正在更新分支",
     "tagCreate": "正在创建标签",
+    "compareBranches": "正在比较分支",
     "tagDelete": "正在删除标签",
     "tagPush": "正在推送标签",
     "remoteEdit": "正在修改远程配置",
@@ -902,6 +903,12 @@
     "storeHint": "保存后，后续 fetch / pull / push / 更新项目可自动使用，无需再次输入。",
     "saveAndRetry": "保存并重试",
     "enterCredentials": "输入凭据…"
+  },
+  "branchCompare": {
+    "swap": "交换方向",
+    "retry": "重试",
+    "unique": "{in} 中独有的提交（{notIn} 中没有）",
+    "empty": "没有独有提交"
   },
   "tagDialog": {
     "title": "新建标签",
