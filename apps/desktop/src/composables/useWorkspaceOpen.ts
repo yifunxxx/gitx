@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef, type Ref, type ShallowRef } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChangesStore } from "@/stores/changesStore";
@@ -10,34 +10,19 @@ import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
 import { formatErrorMessage } from "@/lib/errors";
-
-type OpenOperation = { id: symbol; navigation: number; path: string | null };
-type OpenState = {
-  operation: ShallowRef<OpenOperation | null>;
-  error: Ref<string | null>;
-};
-// Share the picker and pending state across entry points in one application,
-// without carrying it into another Pinia instance or retaining closed instances.
-const states = new WeakMap<ReturnType<typeof useWorkspaceStore>, OpenState>();
+import { isWorkspaceOpening as hasOpenOperation, workspaceOpenState } from "./workspaceOpenState";
 
 // Action enabled predicates read only the existing state. They must not create
 // controllers or initialize unrelated stores while rendering menus.
 export function isWorkspaceOpening() {
-  const workspace = useWorkspaceStore();
-  const operation = states.get(workspace)?.operation.value;
-  return !!operation && operation.navigation === workspace.navigationToken();
+  return hasOpenOperation(useWorkspaceStore());
 }
 
 // Actions run outside component setup and supply the global translator; the
 // component wrapper below retains the local i18n scope.
 export function createWorkspaceOpen(t: (key: string) => string) {
   const workspace = useWorkspaceStore();
-  let state = states.get(workspace);
-  if (!state) {
-    state = { operation: shallowRef(null), error: ref(null) };
-    states.set(workspace, state);
-  }
-  const { operation, error } = state;
+  const { operation, error } = workspaceOpenState(workspace);
   // Navigation from another entry retires this operation immediately; the old
   // backend read may still be pending, but must not lock the new workspace.
   const pending = computed(() => operation.value?.navigation === workspace.navigationToken());

@@ -20,6 +20,7 @@ import { markContextHandled } from "@/lib/contextMenu";
 import { formatErrorMessage } from "@/lib/errors";
 import { cloneJson } from "@/lib/clone";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
+import { ownsWorkspaceInitialReads } from "@/composables/workspaceOpenState";
 import { useLogContextMenus } from "./useLogContextMenus";
 import {
   Select,
@@ -92,13 +93,13 @@ const datePreset = computed(() =>
 const selectedSet = computed(() => new Set(log.selectedShas));
 
 onMounted(() => {
-  if (workspace.isRepo) void log.load(true);
+  if (workspace.isRepo && !ownsWorkspaceInitialReads(workspace)) void log.load(true);
 });
 
 watch(
   () => workspace.repoPath,
   () => {
-    if (workspace.isRepo) void log.load(true);
+    if (workspace.isRepo && !ownsWorkspaceInitialReads(workspace)) void log.load(true);
   },
 );
 

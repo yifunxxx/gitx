@@ -23,6 +23,7 @@ import type { RefEntry } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
 import { markContextHandled } from "@/lib/contextMenu";
 import { runAction } from "@/actions";
+import { ownsWorkspaceInitialReads } from "@/composables/workspaceOpenState";
 
 const { t } = useI18n();
 const branches = useBranchesStore();
@@ -59,7 +60,7 @@ watch(
 );
 
 onMounted(() => {
-  void branches.refresh();
+  if (!ownsWorkspaceInitialReads(workspace)) void branches.refresh();
 });
 
 function openRefMenu(entry: RefEntry | null, e: MouseEvent) {

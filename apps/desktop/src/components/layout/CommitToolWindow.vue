@@ -27,6 +27,7 @@ import { getBackend, type ChangesListMode } from "@/lib/backend";
 import { runAction } from "@/actions";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
+import { ownsWorkspaceInitialReads } from "@/composables/workspaceOpenState";
 import { openDialog } from "@/composables/useDialog";
 import StopTrackingDialog from "@/features/commit/StopTrackingDialog.vue";
 import RollbackChangesDialog from "@/features/commit/RollbackChangesDialog.vue";
@@ -136,7 +137,7 @@ const ctxShowMoveChangelist = computed(
 
 onMounted(() => {
   if (workspace.isRepo) {
-    void changes.refresh();
+    if (!ownsWorkspaceInitialReads(workspace)) void changes.refresh();
     void rewrite.refreshOpState();
   }
 });
@@ -145,7 +146,7 @@ watch(
   () => workspace.repoPath,
   () => {
     if (workspace.isRepo) {
-      void changes.refresh();
+      if (!ownsWorkspaceInitialReads(workspace)) void changes.refresh();
       void rewrite.refreshOpState();
     }
   },

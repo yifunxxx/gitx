@@ -22,6 +22,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const recent = ref<string[]>([]);
   const branch = ref<BranchInfo | null>(null);
   const openGeneration = ref(0);
+  // Distinguish a published open result from a picker/backend still pending.
+  const appliedOpenGeneration = ref<number | null>(null);
   let rootsGeneration = 0;
   let recentGeneration = 0;
   let disposed = false;
@@ -74,6 +76,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
           ]
         : [];
     activeRepoId.value = roots.value[0]?.id ?? null;
+    appliedOpenGeneration.value = openGeneration.value;
   }
 
   async function detectGit() {
@@ -199,6 +202,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     repoId,
     repoPath,
     navigationToken: () => openGeneration.value,
+    appliedOpenToken: () => appliedOpenGeneration.value,
     detectGit,
     loadRecent,
     openFolder,
