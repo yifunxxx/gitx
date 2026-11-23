@@ -9,7 +9,7 @@
 ## 优势
 
 - 主界面清晰：Commit / Changes、Log、Diff、Stash 同窗可用
-- 浅色 / 深色 / 跟随系统主题，中英双语
+- 浅色 / 深色 / 跟随系统 / 液态玻璃主题，中英双语
 - 原生桌面壳（Tauri）+ 真实 Git 引擎，不是浏览器页套壳
 - 对标 IDEA 内置 Git 体验，面向日常本地工作流
 
@@ -26,15 +26,15 @@ pnpm tauri:dev
 
 ## 截图
 
-Welcome：
+液态玻璃 · 浅色 — Welcome：
 
 ![Welcome](./docs/screenshots/welcome.png)
 
-仓库主视图（Changes + Log）：
+液态玻璃 · 浅色 — 仓库主视图（Changes + Log）：
 
 ![Repository](./docs/screenshots/repo.png)
 
-Welcome（深色）：
+液态玻璃 · 深色 — Welcome：
 
 ![Welcome dark](./docs/screenshots/welcome-dark.png)
 
