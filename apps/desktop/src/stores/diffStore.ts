@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, watch } from "vue";
+import { ref, shallowRef, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
 import type { DiffFileResult, DiffSide, IgnoreWhitespace } from "@/lib/backend";
@@ -32,7 +32,9 @@ export type DiffTab = {
 };
 
 export const useDiffStore = defineStore("diff", () => {
-  const tabs = ref<DiffTab[]>([]);
+  // Tab updates replace their slot/array; diff payloads are read-only snapshots.
+  // Avoid tracking every hunk and line while preparing large editor documents.
+  const tabs = shallowRef<DiffTab[]>([]);
   const activeId = ref<string | null>(null);
   let nextContentVersion = 0;
   const paneStates = new Map<string, {
@@ -77,7 +79,7 @@ export const useDiffStore = defineStore("diff", () => {
     return loadGen.get(id) === gen;
   }
 
-  /** Always read the reactive proxy from `tabs` — never keep a raw insert object. */
+  /** Read the current snapshot; captured tab objects may have been replaced. */
   function liveTab(id: string): DiffTab | undefined {
     return tabs.value.find((t) => t.id === id);
   }
@@ -122,15 +124,11 @@ export const useDiffStore = defineStore("diff", () => {
     return tab && saved?.key === diffViewKey(tab) ? saved.panes[side] : undefined;
   }
 
-  /**
-   * Patch through the array proxy (or replace the slot). Mutating a *raw*
-   * object that was pushed into `tabs` bypasses Vue setters and leaves Diff
-   * stuck until an unrelated parent re-render (tool-window tab flip).
-   */
+  /** Publish every change through a new array so shallow consumers update. */
   function patchTab(id: string, patch: Partial<DiffTab>) {
     const i = tabs.value.findIndex((t) => t.id === id);
     if (i < 0) return;
-    // Immutable slot replace — never mutate a raw insert object (bypasses Vue).
+    // Keep previous tab/result snapshots stable for readers and cached panes.
     const next: DiffTab = { ...tabs.value[i]!, ...patch };
     tabs.value = [...tabs.value.slice(0, i), next, ...tabs.value.slice(i + 1)];
   }
