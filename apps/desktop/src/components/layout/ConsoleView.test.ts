@@ -66,3 +66,26 @@ it("coalesces a burst of output and clears the document without recreating the e
   expect(editor(wrapper)).toBe(view);
   expect(wrapper.text()).toContain("Console is empty");
 });
+
+it("renders the newest history after an unseen burst evicts all previously painted entries", async () => {
+  const store = useConsoleStore();
+  for (let i = 0; i < 5000; i++) store.append("stdout", `original ${i}`);
+  const wrapper = mount(ConsoleView);
+  const view = editor(wrapper);
+  const dispatch = vi.spyOn(view, "dispatch");
+  for (let i = 0; i < 5100; i++) store.append("stderr", `new ${i}\ncontinued ${i}`);
+  await renderOutput();
+  expect(dispatch).toHaveBeenCalledOnce();
+  expect(editor(wrapper)).toBe(view);
+  const expected = Array.from(
+    { length: 5000 },
+    (_, i) => `stderr  new ${i + 100}\ncontinued ${i + 100}\n`,
+  ).join("");
+  expect(view.state.doc.toString()).toBe(expected);
+  wrapper.unmount();
+  store.append("cmd", "git status");
+  const reopened = mount(ConsoleView);
+  expect(editor(reopened).state.doc.toString()).toBe(
+    expected.slice("stderr  new 100\ncontinued 100\n".length) + "cmd  git status\n",
+  );
+});
