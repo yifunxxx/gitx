@@ -91,7 +91,8 @@
     "create": "Create Repository…",
     "folderPrompt": "Folder path",
     "opened": "Opened",
-    "repoCreated": "Repository created"
+    "repoCreated": "Repository created",
+    "recentRefreshFailed": "Could not refresh recent projects"
   },
   "actions": {
     "refreshStatus": "Refresh Status",

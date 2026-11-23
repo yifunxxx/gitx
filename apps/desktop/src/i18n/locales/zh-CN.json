@@ -91,7 +91,8 @@
     "create": "创建仓库…",
     "folderPrompt": "文件夹路径",
     "opened": "已打开",
-    "repoCreated": "仓库已创建"
+    "repoCreated": "仓库已创建",
+    "recentRefreshFailed": "无法刷新最近项目列表"
   },
   "actions": {
     "refreshStatus": "刷新状态",

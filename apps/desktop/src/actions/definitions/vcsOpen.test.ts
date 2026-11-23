@@ -184,6 +184,42 @@ it("keeps initialization busy until independent initial reads finish", async () 
   expect(entry.pending.value).toBe(false);
 });
 
+it.each(["File.OpenFolder", "Git.Init"])(
+  "%s still initializes the opened repository when recent projects cannot refresh",
+  async (id) => {
+    const reading = deferred<void>();
+    m.pick.mockResolvedValue("opened repo");
+    m.workspaceRecent.mockRejectedValueOnce(new Error("Recent projects unavailable"));
+    m.refresh.mockReturnValue(reading.promise);
+    const workspace = useWorkspaceStore();
+    workspace.recent = ["previous repo"];
+    const entry = componentEntry();
+    const opening = run(id);
+    await flushPromises();
+    expect(workspace.folderPath).toBe("opened repo");
+    expect(workspace.recent).toEqual(["previous repo"]);
+    expect(m.refresh).toHaveBeenCalledOnce();
+    expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+    expect(m.branches).toHaveBeenCalledOnce();
+    expect(useLayoutStore().leftOpen).toBe(true);
+    expect(useLayoutStore().bottomOpen).toBe(true);
+    expect(useLayoutStore().activeBottomTab).toBe("log");
+    expect(entry.pending.value).toBe(true);
+    expect(entry.error.value).toBeNull();
+    expect(m.toast).toHaveBeenCalledWith({
+      title: i18n.global.t("welcome.recentRefreshFailed"),
+      description: "Recent projects unavailable",
+    });
+    expect(m.toast).toHaveBeenCalledWith({
+      title: i18n.global.t(id === "Git.Init" ? "welcome.repoCreated" : "welcome.opened"),
+      description: "opened repo",
+    });
+    reading.resolve();
+    await opening;
+    expect(entry.pending.value).toBe(false);
+  },
+);
+
 it("reports a readable action failure in the shared welcome state and permits retry", async () => {
   m.pick.mockResolvedValue("missing");
   m.workspaceOpen.mockRejectedValueOnce({ message: "Directory is unavailable" });

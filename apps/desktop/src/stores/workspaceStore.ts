@@ -3,6 +3,8 @@ import { computed, ref } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { BranchInfo, RepoRoot, WslPathInfo } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
+import { toast } from "@/composables/useToast";
+import { i18n } from "@/i18n";
 
 export const useWorkspaceStore = defineStore("workspace", () => {
   const folderPath = ref<string | null>(null);
@@ -87,9 +89,18 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   async function loadRecent() {
     const generation = ++recentGeneration;
-    const backend = getBackend();
-    const res = await backend.workspaceRecent();
-    if (generation === recentGeneration) recent.value = res.paths;
+    try {
+      const res = await getBackend().workspaceRecent();
+      if (generation === recentGeneration) recent.value = res.paths;
+    } catch (error) {
+      if (generation !== recentGeneration) return;
+      // This shared list is auxiliary: keep the last known entries and report
+      // its failure without aborting a successful open or startup Git detection.
+      toast({
+        title: i18n.global.t("welcome.recentRefreshFailed"),
+        description: formatErrorMessage(error),
+      });
+    }
   }
 
   async function openFolder(path: string) {

@@ -7,7 +7,10 @@ const backend = vi.hoisted(() => ({
   workspaceOpen: vi.fn(), workspaceRecent: vi.fn(), repoDiscover: vi.fn(),
   initRun: vi.fn(), vcsEnable: vi.fn(),
 }));
+const notifications = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => backend }));
+vi.mock("@/composables/useToast", () => ({ toast: notifications.toast }));
+vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 
 const root = (path: string) => ({
   id: path, worktreeRoot: path, gitDir: `${path}/.git`, commonDir: `${path}/.git`,
@@ -18,8 +21,9 @@ const opened = (path: string) => ({
 });
 const deferred = () => {
   let resolve!: (value: any) => void;
-  const promise = new Promise<any>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<any>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 };
 beforeEach(() => {
   vi.resetAllMocks();
@@ -114,6 +118,35 @@ it("keeps the most recent recent-folder response", async () => {
   old.resolve({ paths: ["A"] });
   await refresh;
   expect(store.recent).toEqual(["B", "A"]);
+});
+
+it("reports recent-project read failure independently, preserves the list and permits retry", async () => {
+  const store = useWorkspaceStore();
+  store.recent = ["A"];
+  backend.workspaceRecent.mockRejectedValueOnce({ message: "Recent list unavailable" });
+  await expect(store.loadRecent()).resolves.toBeUndefined();
+  expect(store.recent).toEqual(["A"]);
+  expect(notifications.toast).toHaveBeenCalledExactlyOnceWith({
+    title: "welcome.recentRefreshFailed",
+    description: "Recent list unavailable",
+  });
+  backend.workspaceRecent.mockResolvedValueOnce({ paths: ["B", "A"] });
+  await store.loadRecent();
+  expect(store.recent).toEqual(["B", "A"]);
+  expect(notifications.toast).toHaveBeenCalledOnce();
+});
+
+it("ignores a recent-project failure superseded by a newer refresh", async () => {
+  const old = deferred();
+  backend.workspaceRecent.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ paths: ["B"] });
+  const store = useWorkspaceStore();
+  const refresh = store.loadRecent();
+  const completed = expect(refresh).resolves.toBeUndefined();
+  await store.loadRecent();
+  old.reject(new Error("Obsolete recent list failure"));
+  await completed;
+  expect(store.recent).toEqual(["B"]);
+  expect(notifications.toast).not.toHaveBeenCalled();
 });
 
 it("clears stale branch info and advances navigation only for a real active-root change", async () => {

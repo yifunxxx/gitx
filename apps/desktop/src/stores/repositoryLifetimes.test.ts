@@ -209,6 +209,25 @@ describe("repository identity and late responses", () => {
     expect(mocks.backend.workspaceRecent).not.toHaveBeenCalled();
   });
 
+  it("reports recent-list failure without turning a completed worktree removal into a failure", async () => {
+    const ws = useWorkspaceStore();
+    await ws.openFolder("A");
+    ws.recent = ["removed", "A"];
+    mocks.backend.workspaceRecent.mockRejectedValueOnce(new Error("Recent list unavailable"));
+    mocks.backend.worktreeList.mockResolvedValueOnce([]);
+    await useWorktreesStore().remove("removed", false);
+    expect(mocks.backend.worktreeRemove).toHaveBeenCalledExactlyOnceWith({
+      path: "A", worktreePath: "removed", force: false,
+    });
+    expect(mocks.backend.worktreeList).toHaveBeenCalledOnce();
+    expect(ws.recent).toEqual(["removed", "A"]);
+    expect(mocks.toast).toHaveBeenCalledWith({
+      title: "welcome.recentRefreshFailed", description: "Recent list unavailable",
+    });
+    expect(mocks.toast).toHaveBeenCalledWith({ title: "worktrees.removed" });
+    expect(useWorktreesStore().error).toBeNull();
+  });
+
   it("does not restore a removed recent repository from a late list response", async () => {
     const ws = useWorkspaceStore();
     const old = deferred<{ paths: string[] }>();
