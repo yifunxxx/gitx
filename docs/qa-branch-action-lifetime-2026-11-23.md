@@ -28,3 +28,5 @@ CreateTagDialog本身的写入生命周期与CompareBranchesDialog的Swap请求�
 - Windows custom-protocol构建通过（1m36s），日志`qa077-native-build-20261123.log`。Rust逻辑未变，没有重复运行Rust全套。没有本轮原生GUI竞态操作证据；用户设置、真实仓库与安装程序均未修改。
 
 本项与QA-036导航归属、QA-009交互验收衔接；修复此缺陷不代表其余导航时序或主题组合已完整验收。提交前再次fetch复核，单独提交推送，结果见统一台账。
+
+独立功能提交`5fccfc0f2666d3d4ce171be1014e736e28284bec`已首次推送成功，经ls-remote核对完整SHA一致。提交前及补记前fetch成功，master仍42df3f7且已包含，无新远端变更或凭据提示。QA-077本项关闭，QA-078/079保留待核查，总体目标继续。
