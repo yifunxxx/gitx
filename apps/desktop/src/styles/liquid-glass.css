@@ -1,83 +1,101 @@
-/* A quiet content plane below a separate, translucent control layer.
-   Optical effects are confined to a few controls/popovers: no per-row filters,
-   pointer tracking, continuously animated backgrounds or permanent will-change. */
+/* Soft-glow liquid glass (Kyant0 AndroidLiquidGlass 2.0.0 visual intent).
+   Translucent frosted chrome, soft specular rims, gentle ambient glow.
+   Optical CSS stays on chrome/popovers only: no per-row filters, pointer
+   tracking, continuously animated backgrounds, or permanent will-change.
+   Content planes (code/lists) stay opaque enough to read. */
 html[data-theme="liquid-glass"] {
-  --background: 250 250 249;
-  --background-solid: 250 250 249;
-  --foreground: 32 35 39;
-  --card: 250 250 249;
-  --card-foreground: 32 35 39;
-  --popover: 249 250 251;
-  --popover-foreground: 32 35 39;
-  --primary: 27 100 218;
+  --background: 248 250 252;
+  --background-solid: 248 250 252;
+  --foreground: 28 32 38;
+  --card: 250 251 253;
+  --card-foreground: 28 32 38;
+  --popover: 250 251 253;
+  --popover-foreground: 28 32 38;
+  --primary: 0 136 255;
   --primary-foreground: 255 255 255;
-  --secondary: 236 239 242;
-  --secondary-foreground: 38 43 49;
-  --muted: 237 239 241;
-  --muted-foreground: 90 97 106;
-  --accent: 227 234 242;
-  --accent-foreground: 32 48 71;
-  --border: 53 65 81 / 0.13;
-  --input: 53 65 81 / 0.21;
-  --ring: 42 108 218;
-  --sidebar: 244 246 247;
-  --sidebar-foreground: 32 35 39;
-  --dbx-content: 250 250 249;
-  --dbx-chrome: 239 242 245;
-  --selection: 75 137 223 / 0.23;
-  --selection-foreground: 24 40 62;
-  --hover-surface: 64 93 128 / 0.09;
-  --glass-base: 249 251 253;
-  --glass-rim: 255 255 255 / 0.94;
-  --glass-edge: 112 133 157 / 0.27;
-  --glass-shade: 30 47 68 / 0.13;
-  --glass-glint: 255 255 255 / 0.66;
-  --glass-control-alpha: 0.42;
-  --glass-floating-alpha: 0.76;
-  --glass-dialog-alpha: 0.91;
+  --secondary: 236 240 245;
+  --secondary-foreground: 36 42 50;
+  --muted: 236 239 244;
+  --muted-foreground: 92 100 112;
+  --accent: 228 236 246;
+  --accent-foreground: 28 48 74;
+  --border: 70 90 120 / 0.12;
+  --input: 70 90 120 / 0.2;
+  --ring: 0 136 255;
+  --sidebar: 242 246 250;
+  --sidebar-foreground: 28 32 38;
+  --dbx-content: 248 250 252;
+  --dbx-chrome: 236 241 247;
+  --selection: 0 136 255 / 0.2;
+  --selection-foreground: 18 40 68;
+  --hover-surface: 255 255 255 / 0.42;
+  --glass-base: 250 250 250;
+  --glass-rim: 255 255 255 / 0.72;
+  --glass-edge: 120 140 170 / 0.18;
+  --glass-shade: 30 40 70 / 0.1;
+  --glass-glint: 255 255 255 / 0.5;
+  --glass-glint-soft: 255 255 255 / 0.22;
+  --glass-glow: 180 210 255 / 0.28;
+  --glass-edge-soft: 120 140 170 / 0.08;
+  --glass-shade-soft: 30 40 70 / 0.06;
+  --glass-control-alpha: 0.4;
+  --glass-floating-alpha: 0.58;
+  --glass-dialog-alpha: 0.78;
+  --glass-blur-control: 12px;
+  --glass-blur-float: 22px;
+  --glass-saturate: 1.45;
   --glass-ambient:
-    radial-gradient(ellipse at 16% 0%, rgb(204 224 215 / 0.7), transparent 48%),
-    radial-gradient(ellipse at 85% 0%, rgb(215 215 237 / 0.65), transparent 48%),
-    linear-gradient(125deg, #e6eaed, #f2efeb 65%, #e1e8ed);
+    radial-gradient(ellipse 70% 55% at 18% -5%, rgb(190 230 255 / 0.55), transparent 58%),
+    radial-gradient(ellipse 65% 50% at 88% 0%, rgb(220 210 255 / 0.42), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgb(200 235 220 / 0.28), transparent 60%),
+    linear-gradient(160deg, #e8eef5, #f4f6f9 55%, #e6edf4);
 }
 html.dark[data-theme="liquid-glass"] {
-  --background: 28 30 33;
-  --background-solid: 28 30 33;
-  --foreground: 235 238 242;
-  --card: 33 36 40;
-  --card-foreground: 235 238 242;
-  --popover: 40 44 50;
-  --popover-foreground: 235 238 242;
-  --primary: 134 180 255;
-  --primary-foreground: 17 36 63;
-  --secondary: 54 59 66;
-  --secondary-foreground: 235 238 242;
-  --muted: 46 50 56;
-  --muted-foreground: 169 178 190;
-  --accent: 56 68 85;
-  --accent-foreground: 235 242 252;
-  --border: 181 197 215 / 0.15;
-  --input: 181 197 215 / 0.25;
-  --ring: 134 180 255;
-  --sidebar: 32 35 39;
-  --sidebar-foreground: 235 238 242;
-  --dbx-content: 28 30 33;
-  --dbx-chrome: 37 41 46;
-  --selection: 100 158 239 / 0.34;
-  --selection-foreground: 247 249 253;
-  --hover-surface: 204 223 245 / 0.1;
-  --glass-base: 44 49 57;
-  --glass-rim: 235 246 255 / 0.32;
-  --glass-edge: 5 12 23 / 0.54;
-  --glass-shade: 0 4 12 / 0.35;
-  --glass-glint: 222 239 255 / 0.1;
-  --glass-control-alpha: 0.35;
-  --glass-floating-alpha: 0.78;
-  --glass-dialog-alpha: 0.92;
+  --background: 18 20 24;
+  --background-solid: 18 20 24;
+  --foreground: 236 240 246;
+  --card: 24 27 32;
+  --card-foreground: 236 240 246;
+  --popover: 28 32 38;
+  --popover-foreground: 236 240 246;
+  --primary: 0 145 255;
+  --primary-foreground: 255 255 255;
+  --secondary: 42 48 58;
+  --secondary-foreground: 236 240 246;
+  --muted: 38 43 52;
+  --muted-foreground: 164 174 188;
+  --accent: 48 60 78;
+  --accent-foreground: 230 240 255;
+  --border: 190 210 235 / 0.14;
+  --input: 190 210 235 / 0.22;
+  --ring: 0 145 255;
+  --sidebar: 22 25 30;
+  --sidebar-foreground: 236 240 246;
+  --dbx-content: 18 20 24;
+  --dbx-chrome: 28 32 38;
+  --selection: 0 145 255 / 0.32;
+  --selection-foreground: 245 248 255;
+  --hover-surface: 255 255 255 / 0.08;
+  --glass-base: 18 18 18;
+  --glass-rim: 255 255 255 / 0.22;
+  --glass-edge: 0 0 0 / 0.45;
+  --glass-shade: 0 0 0 / 0.28;
+  --glass-glint: 255 255 255 / 0.18;
+  --glass-glint-soft: 255 255 255 / 0.08;
+  --glass-glow: 80 140 220 / 0.18;
+  --glass-edge-soft: 0 0 0 / 0.2;
+  --glass-shade-soft: 0 0 0 / 0.16;
+  --glass-control-alpha: 0.4;
+  --glass-floating-alpha: 0.48;
+  --glass-dialog-alpha: 0.72;
+  --glass-blur-control: 10px;
+  --glass-blur-float: 18px;
+  --glass-saturate: 1.35;
   --glass-ambient:
-    radial-gradient(ellipse at 16% 0%, rgb(61 91 84 / 0.5), transparent 48%),
-    radial-gradient(ellipse at 85% 0%, rgb(80 75 105 / 0.44), transparent 48%),
-    linear-gradient(125deg, #222a2d, #2e3036 65%, #242b32);
+    radial-gradient(ellipse 70% 55% at 18% -5%, rgb(40 90 140 / 0.45), transparent 58%),
+    radial-gradient(ellipse 65% 50% at 88% 0%, rgb(70 55 120 / 0.35), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgb(30 70 60 / 0.28), transparent 60%),
+    linear-gradient(160deg, #14181e, #1a1e25 55%, #161b22);
 }
 html[data-theme="liquid-glass"]:not([data-corner-style="none"]) {
   --dbx-radius-sm: 6px;
@@ -114,23 +132,34 @@ html[data-theme="liquid-glass"] .glass-workspace {
   overflow: hidden;
   border: 1px solid rgb(var(--glass-rim));
   border-radius: var(--dbx-radius-lg);
-  box-shadow: 0 2px 10px rgb(var(--glass-shade));
+  background: rgb(var(--dbx-content));
+  box-shadow:
+    0 1px 0 rgb(var(--glass-glint)),
+    0 8px 28px -10px rgb(var(--glass-shade)),
+    0 0 40px -16px rgb(var(--glass-glow));
 }
 
-/* The bright upper rim and darker lower rim suggest a rounded lens edge.
-   Background blur samples the content behind a floating control, not its text. */
+/* Soft specular rim + frosted fill (CSS stand-in for lens/highlight shaders). */
 html[data-theme="liquid-glass"] :is(.glass-control, .glass-toolbar) {
   border: 1px solid transparent;
   border-radius: var(--glass-pill);
   background:
-    linear-gradient(155deg, rgb(var(--glass-glint)), transparent 45%, rgb(var(--glass-glint)) 125%)
+    linear-gradient(
+      145deg,
+      rgb(var(--glass-glint)),
+      transparent 42%,
+      transparent 68%,
+      rgb(var(--glass-glint-soft))
+    )
       padding-box,
     rgb(var(--glass-base) / var(--glass-control-alpha)) padding-box;
   border-color: rgb(var(--glass-rim)) rgb(var(--glass-edge)) rgb(var(--glass-edge))
     rgb(var(--glass-rim));
   box-shadow:
-    inset 0 -1px 1px rgb(var(--glass-rim)),
-    0 2px 5px rgb(var(--glass-shade));
+    inset 0 0.5px 0 rgb(var(--glass-rim)),
+    inset 0 -0.5px 1px rgb(var(--glass-edge-soft)),
+    0 4px 16px -4px rgb(var(--glass-shade)),
+    0 0 24px -8px rgb(var(--glass-glow));
 }
 html[data-theme="liquid-glass"] .glass-control {
   height: 32px;
@@ -148,7 +177,7 @@ html[data-theme="liquid-glass"] .glass-control:disabled {
   opacity: 0.45;
 }
 html[data-theme="liquid-glass"] .glass-tabbar {
-  background: rgb(var(--dbx-chrome));
+  background: rgb(var(--dbx-chrome) / 0.72);
 }
 html[data-theme="liquid-glass"] .glass-tab {
   border-radius: var(--glass-pill);
@@ -156,22 +185,25 @@ html[data-theme="liquid-glass"] .glass-tab {
 html[data-theme="liquid-glass"]
   :is(.glass-tab[data-active="true"], aside.glass-chrome button[aria-pressed="true"]) {
   background:
-    linear-gradient(160deg, rgb(var(--glass-glint)), transparent 75%), rgb(var(--background));
+    linear-gradient(160deg, rgb(var(--glass-glint)), transparent 70%),
+    rgb(var(--background) / 0.92);
   box-shadow:
-    inset 0 1px 0 rgb(var(--glass-rim)),
-    0 1px 4px rgb(var(--glass-shade));
+    inset 0 0.5px 0 rgb(var(--glass-rim)),
+    0 2px 10px -2px rgb(var(--glass-shade)),
+    0 0 18px -6px rgb(var(--glass-glow));
   outline: 1px solid rgb(var(--border));
 }
 
 html[data-theme="liquid-glass"] :is(.context-menu-panel, .dbx-floating-surface, [role="dialog"]) {
   --glass-opacity: var(--glass-floating-alpha);
   background:
+    radial-gradient(120% 80% at 12% 0%, rgb(var(--glass-glint)), transparent 42%),
     linear-gradient(
-      145deg,
+      155deg,
       rgb(var(--glass-glint)),
-      transparent 26%,
-      transparent 72%,
-      rgb(var(--glass-glint)) 150%
+      transparent 38%,
+      transparent 70%,
+      rgb(var(--glass-glint-soft))
     ),
     rgb(var(--glass-base) / var(--glass-opacity));
   border: 1px solid;
@@ -179,10 +211,11 @@ html[data-theme="liquid-glass"] :is(.context-menu-panel, .dbx-floating-surface, 
     rgb(var(--glass-rim));
   border-radius: var(--dbx-radius-lg);
   box-shadow:
-    inset 0 0 0 1px rgb(var(--glass-glint)),
-    inset 0 -1px 0 rgb(var(--glass-rim)),
-    0 16px 48px -12px rgb(var(--glass-shade)),
-    0 3px 10px rgb(var(--glass-shade));
+    inset 0 0 0 0.5px rgb(var(--glass-glint-soft)),
+    inset 0 -1px 0 rgb(var(--glass-edge-soft)),
+    0 20px 48px -16px rgb(var(--glass-shade)),
+    0 4px 14px -4px rgb(var(--glass-shade-soft)),
+    0 0 40px -12px rgb(var(--glass-glow));
 }
 html[data-theme="liquid-glass"] [role="dialog"] {
   --glass-opacity: var(--glass-dialog-alpha);
@@ -197,10 +230,10 @@ html[data-theme="liquid-glass"]
 }
 @supports (backdrop-filter: blur(18px)) {
   html[data-theme="liquid-glass"] :is(.context-menu-panel, .dbx-floating-surface, [role="dialog"]) {
-    backdrop-filter: blur(18px) saturate(1.35);
+    backdrop-filter: blur(var(--glass-blur-float)) saturate(var(--glass-saturate));
   }
   html[data-theme="liquid-glass"] :is(.glass-control, .glass-toolbar) {
-    backdrop-filter: blur(10px) saturate(1.2);
+    backdrop-filter: blur(var(--glass-blur-control)) saturate(var(--glass-saturate));
   }
 }
 @supports not (backdrop-filter: blur(18px)) {
@@ -211,26 +244,32 @@ html[data-theme="liquid-glass"]
 html[data-theme="liquid-glass"]
   [data-ui-button]:is([data-variant="outline"], [data-variant="secondary"]) {
   background:
-    linear-gradient(155deg, rgb(var(--glass-glint)), transparent 65%), rgb(var(--secondary) / 0.65);
+    linear-gradient(155deg, rgb(var(--glass-glint)), transparent 65%),
+    rgb(var(--secondary) / 0.55);
   box-shadow:
-    inset 0 1px 0 rgb(var(--glass-rim)),
-    0 1px 3px rgb(var(--glass-shade));
+    inset 0 0.5px 0 rgb(var(--glass-rim)),
+    0 2px 8px -2px rgb(var(--glass-shade));
 }
 html[data-theme="liquid-glass"] [data-ui-button][data-variant="default"] {
-  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.16), transparent 70%);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.22), transparent 68%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.26),
-    0 2px 5px rgb(var(--glass-shade));
+    inset 0 0.5px 0 rgb(255 255 255 / 0.35),
+    0 4px 14px -4px rgb(var(--glass-shade)),
+    0 0 20px -6px rgb(var(--primary) / 0.35);
 }
 html[data-theme="liquid-glass"]
   [role="dialog"]
   :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
-  background-color: rgb(var(--background) / 0.7);
-  box-shadow: inset 0 1px 2px rgb(var(--glass-shade));
+  background-color: rgb(var(--background) / 0.78);
+  box-shadow:
+    inset 0 1px 2px rgb(var(--glass-shade-soft)),
+    inset 0 0.5px 0 rgb(var(--glass-glint-soft));
 }
 html[data-theme="liquid-glass"] .branch-search {
-  background: rgb(var(--glass-base) / 0.32);
-  box-shadow: inset 0 1px 0 rgb(var(--glass-glint));
+  background: rgb(var(--glass-base) / 0.36);
+  box-shadow:
+    inset 0 0.5px 0 rgb(var(--glass-glint)),
+    0 0 16px -8px rgb(var(--glass-glow));
 }
 html[data-theme="liquid-glass"] [role="dialog"] .branch-search input {
   background: transparent;
@@ -238,30 +277,42 @@ html[data-theme="liquid-glass"] [role="dialog"] .branch-search input {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* Individual translate/scale preserve transforms used by floating-position libraries. */
+  /* Independent translate/scale keep floating-position library transforms intact. */
   html[data-theme="liquid-glass"] :is(.context-menu-panel, .dbx-floating-surface, [role="dialog"]) {
-    animation: glass-arrive 240ms cubic-bezier(0.16, 1, 0.3, 1);
+    animation: glass-arrive 280ms cubic-bezier(0.22, 1, 0.36, 1);
   }
   html[data-theme="liquid-glass"] :is([data-ui-button], .glass-control, .glass-tab) {
     transition:
-      background-color 160ms ease,
-      color 160ms ease,
-      border-color 160ms ease,
+      background-color 180ms ease,
+      color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 220ms ease,
       opacity 160ms ease,
-      scale 220ms cubic-bezier(0.2, 1.4, 0.4, 1);
+      scale 240ms cubic-bezier(0.34, 1.4, 0.64, 1);
   }
   html[data-theme="liquid-glass"] :is([data-ui-button], .glass-control):active:not(:disabled) {
-    scale: 0.96;
+    scale: 0.97;
   }
   html[data-theme="liquid-glass"] .glass-control:hover:not(:disabled) {
-    background-color: rgb(var(--glass-glint));
+    box-shadow:
+      inset 0 0.5px 0 rgb(var(--glass-rim)),
+      inset 0 -0.5px 1px rgb(var(--glass-edge-soft)),
+      0 6px 18px -4px rgb(var(--glass-shade)),
+      0 0 28px -6px rgb(var(--glass-glow));
+  }
+  html[data-theme="liquid-glass"]
+    :is([data-ui-button], .glass-control, .glass-tab):focus-visible {
+    box-shadow:
+      0 0 0 2px rgb(var(--background)),
+      0 0 0 4px rgb(var(--ring) / 0.45),
+      0 0 24px -4px rgb(var(--glass-glow));
   }
 }
 @keyframes glass-arrive {
   from {
     opacity: 0;
-    translate: 0 5px;
-    scale: 0.97;
+    translate: 0 6px;
+    scale: 0.98;
   }
   to {
     opacity: 1;

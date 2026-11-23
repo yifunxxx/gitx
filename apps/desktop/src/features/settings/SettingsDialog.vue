@@ -409,11 +409,6 @@ function onKeymapPatch(overrides: AppSettings["keymapOverrides"]) {
                 />
 
                 <p
-                  v-if="field.id === 'theme' && String(fieldValue(field)).startsWith('liquid-glass')"
-                  class="text-[11px] leading-relaxed text-muted-foreground"
-                >{{ t("settings.glassDescription") }}</p>
-
-                <p
                   v-if="numberErrors[field.id]"
                   :id="`${idPrefix}-${field.id}-error`"
                   role="alert"

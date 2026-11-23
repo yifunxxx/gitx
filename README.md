@@ -2,138 +2,46 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-Focused desktop Git GUI built on the dbx stack (Tauri 2 + Vue 3 + Rust). Default UI language is **English (en)**; 简体中文 (zh-CN) is available in Settings → Appearance. Light / dark / system themes are supported and persisted.
+A focused desktop Git workbench — open, clone, or create a repository and get to work.
 
-## Requirements
+Built with Tauri 2 + Vue 3 + Rust. Default UI language is English; 简体中文 is available in Settings → Appearance.
 
-- Node ≥ 22.13 (see `.nvmrc`)
-- pnpm 10
-- Rust 1.90 (see `rust-toolchain.toml`)
-- System `git` ≥ 2.31
-- Platform WebView deps ([Tauri prerequisites](https://tauri.app/start/prerequisites/))
+## Why gitx
 
-### Windows 11 extras
+- Clear main layout: Commit / Changes, Log, Diff, Stash in one window
+- Light / dark / system / Liquid Glass themes, English + 简体中文
+- Native desktop shell (Tauri) with a real Git engine, not a thin wrapper around a browser tab
+- Inspired by IntelliJ IDEA’s Git tooling — aimed at day-to-day local workflow
 
-- [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (preinstalled on most Win11 machines)
-- [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the **Desktop development with C++** / MSVC workload
-- Git for Windows
+## Download
 
-## Develop
+Windows installers (NSIS `.exe` / MSI): **[latest Release](https://github.com/yifunxxx/gitx/releases/latest)**.
+
+## Get started
+
+Requires Node ≥ 22.13, pnpm 10, Rust (see `rust-toolchain.toml`), and system `git`.
 
 ```bash
 pnpm install
-pnpm dev:web          # UI against mockBackend (no Rust window)
-pnpm tauri:dev        # full desktop shell
+pnpm tauri:dev
 ```
 
-Useful checks:
+UI-only (mock backend, no Rust window): `pnpm dev:web`
 
-```bash
-pnpm typecheck
-pnpm test
-cargo test -p gitx-git -p gitx-testkit
-cargo build -p gitx-helper
-```
+## Screenshots
 
-### Export IPC bindings
+Liquid Glass · Light — Welcome:
 
-Normal builds and app startup leave checked-in TypeScript bindings unchanged.
-To export them explicitly, build a debug executable, then run it with
-`GITX_EXPORT_BINDINGS` set to an output file. Export exits without opening a window
-and replaces the destination only after generation succeeds. The parent directory
-must exist. Review the generated signatures before replacing the checked-in file;
-`pnpm bindings:check` checks presence only.
+![Welcome](./docs/screenshots/welcome.png)
 
-```powershell
-cargo build -p gitx
-$env:GITX_EXPORT_BINDINGS = Join-Path $env:TEMP 'gitx-bindings.ts'
-try {
-  .\target\debug\gitx.exe
-  if ($LASTEXITCODE -ne 0) { throw 'Binding export failed' }
-} finally {
-  Remove-Item Env:GITX_EXPORT_BINDINGS
-}
-```
+Liquid Glass · Light — repository (Changes + Log):
 
-### Theme & language
+![Repository](./docs/screenshots/repo.png)
 
-- Toolbar sun/moon toggles light ↔ dark (persisted in app settings).
-- **Settings** (`Mod+,`) → **Appearance**: theme (system/light/dark), language (en / zh-CN), corner style, palette.
-- **Keymap** page: search actions, rebind shortcuts, reset overrides.
+Liquid Glass · Dark — Welcome:
 
-## Windows 11 — local run & build
+![Welcome dark](./docs/screenshots/welcome-dark.png)
 
-In PowerShell or Git Bash (after installing the prerequisites above):
+## License
 
-```powershell
-# Enable corepack or install pnpm 10, then:
-pnpm install
-pnpm tauri:dev        # run the desktop app
-pnpm tauri:build      # produce NSIS .exe + MSI under target/release/bundle/
-```
-
-Installers land at (Cargo workspace root `target/`):
-
-- `target/release/bundle/nsis/*-setup.exe`
-- `target/release/bundle/msi/*.msi`
-
-Unsigned builds may show SmartScreen — choose **More info** → **Run anyway**.
-
-## Download Windows installer
-
-### GitHub Releases (recommended)
-
-Tagged builds (`v*`) publish a [GitHub Release](https://github.com/yifunxxx/gitx/releases) with both installers attached:
-
-| Asset              | Contents            |
-| ------------------ | ------------------- |
-| `*-setup.exe`      | NSIS installer      |
-| `*.msi`            | MSI installer       |
-
-1. Open **[Releases](https://github.com/yifunxxx/gitx/releases)**.
-2. Pick the latest `v*` release (e.g. `v0.1.26`).
-3. Download the NSIS `.exe` (most users) or the `.msi`, then run it — direct installer files, not zip packages.
-
-App / package versions are `0.1.26`, matching tag `v0.1.26`. Builds are unsigned — SmartScreen may warn; choose **More info** → **Run anyway**.
-
-Publish a release by pushing a version tag (after the workflow is on `master`):
-
-```bash
-git checkout master && git pull
-# Bump workspace version in Cargo.toml / package.json / tauri.conf.json / README.
-# In Cargo.lock, only rewrite [[package]] blocks named gitx / gitx-* — never
-# sed the whole file (that can retarget third-party crates like serde_repr).
-git tag -a v0.1.26 -m "gitx v0.1.26"
-git push origin v0.1.26
-# Watch: Actions → Release Windows; then https://github.com/yifunxxx/gitx/releases
-```
-
-Optional: **Actions → Release Windows → Run workflow** with a `version` input (`0.1.26` or `v0.1.26`) to create the same Release without a local tag push.
-
-### CI Artifacts (master / debugging)
-
-Every successful **Release Windows** run also uploads Actions Artifacts (30-day retention):
-
-| Artifact name       | Contents    |
-| ------------------- | ----------- |
-| `gitx-windows-nsis` | NSIS `.exe` |
-| `gitx-windows-msi`  | MSI         |
-
-1. Open [Actions → Release Windows](../../actions/workflows/release-windows.yml).
-2. Open a green run → **Artifacts** → download, unzip, install.
-
-```bash
-gh workflow run release-windows.yml --ref master
-gh run list --workflow=release-windows.yml --limit 3
-```
-
-## Layout
-
-- `apps/desktop` — Vue 3 frontend
-- `src-tauri` — Tauri app crate + IPC commands
-- `crates/*` — git engine / meta / helper
-- `docs/` — product & development plan
-
-## Milestone
-
-**M8 Settings, Polish & Release** (on top of M0–M7) — declarative Settings (searchable), Keymap overrides, English default + zh-CN, light/dark theme persistence, Welcome copy polish, concurrency/toast Busy hardening. See `docs/dev-plan/08-milestones.md`.
+[MIT](./LICENSE)
