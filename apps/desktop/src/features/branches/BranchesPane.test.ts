@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/stores/branchesStore", () => ({ useBranchesStore: () => mocks.branches }));
 vi.mock("@/stores/logStore", () => ({ useLogStore: () => mocks.log }));
-vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => ({}) }));
+vi.mock("@/stores/workspaceStore", () => ({
+  useWorkspaceStore: () => ({ repoPath: "A", repoId: "A", isRepo: true, navigationToken: () => 0 }),
+}));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => ({}) }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({}) }));

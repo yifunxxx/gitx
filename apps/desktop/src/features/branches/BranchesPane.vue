@@ -24,6 +24,7 @@ import { formatErrorMessage } from "@/lib/errors";
 import { markContextHandled } from "@/lib/contextMenu";
 import { runAction } from "@/actions";
 import { ownsWorkspaceInitialReads } from "@/composables/workspaceOpenState";
+import { useRepositoryAction } from "@/composables/useRepositoryAction";
 
 const { t } = useI18n();
 const branches = useBranchesStore();
@@ -37,6 +38,10 @@ const sync = useSyncStore();
 const menuFor = ref<RefEntry | null>(null);
 const menuPos = ref({ x: 0, y: 0 });
 const selected = ref<string | null>(null);
+const captureAction = useRepositoryAction(() => {
+  closeMenu();
+  selected.value = null;
+});
 
 const groupByDir = computed(() => settings.settings?.git?.groupBranchesByDirectory ?? true);
 const showTags = computed(() => settings.settings?.git?.showTags ?? true);
@@ -75,9 +80,12 @@ function closeMenu() {
 }
 
 
-async function afterBranchChange() {
+async function afterBranchChange(source: ReturnType<typeof captureAction>) {
+  if (!source.current()) return;
   await changes.refresh();
+  if (!source.current()) return;
   await log.load(true);
+  if (!source.current()) return;
   await branches.refresh();
 }
 
@@ -92,15 +100,21 @@ async function onSelect(entry: RefEntry) {
 
 /** Double click: checkout. */
 async function onCheckout(entry: RefEntry) {
+  const source = captureAction();
+  if (!source.current()) return;
   try {
     if ((await branches.checkout(entry)) === false) return;
+    if (!source.current()) return;
     toast({ title: t("branches.checkedOut", { name: entry.name }) });
   } catch (e) {
+    if (!source.current()) return;
     toast({ title: t("branches.checkoutFailed"), description: formatErrorMessage(e) });
   }
 }
 
 async function onNewBranchFrom(entry: RefEntry) {
+  const source = captureAction();
+  if (!source.current()) return;
   const start =
     entry.kind === "tag" ? entry.fullName : entry.kind === "remoteBranch" ? entry.name : entry.name;
   const result = await openDialog<{
@@ -108,17 +122,21 @@ async function onNewBranchFrom(entry: RefEntry) {
     checkout: boolean;
     force: boolean;
   } | null>(NewBranchDialog, { startPoint: start });
-  if (!result?.name) return;
+  if (!result?.name || !source.current()) return;
   try {
     await branches.createBranch(result.name, start, result.checkout, result.force);
+    if (!source.current()) return;
     toast({ title: t("branches.created", { name: result.name }) });
-    await afterBranchChange();
+    await afterBranchChange(source);
   } catch (e) {
+    if (!source.current()) return;
     toast({ title: t("branches.createFailed"), description: formatErrorMessage(e) });
   }
 }
 
 async function onRename(entry: RefEntry) {
+  const source = captureAction();
+  if (!source.current()) return;
   const result = await openDialog<{
     newName: string;
     unsetUpstream: boolean;
@@ -126,55 +144,59 @@ async function onRename(entry: RefEntry) {
     oldName: entry.name,
     hasUpstream: !!entry.upstream,
   });
-  if (!result?.newName) return;
+  if (!result?.newName || !source.current()) return;
   try {
     await branches.renameBranch(entry.name, result.newName, result.unsetUpstream);
+    if (!source.current()) return;
     toast({ title: t("branches.renamed", { name: result.newName }) });
-    await afterBranchChange();
+    await afterBranchChange(source);
   } catch (e) {
+    if (!source.current()) return;
     toast({ title: t("branches.renameFailed"), description: formatErrorMessage(e) });
   }
 }
 
 async function onDelete(entry: RefEntry) {
+  const source = captureAction();
+  if (!source.current()) return;
   const ok = await openDialog<boolean>(ConfirmDialog, {
     title: t("branches.deleteConfirm", { name: entry.name }),
     message: t("branches.deleteHint"),
     confirmLabel: t("branches.delete"),
     destructive: true,
   });
-  if (!ok) return;
+  if (!ok || !source.current()) return;
   try {
     if (entry.kind === "remoteBranch") {
       const parts = entry.name.split("/");
       const remote = parts[0] ?? "origin";
       const branch = parts.slice(1).join("/") || entry.name;
-      // Push --delete via existing push path is heavy; use remote remove branch if available.
-      // Fall back: open remotes for now is worse — call backend via fetch isn't right.
-      // Use sync push with delete through a dedicated path if present; else toast.
-      await getRemoteDelete(remote, branch);
+      await getRemoteDelete(source, remote, branch);
     } else {
       const sha = await branches.deleteBranch(entry.name, true);
+      if (!source.current()) return;
       toast({
         title: t("branches.deleted", { name: entry.name }),
         description: sha ? `SHA ${sha.slice(0, 7)}` : undefined,
         persistent: true,
       });
     }
-    await afterBranchChange();
+    await afterBranchChange(source);
   } catch (e) {
+    if (!source.current()) return;
     toast({ title: t("branches.deleteFailed"), description: formatErrorMessage(e) });
   }
 }
 
-async function getRemoteDelete(remote: string, branch: string) {
+async function getRemoteDelete(source: ReturnType<typeof captureAction>, remote: string, branch: string) {
   const { getBackend } = await import("@/lib/backend");
-  if (!workspace.repoPath) return;
+  if (!source.current()) return;
   await getBackend().remoteDeleteBranch({
-    path: workspace.repoPath,
+    path: source.path!,
     remote,
     branch,
   });
+  if (!source.current()) return;
   toast({ title: t("branches.deleted", { name: `${remote}/${branch}` }) });
 }
 
@@ -192,28 +214,36 @@ async function onCopy(entry: RefEntry) {
 }
 
 async function onMergeIntoCurrent(entry: RefEntry) {
+  const source = captureAction();
+  if (!source.current()) return;
   await rewrite.merge({ branches: [entry.name] });
-  await afterBranchChange();
+  await afterBranchChange(source);
 }
 
 async function onRebaseCurrentOnto(entry: RefEntry) {
+  const source = captureAction();
+  if (!source.current()) return;
   await rewrite.rebase({ upstream: entry.name });
-  await afterBranchChange();
+  await afterBranchChange(source);
 }
 
 async function onCheckoutAndRebase(entry: RefEntry) {
+  const source = captureAction();
+  if (!source.current()) return;
   const current = branches.refs?.current;
   if (!current) return;
   await rewrite.rebase({ upstream: current, branch: entry.name });
-  await afterBranchChange();
+  await afterBranchChange(source);
 }
 
 async function onPullUsing(entry: RefEntry, rebase: boolean) {
+  const source = captureAction();
+  if (!source.current()) return;
   const parts = entry.name.split("/");
   const remote = parts[0] ?? "origin";
   const branch = parts.slice(1).join("/") || entry.name;
   await sync.pull({ remote, branch, rebase });
-  await afterBranchChange();
+  await afterBranchChange(source);
 }
 
 async function onPush(entry: RefEntry) {

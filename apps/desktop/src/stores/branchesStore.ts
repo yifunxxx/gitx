@@ -275,53 +275,69 @@ export const useBranchesStore = defineStore("branches", () => {
     return current();
   }
 
-  async function createBranch(name: string, startPoint?: string, checkout = true, force = false) {
+  function captureMutation() {
     const ws = workspace();
-    if (!ws.repoPath) return;
+    const path = ws.repoPath;
+    const repoId = ws.repoId;
+    const navigation = ws.navigationToken();
+    if (!path || !ws.isRepo) return null;
+    return {
+      path,
+      gitDir: ws.gitDir,
+      async refresh() {
+        if (ws.repoPath === path && ws.repoId === repoId && ws.navigationToken() === navigation)
+          await refresh();
+      },
+    };
+  }
+
+  async function createBranch(name: string, startPoint?: string, checkout = true, force = false) {
+    const source = captureMutation();
+    if (!source) return;
     await getBackend().branchCreate({
-      path: ws.repoPath,
+      path: source.path,
       name,
       startPoint: startPoint ?? null,
       checkout,
       force,
     });
-    await refresh();
+    await source.refresh();
   }
 
   async function renameBranch(oldName: string, newName: string, unsetUpstream: boolean) {
-    const ws = workspace();
-    if (!ws.repoPath) return;
+    const source = captureMutation();
+    if (!source) return;
     await getBackend().branchRename({
-      path: ws.repoPath,
+      path: source.path,
       oldName,
       newName,
       unsetUpstream,
       force: false,
-      gitDir: ws.gitDir,
+      gitDir: source.gitDir,
     });
-    await refresh();
+    await source.refresh();
   }
 
   async function deleteBranch(name: string, force: boolean) {
-    const ws = workspace();
-    if (!ws.repoPath) return;
-    const res = await getBackend().branchDelete({ path: ws.repoPath, name, force });
-    await refresh();
+    const source = captureMutation();
+    if (!source) return;
+    const res = await getBackend().branchDelete({ path: source.path, name, force });
+    await source.refresh();
     return res.sha;
   }
 
   async function restoreBranch(name: string, sha: string) {
-    const ws = workspace();
-    if (!ws.repoPath) return;
-    await getBackend().branchRestore({ path: ws.repoPath, name, sha });
-    await refresh();
+    const source = captureMutation();
+    if (!source) return;
+    await getBackend().branchRestore({ path: source.path, name, sha });
+    await source.refresh();
   }
 
   async function updateBranch(local: string, remoteRef: string) {
-    const ws = workspace();
-    if (!ws.repoPath) return;
-    await getBackend().branchUpdate({ path: ws.repoPath, local, remoteRef });
-    await refresh();
+    const source = captureMutation();
+    if (!source) return;
+    await getBackend().branchUpdate({ path: source.path, local, remoteRef });
+    await source.refresh();
   }
 
   async function fetch(remote?: string) {
