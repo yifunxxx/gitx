@@ -14,7 +14,7 @@ import VirtualList from "@/components/common/VirtualList.vue";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { statusClass } from "@/features/commit/statusColor";
-import type { ChangesListMode, FileChangeKind, LogListMode } from "@/lib/backend";
+import type { ChangesListMode, FileChangeKind, LogCommit, LogListMode } from "@/lib/backend";
 import { toast } from "@/composables/useToast";
 import { markContextHandled } from "@/lib/contextMenu";
 import { formatErrorMessage } from "@/lib/errors";
@@ -128,7 +128,31 @@ const changedFilesListModeTip = computed(() =>
     : t("commitTw.listModeToggleTipFlat"),
 );
 const graphCursor = shallowRef<GraphLayoutCursor | null>(null);
-const graphLayout = shallowRef<GraphLayoutResult>({ rows: [], maxLane: 0, colPx: 48 });
+// Publish text and positional graph rows together. A refresh can prepend or
+// reorder commits before the deferred layout runs; mixing generations draws
+// the previous commit's connections beside the new commit's message.
+function emptyGraphPresentation() {
+  return {
+    commits: [] as LogCommit[],
+    layout: { rows: [], maxLane: 0, colPx: 48 } as GraphLayoutResult,
+  };
+}
+const graphPresentation = shallowRef(emptyGraphPresentation());
+const graphLayout = computed(() => graphPresentation.value.layout);
+const graphCommits = computed(() => graphPresentation.value.commits);
+const layoutWaiters = new Set<() => void>();
+function finishLayout() {
+  for (const resolve of layoutWaiters) resolve();
+  layoutWaiters.clear();
+}
+watch(
+  () => [workspace.repoPath, workspace.repoId],
+  () => {
+    graphCursor.value = null;
+    graphPresentation.value = emptyGraphPresentation();
+  },
+  { flush: "sync" },
+);
 
 function graphOptions() {
   return {
@@ -149,6 +173,8 @@ watch(
   () =>
     [
       listMode.value,
+      workspace.repoPath,
+      workspace.repoId,
       log.commits,
       log.filters.text,
       log.filters.authors,
@@ -166,18 +192,20 @@ watch(
     // the current history before graph cells are shown again.
     if (listMode.value !== "flat") {
       graphCursor.value = null;
-      graphLayout.value = { rows: [], maxLane: 0, colPx: 48 };
+      graphPresentation.value = emptyGraphPresentation();
+      finishLayout();
       return;
     }
     // Yield past the IPC/Pinia turn so scroll input can be processed first.
     graphRaf = requestAnimationFrame(() => {
       graphRaf = 0;
-      const { layout: next, cursor } = timedSync(
-        `log.graphLayout n=${log.commits.length}`,
-        () => layoutCommitGraphIncremental(log.commits, graphOptions(), graphCursor.value),
+      const commits = log.commits;
+      const { layout: next, cursor } = timedSync(`log.graphLayout n=${commits.length}`, () =>
+        layoutCommitGraphIncremental(commits, graphOptions(), graphCursor.value),
       );
       graphCursor.value = cursor;
-      graphLayout.value = next;
+      graphPresentation.value = { commits, layout: next };
+      finishLayout();
     });
   },
   { immediate: true },
@@ -187,11 +215,6 @@ watch(
  * do not synchronously walk the whole history inside the scroll callback. */
 const treeRows = shallowRef<LogTreeRow[]>([]);
 let treeRaf = 0;
-const treeLayoutWaiters = new Set<() => void>();
-function finishTreeLayout() {
-  for (const resolve of treeLayoutWaiters) resolve();
-  treeLayoutWaiters.clear();
-}
 watch(
   () => [listMode.value, log.commits, t("log.treeOther")] as const,
   ([mode, commits, other]) => {
@@ -199,7 +222,7 @@ watch(
     treeRaf = 0;
     if (mode !== "tree") {
       treeRows.value = [];
-      finishTreeLayout();
+      finishLayout();
       return;
     }
     treeRaf = requestAnimationFrame(() => {
@@ -207,7 +230,7 @@ watch(
       treeRows.value = timedSync(`log.treeRows n=${commits.length}`, () =>
         buildLogTreeRows(commits, String(other)),
       );
-      finishTreeLayout();
+      finishLayout();
     });
   },
   { immediate: true },
@@ -227,7 +250,7 @@ const commitNavigation = computed(() => {
       if (row.kind === "commit") add(row.commit.sha, index);
     });
   } else {
-    log.commits.forEach((commit, index) => add(commit.sha, index));
+    graphCommits.value.forEach((commit, index) => add(commit.sha, index));
   }
   return { shas, positions };
 });
@@ -255,8 +278,9 @@ function scheduleLoadMore() {
 onUnmounted(() => {
   if (treeRaf) cancelAnimationFrame(treeRaf);
   treeRaf = 0;
-  finishTreeLayout();
+  finishLayout();
   if (graphRaf) cancelAnimationFrame(graphRaf);
+  graphRaf = 0;
   if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
 });
 
@@ -275,8 +299,8 @@ const graphMaxOffset = computed(() =>
   Math.max(0, graphLayout.value.colPx - graphColumnWidth.value),
 );
 const selectedNodeX = computed(() => {
-  const index = log.commits.findIndex((c) => c.sha === log.selectedSha);
-  return index < 0 ? 0 : 13 + (graphLayout.value.rows[index]?.graph.lane ?? 0) * 14;
+  const index = graphCommits.value.findIndex((c) => c.sha === log.selectedSha);
+  return index < 0 ? null : 13 + (graphLayout.value.rows[index]?.graph.lane ?? 0) * 14;
 });
 watch(graphPanel, (element, _, onCleanup) => {
   if (!element || typeof ResizeObserver === "undefined") return;
@@ -292,8 +316,10 @@ watch(
   [() => log.selectedSha, selectedNodeX, graphColumnWidth, graphMaxOffset],
   ([, node, width, maximum]) => {
     let offset = graphOffset.value;
-    if (node < offset + 8) offset = node - 8;
-    else if (node > offset + width - 8) offset = node - width + 8;
+    if (node !== null) {
+      if (node < offset + 8) offset = node - 8;
+      else if (node > offset + width - 8) offset = node - width + 8;
+    }
     graphOffset.value = Math.max(0, Math.min(maximum, offset));
   },
 );
@@ -329,7 +355,7 @@ watch(
 async function selectCommit(sha: string, multi = false, range = false) {
   const source = captureAction();
   try {
-    if (range && listMode.value === "tree") {
+    if (range) {
       await log.select(sha, multi, range, commitNavigation.value.shas);
     } else {
       await log.select(sha, multi, range);
@@ -343,6 +369,7 @@ async function onCommitKeydown(sha: string, event: KeyboardEvent) {
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
   const source = captureAction();
   const navigation = commitNavigation.value;
+  const displayedCommits = listMode.value === "flat" ? graphCommits.value : log.commits;
   const position = navigation.positions.get(sha);
   if (!position) return;
   let targetIndex = position.orderIndex;
@@ -352,7 +379,7 @@ async function onCommitKeydown(sha: string, event: KeyboardEvent) {
   else if (event.key === "Home") targetIndex = 0;
   else if (event.key === "End") targetIndex = navigation.shas.length - 1;
   else if (event.key === "ArrowLeft") {
-    const parent = log.commits.find((commit) => commit.sha === sha)?.parents[0];
+    const parent = displayedCommits.find((commit) => commit.sha === sha)?.parents[0];
     if (!parent) return;
     event.preventDefault();
     if (!log.commits.some((commit) => commit.sha === parent)) {
@@ -369,7 +396,7 @@ async function onCommitKeydown(sha: string, event: KeyboardEvent) {
     targetSha = parent;
   } else if (event.key === "ArrowRight") {
     event.preventDefault();
-    targetSha = log.commits.find((commit) => commit.parents.includes(sha))?.sha;
+    targetSha = displayedCommits.find((commit) => commit.parents.includes(sha))?.sha;
     if (!targetSha) return;
   } else if (event.key === "Enter") {
     event.preventDefault();
@@ -385,13 +412,7 @@ async function onCommitKeydown(sha: string, event: KeyboardEvent) {
 
 async function scrollToCommit(sha: string, align?: "nearest" | "center", focus = false) {
   const source = captureAction();
-  await nextTick();
-  // A new history window updates the store before its deferred tree rows.
-  // Wait on that existing layout job instead of rebuilding in the input path.
-  while (source.current() && listMode.value === "tree" && treeRaf) {
-    await new Promise<void>((resolve) => treeLayoutWaiters.add(resolve));
-    await nextTick();
-  }
+  await waitForLayout(source.current);
   if (!source.current() || log.selectedSha !== sha) return;
   const position = commitNavigation.value.positions.get(sha);
   if (!position) return;
@@ -406,6 +427,16 @@ async function scrollToCommit(sha: string, align?: "nearest" | "center", focus =
   }
 }
 
+async function waitForLayout(current: () => boolean) {
+  await nextTick();
+  // Navigation must target the same deferred rows that the user will see.
+  // Wait on the existing job without building a second graph on the input path.
+  while (current() && (listMode.value === "tree" ? treeRaf : graphRaf)) {
+    await new Promise<void>((resolve) => layoutWaiters.add(resolve));
+    await nextTick();
+  }
+}
+
 async function applySearch() {
   log.setTextFilter(textDraft.value);
   log.setAuthorFilter(authorDraft.value);
@@ -415,8 +446,10 @@ async function applySearch() {
 }
 
 async function reloadFilters() {
+  const source = captureAction();
   await log.applyFilters();
-  await nextTick();
+  await waitForLayout(source.current);
+  if (!source.current()) return;
   commitListRef.value?.scrollToIndex?.(0);
 }
 
@@ -712,7 +745,7 @@ function onCommitContext(sha: string, e: MouseEvent) {
                 <VirtualList
                   v-if="listMode === 'flat'"
                   ref="commitListRef"
-                  :items="log.commits"
+                  :items="graphCommits"
                   :item-height="ROW_H"
                   :get-key="(c) => c.sha"
                   preserve-scroll-anchor
@@ -887,7 +920,9 @@ function onCommitContext(sha: string, e: MouseEvent) {
               <Splitpanes horizontal class="h-full">
                 <Pane :size="45">
                   <div class="flex h-full min-h-0 flex-col">
-                    <div class="flex items-center justify-between border-b px-2 py-1 text-[11px] font-medium">
+                    <div
+                      class="flex items-center justify-between border-b px-2 py-1 text-[11px] font-medium"
+                    >
                       <span>{{ t("log.changedFiles") }}</span>
                       <Tip :text="changedFilesListModeTip">
                         <Button

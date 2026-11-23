@@ -181,6 +181,8 @@ it("handles Ctrl toggles, Shift ranges and right-clicks through actual commit ro
       },
     },
   });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await flushPromises();
   const rows = wrapper.findAll('[role="option"]');
   expect(rows).toHaveLength(4);
   await rows[0]!.trigger("click");

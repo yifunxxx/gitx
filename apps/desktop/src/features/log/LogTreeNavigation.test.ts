@@ -232,6 +232,8 @@ it("uses flat row positions if the display mode changes before the queued tree r
   await jumpToNewWindow();
   mocks.settings.settings.git.logListMode = "flat";
   await flushPromises();
+  expect(mocks.scroll).not.toHaveBeenCalled();
+  await renderFrame();
   expect(mocks.scroll).toHaveBeenCalledExactlyOnceWith(1, "center");
 });
 
@@ -253,7 +255,7 @@ it("does not reveal a pending target after switching repositories", async () => 
 it("retains flat keyboard, range and jump behavior after switching from tree mode", async () => {
   const log = useLogStore();
   mocks.settings.settings.git.logListMode = "flat";
-  await flushPromises();
+  await renderFrame();
   await row("a").trigger("keydown", { key: "ArrowDown" });
   await flushPromises();
   expect(log.selectedSha).toBe("c");
