@@ -81,6 +81,6 @@ code 类中的主要正增量是 `system / InstructionStream` +835,008 bytes 和
 - 2000 个文件哈希、status、HEAD `20e7b3b7963d129818958ae9ae9f9abb2a461926` 及索引树 `9e6e2d94c89c60127594bf85d558b7deaa4d3ca2` 均与实验前一致。
 - 应用设置只发生本次预期的最近项目插入；独占比较确认无并发更改后恢复原字节，SHA256 为 `1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`。用户安装版未替换。
 - 证据包括 `cycles-result.json`、各轮 `fixture-load/result.json`、三个 `.heapsnapshot`、各阶段 `.json`、`heap-analysis.json`、`process-analysis.json`、`metrics`、`restoration.json` 及监听退出记录。采集和分析脚本保存在同目录；原始堆快照仅在本地，报告只记录必要汇总。
-- 本轮仅更新报告、统一台账与验收映射；文档链接和差异检查通过，不重复运行未变更产品的全量测试。独立提交/推送结果在统一台账补记。
+- 本轮仅更新报告、统一台账与验收映射；146个本地Markdown链接和差异检查通过，不重复运行未变更产品的全量测试。报告提交 `6ac6fbf7de68aeddf022dadfe01a362fc0b1815e` 已独立推送，远端完整SHA核对一致，没有凭据请求。
 
 新增确认缺陷 0 项，新增修复 0 项；补齐这一个原生场景的 GC/DOM/监听器与关闭回收证据。QA-034/008/040仍开放，已知未关闭仍为11项。持续快速滚轮、长时/反复导航资源趋势、终端交互与跨平台边界仍需后续验证，不据此编造整体完成率。
