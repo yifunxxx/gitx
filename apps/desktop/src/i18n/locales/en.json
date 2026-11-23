@@ -903,6 +903,20 @@
     "saveAndRetry": "Save and Retry",
     "enterCredentials": "Enter credentials…"
   },
+  "tagDialog": {
+    "title": "New Tag",
+    "target": "Commit: {target}",
+    "name": "Tag name",
+    "message": "Message (annotated if non-empty)",
+    "force": "Force",
+    "pushAfter": "Push to remote after creation",
+    "create": "Create",
+    "created": "Tag {name} created",
+    "createdAndPushed": "Tag {name} created and pushed",
+    "noRemote": "Configure a remote before creating and pushing a tag.",
+    "localCreated": "Tag {name} was created locally. Push to {remote} failed; you can retry the push or close this dialog.",
+    "retryPush": "Retry push"
+  },
   "branches": {
     "multiRootFailed": "Checkout did not complete in every repository",
     "refreshFailed": "Could not refresh the repository after checkout",
