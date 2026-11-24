@@ -10,6 +10,18 @@ export const commands = {
   async appInfo(): Promise<AppInfo> {
     return await TAURI_INVOKE("app_info");
   },
+  /**
+   * Consume the `--open` path once so a second mount cannot re-open it.
+   */
+  async appStartupOpenPath(): Promise<string | null> {
+    return await TAURI_INVOKE("app_startup_open_path");
+  },
+  /**
+   * Spawn a new gitx process that opens `path` in its own window.
+   */
+  async appOpenNewWindow(path: string): Promise<null> {
+    return await TAURI_INVOKE("app_open_new_window", { path });
+  },
   async appCheckForUpdates(): Promise<AppUpdateInfo> {
     return await TAURI_INVOKE("app_check_for_updates");
   },

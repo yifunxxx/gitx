@@ -10,12 +10,14 @@ const m = vi.hoisted(() => ({
   workspaceRecent: vi.fn(),
   initRun: vi.fn(),
   vcsEnable: vi.fn(),
+  appOpenNewWindow: vi.fn(),
   refresh: vi.fn(),
   load: vi.fn(),
   branches: vi.fn(),
   pick: vi.fn(),
   toast: vi.fn(),
   jobList: vi.fn(),
+  choose: vi.fn(),
 }));
 vi.mock("@/lib/backend", async () => {
   const { withBackendActivity } = await import("@/lib/backend/activity");
@@ -31,6 +33,9 @@ vi.mock("@/lib/utils", async (original) => ({
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: m.pick }));
 vi.mock("@/composables/useToast", () => ({ toast: m.toast }));
+vi.mock("@/composables/useOpenProjectChoice", () => ({
+  chooseOpenProjectTarget: m.choose,
+}));
 
 let pinia: ReturnType<typeof createPinia>;
 const cleanup: Array<() => void> = [];
@@ -66,6 +71,8 @@ beforeEach(() => {
   m.vcsEnable.mockImplementation(async ({ path }) => opened(path));
   m.workspaceRecent.mockResolvedValue({ paths: [] });
   m.jobList.mockResolvedValue([]);
+  m.appOpenNewWindow.mockResolvedValue(null);
+  m.choose.mockResolvedValue("here");
   m.pick.mockResolvedValue("repo");
 });
 afterEach(async () => {

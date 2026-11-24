@@ -5,6 +5,7 @@ import { Check, FolderOpen } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorkspaceOpen } from "@/composables/useWorkspaceOpen";
+import { folderDisplayName, workspacePathKey } from "@/lib/workspacePath";
 
 const props = defineProps<{ submenu?: boolean }>();
 const itemComponent = computed(() => (props.submenu ? MenuItem : "button"));
@@ -12,17 +13,11 @@ const emit = defineEmits<{ close: [] }>();
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
 const { pending, openFolder, openRecent } = useWorkspaceOpen();
-function pathKey(path: string) {
-  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^[a-z]:\//i.test(normalized) || normalized.startsWith("//")
-    ? normalized.toLowerCase()
-    : normalized;
-}
 const recent = computed(() => {
   const seen = new Set<string>();
   return workspace.recent
     .filter((path) => {
-      const key = pathKey(path);
+      const key = workspacePathKey(path);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -30,12 +25,8 @@ const recent = computed(() => {
     .slice(0, 20);
 });
 const isCurrent = (path: string) =>
-  !!workspace.folderPath && pathKey(path) === pathKey(workspace.folderPath);
-const name = (path: string) =>
-  path
-    .replace(/[\\/]+$/, "")
-    .split(/[\\/]/)
-    .pop() || path;
+  !!workspace.folderPath && workspacePathKey(path) === workspacePathKey(workspace.folderPath);
+const name = (path: string) => folderDisplayName(path) || path;
 async function choose(path?: string) {
   if (pending.value || (path && isCurrent(path))) return;
   emit("close");

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   pick: vi.fn(),
   toast: vi.fn(),
   action: vi.fn(),
+  choose: vi.fn(),
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
@@ -33,6 +34,9 @@ vi.mock("@/lib/utils", async (original) => ({
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.pick }));
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
+vi.mock("@/composables/useOpenProjectChoice", () => ({
+  chooseOpenProjectTarget: mocks.choose,
+}));
 vi.mock("@/stores/settingsStore", () => ({
   useSettingsStore: () => ({ settings: { appearance: { theme: "light" } } }),
 }));
@@ -56,6 +60,7 @@ const button = (host: ReturnType<typeof mount>, label: string) =>
   host.findAll("button").find((item) => item.text() === label)!;
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.choose.mockResolvedValue("here");
   mocks.workspace = reactive({
     folderPath: null as string | null,
     isRepo: false,

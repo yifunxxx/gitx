@@ -29,10 +29,15 @@ import { i18n } from "@/i18n";
 
 import { useAppEvents } from "@/composables/useAppEvents";
 import { useRepositoryRefresh } from "@/composables/useRepositoryRefresh";
+import { useWindowTitle } from "@/composables/useWindowTitle";
+import { createWorkspaceOpen } from "@/composables/useWorkspaceOpen";
+import { getBackend } from "@/lib/backend";
 import { isTerminalToggle } from "@/features/terminal/terminalShortcut";
 import { installLongTaskLogging } from "@/lib/longTaskLog";
+import { isTauri } from "@/lib/utils";
 
 useRepositoryRefresh();
+useWindowTitle();
 const stopLongTaskLog = installLongTaskLogging();
 const layout = useLayoutStore();
 const workspace = useWorkspaceStore();
@@ -121,6 +126,17 @@ onMounted(async () => {
         },
       },
     });
+  }
+  if (disposed || !isTauri()) return;
+  // New-window launches pass `--open <path>`; consume once after startup.
+  try {
+    const startupPath = await getBackend().appStartupOpenPath();
+    if (disposed || !startupPath || workspace.folderPath) return;
+    await createWorkspaceOpen((key) => String(i18n.global.t(key))).openRecent(startupPath);
+  } catch (err) {
+    if (!disposed) {
+      toast({ title: formatErrorMessage(err) });
+    }
   }
 });
 

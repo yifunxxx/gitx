@@ -16,10 +16,12 @@ const m = vi.hoisted(() => ({
   workspaceRecent: vi.fn(),
   initRun: vi.fn(),
   vcsEnable: vi.fn(),
+  appOpenNewWindow: vi.fn(),
   refresh: vi.fn(),
   load: vi.fn(),
   branches: vi.fn(),
   toast: vi.fn(),
+  choose: vi.fn(),
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => m }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ refresh: m.refresh }) }));
@@ -31,6 +33,9 @@ vi.mock("@/lib/utils", async (original) => ({
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: m.pick }));
 vi.mock("@/composables/useToast", () => ({ toast: m.toast }));
+vi.mock("@/composables/useOpenProjectChoice", () => ({
+  chooseOpenProjectTarget: m.choose,
+}));
 
 enableAutoUnmount(afterEach);
 const cleanup: Array<() => void> = [];
@@ -89,6 +94,8 @@ beforeEach(() => {
   m.initRun.mockImplementation(async ({ path }) => result(path));
   m.vcsEnable.mockImplementation(async ({ path }) => result(path));
   m.workspaceRecent.mockResolvedValue({ paths: [] });
+  m.appOpenNewWindow.mockResolvedValue(null);
+  m.choose.mockResolvedValue("here");
   const layout = useLayoutStore();
   layout.leftOpen = false;
   layout.bottomOpen = false;

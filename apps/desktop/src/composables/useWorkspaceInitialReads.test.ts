@@ -29,10 +29,14 @@ const m = vi.hoisted(() => ({
   },
   opState: vi.fn(),
   pick: vi.fn(),
+  choose: vi.fn(),
 }));
 vi.mock("@/lib/backend", async () => {
   const { withBackendActivity } = await import("@/lib/backend/activity");
-  const backend = withBackendActivity(m.backend);
+  const backend = withBackendActivity({
+    ...m.backend,
+    appOpenNewWindow: vi.fn().mockResolvedValue(null),
+  });
   return { getBackend: () => backend };
 });
 vi.mock("@/stores/settingsStore", () => ({
@@ -54,6 +58,9 @@ vi.mock("@/lib/utils", async (original) => ({
   isTauri: () => true,
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: m.pick }));
+vi.mock("@/composables/useOpenProjectChoice", () => ({
+  chooseOpenProjectTarget: m.choose,
+}));
 
 enableAutoUnmount(afterEach);
 let pinia: ReturnType<typeof createPinia>;
@@ -106,6 +113,7 @@ beforeEach(() => {
   m.backend.logChangedFiles.mockResolvedValue([]);
   m.backend.refsList.mockResolvedValue(refs);
   m.backend.remoteList.mockResolvedValue([]);
+  m.choose.mockResolvedValue("here");
   m.pick.mockResolvedValue("repo");
 });
 afterEach(async () => {

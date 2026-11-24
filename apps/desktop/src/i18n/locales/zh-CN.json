@@ -92,7 +92,11 @@
     "folderPrompt": "文件夹路径",
     "opened": "已打开",
     "repoCreated": "仓库已创建",
-    "recentRefreshFailed": "无法刷新最近项目列表"
+    "recentRefreshFailed": "无法刷新最近项目列表",
+    "openProjectTitle": "打开项目",
+    "openProjectMessage": "当前已打开项目（{current}）。要将“{next}”在本窗口打开，还是开新窗口？",
+    "openInThisWindow": "本窗口打开",
+    "openInNewWindow": "开新窗口"
   },
   "actions": {
     "refreshStatus": "刷新状态",
