@@ -188,6 +188,8 @@ import { withBackendActivity } from "./activity";
 
 export type Backend = {
   appInfo(): Promise<AppInfo>;
+  appStartupOpenPath(): Promise<string | null>;
+  appOpenNewWindow(path: string): Promise<null>;
   appCheckForUpdates(): Promise<AppUpdateInfo>;
   appDownloadUpdate(req: AppDownloadUpdateReq): Promise<AppDownloadUpdateRes>;
   appInstallUpdate(req: AppInstallUpdateReq): Promise<null>;
@@ -354,6 +356,8 @@ export type Backend = {
 
 export const tauriBackend: Backend = {
   appInfo: () => commands.appInfo(),
+  appStartupOpenPath: () => commands.appStartupOpenPath(),
+  appOpenNewWindow: (path) => commands.appOpenNewWindow(path),
   appCheckForUpdates: () => commands.appCheckForUpdates(),
   appDownloadUpdate: (req) => commands.appDownloadUpdate(req),
   appInstallUpdate: (req) => commands.appInstallUpdate(req),

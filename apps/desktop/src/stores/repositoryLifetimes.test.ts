@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   backend: {
     workspaceOpen: vi.fn(),
     workspaceRecent: vi.fn(),
+    appOpenNewWindow: vi.fn(),
     refsList: vi.fn(),
     remoteList: vi.fn(),
     worktreeList: vi.fn(),
@@ -42,6 +43,7 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   dialog: vi.fn(),
   toast: vi.fn(),
+  choose: vi.fn(),
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks.backend }));
 vi.mock("./changesStore", () => ({ useChangesStore: () => mocks.changes }));
@@ -53,6 +55,9 @@ vi.mock("@/composables/useDialog", () => ({
   useDialogStack: () => ({ value: [] }),
 }));
 vi.mock("@/composables/useConfirm", () => ({ confirmDialog: vi.fn() }));
+vi.mock("@/composables/useOpenProjectChoice", () => ({
+  chooseOpenProjectTarget: mocks.choose,
+}));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -77,6 +82,8 @@ beforeEach(() => {
   localStorage.clear();
   mocks.backend.workspaceOpen.mockImplementation(async ({ path }) => openResult(path));
   mocks.backend.workspaceRecent.mockResolvedValue({ paths: [] });
+  mocks.backend.appOpenNewWindow.mockResolvedValue(null);
+  mocks.choose.mockResolvedValue("here");
   mocks.backend.remoteList.mockResolvedValue([]);
   mocks.backend.refsList.mockResolvedValue({
     local: [],

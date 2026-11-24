@@ -5,6 +5,7 @@ import type { WorktreeInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { toast } from "@/composables/useToast";
 import { confirmDialog } from "@/composables/useConfirm";
+import { chooseOpenProjectTarget } from "@/composables/useOpenProjectChoice";
 import { formatErrorMessage } from "@/lib/errors";
 import { i18n } from "@/i18n";
 
@@ -130,9 +131,18 @@ export const useWorktreesStore = defineStore("worktrees", () => {
     );
   }
 
-  async function openWorktree(path: string, _newWindow: boolean) {
-    // Single main window: always switch the current workspace (no OS window spawn).
+  async function openWorktree(path: string, preferNewWindow: boolean) {
     try {
+      const target = await chooseOpenProjectTarget({
+        currentPath: workspace().folderPath,
+        nextPath: path,
+        preferNewWindow,
+      });
+      if (!target) return;
+      if (target === "new") {
+        await getBackend().appOpenNewWindow(path);
+        return;
+      }
       await workspace().openFolder(path);
     } catch (e) {
       toast({ title: formatErrorMessage(e) });

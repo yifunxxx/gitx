@@ -15,7 +15,11 @@ const m = vi.hoisted(() => ({
   run: vi.fn(),
 }));
 vi.mock("@/lib/backend", () => ({
-  getBackend: () => ({ workspaceRecent: m.recent, gitDetect: m.gitDetect }),
+  getBackend: () => ({
+    workspaceRecent: m.recent,
+    gitDetect: m.gitDetect,
+    appStartupOpenPath: async () => null,
+  }),
 }));
 vi.mock("@/stores/settingsStore", () => ({
   useSettingsStore: () => ({ settings: null, load: m.settingsLoad }),
@@ -26,6 +30,7 @@ vi.mock("@/stores/updateStore", () => ({
 }));
 vi.mock("@/composables/useRepositoryRefresh", () => ({ useRepositoryRefresh: () => {} }));
 vi.mock("@/composables/useAppEvents", () => ({ useAppEvents: () => {} }));
+vi.mock("@/composables/useWindowTitle", () => ({ useWindowTitle: () => {} }));
 vi.mock("@/composables/useToast", () => ({ toast: m.toast }));
 vi.mock("@/actions/registry", () => ({ listActions: () => [] }));
 vi.mock("@/actions", async () => ({ ...(await import("@/actions/keymap")), runAction: m.run }));

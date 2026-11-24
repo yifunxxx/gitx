@@ -21,11 +21,13 @@ const m = vi.hoisted(() => ({
   auth: vi.fn(),
   workspaceOpen: vi.fn(),
   workspaceRecent: vi.fn(),
+  appOpenNewWindow: vi.fn(),
   refresh: vi.fn(),
   load: vi.fn(),
   branches: vi.fn(),
   toast: vi.fn(),
   pick: vi.fn(),
+  choose: vi.fn(),
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => m }));
 vi.mock("@/lib/utils", async (original) => ({
@@ -35,6 +37,9 @@ vi.mock("@/lib/utils", async (original) => ({
 vi.mock("@/composables/useCredentials", () => ({ handleAuthFailure: m.auth }));
 vi.mock("@/composables/useToast", () => ({ toast: m.toast }));
 vi.mock("@/composables/useConfirm", () => ({ promptDialog: m.pick }));
+vi.mock("@/composables/useOpenProjectChoice", () => ({
+  chooseOpenProjectTarget: m.choose,
+}));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ refresh: m.refresh }) }));
 vi.mock("@/stores/logStore", () => ({ useLogStore: () => ({ load: m.load }) }));
 vi.mock("@/stores/branchesStore", () => ({ useBranchesStore: () => ({ refresh: m.branches }) }));
@@ -75,6 +80,8 @@ beforeEach(() => {
   setActivePinia(pinia);
   m.workspaceOpen.mockImplementation(async ({ path }) => result(path));
   m.workspaceRecent.mockResolvedValue({ paths: [] });
+  m.appOpenNewWindow.mockResolvedValue(null);
+  m.choose.mockResolvedValue("here");
   m.cloneRun.mockResolvedValue({ path: "clone" });
   m.jobCancel.mockResolvedValue(true);
   m.cloneCheckUrl.mockResolvedValue(true);

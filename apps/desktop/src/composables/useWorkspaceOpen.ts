@@ -6,9 +6,11 @@ import { useLogStore } from "@/stores/logStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useJobsStore } from "@/stores/jobsStore";
+import { getBackend } from "@/lib/backend";
 import { isTauri } from "@/lib/utils";
 import { toast } from "@/composables/useToast";
 import { promptDialog } from "@/composables/useConfirm";
+import { chooseOpenProjectTarget } from "@/composables/useOpenProjectChoice";
 import { formatErrorMessage } from "@/lib/errors";
 import { isWorkspaceOpening as hasOpenOperation, workspaceOpenState } from "./workspaceOpenState";
 
@@ -64,6 +66,29 @@ export function createWorkspaceOpen(t: (key: string) => string) {
       // A title-bar or shortcut navigation can finish while the picker is open.
       if (!path || !current()) return;
       operation.value = { id, navigation, path };
+
+      // Enabling VCS always targets the folder already open in this window.
+      const target =
+        kind === "enable"
+          ? "here"
+          : await chooseOpenProjectTarget({
+              currentPath: workspace.folderPath,
+              nextPath: path,
+            });
+      if (!current()) return;
+      if (!target) return;
+
+      if (target === "new") {
+        // Create the repository here if needed, then hand the path to a new
+        // process window so this window keeps its current project.
+        if (kind === "create") {
+          await getBackend().initRun({ path, initialBranch: "main" });
+          if (!current()) return;
+        }
+        await getBackend().appOpenNewWindow(path);
+        return;
+      }
+
       const opening =
         kind === "enable"
           ? workspace.enableVcs("main")

@@ -7,8 +7,9 @@ mod state;
 mod terminal;
 
 use commands::app::{
-    app_check_for_updates, app_download_update, app_info, app_install_update, git_detect,
-    git_test_executable, log_frontend, settings_get, settings_reload, settings_set,
+    app_check_for_updates, app_download_update, app_info, app_install_update, app_open_new_window,
+    app_startup_open_path, git_detect, git_test_executable, log_frontend, parse_startup_open_path,
+    settings_get, settings_reload, settings_set, StartupOpenPath,
 };
 use commands::changelist::{
     changelist_create, changelist_delete, changelist_list, changelist_move, changelist_rename,
@@ -92,6 +93,8 @@ pub fn run() {
     let specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
             app_info,
+            app_startup_open_path,
+            app_open_new_window,
             app_check_for_updates,
             app_download_update,
             app_install_update,
@@ -302,6 +305,9 @@ pub fn run() {
         })
         .setup(move |app| {
             specta_builder.mount_events(app);
+
+            let startup_open = parse_startup_open_path(std::env::args());
+            app.manage(StartupOpenPath(std::sync::Mutex::new(startup_open)));
 
             let config_dir = app
                 .path()

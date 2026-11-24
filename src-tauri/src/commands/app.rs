@@ -6,8 +6,29 @@ use gitx_meta::{load_app_settings, save_app_settings};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::AsyncWriteExt;
+
+/// Path requested via `--open <path>` for a newly spawned process window.
+#[derive(Debug, Default)]
+pub struct StartupOpenPath(pub Mutex<Option<String>>);
+
+/// Parse `gitx --open <absolute-dir>` (and ignore other argv noise from wrappers).
+pub fn parse_startup_open_path<I, S>(args: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        if arg.as_ref() == "--open" {
+            let path = args.next()?.as_ref().trim().to_string();
+            return (!path.is_empty()).then_some(path);
+        }
+    }
+    None
+}
 
 const GITHUB_RELEASES_LATEST: &str = "https://api.github.com/repos/yifunxxx/gitx/releases/latest";
 const ALLOWED_DOWNLOAD_PREFIX: &str = "https://github.com/yifunxxx/gitx/releases/download/";
@@ -86,6 +107,50 @@ pub async fn app_info() -> Result<AppInfo, AppError> {
         name: "gitx".into(),
         version: env!("CARGO_PKG_VERSION").into(),
     })
+}
+
+/// Consume the `--open` path once so a second mount cannot re-open it.
+#[tauri::command]
+#[specta::specta]
+pub fn app_startup_open_path(state: State<'_, StartupOpenPath>) -> Option<String> {
+    state.0.lock().ok().and_then(|mut slot| slot.take())
+}
+
+/// Spawn a new gitx process that opens `path` in its own window.
+#[tauri::command]
+#[specta::specta]
+pub fn app_open_new_window(path: String) -> Result<(), AppError> {
+    let directory = PathBuf::from(&path);
+    if !directory.is_absolute() || !directory.is_dir() {
+        return Err(AppError::new(
+            ErrorCode::FsError,
+            format!("not an absolute directory: {path}"),
+        ));
+    }
+    let exe = std::env::current_exe().map_err(|error| {
+        AppError::new(
+            ErrorCode::Internal,
+            format!("resolve current executable: {error}"),
+        )
+    })?;
+    let mut command = std::process::Command::new(exe);
+    command.arg("--open").arg(&path);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Avoid attaching the child to this console / job so the new window
+        // survives independently (matches launching gitx.exe twice).
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+    }
+    command.spawn().map_err(|error| {
+        AppError::new(
+            ErrorCode::Internal,
+            format!("spawn new window for {path}: {error}"),
+        )
+    })?;
+    Ok(())
 }
 
 fn parse_semver(raw: &str) -> Option<(u64, u64, u64)> {
@@ -614,6 +679,20 @@ mod tests {
         assert!(!is_newer("0.1.31", "0.1.31"));
         assert!(!is_newer("0.1.30", "0.1.31"));
         assert!(is_newer("v0.2.0", "0.1.99"));
+    }
+
+    #[test]
+    fn startup_open_path_reads_double_dash_open() {
+        assert_eq!(
+            parse_startup_open_path(["gitx", "--open", "D:\\work\\demo"]),
+            Some("D:\\work\\demo".into())
+        );
+        assert_eq!(parse_startup_open_path(["gitx", "--open", ""]), None);
+        assert_eq!(parse_startup_open_path(["gitx", "--help"]), None);
+        assert_eq!(
+            parse_startup_open_path(["gitx", "--flag", "x", "--open", "/tmp/repo"]),
+            Some("/tmp/repo".into())
+        );
     }
 
     #[test]

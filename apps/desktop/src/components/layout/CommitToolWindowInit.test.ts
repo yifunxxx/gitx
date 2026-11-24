@@ -11,12 +11,14 @@ const m = vi.hoisted(() => ({
   vcsEnable: vi.fn(),
   workspaceOpen: vi.fn(),
   workspaceRecent: vi.fn(),
+  appOpenNewWindow: vi.fn(),
   pick: vi.fn(),
   refresh: vi.fn(),
   load: vi.fn(),
   branches: vi.fn(),
   toast: vi.fn(),
   errors: vi.fn(),
+  choose: vi.fn(),
   changes: {} as any,
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
@@ -31,6 +33,9 @@ vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => ({}) }));
 vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({}) }));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({}) }));
 vi.mock("@/composables/useToast", () => ({ toast: m.toast }));
+vi.mock("@/composables/useOpenProjectChoice", () => ({
+  chooseOpenProjectTarget: m.choose,
+}));
 vi.mock("@/actions", () => ({ runAction: vi.fn() }));
 vi.mock("@/lib/utils", async (original) => ({
   ...(await original<object>()),
@@ -90,6 +95,8 @@ beforeEach(() => {
   });
   m.vcsEnable.mockImplementation(async ({ path }) => result(path));
   m.workspaceOpen.mockImplementation(async ({ path }) => result(path, false));
+  m.appOpenNewWindow.mockResolvedValue(null);
+  m.choose.mockResolvedValue("here");
   m.workspaceRecent.mockResolvedValue({ paths: [] });
 });
 

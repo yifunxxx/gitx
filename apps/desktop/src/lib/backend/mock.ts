@@ -722,6 +722,12 @@ export const mockBackend: Backend = {
   async appInfo() {
     return { name: "gitx", version: "0.1.3-web" };
   },
+  async appStartupOpenPath() {
+    return null;
+  },
+  async appOpenNewWindow() {
+    return null;
+  },
   async appCheckForUpdates() {
     return {
       currentVersion: "0.1.3-web",

@@ -92,7 +92,11 @@
     "folderPrompt": "Folder path",
     "opened": "Opened",
     "repoCreated": "Repository created",
-    "recentRefreshFailed": "Could not refresh recent projects"
+    "recentRefreshFailed": "Could not refresh recent projects",
+    "openProjectTitle": "Open project",
+    "openProjectMessage": "A project is already open ({current}). Open “{next}” in this window or a new window?",
+    "openInThisWindow": "This window",
+    "openInNewWindow": "New window"
   },
   "actions": {
     "refreshStatus": "Refresh Status",
