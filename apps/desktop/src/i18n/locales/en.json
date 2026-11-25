@@ -367,6 +367,7 @@
     "keepManual": "Keep this manual result"
   },
   "toolWindows": {
+    "file": "File",
     "commit": "Commit",
     "git": "Git",
     "console": "Console",
@@ -377,6 +378,18 @@
     "shelf": "Shelf",
     "stashesShelves": "Stashes & Shelves",
     "worktrees": "Worktrees"
+  },
+  "fileTree": {
+    "showToolWindow": "Show File Tool Window",
+    "showCommitToolWindow": "Show Commit Tool Window",
+    "filter": "Filter loaded files",
+    "empty": "This folder is empty",
+    "noMatches": "No matching loaded files",
+    "loadFailed": "Unable to list folder",
+    "actionFailed": "File action failed",
+    "refresh": "Refresh files",
+    "tree": "Project files",
+    "retryDirectory": "Retry loading {name}"
   },
   "rewrite": {
     "operationFailed": "{operation} failed",
@@ -565,6 +578,7 @@
     "gitTestFail": "Git detection failed",
     "gitNotFound": "Git not found. Install Git for Windows, or enter the full path to git.exe below.",
     "pages": {
+      "projectFiles": "Project Files",
       "appearance": "Appearance",
       "git": "Version Control · Git",
       "confirmation": "Confirmation & Display",
@@ -572,6 +586,8 @@
       "about": "About & Updates"
     },
     "fields": {
+      "showIgnoredInFileTree": "Show ignored files in File tool window",
+      "showHiddenInFileTree": "Show hidden files in File tool window",
       "theme": "Theme",
       "locale": "Language",
       "cornerStyle": "Corner style",

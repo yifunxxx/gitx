@@ -7,6 +7,7 @@ const KEY = "gitx.layout.v1";
 
 export const useLayoutStore = defineStore("layout", () => {
   const leftOpen = ref(true);
+  const activeLeftTab = ref<"commit" | "file">("commit");
   const bottomOpen = ref(true);
   const bottomMaximized = ref(false);
   const leftSize = ref(28);
@@ -29,6 +30,9 @@ export const useLayoutStore = defineStore("layout", () => {
       if (!raw) return;
       const data = JSON.parse(raw) as Record<string, unknown>;
       if (typeof data.leftOpen === "boolean") leftOpen.value = data.leftOpen;
+      if (data.activeLeftTab === "commit" || data.activeLeftTab === "file") {
+        activeLeftTab.value = data.activeLeftTab;
+      }
       if (typeof data.bottomOpen === "boolean") bottomOpen.value = data.bottomOpen;
       if (typeof data.leftSize === "number") leftSize.value = data.leftSize;
       if (typeof data.bottomSize === "number") bottomSize.value = data.bottomSize;
@@ -52,6 +56,7 @@ export const useLayoutStore = defineStore("layout", () => {
       KEY,
       JSON.stringify({
         leftOpen: leftOpen.value,
+        activeLeftTab: activeLeftTab.value,
         bottomOpen: bottomOpen.value,
         leftSize: leftSize.value,
         bottomSize: bottomSize.value,
@@ -63,15 +68,29 @@ export const useLayoutStore = defineStore("layout", () => {
 
   load();
   // Keep dock visibility consistent with Commit TW presentation after restore.
-  if (commitTwMode.value === "float") {
+  if (activeLeftTab.value === "commit" && commitTwMode.value === "float") {
     leftOpen.value = false;
-  } else if (!leftOpen.value) {
+  } else if (activeLeftTab.value === "commit" && !leftOpen.value) {
     leftOpen.value = true;
   }
-  watch([leftOpen, bottomOpen, leftSize, bottomSize, commitTwMode, commitControlsHidden], persist);
+  watch(
+    [leftOpen, activeLeftTab, bottomOpen, leftSize, bottomSize, commitTwMode, commitControlsHidden],
+    persist,
+  );
+
+  function showLeftTab(tab: "commit" | "file") {
+    activeLeftTab.value = tab;
+    leftOpen.value = tab === "file" || commitTwMode.value !== "float";
+  }
+
+  function toggleLeftTab(tab: "commit" | "file") {
+    if (activeLeftTab.value === tab && leftOpen.value) leftOpen.value = false;
+    else showLeftTab(tab);
+  }
 
   async function setCommitTwMode(mode: CommitTwMode) {
     const prev = commitTwMode.value;
+    activeLeftTab.value = "commit";
     commitTwMode.value = mode;
     // IDEA-like single OS window: modes are in-app only (never spawn WebviewWindow).
     if (mode === "docked") {
@@ -101,6 +120,7 @@ export const useLayoutStore = defineStore("layout", () => {
 
   return {
     leftOpen,
+    activeLeftTab,
     bottomOpen,
     bottomMaximized,
     leftSize,
@@ -112,6 +132,8 @@ export const useLayoutStore = defineStore("layout", () => {
     commitTwMode,
     commitControlsHidden,
     setCommitTwMode,
+    showLeftTab,
+    toggleLeftTab,
     toggleCommitControls,
   };
 });

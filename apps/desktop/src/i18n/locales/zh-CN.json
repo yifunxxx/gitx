@@ -367,6 +367,7 @@
     "keepManual": "保留此块的手动结果"
   },
   "toolWindows": {
+    "file": "文件",
     "commit": "提交",
     "git": "Git",
     "console": "控制台",
@@ -377,6 +378,18 @@
     "shelf": "Shelf",
     "stashesShelves": "Stash 与 Shelf",
     "worktrees": "工作树"
+  },
+  "fileTree": {
+    "showToolWindow": "显示文件工具窗",
+    "showCommitToolWindow": "显示提交工具窗",
+    "filter": "筛选已加载文件",
+    "empty": "文件夹为空",
+    "noMatches": "没有匹配的已加载文件",
+    "loadFailed": "无法列举文件夹",
+    "actionFailed": "文件操作失败",
+    "refresh": "刷新文件",
+    "tree": "项目文件",
+    "retryDirectory": "重试加载 {name}"
   },
   "rewrite": {
     "operationFailed": "{operation}失败",
@@ -565,6 +578,7 @@
     "gitTestFail": "Git 检测失败",
     "gitNotFound": "未找到 git，请安装 Git for Windows 或在下方填写 git.exe 完整路径",
     "pages": {
+      "projectFiles": "项目文件",
       "appearance": "外观",
       "git": "版本控制 · Git",
       "confirmation": "确认与显示",
@@ -572,6 +586,8 @@
       "about": "关于与更新"
     },
     "fields": {
+      "showIgnoredInFileTree": "在文件工具窗中显示被忽略的文件",
+      "showHiddenInFileTree": "在文件工具窗中显示隐藏文件",
       "theme": "主题",
       "locale": "语言",
       "cornerStyle": "圆角风格",

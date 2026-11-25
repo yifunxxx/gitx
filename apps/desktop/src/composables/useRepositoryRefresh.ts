@@ -28,7 +28,7 @@ let lastRegistration = Date.now();
 
 /** One refresh at a time. Bursts are coalesced and events received during a
  * refresh cause one subsequent pass, with no overlapping polling requests. */
-export function useRepositoryRefresh() {
+export function useRepositoryRefresh(refreshFiles?: () => Promise<void>) {
   const ws = useWorkspaceStore();
   const changes = useChangesStore();
   const branches = useBranchesStore();
@@ -53,6 +53,27 @@ export function useRepositoryRefresh() {
   let nativeGeneration: number | undefined;
   let logPending = false;
   let configureChain = Promise.resolve();
+  let folderRefresh: Promise<void> | undefined;
+
+  function refreshNonRepositoryFiles() {
+    if (
+      disposed ||
+      ws.isRepo ||
+      !ws.folderPath ||
+      !refreshFiles ||
+      folderRefresh ||
+      document.visibilityState === "hidden"
+    )
+      return;
+    folderRefresh = Promise.resolve()
+      .then(refreshFiles)
+      .catch((error) => {
+        if (!disposed) console.append("stderr", formatErrorMessage(error));
+      })
+      .finally(() => {
+        folderRefresh = undefined;
+      });
+  }
 
   function schedule(kinds: ChangeKind[]) {
     if (disposed || !ws.isRepo || !ws.repoPath) return;
@@ -93,6 +114,7 @@ export function useRepositoryRefresh() {
     const run = (task: () => unknown) =>
       tasks.push(Promise.resolve().then(() => (current() ? task() : undefined)));
     if (kinds.size) run(() => changes.refresh(true));
+    if (refreshFiles && (kinds.has("worktree") || kinds.has("ignore"))) run(refreshFiles);
     if (kinds.has("refs")) {
       run(() => branches.refresh());
       run(() => worktrees.refresh());
@@ -163,6 +185,7 @@ export function useRepositoryRefresh() {
 
   function onFocus() {
     if (document.visibilityState !== "hidden") schedule(allKinds);
+    refreshNonRepositoryFiles();
   }
 
   watch(
@@ -198,6 +221,9 @@ export function useRepositoryRefresh() {
     document.addEventListener("visibilitychange", onFocus);
     poll = setInterval(() => {
       if (fallback && document.visibilityState !== "hidden") schedule(allKinds);
+      // Non-Git folders have no repository watch. Reuse the existing bounded
+      // fallback cadence; the tree only rereads directories already opened.
+      refreshNonRepositoryFiles();
     }, 5000);
   });
   onUnmounted(() => {

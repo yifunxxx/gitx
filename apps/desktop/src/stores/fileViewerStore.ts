@@ -8,10 +8,13 @@ import { useChangesStore } from "./changesStore";
 import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
+import { relativeToRoot } from "@/lib/projectFilePath";
 
 export type FileViewerTab = {
   id: string;
   path: string;
+  /** Present for files outside the active Git repository. */
+  folderPath?: string;
   title: string;
   text: string;
   /** Text as loaded from disk / last successful save. */
@@ -30,7 +33,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
   const activeId = ref<string | null>(null);
   const workspace = useWorkspaceStore();
   watch(
-    () => workspace.repoPath,
+    () => [workspace.repoPath, workspace.folderPath, workspace.appliedOpenToken?.()],
     () => {
       tabs.value = [];
       activeId.value = null;
@@ -38,22 +41,32 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     { flush: "sync" },
   );
 
-  async function open(filePath: string) {
+  async function open(filePath: string, source?: { folderPath: string | null }) {
     const workspace = useWorkspaceStore();
     const layout = useLayoutStore();
-    if (!workspace.repoPath || !workspace.repoId) return;
+    const sourceRoot = source?.folderPath ?? workspace.repoPath;
+    if (!sourceRoot) return;
+    const sourceFilePath = filePath;
+    const repoRelative =
+      workspace.isRepo && workspace.repoPath && workspace.repoId
+        ? relativeToRoot(sourceRoot, filePath, workspace.repoPath)
+        : null;
+    const folderPath = repoRelative === null ? sourceRoot : undefined;
+    filePath = repoRelative ?? filePath;
+    const navigation = workspace.navigationToken();
 
-    const existing = tabs.value.find((t) => t.path === filePath);
+    const existing = tabs.value.find((t) => t.path === filePath && t.folderPath === folderPath);
     if (existing) {
       activeId.value = existing.id;
       layout.activeEditorKind = "file";
       return;
     }
 
-    const id = `file:${filePath}`;
+    const id = folderPath ? `file:${JSON.stringify([folderPath, filePath])}` : `file:${filePath}`;
     const tab = reactive<FileViewerTab>({
       id,
       path: filePath,
+      folderPath,
       title: filePath.split("/").pop() ?? filePath,
       text: "",
       baseline: "",
@@ -70,24 +83,37 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
 
     const repoPath = workspace.repoPath;
     const repoId = workspace.repoId;
+    const current = () =>
+      tabs.value.includes(tab) &&
+      workspace.repoPath === repoPath &&
+      workspace.navigationToken() === navigation;
     try {
       const backend = getBackend();
-      const diff = await backend.diffFile({
-        repoId,
-        path: repoPath,
-        filePath,
-        left: "head",
-        right: "worktree",
-      });
-      if (!tabs.value.includes(tab) || workspace.repoPath !== repoPath) return;
-      const text = diff.rightText ?? "";
+      // Tree entries may include binary/oversize files. Read through the bounded
+      // text endpoint before making them editable, even inside a Git repository.
+      const fileText =
+        source || folderPath
+          ? await backend.fsReadFile({ folderPath: sourceRoot, filePath: sourceFilePath })
+          : undefined;
+      if (!current()) return;
+      const diff = folderPath
+        ? null
+        : await backend.diffFile({
+            repoId: repoId!,
+            path: repoPath!,
+            filePath,
+            left: "head",
+            right: "worktree",
+          });
+      const text = fileText ?? diff?.rightText ?? "";
+      if (!current()) return;
       tab.text = text;
       tab.baseline = text;
-      tab.hunks = diff.hunks;
+      tab.hunks = diff?.hunks ?? [];
       tab.dirty = false;
       tab.editable = true;
     } catch (e) {
-      if (!tabs.value.includes(tab) || workspace.repoPath !== repoPath) return;
+      if (!current()) return;
       const text = `// failed to load ${filePath}\n// ${formatErrorMessage(e)}`;
       tab.text = text;
       tab.baseline = text;
@@ -112,7 +138,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     const workspace = useWorkspaceStore();
     const targetId = id ?? activeId.value;
     const tab = tabs.value.find((t) => t.id === targetId);
-    if (!tab || !workspace.repoPath || !workspace.repoId) return false;
+    if (!tab || (!tab.folderPath && (!workspace.repoPath || !workspace.repoId))) return false;
     if (!tab.editable || tab.loading || tab.saving) return false;
     if (!tab.dirty) return true;
 
@@ -124,12 +150,15 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     tab.saving = true;
     try {
       const backend = getBackend();
-      await backend.fileWriteWorktree({
-        repoId,
-        path: repoPath,
-        filePath: path,
-        content,
-      });
+      if (tab.folderPath)
+        await backend.fsWriteFile({ folderPath: tab.folderPath, filePath: path, content });
+      else
+        await backend.fileWriteWorktree({
+          repoId: repoId!,
+          path: repoPath!,
+          filePath: path,
+          content,
+        });
       if (
         !tabs.value.includes(tab) ||
         workspace.repoPath !== repoPath ||
@@ -139,27 +168,32 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       }
       tab.baseline = content;
       tab.dirty = tab.text !== tab.baseline;
-      try {
-        const diff = await backend.diffFile({
-          repoId,
-          path: repoPath,
-          filePath: path,
-          left: "head",
-          right: "worktree",
-        });
-        if (
-          tabs.value.includes(tab) &&
-          workspace.repoPath === repoPath &&
-          workspace.navigationToken() === navigation &&
-          tab.text === content
-        ) {
-          // These line numbers describe the saved snapshot, not later draft edits.
-          tab.hunks = diff.hunks;
+      if (!tab.folderPath)
+        try {
+          const diff = await backend.diffFile({
+            repoId: repoId!,
+            path: repoPath!,
+            filePath: path,
+            left: "head",
+            right: "worktree",
+          });
+          if (
+            tabs.value.includes(tab) &&
+            workspace.repoPath === repoPath &&
+            workspace.navigationToken() === navigation &&
+            tab.text === content
+          ) {
+            // These line numbers describe the saved snapshot, not later draft edits.
+            tab.hunks = diff.hunks;
+          }
+        } catch {
+          // Disk write already succeeded; stale gutter is recoverable on reopen.
         }
-      } catch {
-        // Disk write already succeeded; stale gutter is recoverable on reopen.
-      }
-      if (workspace.repoPath === repoPath && workspace.navigationToken() === navigation) {
+      if (
+        workspace.isRepo &&
+        workspace.repoPath === repoPath &&
+        workspace.navigationToken() === navigation
+      ) {
         void useChangesStore().refresh();
       }
       return true;

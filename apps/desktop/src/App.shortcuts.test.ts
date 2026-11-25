@@ -32,7 +32,10 @@ beforeEach(async () => {
   vi.resetAllMocks();
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const modifierState = KeyboardEvent.prototype.getModifierState;
-  vi.spyOn(KeyboardEvent.prototype, "getModifierState").mockImplementation(function (this: KeyboardEvent, name) {
+  vi.spyOn(KeyboardEvent.prototype, "getModifierState").mockImplementation(function (
+    this: KeyboardEvent,
+    name,
+  ) {
     return name === "AltGraph" ? false : modifierState.call(this, name);
   });
   state.actions = [
@@ -52,6 +55,18 @@ beforeEach(async () => {
       id: "Git.Push",
       title: "Push",
       defaultShortcuts: { win: ["mod+shift+k"] },
+      run: async () => {},
+    },
+    {
+      id: "ToolWindow.ShowFile",
+      title: "Show File Tool Window",
+      defaultShortcuts: { win: ["alt+1"] },
+      run: async () => {},
+    },
+    {
+      id: "ToolWindow.ShowCommit",
+      title: "Show Commit Tool Window",
+      defaultShortcuts: { win: ["alt+0"] },
       run: async () => {},
     },
   ];
@@ -108,6 +123,22 @@ it("still runs File.Save from a contentEditable editor host", () => {
     expect.objectContaining({ source: "shortcut" }),
   );
   host.remove();
+});
+
+it("runs File and Commit tool-window shortcuts from editors while leaving dialogs modal", () => {
+  key({ key: "1", altKey: true });
+  key({ key: "0", altKey: true });
+  expect(state.run.mock.calls.map((args) => args[0])).toEqual([
+    "ToolWindow.ShowFile",
+    "ToolWindow.ShowCommit",
+  ]);
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  document.body.append(dialog);
+  key({ key: "1", altKey: true }, dialog);
+  key({ key: "0", altKey: true }, dialog);
+  expect(state.run).toHaveBeenCalledTimes(2);
+  dialog.remove();
 });
 
 it.each([{ repeat: true }, { isComposing: true }, { keyCode: 229 }])(

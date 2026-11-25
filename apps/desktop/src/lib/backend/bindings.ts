@@ -119,6 +119,15 @@ export const commands = {
   async fileWriteWorktree(req: FileWriteWorktreeReq): Promise<null> {
     return await TAURI_INVOKE("file_write_worktree", { req });
   },
+  async fsReadDir(req: FsReadDirReq): Promise<FsEntry[]> {
+    return await TAURI_INVOKE("fs_read_dir", { req });
+  },
+  async fsReadFile(req: FsReadFileReq): Promise<string> {
+    return await TAURI_INVOKE("fs_read_file", { req });
+  },
+  async fsWriteFile(req: FsWriteFileReq): Promise<null> {
+    return await TAURI_INVOKE("fs_write_file", { req });
+  },
   async stagePaths(req: PathsReq): Promise<null> {
     return await TAURI_INVOKE("stage_paths", { req });
   },
@@ -576,6 +585,11 @@ export type AppSettings = {
    */
   showIgnoredFiles?: boolean;
   /**
+   * Independent File tool window visibility preferences.
+   */
+  showIgnoredInFileTree?: boolean;
+  showHiddenInFileTree?: boolean;
+  /**
    * Enable SQLite Log indexing (#103). Default on.
    */
   logIndexing?: boolean;
@@ -979,6 +993,16 @@ export type FixupIntoReq = {
   squash: boolean;
   message: string | null;
 };
+export type FsEntry = { name: string; path: string; kind: FsEntryKind };
+export type FsEntryKind = "file" | "directory";
+export type FsReadDirReq = {
+  folderPath: string;
+  dir: string;
+  showIgnored: boolean;
+  showHidden: boolean;
+};
+export type FsReadFileReq = { folderPath: string; filePath: string };
+export type FsWriteFileReq = { folderPath: string; filePath: string; content: string };
 export type GitDetectDto = {
   path: string;
   version: string;

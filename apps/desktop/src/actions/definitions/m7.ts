@@ -1,5 +1,5 @@
 import { GitBranch, GitFork, Layers, PanelBottom } from "@lucide/vue";
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorktreesStore } from "@/stores/worktreesStore";
@@ -12,6 +12,7 @@ import { i18n } from "@/i18n";
 import { formatErrorMessage } from "@/lib/errors";
 import { submoduleFeedback } from "@/lib/submoduleFeedback";
 import { useChangesStore } from "@/stores/changesStore";
+import { focusCommitUi } from "@/features/commit/focusCommitUi";
 
 function hasRepo() {
   const ws = useWorkspaceStore();
@@ -21,6 +22,31 @@ function hasRepo() {
 export function registerM7Actions() {
   const syncingForks = ref(new Set<string>());
   const updatingSubmodules = ref(new Set<string>());
+  registerAction({
+    id: "ToolWindow.ShowFile",
+    title: "Show File Tool Window",
+    titleKey: "fileTree.showToolWindow",
+    description: "Browse project files 项目文件",
+    defaultShortcuts: { mac: ["alt+1"], win: ["alt+1"], linux: ["alt+1"] },
+    scope: "global",
+    async run() {
+      useLayoutStore().showLeftTab("file");
+      await nextTick();
+      document
+        .querySelector<HTMLElement>('[data-gitx-context="projectFiles"] [role="tree"]')
+        ?.focus({ preventScroll: true });
+    },
+  });
+  registerAction({
+    id: "ToolWindow.ShowCommit",
+    title: "Show Commit Tool Window",
+    titleKey: "fileTree.showCommitToolWindow",
+    defaultShortcuts: { mac: ["alt+0"], win: ["alt+0"], linux: ["alt+0"] },
+    scope: "global",
+    async run() {
+      await focusCommitUi();
+    },
+  });
   registerAction({
     id: "Git.Show.WorkingTrees",
     title: "Show Worktrees",

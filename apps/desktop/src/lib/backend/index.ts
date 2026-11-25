@@ -5,6 +5,10 @@ import type {
   AppInstallUpdateReq,
   AppUpdateInfo,
   AppSettings,
+  FsEntry,
+  FsReadDirReq,
+  FsReadFileReq,
+  FsWriteFileReq,
   BlameReq,
   BlameResult,
   BlobContent,
@@ -208,6 +212,9 @@ export type Backend = {
   vcsEnable(req: VcsEnableReq): Promise<WorkspaceOpenRes>;
   statusGet(req: StatusGetReq): Promise<StatusSnapshot>;
   fileWriteWorktree(req: FileWriteWorktreeReq): Promise<null>;
+  fsReadDir(req: FsReadDirReq): Promise<FsEntry[]>;
+  fsReadFile(req: FsReadFileReq): Promise<string>;
+  fsWriteFile(req: FsWriteFileReq): Promise<null>;
   stagePaths(req: PathsReq): Promise<null>;
   unstagePaths(req: PathsReq): Promise<null>;
   addPaths(req: AddPathsReq): Promise<null>;
@@ -376,6 +383,9 @@ export const tauriBackend: Backend = {
   vcsEnable: (req) => commands.vcsEnable(req),
   statusGet: (req) => commands.statusGet(req),
   fileWriteWorktree: (req) => commands.fileWriteWorktree(req),
+  fsReadDir: (req) => commands.fsReadDir(req),
+  fsReadFile: (req) => commands.fsReadFile(req),
+  fsWriteFile: (req) => commands.fsWriteFile(req),
   stagePaths: (req) => commands.stagePaths(req),
   unstagePaths: (req) => commands.unstagePaths(req),
   addPaths: (req) => commands.addPaths(req),

@@ -7,6 +7,7 @@ enableAutoUnmount(afterEach);
 const mocks = vi.hoisted(() => ({
   ws: {} as {
     repoPath: string;
+    folderPath?: string;
     repoId: string;
     isRepo: boolean;
     roots: unknown[];
@@ -35,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   unlisten: vi.fn(),
   append: vi.fn(),
+  refreshFiles: vi.fn(),
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks.backend }));
 vi.mock("@/lib/utils", () => ({ isTauri: () => true }));
@@ -53,7 +55,7 @@ vi.mock("@/stores/syncStore", () => ({ useSyncStore: () => mocks.sync }));
 vi.mock("@/stores/consoleStore", () => ({ useConsoleStore: () => ({ append: mocks.append }) }));
 const Host = defineComponent({
   setup() {
-    useRepositoryRefresh();
+    useRepositoryRefresh(mocks.refreshFiles);
     return () => null;
   },
 });
@@ -378,4 +380,40 @@ it("defers while a write is active and uses bounded fallback polling on watch fa
   expect(mocks.changes.refresh).toHaveBeenCalledTimes(2);
   host.unmount();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("refreshes File entries for worktree/ignore but not status-only events", async () => {
+  const host = mount(Host);
+  await flushPromises();
+  await vi.advanceTimersByTimeAsync(200);
+  mocks.refreshFiles.mockClear();
+  emit("A", ["index"]);
+  await vi.advanceTimersByTimeAsync(200);
+  expect(mocks.refreshFiles).not.toHaveBeenCalled();
+  emit("A", ["worktree"]);
+  emit("A", ["ignore"]);
+  await vi.advanceTimersByTimeAsync(200);
+  expect(mocks.refreshFiles).toHaveBeenCalledOnce();
+  host.unmount();
+});
+
+it("refreshes non-Git File directories on focus and bounded polling without Git refresh", async () => {
+  mocks.ws.isRepo = false;
+  mocks.ws.folderPath = "C:/plain";
+  const host = mount(Host);
+  await flushPromises();
+  const pending = deferred<void>();
+  mocks.refreshFiles.mockReturnValueOnce(pending.promise);
+  window.dispatchEvent(new Event("focus"));
+  await flushPromises();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(mocks.refreshFiles).toHaveBeenCalledOnce();
+  expect(mocks.changes.refresh).not.toHaveBeenCalled();
+  pending.resolve();
+  await flushPromises();
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(mocks.refreshFiles).toHaveBeenCalledTimes(2);
+  host.unmount();
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(mocks.refreshFiles).toHaveBeenCalledTimes(2);
 });

@@ -6,6 +6,7 @@ import type {
   DiffFileResult,
   DiffHunk,
   FileChange,
+  FsEntry,
   JobHandle,
   LogCommit,
   ShelfEntry,
@@ -25,6 +26,8 @@ const defaultSettings: AppSettings = {
   recentWorkspaces: ["/tmp/demo-repo"],
   stagingMode: false,
   showIgnoredFiles: false,
+  showIgnoredInFileTree: false,
+  showHiddenInFileTree: false,
   logIndexing: true,
   keymapOverrides: {},
   git: {
@@ -59,6 +62,7 @@ const defaultSettings: AppSettings = {
 let settings = structuredClone(defaultSettings);
 let amendMessage = "Initial commit\n";
 let nextSha = 2;
+const workspaceTexts = new Map<string, string>();
 
 const files: FileChange[] = [
   {
@@ -854,6 +858,43 @@ export const mockBackend: Backend = {
         kind: "modified",
       });
     }
+    return null;
+  },
+  async fsReadDir(req) {
+    const prefix = req.dir ? `${req.dir}/` : "";
+    const paths = [
+      ...new Set([
+        "README.md",
+        "src/main.ts",
+        ".gitignore",
+        "node_modules/example/index.js",
+        ...files.map((file) => file.path),
+      ]),
+    ];
+    const entries = new Map<string, FsEntry>();
+    for (const path of paths) {
+      if (!path.startsWith(prefix)) continue;
+      const suffix = path.slice(prefix.length);
+      const name = suffix.split("/")[0]!;
+      if (!name || (!req.showHidden && name.startsWith("."))) continue;
+      if (!req.showIgnored && path.startsWith("node_modules/")) continue;
+      entries.set(name, {
+        name,
+        path: `${prefix}${name}`,
+        kind: suffix.includes("/") ? "directory" : "file",
+      });
+    }
+    return [...entries.values()].sort(
+      (a, b) =>
+        Number(b.kind === "directory") - Number(a.kind === "directory") ||
+        a.name.localeCompare(b.name),
+    );
+  },
+  async fsReadFile(req) {
+    return workspaceTexts.get(`${req.folderPath}/${req.filePath}`) ?? `// ${req.filePath}\n`;
+  },
+  async fsWriteFile(req) {
+    workspaceTexts.set(`${req.folderPath}/${req.filePath}`, req.content);
     return null;
   },
   async stagePaths(req) {

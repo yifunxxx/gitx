@@ -4,6 +4,7 @@ import { focusCommitUi } from "./focusCommitUi";
 const layout = vi.hoisted(() => ({
   commitTwMode: "docked" as "docked" | "window" | "float",
   leftOpen: false,
+  activeLeftTab: "file" as "commit" | "file",
   commitControlsHidden: true,
 }));
 
@@ -12,6 +13,7 @@ vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => layout }));
 beforeEach(() => {
   layout.commitTwMode = "docked";
   layout.leftOpen = false;
+  layout.activeLeftTab = "file";
   layout.commitControlsHidden = true;
   document.body.innerHTML = "";
 });
@@ -29,13 +31,16 @@ it("opens the docked Commit TW, shows controls, and focuses the message", async 
   await focusCommitUi();
 
   expect(layout.leftOpen).toBe(true);
+  expect(layout.activeLeftTab).toBe("commit");
   expect(layout.commitControlsHidden).toBe(false);
   expect(focus).toHaveBeenCalledOnce();
 });
 
 it("does not force leftOpen while Commit TW is floating", async () => {
   layout.commitTwMode = "float";
+  layout.leftOpen = true;
   await focusCommitUi();
   expect(layout.leftOpen).toBe(false);
+  expect(layout.activeLeftTab).toBe("commit");
   expect(layout.commitControlsHidden).toBe(false);
 });

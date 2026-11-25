@@ -96,6 +96,28 @@ export const SETTINGS_PAGES: SettingPage[] = [
     ],
   },
   {
+    id: "project-files",
+    titleKey: "settings.pages.projectFiles",
+    fields: [
+      {
+        id: "showIgnoredInFileTree",
+        titleKey: "settings.fields.showIgnoredInFileTree",
+        keywords: ["file", "tree", "ignored", "文件", "忽略"],
+        path: "showIgnoredInFileTree",
+        control: { kind: "boolean" },
+        scope: "app",
+      },
+      {
+        id: "showHiddenInFileTree",
+        titleKey: "settings.fields.showHiddenInFileTree",
+        keywords: ["file", "tree", "hidden", "文件", "隐藏"],
+        path: "showHiddenInFileTree",
+        control: { kind: "boolean" },
+        scope: "app",
+      },
+    ],
+  },
+  {
     id: "vcs-git",
     titleKey: "settings.pages.git",
     fields: [

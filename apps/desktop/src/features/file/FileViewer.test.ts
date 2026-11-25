@@ -11,6 +11,8 @@ import { useFileViewerStore } from "@/stores/fileViewerStore";
 const mocks = vi.hoisted(() => ({
   diffFile: vi.fn(),
   fileWriteWorktree: vi.fn(),
+  fsReadFile: vi.fn(),
+  fsWriteFile: vi.fn(),
   workspace: {} as any,
   layout: {} as any,
   changes: { refresh: vi.fn() },
@@ -39,6 +41,7 @@ beforeEach(() => {
   });
   mocks.layout = reactive({ activeEditorKind: "welcome" });
   mocks.fileWriteWorktree.mockResolvedValue(null);
+  mocks.fsWriteFile.mockResolvedValue(null);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: {
@@ -449,5 +452,26 @@ it("abandons a pending paste after closing and reopening the same file", async (
   await flushPromises();
   expect(oldDispatch).not.toHaveBeenCalled();
   expect(store.tabs[0]!.text).toBe("reopened");
+  expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it("edits and saves a non-Git file through the same editor component", async () => {
+  mocks.workspace.isRepo = false;
+  mocks.workspace.folderPath = "C:/plain";
+  mocks.workspace.repoPath = "C:/plain";
+  mocks.fsReadFile.mockResolvedValue("plain text\n");
+  const store = useFileViewerStore();
+  await store.open("note.txt", { folderPath: "C:/plain" });
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const view = editor(wrapper);
+  view.dispatch({ changes: { from: 0, insert: "edited " } });
+  await store.saveActive();
+  expect(mocks.fsWriteFile).toHaveBeenCalledExactlyOnceWith({
+    folderPath: "C:/plain",
+    filePath: "note.txt",
+    content: "edited plain text\n",
+  });
+  expect(mocks.diffFile).not.toHaveBeenCalled();
   expect(store.tabs[0]!.dirty).toBe(false);
 });

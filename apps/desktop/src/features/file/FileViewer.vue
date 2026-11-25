@@ -288,7 +288,7 @@ const menuActions = computed(() => {
   >
     <div class="flex h-8 items-center gap-2 border-b bg-dbx-chrome px-2 text-xs">
       <span class="font-medium">{{ tab.path }}</span>
-      <span class="text-muted-foreground">vs HEAD</span>
+      <span v-if="!tab.folderPath" class="text-muted-foreground">vs HEAD</span>
       <span v-if="tab.dirty" class="text-muted-foreground">· {{ t("editor.unsaved") }}</span>
       <span v-if="tab.saving" class="text-muted-foreground">· {{ t("editor.saving") }}</span>
     </div>

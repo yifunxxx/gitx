@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
 import WorkspacePanels from "@/components/layout/WorkspacePanels.vue";
 import "splitpanes/dist/splitpanes.css";
 import TitleBar from "@/components/layout/TitleBar.vue";
 import ToolWindowStripe from "@/components/layout/ToolWindowStripe.vue";
 import CommitToolWindow from "@/components/layout/CommitToolWindow.vue";
+import FileToolWindow from "@/components/layout/FileToolWindow.vue";
 import EditorTabs from "@/components/layout/EditorTabs.vue";
 import GitToolWindow from "@/components/layout/GitToolWindow.vue";
 import StatusBar from "@/components/layout/StatusBar.vue";
@@ -18,6 +19,7 @@ import DialogHost from "@/components/common/DialogHost.vue";
 import BranchesPopup from "@/features/branches/BranchesPopup.vue";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useFileTreeStore } from "@/stores/fileTreeStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUpdateStore } from "@/stores/updateStore";
@@ -36,10 +38,18 @@ import { isTerminalToggle } from "@/features/terminal/terminalShortcut";
 import { installLongTaskLogging } from "@/lib/longTaskLog";
 import { isTauri } from "@/lib/utils";
 
-useRepositoryRefresh();
+useRepositoryRefresh(() => useFileTreeStore().refreshExpanded());
 useWindowTitle();
 const stopLongTaskLog = installLongTaskLogging();
 const layout = useLayoutStore();
+const leftDockVisible = computed(
+  () => layout.leftOpen && (layout.activeLeftTab === "file" || layout.commitTwMode !== "float"),
+);
+function leftResized(payload: { event?: Event; panes: { size: number }[] }) {
+  if (payload.event && leftDockVisible.value && payload.panes[0]) {
+    layout.leftSize = Math.min(50, Math.max(16, payload.panes[0].size));
+  }
+}
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const updates = useUpdateStore();
@@ -74,7 +84,14 @@ function onKeydown(e: KeyboardEvent) {
   }
   const id = findActionIdByEvent(e);
   // Settings and Save must reach CodeMirror / contentEditable hosts (Ctrl/Cmd+S).
-  if (editing && id !== "Settings" && id !== "File.Save") return;
+  const toolWindowAction = id === "ToolWindow.ShowFile" || id === "ToolWindow.ShowCommit";
+  if (
+    editing &&
+    id !== "Settings" &&
+    id !== "File.Save" &&
+    !(toolWindowAction && !target?.closest("[role='dialog']"))
+  )
+    return;
   if (!id) return;
   e.preventDefault();
   void runAction(id, {
@@ -158,21 +175,28 @@ onUnmounted(() => {
         <div class="glass-workspace app-no-drag min-h-0 min-w-0 flex-1">
           <WorkspacePanels>
             <template #editor>
-              <Splitpanes class="h-full">
+              <Splitpanes
+                class="editor-panels h-full"
+                :class="{ 'editor-panels-single': !leftDockVisible }"
+                :maximize-panes="false"
+                @resized="leftResized"
+              >
                 <Pane
-                  v-if="layout.leftOpen && layout.commitTwMode !== 'float'"
-                  :size="layout.leftSize"
-                  min-size="16"
-                  max-size="50"
+                  :size="leftDockVisible ? layout.leftSize : 0"
+                  :min-size="leftDockVisible ? 16 : 0"
+                  :max-size="leftDockVisible ? 50 : 0"
+                  :aria-hidden="!leftDockVisible || undefined"
+                  :inert="!leftDockVisible || undefined"
                 >
-                  <CommitToolWindow />
+                  <div v-show="leftDockVisible" class="h-full min-h-0">
+                    <CommitToolWindow
+                      v-if="layout.commitTwMode !== 'float'"
+                      v-show="layout.activeLeftTab === 'commit'"
+                    />
+                    <FileToolWindow v-show="layout.activeLeftTab === 'file'" />
+                  </div>
                 </Pane>
-                <Pane
-                  :size="
-                    layout.leftOpen && layout.commitTwMode !== 'float' ? 100 - layout.leftSize : 100
-                  "
-                  min-size="30"
-                >
+                <Pane :size="leftDockVisible ? 100 - layout.leftSize : 100" min-size="30">
                   <EditorTabs />
                 </Pane>
               </Splitpanes>
@@ -184,6 +208,7 @@ onUnmounted(() => {
       <!-- Float mode: in-app panel only — never a second OS / Webview window. -->
       <div
         v-if="layout.commitTwMode === 'float'"
+        v-show="layout.activeLeftTab === 'commit'"
         class="pointer-events-none fixed inset-x-4 bottom-12 top-14 z-40 flex justify-start"
       >
         <div
@@ -205,6 +230,12 @@ onUnmounted(() => {
 </template>
 
 <style>
+.editor-panels-single > .splitpanes__splitter {
+  display: none;
+}
+.editor-panels > .splitpanes__pane {
+  transition: none;
+}
 /* Override splitpanes default-theme hard-coded #f2f2f2 / #fff so dark mode
    does not leave light "islands" in Log / nested panes (GIT-37). */
 .default-theme.splitpanes .splitpanes__pane {

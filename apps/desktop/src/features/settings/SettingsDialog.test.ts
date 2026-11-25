@@ -112,14 +112,14 @@ it("shows all appearance fields for a matching page title", async () => {
 });
 
 it("rejects out-of-range fetch intervals before persistence", async () => {
-  await host.findAll("nav button")[1]!.trigger("click");
+  await button("Version Control · Git").trigger("click");
   await host.get('input[type="number"]').setValue(-1);
   await button("Apply").trigger("click");
   expect(backend.settingsSet).not.toHaveBeenCalled();
 });
 
 it("tests automatic Git detection independently of the saved path", async () => {
-  await host.findAll("nav button")[1]!.trigger("click");
+  await button("Version Control · Git").trigger("click");
   backend.gitTestExecutable.mockResolvedValue({ path: "C:/Git/git.exe", version: "2.50" });
   backend.gitDetect.mockResolvedValue({ path: "old", version: "2.49" });
   await button("Test").trigger("click");
@@ -197,7 +197,7 @@ it("restores the saved locale and ignores consumed or composing Escape", async (
 });
 
 it("invalidates old Git test results on path edits and permits a new test", async () => {
-  await host.findAll("nav button")[1]!.trigger("click");
+  await button("Version Control · Git").trigger("click");
   const input = host.get('input[placeholder="Leave empty to use git from PATH"]');
   const old = deferred<any>();
   const latest = deferred<any>();
@@ -221,7 +221,7 @@ it("invalidates old Git test results on path edits and permits a new test", asyn
 });
 
 it.each(["", "1.5", "1441"])("blocks invalid fetch interval %s and accepts zero", async (value) => {
-  await host.findAll("nav button")[1]!.trigger("click");
+  await button("Version Control · Git").trigger("click");
   const input = host.get('input[type="number"]');
   await input.setValue(value);
   expect(input.attributes("aria-invalid")).toBe("true");
@@ -235,11 +235,31 @@ it.each(["", "1.5", "1441"])("blocks invalid fetch interval %s and accepts zero"
 });
 
 it("associates each editable field with its visible title", async () => {
-  for (const page of [0, 1, 2]) {
-    await host.findAll("nav button")[page]!.trigger("click");
+  for (const page of [
+    "Appearance",
+    "Project Files",
+    "Version Control · Git",
+    "Confirmation & Display",
+  ]) {
+    await button(page).trigger("click");
     for (const control of host.findAll('fieldset input, fieldset [role="combobox"]')) {
       const label = host.findAll("label").find((item) => item.attributes("for") === control.attributes("id"));
       expect(label?.text()).toBeTruthy();
     }
   }
+});
+
+it("saves File tree visibility independently from Commit ignored files", async () => {
+  await button("Project Files").trigger("click");
+  const controls = host.findAll('fieldset input[type="checkbox"]');
+  expect(controls).toHaveLength(2);
+  await controls[0]!.setValue(true);
+  await controls[1]!.setValue(true);
+  await button("Apply").trigger("click");
+  await flushPromises();
+  expect(backend.settingsSet.mock.calls[0]![0]).toMatchObject({
+    showIgnoredInFileTree: true,
+    showHiddenInFileTree: true,
+    showIgnoredFiles: false,
+  });
 });

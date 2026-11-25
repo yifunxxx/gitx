@@ -48,6 +48,8 @@ export const useSettingsStore = defineStore("settings", () => {
       recentWorkspaces: [],
       stagingMode: false,
       showIgnoredFiles: false,
+      showIgnoredInFileTree: false,
+      showHiddenInFileTree: false,
       logIndexing: true,
       keymapOverrides: {},
       git: {
