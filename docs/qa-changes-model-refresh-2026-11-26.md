@@ -42,4 +42,4 @@
 
 `native-restoration.json`核对2000文件内容、HEAD、index、status、metadata和用户设置全部一致。`native-exit.json`确认8个观察进程身份均退出。测试profile的settings归档并核对SHA256后移除，见`native-settings-cleanup.json`；用户设置哈希保持`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`。
 
-提交前再次fetch及两分支快进检查成功，仍包含master`5241dd5`和交付`3e7a993`。QA099修复和所列验证完成；提交推送结果随后补记。其他11项已知事项及七项目标继续。
+提交前再次fetch及两分支快进检查成功，仍包含master`5241dd5`和交付`3e7a993`。功能提交`c747b5e331a6ec789b489134394856ea2fa8c7b4`首次推送成功，ls-remote完整SHA一致，无凭据提示。交付补记前再次fetch/两分支检查成功，master无新提交。QA099修复、所列验证及交付完成；其他11项已知事项及七项目标继续。
