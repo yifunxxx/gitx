@@ -11,6 +11,7 @@ export type JobUi = {
   message?: string;
   startedAt: number;
   cancellable?: boolean;
+  cancelling?: boolean;
 };
 
 export type JobStartSource = "ui" | "native";
@@ -25,13 +26,19 @@ export const useJobsStore = defineStore("jobs", () => {
   let eventVersion = 0;
   let refreshing = false;
   let nextUiId = 0;
+  const cancellations = new Map<string, object>();
+  let disposed = false;
 
   const stopObserving = observeBackendActivity(getActivePinia()!, (operation) => {
     const label = i18n.global.t(operation.titleKey);
     const id = begin(operation.target ? `${label} · ${operation.target}` : label, operation.path);
     return () => finished(id);
   });
-  onScopeDispose(stopObserving);
+  onScopeDispose(() => {
+    disposed = true;
+    cancellations.clear();
+    stopObserving();
+  });
 
   const count = computed(() => running.value.length);
 
@@ -46,10 +53,11 @@ export const useJobsStore = defineStore("jobs", () => {
     source: JobStartSource = "ui",
   ) {
     ++eventVersion;
+    const previous = running.value.find((entry) => entry.id === job.id);
     if (source === "native") knownNativeIds.add(job.id);
     running.value = [
       ...running.value.filter((j) => j.id !== job.id),
-      { ...job, startedAt: job.startedAt ?? Date.now() },
+      { ...job, startedAt: job.startedAt ?? Date.now(), cancelling: previous?.cancelling },
     ];
   }
 
@@ -59,6 +67,7 @@ export const useJobsStore = defineStore("jobs", () => {
 
   function finished(id: string) {
     ++eventVersion;
+    cancellations.delete(id);
     knownNativeIds.delete(id);
     running.value = running.value.filter((j) => j.id !== id);
   }
@@ -79,9 +88,30 @@ export const useJobsStore = defineStore("jobs", () => {
   }
 
   async function cancel(id: string) {
-    const ok = await getBackend().jobCancel(id);
-    if (ok) finished(id);
-    return ok;
+    const job = running.value.find((entry) => entry.id === id);
+    if (disposed || !job?.cancellable || job.cancelling) return false;
+    const request = {};
+    cancellations.set(id, request);
+    ++eventVersion;
+    progress(id, { cancelling: true });
+    const current = () => !disposed && cancellations.get(id) === request;
+    const reset = () => {
+      cancellations.delete(id);
+      ++eventVersion;
+      progress(id, { cancelling: false });
+    };
+    try {
+      const ok = await getBackend().jobCancel(id);
+      if (!current()) return false;
+      // Acceptance only signals the token. Retain the row and its busy state
+      // until job://finished or a fresh native list confirms actual completion.
+      if (!ok) reset();
+      return ok;
+    } catch (error) {
+      if (!current()) return false;
+      reset();
+      throw error;
+    }
   }
 
   async function refresh(current: () => boolean = () => true) {
@@ -91,10 +121,13 @@ export const useJobsStore = defineStore("jobs", () => {
     try {
       const jobs = await getBackend().jobList();
       // Events received during the read are more recent than its snapshot.
-      if (!current() || version !== eventVersion) return;
+      if (disposed || !current() || version !== eventVersion) return;
       const prevById = new Map(running.value.map((job) => [job.id, job]));
       const listedIds = new Set(jobs.map((job) => job.id));
       const previouslyNative = knownNativeIds;
+      for (const id of previouslyNative) {
+        if (!listedIds.has(id)) cancellations.delete(id);
+      }
       // Frontend-only jobs (pull/fetch/update-project) are never in jobList;
       // keep them so the badge and popup stay in sync while work runs.
       const uiOnly = running.value.filter(
@@ -111,6 +144,7 @@ export const useJobsStore = defineStore("jobs", () => {
             cancellable: job.cancellable,
             percent: prev?.percent,
             message: prev?.message,
+            cancelling: prev?.cancelling,
           };
         }),
         ...uiOnly,

@@ -6,7 +6,7 @@ import { useJobsStore } from "@/stores/jobsStore";
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 
 vi.mock("@/lib/backend", () => ({
-  getBackend: () => ({ jobList: vi.fn().mockResolvedValue([]), jobCancel: vi.fn() }),
+  getBackend: () => ({ jobList: vi.fn().mockResolvedValue([]), jobCancel: vi.fn().mockResolvedValue(true) }),
 }));
 vi.mock("vue-i18n", () => ({
   useI18n: () => ({ t: (key: string, params?: { count?: number }) =>
@@ -53,4 +53,20 @@ it("shows the actual operation, concurrent count and returns to idle", async () 
   jobs.finished(second);
   await wrapper.vm.$nextTick();
   expect(button.text()).toContain("status.idle");
+});
+
+it("shows cancellation in the status indicator until completion", async () => {
+  const jobs = useJobsStore();
+  jobs.started({ id: "native", title: "Auto Fetch", cancellable: true }, "native");
+  const wrapper = mount(StatusBar);
+  await jobs.cancel("native");
+  await wrapper.vm.$nextTick();
+  const button = wrapper.get('button[aria-label="status.jobsTitle"]');
+  expect(button.text()).toContain("Auto Fetch · status.jobCancelling");
+  expect(button.attributes("title")).toContain("status.jobCancelling");
+  expect(button.find("svg").exists()).toBe(true);
+  jobs.finished("native");
+  await wrapper.vm.$nextTick();
+  expect(button.text()).toContain("status.idle");
+  expect(button.find("svg").exists()).toBe(false);
 });

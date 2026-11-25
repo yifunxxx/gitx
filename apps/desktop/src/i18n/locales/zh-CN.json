@@ -563,6 +563,7 @@
     "jobRunning": "运行中…",
     "jobPercent": "{percent}%",
     "cancelFailed": "无法取消进程",
+    "jobCancelling": "正在取消…",
     "noRepo": "无仓库",
     "upstream": "上游",
     "noUpstream": "无上游分支 — Push 以设置",

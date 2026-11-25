@@ -42,6 +42,8 @@ it("opens a popup anchor and cancels a running job", async () => {
   expect(jobs.anchorY).toBe(640);
   mocks.cancel.mockResolvedValue(true);
   await expect(jobs.cancel("pull")).resolves.toBe(true);
+  expect(jobs.count).toBe(1);
+  jobs.finished("pull");
   expect(jobs.count).toBe(0);
   jobs.closePopup();
   expect(jobs.popupOpen).toBe(false);

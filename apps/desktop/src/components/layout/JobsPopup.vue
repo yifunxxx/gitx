@@ -15,6 +15,7 @@ const estimatedHeight = computed(() =>
 );
 
 function detailFor(job: JobUi) {
+  if (job.cancelling) return t("status.jobCancelling");
   if (job.message) return job.message;
   if (job.percent != null) return t("status.jobPercent", { percent: Math.round(job.percent) });
   return t("status.jobRunning");
@@ -80,10 +81,12 @@ async function onCancel(id: string) {
         v-if="job.cancellable"
         type="button"
         role="menuitem"
-        class="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        :disabled="job.cancelling"
+        :aria-disabled="job.cancelling || undefined"
+        class="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-50"
         @click="onCancel(job.id)"
       >
-        {{ t("common.cancel") }}
+        {{ t(job.cancelling ? "status.jobCancelling" : "common.cancel") }}
       </button>
     </div>
   </ContextMenuSurface>

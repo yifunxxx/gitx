@@ -29,11 +29,10 @@ Review paths, repository addresses, and personal information before sharing logs
 
 ## Background jobs
 
-Click **Background processes** in the status bar to inspect running, waiting, and completed operations. Clone, Fetch, Push, comparisons, updates, and file reads may appear here.
+Click **Background processes** in the status bar to inspect unfinished operations. Clone, Fetch, Push, comparisons, updates, and file reads may appear here. Completed tasks are removed; this queue does not retain history.
 
-- **Waiting** means queued, not failed.
-- **Running** means work is underway; inspect progress or output.
-- **Cancel**, when available, requests cancellation. Wait for completion; cancellation does not automatically roll back every effect.
-- On **Failed**, read the error and verify the actual state before retrying.
+- Details show a phase message, progress, or **Running…**. Writes to the same repository may be waiting for another operation to finish.
+- **Cancel**, when available, requests cancellation. The queue shows **Cancelling…** and disables the button until task completion is confirmed. Closing and reopening the queue preserves that state.
+- A failed cancellation request reports an error and allows retry. Cancellation does not automatically roll back every effect. When a task fails, inspect its error notification and Console, and verify the actual state before retrying.
 
 Writes to one repository may wait in sequence. Repeated clicking does not speed them up, and changing tabs does not cancel them. Operations such as creating tags or committing may finish their local stage before a remote stage fails. Follow the relevant feature's recovery instructions.

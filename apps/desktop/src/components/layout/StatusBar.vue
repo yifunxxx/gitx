@@ -2,7 +2,7 @@
 import { Bell, GitBranch, LoaderCircle } from "@lucide/vue";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { useJobsStore } from "@/stores/jobsStore";
+import { useJobsStore, type JobUi } from "@/stores/jobsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 
@@ -19,9 +19,10 @@ const branchText = computed(() => {
   return b.head;
 });
 
-const busyText = computed(() =>
-  jobs.count ? jobs.running[0]!.title : t("status.idle"),
-);
+function jobTitle(job: JobUi) {
+  return job.cancelling ? `${job.title} · ${t("status.jobCancelling")}` : job.title;
+}
+const busyText = computed(() => jobs.count ? jobTitle(jobs.running[0]!) : t("status.idle"));
 
 function toggleJobsPopup(event: MouseEvent) {
   if (jobs.popupOpen) {
@@ -48,7 +49,7 @@ function toggleJobsPopup(event: MouseEvent) {
       class="flex min-w-0 max-w-[45%] items-center gap-1 rounded px-1 hover:bg-accent/60 hover:text-foreground"
       :aria-expanded="jobs.popupOpen"
       :aria-label="t('status.jobsTitle')"
-      :title="jobs.running.map(job => job.title + (job.message ? ` — ${job.message}` : '')).join('\n') || busyText"
+      :title="jobs.running.map(job => jobTitle(job) + (job.message ? ` — ${job.message}` : '')).join('\n') || busyText"
       @click="toggleJobsPopup"
     >
       <LoaderCircle v-if="jobs.count" class="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none" />

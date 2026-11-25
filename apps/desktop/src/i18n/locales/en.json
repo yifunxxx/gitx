@@ -563,6 +563,7 @@
     "jobRunning": "Running…",
     "jobPercent": "{percent}%",
     "cancelFailed": "Could not cancel process",
+    "jobCancelling": "Cancelling…",
     "noRepo": "no repo",
     "upstream": "Upstream",
     "noUpstream": "No upstream branch — Push to set",
