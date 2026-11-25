@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { LoaderCircle, Search, X } from "@lucide/vue";
 import VirtualList from "@/components/common/VirtualList.vue";
@@ -115,7 +115,24 @@ async function open(match: FsSearchMatch) {
       folderPath: folder,
       ...(match.line ? { line: match.line, column: match.column ?? 1 } : {}),
     });
-    if (current(token)) close();
+    if (current(token)) {
+      const tab = viewer.tabs.find((item) => item.id === viewer.activeId);
+      close();
+      // DialogHost restores its opener after unmount. Reveal once that focus
+      // restoration has finished so typing continues in the search result.
+      await nextTick();
+      await nextTick();
+      if (
+        tab &&
+        match.line &&
+        viewer.tabs.includes(tab) &&
+        viewer.activeId === tab.id &&
+        workspace.folderPath === folder &&
+        workspace.navigationToken() === navigation &&
+        !useDialogState().value
+      )
+        tab.reveal = { line: match.line, column: match.column ?? 1 };
+    }
   } finally {
     opening.value = false;
   }

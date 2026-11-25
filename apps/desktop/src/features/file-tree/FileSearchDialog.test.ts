@@ -9,14 +9,18 @@ const mocks = vi.hoisted(() => ({
   fsCancelSearch: vi.fn(),
   open: vi.fn(),
   close: vi.fn(),
+  tabs: [] as any[],
+  dialog: null as any,
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
-vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: mocks.open }) }));
+vi.mock("@/stores/fileViewerStore", () => ({
+  useFileViewerStore: () => ({ open: mocks.open, tabs: mocks.tabs, activeId: "result" }),
+}));
 vi.mock("@/composables/useDialog", () => ({
   closeDialog: mocks.close,
-  useDialogState: () => ({ value: { id: 8 } }),
+  useDialogState: () => mocks.dialog,
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 let wrapper: VueWrapper;
@@ -36,6 +40,11 @@ const deferred = () => {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.resetAllMocks();
+  mocks.tabs = [];
+  mocks.dialog = { value: { id: 8 } };
+  mocks.close.mockImplementation(() => {
+    mocks.dialog.value = null;
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -143,6 +152,8 @@ it("searches saved content with case preference and navigates to its line and co
   });
   expect(wrapper.text()).toContain("deep/a.txt:22:5");
   expect(wrapper.text()).toContain("a matching line");
+  const openedTab = { id: "result", reveal: undefined as any };
+  mocks.tabs.push(openedTab);
   await wrapper.get('input[type="search"]').trigger("keydown", { key: "Enter" });
   await flushPromises();
   expect(mocks.open).toHaveBeenCalledWith("deep/a.txt", {
@@ -150,4 +161,5 @@ it("searches saved content with case preference and navigates to its line and co
     line: 22,
     column: 5,
   });
+  expect(openedTab.reveal).toEqual({ line: 22, column: 5 });
 });
