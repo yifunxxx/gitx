@@ -26,4 +26,6 @@ Windows独立`app.gitx.qa102`构建成功，程序SHA256为`D50CC27455E865C95D42
 
 正常关闭后8个观察进程身份（PID与创建时间）全部退出，测试settings归档后移除。用户settings SHA256保持`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`。新建fixture结果保留作证据，用户工作仓库和安装版未更新。
 
-证据目录：`E:/IDEAproject/gitx/test-results/qa102-pull-unborn-20261126`，包含旧失败/修后通过日志、构建及Clippy日志、准备/核对脚本、初始与最终状态、截图、原生文本和退出记录。QA102验收完成，提交前远端复核及推送状态随后补记。
+证据目录：`E:/IDEAproject/gitx/test-results/qa102-pull-unborn-20261126`，包含旧失败/修后通过日志、构建及Clippy日志、准备/核对脚本、初始与最终状态、截图、原生文本和退出记录。
+
+提交前及补记前fetch/两分支检查成功，已包含master`5241dd5`。功能`aa319059c4667affb906aa678eb6ecdedc269b88`首次推送成功，独立ls-remote完整SHA一致，无凭据提示。文档站点校验及差异检查通过；QA102关闭，原11项已知未关闭和整体七项目标继续。
