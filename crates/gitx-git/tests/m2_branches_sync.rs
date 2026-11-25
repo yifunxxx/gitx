@@ -72,7 +72,10 @@ async fn pull_without_commit_reports_staged_updates_and_preserves_head() {
         assert_eq!(result.message, "Changes applied; commit required");
         assert_eq!(result.updated_files.len(), 1);
         assert_eq!(result.updated_files[0].path, "incoming.txt");
-        assert!(result.commits.is_empty(), "No commits were created");
+        // Incoming describes the fetched source, even though the result still
+        // needs a local commit. HEAD preservation is checked separately above.
+        assert_eq!(result.commits.len(), 1);
+        assert!(result.commits[0].ends_with(" incoming"));
         assert_eq!(
             std::fs::read_to_string(cwd.join("README.md")).unwrap(),
             "local unfinished\n"

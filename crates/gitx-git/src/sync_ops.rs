@@ -159,6 +159,13 @@ impl GitRunner {
             .git_bin(self.git_bin.clone());
         self.run(inv, cancel).await.map_err(map_network_err)?;
 
+        // Pull may target a branch other than @{u}, even without a tracking
+        // ref. Snapshot this pull's fetched tip before reading result metadata.
+        // Keep pull as one command so Git retains its rebase/fetch semantics.
+        let fetched = self
+            .rev_parse(cwd, "FETCH_HEAD", cancel)
+            .await
+            .unwrap_or_default();
         let new = self
             .rev_parse(cwd, "HEAD", cancel)
             .await
@@ -182,8 +189,15 @@ impl GitRunner {
         } else {
             Vec::new()
         };
-        let commits = if head_changed {
-            self.rev_list_oneline(cwd, &format!("{old}..{new}"), cancel)
+        // Incoming also describes squash / --no-commit results whose HEAD has
+        // not moved. Local replays and the new merge commit are not incoming.
+        let commits = if updated && !fetched.is_empty() {
+            let range = if old.is_empty() {
+                fetched.clone()
+            } else {
+                format!("{old}..{fetched}")
+            };
+            self.rev_list_oneline(cwd, &range, cancel)
                 .await
                 .unwrap_or_default()
         } else {
