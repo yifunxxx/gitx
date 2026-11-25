@@ -228,6 +228,7 @@ export type Backend = {
   addPaths(req: AddPathsReq): Promise<null>;
   stageHunks(req: HunksReq): Promise<null>;
   unstageHunks(req: HunksReq): Promise<null>;
+  revertHunks(req: HunksReq): Promise<null>;
   diffFile(req: DiffFileReq): Promise<DiffFileResult>;
   diffFileAt(req: DiffFileAtReq): Promise<DiffFileResult>;
   diffRefs(req: DiffRefsReq): Promise<DiffRefsResult>;
@@ -402,6 +403,7 @@ export const tauriBackend: Backend = {
   addPaths: (req) => commands.addPaths(req),
   stageHunks: (req) => commands.stageHunks(req),
   unstageHunks: (req) => commands.unstageHunks(req),
+  revertHunks: (req) => commands.revertHunks(req),
   diffFile: (req) => commands.diffFile(req),
   diffFileAt: (req) => commands.diffFileAt(req),
   diffRefs: (req) => commands.diffRefs(req),

@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use gitx_core::AppError;
+use gitx_core::{AppError, DiffHunk, ErrorCode};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -21,6 +21,9 @@ pub struct HunksReq {
     pub path: String,
     pub file_path: String,
     pub hunk_indexes: Vec<u32>,
+    /// Snapshot shown to the user; reject if the live diff has changed.
+    #[serde(default)]
+    pub expected_hunks: Option<Vec<DiffHunk>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -124,8 +127,14 @@ pub async fn stage_hunks(
         .scheduler
         .acquire_repo_write(&git, &req.path, &cancel)
         .await?;
-    git.stage_hunks(&cwd, &req.file_path, &req.hunk_indexes, &cancel)
-        .await
+    git.stage_hunks_checked(
+        &cwd,
+        &req.file_path,
+        &req.hunk_indexes,
+        req.expected_hunks.as_deref(),
+        &cancel,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -150,8 +159,48 @@ pub async fn unstage_hunks(
         .scheduler
         .acquire_repo_write(&git, &req.path, &cancel)
         .await?;
-    git.unstage_hunks(&cwd, &req.file_path, &req.hunk_indexes, &cancel)
-        .await
+    git.unstage_hunks_checked(
+        &cwd,
+        &req.file_path,
+        &req.hunk_indexes,
+        req.expected_hunks.as_deref(),
+        &cancel,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn revert_hunks(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: HunksReq,
+) -> Result<(), AppError> {
+    let expected = req.expected_hunks.as_deref().ok_or_else(|| {
+        AppError::new(
+            ErrorCode::InvalidArgument,
+            "review the diff before rolling back a block",
+        )
+    })?;
+    emit_cmd(
+        &app,
+        format!("# revert hunks {:?} on {}", req.hunk_indexes, req.file_path),
+    )
+    .await;
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.revert_hunks(
+        PathBuf::from(&req.path).as_path(),
+        &req.file_path,
+        &req.hunk_indexes,
+        expected,
+        &cancel,
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

@@ -943,21 +943,14 @@ export const mockBackend: Backend = {
   async addPaths(req) {
     return this.stagePaths(req);
   },
-  async stageHunks(req) {
-    emitConsole("cmd", `# stage hunks ${req.hunkIndexes.join(",")} on ${req.filePath}`);
-    return this.stagePaths({
-      repoId: req.repoId,
-      path: req.path,
-      paths: [req.filePath],
-    });
+  async stageHunks() {
+    throw new Error("Block operations require the desktop application");
   },
-  async unstageHunks(req) {
-    emitConsole("cmd", `# unstage hunks ${req.hunkIndexes.join(",")} on ${req.filePath}`);
-    return this.unstagePaths({
-      repoId: req.repoId,
-      path: req.path,
-      paths: [req.filePath],
-    });
+  async unstageHunks() {
+    throw new Error("Block operations require the desktop application");
+  },
+  async revertHunks() {
+    throw new Error("Block operations require the desktop application");
   },
   async diffFile(req): Promise<DiffFileResult> {
     const includeTexts = req.includeTexts !== false;

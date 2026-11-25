@@ -2,24 +2,34 @@
 
 use crate::{GitInvocation, GitRunner, OpKind};
 use gitx_core::{AppError, DiffHunk, ErrorCode};
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) enum PartialSelection<'a> {
     Lines(&'a [u32]),
-    Hunks(&'a [u32]),
+    Hunks(&'a [u32], Option<&'a [DiffHunk]>),
 }
 
 impl PartialSelection<'_> {
     pub(crate) fn is_empty(&self) -> bool {
         match self {
-            Self::Lines(items) | Self::Hunks(items) => items.is_empty(),
+            Self::Lines(items) | Self::Hunks(items, _) => items.is_empty(),
         }
     }
 
     pub(crate) fn validate(&self, hunks: &[DiffHunk]) -> Result<(), AppError> {
+        if let Self::Hunks(_, Some(expected)) = self {
+            if *expected != hunks {
+                return Err(partial_error(
+                    "diff changed since preview; refresh and review the block before retrying",
+                ));
+            }
+        }
         let (items, valid) = match self {
-            Self::Hunks(items) => (*items, hunks.iter().map(|hunk| hunk.index).collect()),
+            Self::Hunks(items, _) => (*items, hunks.iter().map(|hunk| hunk.index).collect()),
             Self::Lines(items) => {
                 let mut valid = HashSet::new();
                 for hunk in hunks {
@@ -81,6 +91,75 @@ fn partial_error(message: &str) -> AppError {
     AppError::new(ErrorCode::GitCommandFailed, message)
 }
 
+fn partial_is_link(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
+fn recheck_partial_worktree(full: &Path, existed: bool, bytes: &[u8]) -> Result<(), AppError> {
+    let changed = || partial_error("file changed while preparing rollback; refresh and retry");
+    match std::fs::symlink_metadata(full) {
+        Err(error) if !existed && error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(meta)
+            if existed
+                && meta.is_file()
+                && !partial_is_link(&meta)
+                && !meta.permissions().readonly() =>
+        {
+            if std::fs::read(full).map_err(|_| changed())? == bytes {
+                Ok(())
+            } else {
+                Err(changed())
+            }
+        }
+        _ => Err(changed()),
+    }
+}
+
+/// Remove only empty directories created by this rollback if preparation fails.
+#[derive(Default)]
+struct RestoredParents(Vec<PathBuf>);
+impl Drop for RestoredParents {
+    fn drop(&mut self) {
+        for path in self.0.iter().rev() {
+            let _ = std::fs::remove_dir(path);
+        }
+    }
+}
+
+fn prepare_rollback_parents(cwd: &Path, path: &str) -> Result<RestoredParents, AppError> {
+    let mut created = RestoredParents::default();
+    let mut current = cwd.to_path_buf();
+    for component in Path::new(path)
+        .parent()
+        .into_iter()
+        .flat_map(Path::components)
+    {
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) if meta.is_dir() && !partial_is_link(&meta) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir(&current).map_err(|error| {
+                    AppError::new(
+                        ErrorCode::FsError,
+                        format!("restore parent directory: {error}"),
+                    )
+                })?;
+                created.0.push(current.clone());
+            }
+            _ => return Err(partial_error("rollback parent is not a regular directory")),
+        }
+    }
+    Ok(created)
+}
+
 impl GitRunner {
     pub async fn revert_lines(
         &self,
@@ -89,7 +168,36 @@ impl GitRunner {
         lines: &[u32],
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        if lines.is_empty() {
+        self.revert_selection(cwd, path, PartialSelection::Lines(lines), cancel)
+            .await
+    }
+
+    /// Revert exactly a reviewed index/worktree block, including pure deletions.
+    pub async fn revert_hunks(
+        &self,
+        cwd: &Path,
+        path: &str,
+        hunks: &[u32],
+        expected: &[DiffHunk],
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        self.revert_selection(
+            cwd,
+            path,
+            PartialSelection::Hunks(hunks, Some(expected)),
+            cancel,
+        )
+        .await
+    }
+
+    async fn revert_selection(
+        &self,
+        cwd: &Path,
+        path: &str,
+        selection: PartialSelection<'_>,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        if selection.is_empty() {
             return Ok(());
         }
         validate_partial_path(path)?;
@@ -101,28 +209,62 @@ impl GitRunner {
         let mut current = cwd.to_path_buf();
         for component in Path::new(path).components() {
             current.push(component);
-            let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
-                AppError::new(ErrorCode::FsError, format!("read path metadata: {error}"))
-            })?;
-            if metadata.file_type().is_symlink() {
+            let metadata = match std::fs::symlink_metadata(&current) {
+                Ok(metadata) => metadata,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && matches!(selection, PartialSelection::Hunks(..)) =>
+                {
+                    continue
+                }
+                Err(error) => {
+                    return Err(AppError::new(
+                        ErrorCode::FsError,
+                        format!("read path metadata: {error}"),
+                    ))
+                }
+            };
+            if partial_is_link(&metadata) {
                 return Err(partial_error("symlinks require whole-file operations"));
             }
         }
-        let metadata = std::fs::symlink_metadata(&full).map_err(|error| {
-            AppError::new(ErrorCode::FsError, format!("read file metadata: {error}"))
-        })?;
-        if !metadata.is_file() || metadata.permissions().readonly() {
+        let metadata = match std::fs::symlink_metadata(&full) {
+            Ok(metadata) => Some(metadata),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && matches!(selection, PartialSelection::Hunks(..)) =>
+            {
+                None
+            }
+            Err(error) => {
+                return Err(AppError::new(
+                    ErrorCode::FsError,
+                    format!("read file metadata: {error}"),
+                ))
+            }
+        };
+        if metadata
+            .as_ref()
+            .is_some_and(|meta| !meta.is_file() || meta.permissions().readonly())
+        {
             return Err(partial_error(
                 "partial rollback requires a writable regular file",
             ));
         }
-        let work_bytes = std::fs::read(&full).map_err(|error| {
-            AppError::new(ErrorCode::FsError, format!("read worktree file: {error}"))
-        })?;
+        let work_bytes = if metadata.is_some() {
+            std::fs::read(&full).map_err(|error| {
+                AppError::new(ErrorCode::FsError, format!("read worktree file: {error}"))
+            })?
+        } else {
+            Vec::new()
+        };
         let work_text = decode_partial_text(work_bytes.clone())?;
         let base = match self.partial_index_blob(cwd, path, cancel).await? {
             Some(blob) => Some(blob),
-            None => self.partial_head_blob(cwd, path, cancel).await?,
+            None if matches!(selection, PartialSelection::Lines(_)) => {
+                self.partial_head_blob(cwd, path, cancel).await?
+            }
+            None => None,
         };
         let base_text = base.as_ref().map_or("", |blob| blob.text.as_str());
         let hunks = gitx_diff::compute_hunks(
@@ -130,24 +272,64 @@ impl GitRunner {
             Some(&work_text),
             &gitx_diff::DiffComputeOptions::default(),
         );
-        PartialSelection::Lines(lines).validate(&hunks)?;
-        let content = gitx_diff::revert_selected_lines_to_base(base_text, &work_text, lines);
+        selection.validate(&hunks)?;
+        let content = match selection {
+            PartialSelection::Lines(lines) => {
+                gitx_diff::revert_selected_lines_to_base(base_text, &work_text, lines)
+            }
+            PartialSelection::Hunks(hunks, _) => {
+                gitx_diff::apply_unstage_hunks_to_index(base_text, &work_text, hunks)
+            }
+        };
         if content == work_text {
             return Err(AppError::new(
                 ErrorCode::NothingToCommit,
                 "no selected changes to roll back",
             ));
         }
+        // A missing index side means an added worktree file. Reverting its
+        // complete contents restores absence; legacy line rollback keeps a file.
+        if content.is_empty() && base.is_none() && matches!(selection, PartialSelection::Hunks(..))
+        {
+            if cancel.is_cancelled() {
+                return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
+            }
+            recheck_partial_worktree(&full, metadata.is_some(), &work_bytes)?;
+            return std::fs::remove_file(&full).map_err(|error| {
+                AppError::new(
+                    ErrorCode::FsError,
+                    format!("remove reverted addition: {error}"),
+                )
+            });
+        }
+        let parent = full.parent().expect("relative file parent");
+        let mut created = prepare_rollback_parents(cwd, path)?;
         // Prepare complete content beside the destination. A failed write or
         // rename must leave the original file intact, and cleanup is automatic.
         use std::io::Write;
-        let mut temporary = tempfile::NamedTempFile::new_in(
-            full.parent().expect("relative file parent"),
-        )
-        .map_err(|error| AppError::new(ErrorCode::FsError, format!("prepare rollback: {error}")))?;
+        let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
+            AppError::new(ErrorCode::FsError, format!("prepare rollback: {error}"))
+        })?;
         temporary
             .write_all(content.as_bytes())
-            .and_then(|_| temporary.as_file().set_permissions(metadata.permissions()))
+            .and_then(|_| match &metadata {
+                Some(meta) => temporary.as_file().set_permissions(meta.permissions()),
+                None => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let mode = if base.as_ref().is_some_and(|blob| blob.mode == "100755") {
+                            0o755
+                        } else {
+                            0o644
+                        };
+                        temporary
+                            .as_file()
+                            .set_permissions(std::fs::Permissions::from_mode(mode))?;
+                    }
+                    Ok(())
+                }
+            })
             .and_then(|_| temporary.as_file().sync_all())
             .map_err(|error| {
                 AppError::new(ErrorCode::FsError, format!("write rollback: {error}"))
@@ -155,31 +337,19 @@ impl GitRunner {
         if cancel.is_cancelled() {
             return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
         }
-        let current_metadata = std::fs::symlink_metadata(&full).map_err(|error| {
-            AppError::new(
-                ErrorCode::FsError,
-                format!("recheck rollback target: {error}"),
-            )
-        })?;
-        if !current_metadata.file_type().is_file()
-            || current_metadata.permissions().readonly()
-            || std::fs::read(&full).map_err(|error| {
-                AppError::new(
-                    ErrorCode::FsError,
-                    format!("recheck rollback content: {error}"),
-                )
-            })? != work_bytes
-        {
-            return Err(partial_error(
-                "file changed while preparing rollback; refresh and retry",
-            ));
-        }
-        temporary.persist(&full).map_err(|error| {
+        recheck_partial_worktree(&full, metadata.is_some(), &work_bytes)?;
+        let persisted = if metadata.is_some() {
+            temporary.persist(&full)
+        } else {
+            temporary.persist_noclobber(&full)
+        };
+        persisted.map_err(|error| {
             AppError::new(
                 ErrorCode::FsError,
                 format!("replace rollback target: {error}"),
             )
         })?;
+        created.0.clear();
         Ok(())
     }
 
@@ -190,7 +360,19 @@ impl GitRunner {
         hunks: &[u32],
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        self.stage_selection(cwd, path, PartialSelection::Hunks(hunks), cancel)
+        self.stage_hunks_checked(cwd, path, hunks, None, cancel)
+            .await
+    }
+
+    pub async fn stage_hunks_checked(
+        &self,
+        cwd: &Path,
+        path: &str,
+        hunks: &[u32],
+        expected: Option<&[DiffHunk]>,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        self.stage_selection(cwd, path, PartialSelection::Hunks(hunks, expected), cancel)
             .await
     }
 
@@ -263,7 +445,7 @@ impl GitRunner {
             PartialSelection::Lines(lines) => {
                 gitx_diff::apply_selected_lines_to_base(index_text, &work_text, lines)
             }
-            PartialSelection::Hunks(hunks) => {
+            PartialSelection::Hunks(hunks, _) => {
                 gitx_diff::apply_selected_hunks_to_base(index_text, &work_text, hunks)
             }
         };
@@ -478,7 +660,19 @@ impl GitRunner {
         hunks: &[u32],
         cancel: &CancellationToken,
     ) -> Result<(), AppError> {
-        self.unstage_selection(cwd, path, PartialSelection::Hunks(hunks), cancel)
+        self.unstage_hunks_checked(cwd, path, hunks, None, cancel)
+            .await
+    }
+
+    pub async fn unstage_hunks_checked(
+        &self,
+        cwd: &Path,
+        path: &str,
+        hunks: &[u32],
+        expected: Option<&[DiffHunk]>,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        self.unstage_selection(cwd, path, PartialSelection::Hunks(hunks, expected), cancel)
             .await
     }
 
@@ -507,7 +701,7 @@ impl GitRunner {
             PartialSelection::Lines(lines) => {
                 gitx_diff::revert_selected_lines_to_base(head_text, index_text, lines)
             }
-            PartialSelection::Hunks(hunks) => {
+            PartialSelection::Hunks(hunks, _) => {
                 gitx_diff::apply_unstage_hunks_to_index(head_text, index_text, hunks)
             }
         };

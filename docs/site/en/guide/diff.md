@@ -22,13 +22,19 @@ Diff views are read-only. To edit the working file, press **F4 in Changes** or o
 
 ## Operate on a hunk
 
-This version displays hunks, but the desktop Diff does not currently expose separate per-hunk Stage/Unstage/Rollback buttons. For the available line-staging UI, see below. For pure deletions or interactive hunk selection, use standard Git in a repository terminal:
+Each block has buttons in the right pane's gutter, or beside the block in Unified mode. Hover or use Tab to focus a button for its action name:
 
-```sh
-git add -p -- path/to/file
-```
+| Direction | Button | Result |
+| --- | --- | --- |
+| Staged → Local | **+ Stage block** | Put only this block in the index, keeping other local edits |
+| HEAD → Staged | **− Unstage block** | Remove this block from the index, leaving the working file unchanged |
+| Staged → Local | **↶ Roll back block** | Confirm to discard this block's unstaged changes, keeping other blocks and staged content |
 
-Choose hunks at Git's prompts, then refresh gitx and inspect Staged. To unstage hunks while retaining working files, use `git reset -p -- path/to/file`. Backend capability does not imply that a corresponding UI button exists.
+These actions work in both layouts with unchanged content collapsed or expanded, including pure deletions. Rolling back the only block of a new file removes that working file; rolling back a deleted file restores it. Rollback cannot be undone, so check the path and block number.
+
+Buttons stay disabled while the action runs, and the task queue shows the operation. Changes and the current Diff refresh afterward. If the write succeeds but refresh fails, the message distinguishes the two; use **Refresh and review** without repeating the write. If background or external edits change the preview, the old block is rejected. Refresh and review before retrying.
+
+Block actions are available only for normal text files in the two comparisons above. Show all whitespace changes first; historical comparisons, rename comparisons, Combined Diff, binary and oversized files do not expose these actions. Per-hunk changelist assignment is still unavailable. The web demo cannot execute real Git block operations; use the desktop application.
 
 ## Stage individual lines
 
@@ -39,7 +45,7 @@ The current **Stage selected lines** command uses a line-number prompt:
 3. Enter the actual added or modified line numbers on the right, such as `4, 7` or `4 7`, separated by commas or spaces.
 4. Confirm and review the new staged diff. Arbitrary text selected with the mouse is not treated as a patch.
 
-Only stageable new-side changed lines are accepted. Range syntax such as `4-7`, unchanged lines, and old-side deletion line numbers are not supported here. Use Git's interactive hunk selection above for pure deletions or complete replacements.
+Only stageable new-side changed lines are accepted. Range syntax such as `4-7`, unchanged lines, and old-side deletion line numbers are not supported here. Use the block buttons above for pure deletions or complete replacements.
 
 ::: tip Verify the final commit
 After partial staging, use Staging mode and inspect **HEAD → Staged**. Selecting a whole-file commit afterward may also include edits you intended to leave out.

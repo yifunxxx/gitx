@@ -33,8 +33,8 @@ use commands::history::{
 };
 use commands::ignore::{exclude_open, ignore_add, ignore_suggest_patterns, rm_cached};
 use commands::index_ops::{
-    add_paths, revert_lines, stage_hunks, stage_lines, stage_paths, unstage_hunks, unstage_lines,
-    unstage_paths,
+    add_paths, revert_hunks, revert_lines, stage_hunks, stage_lines, stage_paths, unstage_hunks,
+    unstage_lines, unstage_paths,
 };
 use commands::jobs::{job_cancel, job_list};
 use commands::multi_root::{
@@ -224,6 +224,7 @@ pub fn run() {
             stage_lines,
             unstage_lines,
             revert_lines,
+            revert_hunks,
             changelist_list,
             changelist_create,
             changelist_rename,

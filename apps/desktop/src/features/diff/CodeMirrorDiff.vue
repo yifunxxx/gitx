@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { diffTheme } from "@/features/editor/editorThemes";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { EditorState, RangeSetBuilder } from "@codemirror/state";
+import { Compartment, EditorState, RangeSetBuilder } from "@codemirror/state";
 import {
   EditorView,
   lineNumbers,
@@ -16,6 +16,7 @@ import { computeSideInlineRanges, computeUnifiedInlineRanges, type CharRange } f
 import { countHunkLines } from "./collapsedDiff";
 import { contentFingerprint } from "./diffPaint";
 import type { DiffPaneScroll, DiffPaneSnapshot, DiffPaneViewState } from "./diffViewState";
+import { hunkActionGutter, type HunkAction, type HunkAnchor, type HunkControl } from "./hunkActions";
 
 const props = defineProps<{
   text: string;
@@ -31,11 +32,15 @@ const props = defineProps<{
   /** Identifies this tab's content and display mode. */
   paintKey?: string;
   initialViewState?: DiffPaneViewState;
+  hunkAnchors?: HunkAnchor[];
+  hunkControls?: HunkControl[];
+  hunkBusy?: boolean;
 }>();
 
 const emit = defineEmits<{
   scroll: [pos: DiffPaneScroll];
   saveViewState: [snapshot: DiffPaneSnapshot];
+  hunkAction: [index: number, action: HunkAction];
 }>();
 
 const hostRef = ref<HTMLDivElement | null>(null);
@@ -49,6 +54,11 @@ let resizeObserver: ResizeObserver | null = null;
 let mountedKey = "";
 let selectionVisible = false;
 let detachSelection: (() => void) | null = null;
+const hunkConfig = new Compartment();
+function hunkExtensions(state: EditorState) {
+  return hunkActionGutter(state, props.hunkAnchors ?? [], props.hunkControls ?? [], !!props.hunkBusy,
+    (index, action) => emit("hunkAction", index, action));
+}
 
 const insertLine = Decoration.line({ class: "cm-diff-insert" });
 const deleteLine = Decoration.line({ class: "cm-diff-delete" });
@@ -329,9 +339,11 @@ function mountNow() {
         ...editorChrome({ caret: false }),
         diffTheme,
         EditorView.decorations.of(deco),
+        hunkConfig.of([]),
       ],
     }),
   });
+  view.dispatch({ effects: hunkConfig.reconfigure(hunkExtensions(view.state)) });
   attachScroll();
   attachSelection(view);
   attachResize(hostEl);
@@ -457,6 +469,11 @@ onBeforeUnmount(() => {
   view?.destroy();
   view = null;
 });
+watch(
+  () => [props.hunkAnchors, props.hunkControls, props.hunkBusy],
+  () => { if (view) view.dispatch({ effects: hunkConfig.reconfigure(hunkExtensions(view.state)) }); },
+  { flush: "post" },
+);
 watch(
   () =>
     [

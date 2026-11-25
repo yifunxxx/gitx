@@ -404,6 +404,9 @@ export const commands = {
   async revertLines(req: LinesReq): Promise<null> {
     return await TAURI_INVOKE("revert_lines", { req });
   },
+  async revertHunks(req: HunksReq): Promise<null> {
+    return await TAURI_INVOKE("revert_hunks", { req });
+  },
   async changelistList(req: ChangelistPathReq): Promise<ChangelistsState> {
     return await TAURI_INVOKE("changelist_list", { req });
   },
@@ -1167,7 +1170,16 @@ export type HunkAnchor = {
   newStart: number;
   newLines: number;
 };
-export type HunksReq = { repoId: string; path: string; filePath: string; hunkIndexes: number[] };
+export type HunksReq = {
+  repoId: string;
+  path: string;
+  filePath: string;
+  hunkIndexes: number[];
+  /**
+   * Snapshot shown to the user; reject if the live diff has changed.
+   */
+  expectedHunks?: DiffHunk[] | null;
+};
 export type IgnoreAddReq = {
   path: string;
   /**

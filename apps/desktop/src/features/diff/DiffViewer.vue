@@ -10,7 +10,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { getBackend } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
-import { promptDialog } from "@/composables/useConfirm";
+import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import type { IgnoreWhitespace } from "@/lib/backend";
 import {
   Select,
@@ -24,6 +24,7 @@ import { buildCollapsedSides, countHunkLines } from "./collapsedDiff";
 import { normalizeEolForDisplay } from "./diffPaint";
 import { expandUnifiedHunks, unifiedLineMap } from "./expandedDiff";
 import { diffViewKey, type DiffPaneScroll } from "./diffViewState";
+import { unifiedHunkAnchors, type HunkAction, type HunkControl } from "./hunkActions";
 
 const props = defineProps<{ tabId: string }>();
 const { t } = useI18n();
@@ -108,20 +109,23 @@ function wsLabel(id: IgnoreWhitespace | undefined): string {
 }
 
 const stagingLines = ref(false);
+const hunkBusy = ref(false);
+const hunkError = ref("");
 let stageGeneration = 0;
 let previewGeneration = 0;
 // Synchronous invalidation also catches A → B → A navigation in one tick.
 watch(
-  () => [
-    workspace.repoId, workspace.repoPath, props.tabId, diffs.activeId,
-    tab.value?.path, tab.value?.left, tab.value?.right,
-    tab.value?.leftRev, tab.value?.rightRev, tab.value?.leftPath,
+  [
+    () => workspace.repoId, () => workspace.repoPath, () => workspace.navigationToken?.(),
+    () => props.tabId, () => diffs.activeId,
+    () => tab.value?.path, () => tab.value?.left, () => tab.value?.right,
+    () => tab.value?.leftRev, () => tab.value?.rightRev, () => tab.value?.leftPath,
   ],
-  () => { stageGeneration += 1; },
+  () => { stageGeneration += 1; hunkError.value = ""; },
   { flush: "sync" },
 );
 watch(
-  () => [tab.value?.result, tab.value?.loading, tab.value?.ignoreWhitespace],
+  [() => tab.value?.result, () => tab.value?.loading, () => tab.value?.ignoreWhitespace],
   () => { previewGeneration += 1; },
   { flush: "sync" },
 );
@@ -147,7 +151,7 @@ const canStage = computed(() =>
 );
 
 async function stageSelectedLines() {
-  if (!tab.value || !canStage.value || stagingLines.value) return;
+  if (!tab.value || !canStage.value || stagingLines.value || hunkBusy.value) return;
   const { repoId, repoPath } = workspace;
   if (!repoId || !repoPath) return;
   const { id, path } = tab.value;
@@ -191,6 +195,90 @@ async function stageSelectedLines() {
     });
   } finally {
     stagingLines.value = false;
+  }
+}
+
+const hunkSource = computed(() => {
+  const value = tab.value;
+  if (!value || value.kind !== "file" || value.leftRev || value.rightRev ||
+      (value.leftPath && value.leftPath !== value.path) || !result.value ||
+      result.value.binary || result.value.tooLarge || !visibleHunks.value.length) return null;
+  if (value.left === "index" && value.right === "worktree") return "local";
+  if (value.left === "head" && value.right === "index") return "staged";
+  return null;
+});
+const hunkControls = computed<HunkControl[]>(() => {
+  if (!hunkSource.value || tab.value?.ignoreWhitespace !== "none") return [];
+  return hunkSource.value === "local"
+    ? [{ action: "stage", label: t("diff.stageHunk") }, { action: "revert", label: t("diff.revertHunk") }]
+    : [{ action: "unstage", label: t("diff.unstageHunk") }];
+});
+const hunkDisabled = computed(() => hunkBusy.value || stagingLines.value || !!tab.value?.loading || !!tab.value?.error);
+const sideHunkAnchors = computed(() => collapsed.value?.hunkStarts ??
+  visibleHunks.value.map(hunk => ({ index: hunk.index, line: Math.max(1, hunk.newStart) })));
+const unifiedAnchors = computed(() => unifiedHunkAnchors(visibleHunks.value, !tab.value?.collapseUnchanged));
+
+async function refreshHunkView(id: string, current: () => boolean) {
+  const refreshed = await Promise.allSettled([changes.refresh(), diffs.reloadTab(id)]);
+  if (!current()) return;
+  for (const result of refreshed) if (result.status === "rejected") throw result.reason;
+  // Both stores record read errors instead of rejecting their refresh promise.
+  const error = changes.error || diffs.tabs.find(item => item.id === id)?.error;
+  if (error) throw new Error(error);
+}
+
+async function reviewHunks() {
+  if (!tab.value || hunkBusy.value || stagingLines.value || tab.value.loading) return;
+  const generation = stageGeneration;
+  const current = () => generation === stageGeneration;
+  hunkBusy.value = true;
+  try {
+    await refreshHunkView(tab.value.id, current);
+    if (current()) hunkError.value = "";
+  } catch (error) {
+    if (current()) hunkError.value = `${t("diff.loadFailed")}: ${formatErrorMessage(error)}`;
+  } finally { hunkBusy.value = false; }
+}
+
+async function runHunk(index: number, action: HunkAction) {
+  const source = tab.value;
+  if (!source || hunkDisabled.value || !hunkControls.value.some(item => item.action === action) ||
+      !visibleHunks.value.some(hunk => hunk.index === index)) return;
+  const { repoId, repoPath } = workspace;
+  if (!repoId || !repoPath || diffs.activeId !== props.tabId) return;
+  const generation = stageGeneration;
+  const preview = previewGeneration;
+  const current = () => generation === stageGeneration;
+  const req = {
+    repoId, path: repoPath, filePath: source.path, hunkIndexes: [index],
+    expectedHunks: visibleHunks.value.map(hunk => ({ ...hunk, lines: [...hunk.lines] })),
+  };
+  hunkBusy.value = true;
+  hunkError.value = "";
+  let applied = false;
+  try {
+    if (action === "revert" && !await confirmDialog({
+      title: t("diff.revertHunk"),
+      message: t("diff.revertHunkConfirm", { path: source.path, block: index + 1 }),
+      destructive: true,
+    })) return;
+    if (!current()) return;
+    if (preview !== previewGeneration) {
+      hunkError.value = t("diff.hunkPreviewChanged");
+      return;
+    }
+    const backend = getBackend();
+    if (action === "stage") await backend.stageHunks(req);
+    else if (action === "unstage") await backend.unstageHunks(req);
+    else await backend.revertHunks(req);
+    applied = true;
+    if (!current()) return;
+    await refreshHunkView(source.id, current);
+    if (current()) toast({ title: t("diff.hunkApplied") });
+  } catch (error) {
+    if (current()) hunkError.value = `${t(applied ? "diff.hunkRefreshFailed" : "diff.hunkFailed")}: ${formatErrorMessage(error)}`;
+  } finally {
+    hunkBusy.value = false;
   }
 }
 </script>
@@ -244,10 +332,18 @@ async function stageSelectedLines() {
         </Button>
       </Tip>
       <Tip v-if="canStage" :text="t('toolbar.diffStageLines')">
-        <Button size="xs" variant="outline" :disabled="stagingLines" @click="stageSelectedLines">
+        <Button size="xs" variant="outline" :disabled="stagingLines || hunkBusy" @click="stageSelectedLines">
           {{ t("diff.stageSelectedLines") }}
         </Button>
       </Tip>
+    </div>
+
+    <div v-if="hunkSource" class="flex shrink-0 items-center gap-2 border-b px-3 py-1 text-[11px] text-muted-foreground" role="status">
+      {{ hunkBusy ? t("diff.hunkApplying") : tab.ignoreWhitespace !== 'none' ? t("diff.hunkWhitespaceHint") : t("diff.hunkActionsHint") }}
+    </div>
+    <div v-if="hunkError" class="flex shrink-0 items-center gap-2 border-b p-2 text-xs text-destructive" role="alert">
+      <span class="min-w-0 flex-1 break-words">{{ hunkError }}</span>
+      <Button size="xs" variant="outline" :disabled="hunkBusy || stagingLines || tab.loading" @click="reviewHunks">{{ t("diff.refreshHunks") }}</Button>
     </div>
 
     <div v-if="tab.error" class="space-y-2 border-b p-3 text-xs" role="alert">
@@ -303,6 +399,10 @@ async function stageSelectedLines() {
           :paint-key="paintKey"
           :enable-inline="enableInline"
           :initial-view-state="diffs.getPaneViewState(tabId, 'unified')"
+          :hunk-anchors="unifiedAnchors"
+          :hunk-controls="hunkControls"
+          :hunk-busy="hunkDisabled"
+          @hunk-action="runHunk"
           @save-view-state="diffs.savePaneViewState(tabId, $event)"
         />
       </div>
@@ -335,6 +435,10 @@ async function stageSelectedLines() {
             :line-map="collapsed?.right.lineMap ?? null"
             :enable-inline="enableInline"
             :initial-view-state="diffs.getPaneViewState(tabId, 'right')"
+            :hunk-anchors="sideHunkAnchors"
+            :hunk-controls="hunkControls"
+            :hunk-busy="hunkDisabled"
+            @hunk-action="runHunk"
             @save-view-state="diffs.savePaneViewState(tabId, $event)"
             @scroll="onRightScroll"
           />

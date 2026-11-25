@@ -35,6 +35,17 @@ export const diffTheme = EditorView.theme({
     width: "4px",
     minWidth: "4px",
   },
+  ".cm-diff-hunk-gutter .cm-gutterElement": { padding: "0 2px" },
+  ".diff-hunk-actions": { display: "inline-flex", gap: "2px", verticalAlign: "top" },
+  ".diff-hunk-action": {
+    width: "19px", height: "18px", lineHeight: "16px", padding: "0",
+    color: "var(--color-foreground)", backgroundColor: "var(--color-muted)",
+    border: "1px solid var(--color-border)", borderRadius: "3px", cursor: "pointer",
+    fontSize: "14px", fontFamily: "sans-serif",
+  },
+  ".diff-hunk-action:hover:not(:disabled)": { backgroundColor: "var(--color-accent)" },
+  ".diff-hunk-action:focus-visible": { outline: "2px solid var(--color-ring)", outlineOffset: "1px" },
+  ".diff-hunk-action:disabled": { opacity: "0.45", cursor: "default" },
   ".cm-diff-gutter-insert": {
     width: "3px",
     height: "100%",

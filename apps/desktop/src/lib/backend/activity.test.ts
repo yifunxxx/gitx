@@ -4,6 +4,19 @@ import { useJobsStore } from "@/stores/jobsStore";
 import { withBackendActivity } from "./activity";
 
 vi.mock("@/lib/backend", () => ({ getBackend: () => ({ jobList: async () => [] }) }));
+
+it.each(["stageHunks", "unstageHunks", "revertHunks"])("tracks %s through completion and failure without leaking a queue entry", async method => {
+  const jobs = useJobsStore();
+  const pending = deferred<null>();
+  const backend = withBackendActivity({ [method]: (_req: unknown) => pending.promise });
+  const request = backend[method]!({ path: "C:/repo", filePath: "file.txt", hunkIndexes: [0] });
+  expect(jobs.count).toBe(1);
+  expect(jobs.running[0]).toMatchObject({ message: "C:/repo", cancellable: false });
+  const error = new Error("index lock");
+  pending.reject(error);
+  await expect(request).rejects.toBe(error);
+  expect(jobs.count).toBe(0);
+});
 let pinia: Pinia;
 beforeEach(() => { pinia = createPinia(); setActivePinia(pinia); });
 afterEach(() => disposePinia(pinia));

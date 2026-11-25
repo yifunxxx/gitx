@@ -15,7 +15,9 @@ export type CollapsedSide = {
 export function buildCollapsedSides(hunks: DiffHunk[]): {
   left: CollapsedSide;
   right: CollapsedSide;
+  hunkStarts: { index: number; line: number }[];
 } {
+  const hunkStarts: { index: number; line: number }[] = [];
   const leftLines: string[] = [];
   const rightLines: string[] = [];
   const leftMap: number[] = [];
@@ -31,6 +33,7 @@ export function buildCollapsedSides(hunks: DiffHunk[]): {
       leftMap.push(0);
       rightMap.push(0);
     }
+    hunkStarts.push({ index: h.index, line: rightLines.length + 1 });
 
     let oldLine = h.oldStart;
     let newLine = h.newStart;
@@ -107,6 +110,7 @@ export function buildCollapsedSides(hunks: DiffHunk[]): {
   }
 
   return {
+    hunkStarts,
     left: { text: leftLines.join("\n"), lineMap: leftMap, changed: leftChanged },
     right: { text: rightLines.join("\n"), lineMap: rightMap, changed: rightChanged },
   };

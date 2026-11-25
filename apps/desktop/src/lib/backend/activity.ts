@@ -23,7 +23,7 @@ export const operationTitles = {
   rewordCommit: "rewrite", squashCommits: "rewrite", dropCommits: "rewrite", fixupInto: "rewrite",
   uncommit: "rewrite", revertRun: "restore", revertContinue: "restore", revertAbort: "restore",
   resetRun: "reset", undoRewrite: "rewrite", extractChanges: "rewrite", dropChanges: "restore",
-  revertLines: "restore", changelistCreate: "changelist", changelistRename: "changelist",
+  revertLines: "restore", revertHunks: "restore", changelistCreate: "changelist", changelistRename: "changelist",
   changelistDelete: "changelist", changelistSetActive: "changelist", changelistMove: "changelist",
   stashCreate: "stashCreate", stashApply: "stashApply", stashPop: "stashApply",
   stashDrop: "stashDelete", stashClear: "stashDelete", stashBranch: "stashApply", stashRestore: "stashApply",
