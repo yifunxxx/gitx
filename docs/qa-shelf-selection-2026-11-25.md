@@ -37,4 +37,4 @@
 
 证据目录：`E:/IDEAproject/gitx/test-results/qa093-shelf-selection-20261125`。关键记录：`frontend-final.log`、`targeted-final.log`、`rust.log`/`rust-summary.json`、`native-partial.json`、`native-retry.json`、`native-keep.json`、`final-verification.json`、生成绑定/类型检查及构建日志。测试使用 `app.gitx.qa093` 配置及独立 WebView profile。
 
-提交前 fetch 成功，仍包含 master `5241dd5` 与交付 `b98d5f5`。新增并完成 QA-093 功能子项，QA-089 剩余块级交互及其他 11 项保持，共 12 项已知未关闭；不是全部潜在问题总量。提交推送结果随后补记。
+提交前 fetch 成功，仍包含 master `5241dd5` 与交付 `b98d5f5`。功能提交 `9b6e9bafd4e27ff7ed75df5017cd08d2217e7fd4` 已首次推送成功，ls-remote 完整 SHA 一致，无凭据提示；交付补记前再次 fetch 确认包含主分支和交付最新提交。新增并完成 QA-093 功能子项，QA-089 剩余块级交互及其他 11 项保持，共 12 项已知未关闭；不是全部潜在问题总量。整体七项目标继续。
