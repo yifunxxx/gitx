@@ -17,6 +17,14 @@ Built with Tauri 2 + Vue 3 + Rust. Default UI language is English; 简体中文 
 
 Windows installers (NSIS `.exe` / MSI): **[latest Release](https://github.com/yifunxxx/gitx/releases/latest)**.
 
+## User guide
+
+**[Read the English guide](https://yifunxxx.github.io/gitx/en/)** · **[简体中文使用手册](https://yifunxxx.github.io/gitx/)**
+
+Step-by-step guides cover installation, commits, file management and search, branches, synchronization, history, conflicts, Stash/Shelf, worktrees, settings, and shortcuts. The searchable VitePress site includes native desktop screenshots and a language switch on each page.
+
+To contribute documentation, see [maintenance and GitHub Pages deployment](./docs/site/en/guide/publishing.md). Preview locally with `pnpm docs:dev`; validate and build with `pnpm docs:build`.
+
 ## Get started
 
 Requires Node ≥ 22.13, pnpm 10, Rust (see `rust-toolchain.toml`), and system `git`.

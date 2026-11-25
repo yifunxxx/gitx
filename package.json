@@ -9,6 +9,11 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "docs:dev": "vitepress dev docs/site",
+    "docs:build": "node scripts/check-docs.mjs && vitepress build docs/site",
+    "docs:preview": "vitepress preview docs/site",
+    "docs:check": "node scripts/check-docs.mjs",
+    "docs:reference": "node scripts/docs-reference.mjs",
     "dev": "pnpm --filter @gitx/desktop dev",
     "dev:web": "pnpm --filter @gitx/desktop dev:web",
     "build": "pnpm --filter @gitx/desktop build",
@@ -26,7 +31,8 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.0",
     "oxfmt": "^0.76.0",
-    "oxlint": "^1.91.0"
+    "oxlint": "^1.91.0",
+    "vitepress": "1.6.4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

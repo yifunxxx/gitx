@@ -17,6 +17,14 @@
 
 Windows 安装包（NSIS `.exe` / MSI）：**[最新 Release](https://github.com/yifunxxx/gitx/releases/latest)**。
 
+## 使用文档
+
+**[中文使用手册](https://yifunxxx.github.io/gitx/)** · **[English guide](https://yifunxxx.github.io/gitx/en/)**
+
+包含安装与首次提交、文件管理、分支与同步、差异与冲突、历史整理、Stash/Shelf、Worktree、设置及快捷键。文档支持中英文切换、全文搜索和深浅色主题，并通过 GitHub Pages 自动发布。
+
+本地预览：`pnpm docs:dev`；验证与构建：`pnpm docs:build`。维护方法见[文档发布指南](docs/site/guide/publishing.md)。
+
 ## 如何启动
 
 需要 Node ≥ 22.13、pnpm 10、Rust（见 `rust-toolchain.toml`）和系统 `git`。

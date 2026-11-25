@@ -1,0 +1,83 @@
+name: Documentation
+
+on:
+  push:
+    branches: [master, main, codex/docs-site]
+    paths:
+      - 'docs/site/**'
+      - 'scripts/*docs*'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.nvmrc'
+      - '.github/workflows/docs.yml'
+      - 'apps/desktop/package.json'
+      - 'apps/desktop/src/actions/**'
+      - 'apps/desktop/src/i18n/locales/**'
+      - 'apps/desktop/src/features/settings/schema.ts'
+  pull_request:
+    paths:
+      - 'docs/site/**'
+      - 'scripts/*docs*'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.nvmrc'
+      - '.github/workflows/docs.yml'
+      - 'apps/desktop/package.json'
+      - 'apps/desktop/src/actions/**'
+      - 'apps/desktop/src/i18n/locales/**'
+      - 'apps/desktop/src/features/settings/schema.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate and build both languages
+        run: pnpm docs:build
+        env:
+          DOCS_BASE: /gitx/
+          DOCS_BRANCH: ${{ github.head_ref || github.ref_name }}
+      - name: Check generated routes, anchors, and assets
+        run: node scripts/check-docs-output.mjs
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: docs/site/.vitepress/dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/docs-site')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
