@@ -258,6 +258,15 @@ impl GitRunner {
             .fetch_run(cwd, Some(&remote), true, FetchTagsPolicy::Auto, cancel)
             .await?;
 
+        // Incoming commits belong to the fetched upstream, not the resulting
+        // HEAD: rebase rewrites local commits and merge creates a local commit.
+        // Capture this before changing HEAD or running update hooks. Keep the
+        // upstream ref in the update commands to retain Git's branch semantics.
+        let incoming_tip = self.rev_parse(cwd, "@{u}", cancel).await?;
+        let commits = self
+            .rev_list_oneline(cwd, &format!("{old}..{incoming_tip}"), cancel)
+            .await?;
+
         match strategy {
             UpdateMethod::Merge => {
                 self.update_preserving_changes(cwd, &["merge", "--no-edit", "@{u}"], cancel)
@@ -281,14 +290,6 @@ impl GitRunner {
         } else {
             Vec::new()
         };
-        let commits = if old != new {
-            self.rev_list_oneline(cwd, &format!("{old}..{new}"), cancel)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
         let strategy_s = match strategy {
             UpdateMethod::Merge => "merge",
             UpdateMethod::Rebase => "rebase",
