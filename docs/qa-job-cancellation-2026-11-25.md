@@ -28,3 +28,5 @@
 证据目录：`E:/IDEAproject/gitx/test-results/qa092-job-cancellation-20261125`，含`before.log`、`initial-fix.log`、`targeted.log`、`all-tests.log`、`typecheck.log`、`build.log`、`lint.log`、`native-build.log`、`docs-build.log`、`native-observations.md`、`running-job-identities.json`、`final-verification.json`和隔离fixture。
 
 本项代码、自动验证及上述原生普通流程完成；提交前再次fetch成功，master5241dd5及交付6c5b208均已包含。单独提交推送结果随后补记。新增并解决QA-092，回到原12项已知未关闭，整体七项目标继续，不用测试数量换算完成率。
+
+最终交付：功能`addeac3d63f574219ad1cc8c7d3c3041b2477692`首次推送成功，`ls-remote`完整SHA一致，分支`codex/checkout-target-safety`，无凭据提示。补记前fetch成功，master仍5241dd5且已包含最新交付addeac3。上文待提交描述由此覆盖；安装版未更新。
