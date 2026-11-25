@@ -274,7 +274,7 @@ impl GitRunner {
 
     // Keep the successful read to one process. Only failed reads need a tree/index
     // lookup to prove that a file is absent; exit 128 alone is not that proof.
-    async fn read_git_blob(
+    pub(crate) async fn read_git_blob(
         &self,
         cwd: &Path,
         rev: &str,
@@ -342,7 +342,7 @@ impl GitRunner {
         }
     }
 
-    async fn head_is_unborn(
+    pub(crate) async fn head_is_unborn(
         &self,
         cwd: &Path,
         cancel: &CancellationToken,

@@ -2,6 +2,7 @@
 
 #![allow(clippy::result_large_err)]
 
+mod changelist_blobs;
 mod changelist_ops;
 mod clone_ops;
 mod compare_ops;

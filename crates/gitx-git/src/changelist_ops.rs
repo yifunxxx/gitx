@@ -1,4 +1,5 @@
 use crate::{
+    changelist_blobs::ChangelistHeadReader,
     partial_commit::CommitSelection,
     partial_ops::{decode_partial_text, partial_is_link, validate_partial_path},
     GitRunner,
@@ -18,6 +19,57 @@ pub(crate) struct ChangelistPreview {
     pub hunks: Vec<DiffHunk>,
 }
 
+fn validate_changelist_file(cwd: &Path, path: &str) -> Result<(), AppError> {
+    validate_partial_path(path)?;
+    let mut current = cwd.to_path_buf();
+    for component in Path::new(path).components() {
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta)
+                if partial_is_link(&meta) || (current == cwd.join(path) && !meta.is_file()) =>
+            {
+                return Err(AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "partial changelists require a regular file",
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(AppError::new(ErrorCode::FsError, error.to_string())),
+        }
+    }
+    Ok(())
+}
+
+fn append_preview(
+    state: &mut ChangelistsState,
+    path: String,
+    preview: Result<ChangelistPreview, AppError>,
+) -> Result<(), AppError> {
+    match preview {
+        Ok(preview) => {
+            if let Some(problem) = &preview.state.problem {
+                state.warnings.push(format!("{path}: {problem}"));
+            }
+            state.partial_files.push(preview.state);
+        }
+        Err(error) => {
+            if error.code == ErrorCode::Cancelled {
+                return Err(error);
+            }
+            state.warnings.push(format!("{path}: {}", error.message));
+            state.partial_files.push(ChangelistFileState {
+                path,
+                content_token: String::new(),
+                hunks: Vec::new(),
+                preview_hunks: Vec::new(),
+                problem: Some(error.message),
+            });
+        }
+    }
+    Ok(())
+}
+
 impl GitRunner {
     pub async fn changelist_resolve(
         &self,
@@ -33,27 +85,27 @@ impl GitRunner {
             .iter()
             .filter(|assignment| !assignment.hunk_ranges.is_empty())
             .map(|assignment| assignment.path.clone())
-            .collect::<BTreeSet<_>>();
-        for path in paths {
-            match self.changelist_preview(cwd, &path, &state, cancel).await {
-                Ok(preview) => {
-                    if let Some(problem) = &preview.state.problem {
-                        state.warnings.push(format!("{path}: {problem}"));
-                    }
-                    state.partial_files.push(preview.state);
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        // A batch needs three Git commands; avoid adding overhead for small lists.
+        if paths.len() <= 3 {
+            for path in paths {
+                let preview = self.changelist_preview(cwd, &path, &state, cancel).await;
+                append_preview(&mut state, path, preview)?;
+            }
+        } else {
+            let mut reader = ChangelistHeadReader::new(self, cwd, paths, cancel).await?;
+            loop {
+                let batch = reader.next(self, cwd, cancel).await?;
+                if batch.is_empty() {
+                    break;
                 }
-                Err(error) => {
-                    if error.code == ErrorCode::Cancelled {
-                        return Err(error);
-                    }
-                    state.warnings.push(format!("{path}: {}", error.message));
-                    state.partial_files.push(ChangelistFileState {
-                        path,
-                        content_token: String::new(),
-                        hunks: Vec::new(),
-                        preview_hunks: Vec::new(),
-                        problem: Some(error.message),
-                    });
+                for (path, head) in batch {
+                    let preview = self
+                        .changelist_preview_with_head(cwd, &path, &state, head, cancel)
+                        .await;
+                    append_preview(&mut state, path, preview)?;
                 }
             }
         }
@@ -67,27 +119,22 @@ impl GitRunner {
         state: &ChangelistsState,
         cancel: &CancellationToken,
     ) -> Result<ChangelistPreview, AppError> {
-        validate_partial_path(path)?;
-        let mut current = cwd.to_path_buf();
-        for component in Path::new(path).components() {
-            current.push(component);
-            match std::fs::symlink_metadata(&current) {
-                Ok(meta)
-                    if partial_is_link(&meta) || (current == cwd.join(path) && !meta.is_file()) =>
-                {
-                    return Err(AppError::new(
-                        ErrorCode::InvalidArgument,
-                        "partial changelists require a regular file",
-                    ))
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
-                Err(error) => return Err(AppError::new(ErrorCode::FsError, error.to_string())),
-            }
-        }
-        let head = self
-            .read_blob_side(cwd, path, DiffSide::Head, cancel)
-            .await?;
+        validate_changelist_file(cwd, path)?;
+        let head = self.read_blob_side(cwd, path, DiffSide::Head, cancel).await;
+        self.changelist_preview_with_head(cwd, path, state, head, cancel)
+            .await
+    }
+
+    async fn changelist_preview_with_head(
+        &self,
+        cwd: &Path,
+        path: &str,
+        state: &ChangelistsState,
+        head: Result<Option<Vec<u8>>, AppError>,
+        cancel: &CancellationToken,
+    ) -> Result<ChangelistPreview, AppError> {
+        validate_changelist_file(cwd, path)?;
+        let head = head?;
         let work = self
             .read_blob_side(cwd, path, DiffSide::Worktree, cancel)
             .await?;

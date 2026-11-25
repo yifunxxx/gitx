@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 mod changelist_anchors;
 pub use changelist_anchors::{content_token, hunk_anchors, map_hunk_anchors};
 
-const TOO_LARGE_BYTES: usize = 5 * 1024 * 1024;
+pub const TOO_LARGE_BYTES: usize = 5 * 1024 * 1024;
 /// Soft line-count gate: prefer Histogram + short deadline above this.
 const LARGE_LINE_COUNT: usize = 8_000;
 /// Hard line-count gate: skip fine Myers detail; emit coarse whole-file hunk.
