@@ -45,4 +45,4 @@
 
 证据目录：`E:/IDEAproject/gitx/test-results/qa094-diff-hunks-20261125`。关键记录：frontend-final.log、rust-tests.log/rust-summary.json、targeted-final.log、status-refresh-before.log、build-final.log、native-build-final.log、bindings.generated.ts、native-*.json/txt、final-verification.json。专用配置`app.gitx.qa094`及独立仓库/profile，用户安装版未替换。
 
-提交前再次fetch/合并成功，包含master`5241dd5`和交付`6aa04da`。本轮新增并完成QA-094逐块功能子项，交付结果随后补记；QA-089剩余按块Changelist及其他11项继续，共12项已知未关闭，不代表所有潜在问题总量。整体目标仍在进行。
+提交前再次fetch/合并成功，包含master`5241dd5`和交付`6aa04da`。功能提交`d8c8b484fc0f91c09d97bf5d64b584f7f76d9b73`首次推送成功，ls-remote完整SHA一致，无凭据提示；交付补记前再次fetch，已包含远端主分支和最新交付提交。本轮新增并完成QA-094逐块功能子项；QA-089剩余按块Changelist及其他11项继续，共12项已知未关闭，不代表所有潜在问题总量。整体目标仍在进行。
