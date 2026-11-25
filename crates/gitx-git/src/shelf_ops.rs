@@ -329,6 +329,20 @@ impl GitRunner {
         remove_applied: bool,
         cancel: &CancellationToken,
     ) -> Result<(Vec<String>, Vec<String>), AppError> {
+        self.unshelve_paths(cwd, shelf_id, None, remove_applied, cancel)
+            .await
+    }
+
+    /// Apply exactly the selected paths. Dependent rename/copy and directory
+    /// groups must be selected in full; never silently widen the requested set.
+    pub async fn unshelve_paths(
+        &self,
+        cwd: &Path,
+        shelf_id: &str,
+        paths: Option<&[String]>,
+        remove_applied: bool,
+        cancel: &CancellationToken,
+    ) -> Result<(Vec<String>, Vec<String>), AppError> {
         let common = self.git_common_dir(cwd, cancel).await?;
         let _shelf_lock = shelf_operation_lock(&common, cancel).await?;
         let (_, patch) = gitx_meta::load_shelf_snapshot(&common, shelf_id)?;
@@ -349,6 +363,43 @@ impl GitRunner {
         for path in forward.iter().chain(&reverse) {
             validate_import_path(path)?;
         }
+        let available: BTreeSet<_> = forward.iter().chain(&reverse).cloned().collect();
+        let selection = paths.map(|paths| paths.iter().cloned().collect::<BTreeSet<_>>());
+        if let Some(selected) = &selection {
+            if selected.is_empty() || !selected.is_subset(&available) {
+                return Err(AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "select at least one path that is still present in this Shelf",
+                ));
+            }
+        }
+        let mut selected_groups = Vec::new();
+        let mut remaining = Vec::new();
+        let mut retained_paths = BTreeSet::new();
+        for group in shelf_patch_groups(&patch, forward, reverse) {
+            if let Some(selected) = &selection {
+                if group.paths.is_disjoint(selected) {
+                    remaining.extend(group.sections);
+                    retained_paths.extend(group.paths);
+                    continue;
+                }
+                if !group.paths.is_subset(selected) {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidArgument,
+                        format!(
+                            "Select all related Shelf paths together: {}",
+                            group.paths.into_iter().collect::<Vec<_>>().join(", ")
+                        ),
+                    ));
+                }
+            }
+            selected_groups.push(group);
+        }
+        let mut selected_sections: Vec<_> = selected_groups
+            .iter()
+            .flat_map(|group| group.sections.iter().cloned())
+            .collect();
+        selected_sections.sort_by_key(|section| section.start);
         // Keep the common, clean case to a single write even for a large Shelf.
         // Check direct application to both index and worktree. Three-way
         // `--check` can exit successfully even when the real merge conflicts.
@@ -356,7 +407,7 @@ impl GitRunner {
             cwd,
             ["apply", "--index", "--check", "--whitespace=nowarn", "-"],
         )
-        .stdin(patch.clone());
+        .stdin(patch_sections(&patch, &selected_sections));
         let direct = match self.run(check, cancel).await {
             Ok(_) => true,
             Err(error) if error.exit_code == Some(1) => false,
@@ -364,15 +415,17 @@ impl GitRunner {
         };
         let groups = if direct {
             vec![ShelfPatchGroup {
-                sections: std::iter::once(0..patch.len()).collect(),
-                paths: forward.into_iter().chain(reverse).collect(),
+                sections: selected_sections,
+                paths: selected_groups
+                    .into_iter()
+                    .flat_map(|group| group.paths)
+                    .collect(),
             }]
         } else {
-            shelf_patch_groups(&patch, forward, reverse)
+            selected_groups
         };
         let mut applied = BTreeSet::new();
         let mut failed = BTreeSet::new();
-        let mut remaining = Vec::new();
         let mut first_error = None;
         for group in groups {
             // Rename/copy chains and file/directory dependencies stay together.
@@ -391,6 +444,7 @@ impl GitRunner {
             match self.run(inv, cancel).await {
                 Ok(_) => applied.extend(group.paths),
                 Err(error) if error.exit_code == Some(1) => {
+                    retained_paths.extend(group.paths.iter().cloned());
                     failed.extend(group.paths);
                     remaining.extend(group.sections);
                     first_error.get_or_insert(error);
@@ -415,7 +469,7 @@ impl GitRunner {
                 &common,
                 shelf_id,
                 &patch,
-                &failed.iter().cloned().collect::<Vec<_>>(),
+                &retained_paths.into_iter().collect::<Vec<_>>(),
                 &rest,
                 binary,
             )

@@ -104,4 +104,4 @@ Use Find Action (`Ctrl+Shift+A`) to search. Availability depends on repository s
 
 ## Current UI boundaries
 
-Per-hunk Stage/Unstage/Rollback controls, per-hunk changelist assignment, and per-file Unshelve selection are not exposed as complete workflows in this baseline. Some settings/backend primitives exist; the guides describe the actual available alternatives. Dedicated submodule registration, hosting-account management, PR Review, and platform MR tools are also outside this UI. Windows is the documented installer and screenshot platform; key definitions for other platforms do not establish published native packages.
+Per-hunk Stage/Unstage/Rollback controls and per-hunk changelist assignment are not exposed as complete workflows in this baseline. Some settings/backend primitives exist; the guides describe the actual available alternatives. Dedicated submodule registration, hosting-account management, PR Review, and platform MR tools are also outside this UI. Windows is the documented installer and screenshot platform; key definitions for other platforms do not establish published native packages.

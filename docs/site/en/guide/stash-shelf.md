@@ -44,7 +44,12 @@ Resolve conflicts using the [conflict workflow](./conflicts), retaining relevant
 
 Expand a shelf to inspect its files. **Preview** shows the unified patch captured when it was saved, not a live diff of the current working tree.
 
-Select a Shelf record and choose **Unshelve**, which operates on that record. The expanded file list is for inspection; the current UI does not provide per-file Unshelve checkboxes. Create separate shelves for separate tasks if you need independent restoration. Leave “Remove applied” off to retain the record. With it enabled, content is removed according to the application result; inspect remaining records after partial failure. Applying onto existing edits may create a protective backup and report conflicts or partial results. Check the affected paths.
+Select a Shelf record and choose **Unshelve**, then check the files to restore. The dialog shares the list/tree switch, search, and folder checkboxes used by Stash and other file pickers. All files are initially selected; unselected files remain unchanged.
+
+- Leave **Remove applied** off to retain the complete record. When enabled, only successfully applied content is removed; unselected and failed content stays in the Shelf.
+- Select both sides of a rename and all dependent file/directory paths together. Incomplete selections report the related paths before writing, without silently expanding the restoration scope.
+- The dialog shows progress and blocks duplicate submissions. Partial failures keep the window open, show an error, and deselect successfully applied files for the next attempt. Inspect Changes and conflicts before retrying.
+- Imported patches that cannot be split reliably, such as mail-prefixed or plain unified diffs, may require selecting the entire group. Full selection still supports restoration.
 
 **Rename** changes the description. **Export Patch** writes the saved patch to a file; see [patches](./patches).
 

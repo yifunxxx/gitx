@@ -1919,10 +1919,16 @@ export const mockBackend: Backend = {
   async shelfUnshelve(req) {
     const entry = mockShelves.find((s) => s.id === req.id);
     if (!entry) throw { code: "notFound", message: "shelf not found" };
+    const selected = new Set(req.paths ?? entry.paths);
+    if (!selected.size || [...selected].some(path => !entry.paths.includes(path)))
+      throw { code: "invalidArgument", message: "Select files still present in the Shelf" };
+    const applied = entry.paths.filter(path => selected.has(path));
     if (req.removeApplied !== false) {
-      moveShelfToDeleted(req.id);
+      const remaining = entry.paths.filter(path => !selected.has(path));
+      if (!remaining.length) moveShelfToDeleted(req.id);
+      else entry.paths = remaining;
     }
-    return { applied: [...entry.paths], failed: [] };
+    return { applied, failed: [] };
   },
   async shelfDelete(req) {
     moveShelfToDeleted(req.id);

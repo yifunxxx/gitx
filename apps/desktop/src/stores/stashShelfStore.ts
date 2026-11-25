@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
-import type { ShelfEntry, StashEntry } from "@/lib/backend";
+import type { ShelfEntry, ShelfUnshelveResult, StashEntry } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { toast } from "@/composables/useToast";
@@ -17,6 +17,7 @@ import { isTauri } from "@/lib/utils";
 const StashDialog = defineAsyncComponent(() => import("@/features/stash/CreateStashDialog.vue"));
 const ShelfDialog = defineAsyncComponent(() => import("@/features/stash/CreateShelfDialog.vue"));
 const ShelfPreviewDialog = defineAsyncComponent(() => import("@/features/stash/ShelfPreviewDialog.vue"));
+const UnshelveDialog = defineAsyncComponent(() => import("@/features/stash/UnshelveDialog.vue"));
 const t = (key: string, args = {}) => i18n.global.t(key, args);
 
 export const useStashShelfStore = defineStore("stashShelf", () => {
@@ -30,6 +31,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
   const selectedDeletedShelfId = ref<string | null>(null);
   const showDeleted = ref(false);
   let previewOpen = false;
+  let unshelveOpen = false;
   let refreshGeneration = 0;
   let repositoryGeneration = 0;
   const pendingPaths = ref(new Set<string>());
@@ -274,9 +276,37 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
   }
 
   async function unshelve(id: string, removeApplied = false) {
-    return mutate(
+    return (await applyShelf(id, removeApplied)).ok;
+  }
+
+  async function unshelveSelected(id: string, paths: string[], removeApplied = false) {
+    if (!paths.length) return { ok: false, result: null };
+    return applyShelf(id, removeApplied, [...new Set(paths)]);
+  }
+
+  async function promptUnshelve(id: string, removeApplied = false) {
+    const path = workspace.repoPath;
+    if (
+      !path || !workspace.isRepo || busy.value || unshelveOpen ||
+      !shelves.value.some((entry) => entry.id === id)
+    ) return false;
+    unshelveOpen = true;
+    try {
+      return await openDialog<boolean | null>(UnshelveDialog, {
+        path, id, removeApplied, navigation: workspace.navigationToken(),
+      });
+    } finally {
+      unshelveOpen = false;
+    }
+  }
+
+  async function applyShelf(
+    id: string, removeApplied: boolean, paths?: string[],
+  ): Promise<{ ok: boolean; result: ShelfUnshelveResult | null }> {
+    let result: ShelfUnshelveResult | null = null;
+    const ok = await mutate(
       async (path) => {
-        const result = await getBackend().shelfUnshelve({ path, id, removeApplied });
+        result = await getBackend().shelfUnshelve({ path, id, removeApplied, ...(paths ? { paths } : {}) });
         if (result.failed.length)
           throw new Error(
             result.applied.length
@@ -290,6 +320,7 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
       "shelf.unshelved",
       "shelf.noChanges",
     );
+    return { ok, result };
   }
 
   async function promptShelf(paths: string[] = []) {
@@ -437,6 +468,8 @@ export const useStashShelfStore = defineStore("stashShelf", () => {
     dropStash,
     clearStashes,
     unshelve,
+    unshelveSelected,
+    promptUnshelve,
     promptShelf,
     promptImportShelf,
     promptExportShelf,

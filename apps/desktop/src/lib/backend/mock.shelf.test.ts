@@ -38,6 +38,19 @@ it("retains applied Shelves until removal is explicitly requested", async () => 
   expect(await backend.shelfRestore({ path: "demo", id: entry.id })).toEqual(entry);
 });
 
+it("applies only the selected files and keeps the unselected Shelf remainder", async () => {
+  const entry = await backend.shelfCreate({ path: 'demo', message: 'partial', paths: ['a.txt', 'b.txt'], keepChanges: true, sourceChangelist: null });
+  for (const paths of [[], ['missing'], ['a.txt', 'missing']]) {
+    await expect(backend.shelfUnshelve({ path: 'demo', id: entry.id, paths, removeApplied: true })).rejects.toMatchObject({ code: 'invalidArgument' });
+    expect(await backend.shelfList({ path: 'demo' })).toContainEqual(entry);
+  }
+  expect(await backend.shelfUnshelve({ path: 'demo', id: entry.id, paths: ['a.txt'], removeApplied: false })).toEqual({ applied: ['a.txt'], failed: [] });
+  expect(await backend.shelfList({ path: 'demo' })).toContainEqual(entry);
+  await backend.shelfUnshelve({ path: 'demo', id: entry.id, paths: ['a.txt'], removeApplied: true });
+  expect((await backend.shelfList({ path: 'demo' })).find(s => s.id === entry.id)?.paths).toEqual(['b.txt']);
+  expect((await backend.shelfListDeleted({ path: 'demo' })).some(s => s.id === entry.id)).toBe(false);
+});
+
 it("rejects missing Shelf operations", async () => {
   await expect(backend.shelfDelete({ path: "demo", id: "missing" })).rejects.toMatchObject({
     code: "notFound",

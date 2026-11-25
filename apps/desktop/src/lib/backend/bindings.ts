@@ -1626,7 +1626,15 @@ export type ShelfPathReq = { path: string };
 export type ShelfPreview = { entry: ShelfEntry; patch: string; truncated: boolean; lossy: boolean };
 export type ShelfPreviewReq = { path: string; id: string; deleted: boolean };
 export type ShelfRenameReq = { path: string; id: string; message: string };
-export type ShelfUnshelveReq = { path: string; id: string; removeApplied?: boolean };
+export type ShelfUnshelveReq = {
+  path: string;
+  id: string;
+  /**
+   * Omitted means all files; an explicit selection must be non-empty.
+   */
+  paths?: string[] | null;
+  removeApplied?: boolean;
+};
 export type ShelfUnshelveResult = { applied: string[]; failed: string[] };
 export type SmartRecovery = {
   sha: string;

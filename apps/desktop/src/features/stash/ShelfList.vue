@@ -193,7 +193,7 @@ function runMenu(action: Action) {
     if (action === "restore") void restore(target.id);
     return;
   }
-  if (action === "unshelve") void store.unshelve(target.id, removeApplied.value);
+  if (action === "unshelve") void store.promptUnshelve(target.id, removeApplied.value);
   if (action === "exportPatch") void store.promptExportShelf(target.id);
   if (action === "rename") void store.promptRenameShelf(target.id);
   if (action === "delete") void store.deleteShelf(target.id);
@@ -366,7 +366,7 @@ function rowKey(event: KeyboardEvent, section: Section, index: number) {
         <Button
           size="xs"
           variant="outline"
-          @click="store.unshelve(selectedShelf!.id, removeApplied)"
+          @click="store.promptUnshelve(selectedShelf!.id, removeApplied)"
         >
           {{ t("shelf.unshelve") }}
         </Button>

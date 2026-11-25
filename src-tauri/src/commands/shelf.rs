@@ -37,6 +37,9 @@ pub struct ShelfIdReq {
 pub struct ShelfUnshelveReq {
     pub path: String,
     pub id: String,
+    /// Omitted means all files; an explicit selection must be non-empty.
+    #[serde(default)]
+    pub paths: Option<Vec<String>>,
     #[serde(default = "default_true")]
     pub remove_applied: bool,
 }
@@ -235,7 +238,13 @@ pub async fn shelf_unshelve(
         .acquire_repo_write(&git, &req.path, &cancel)
         .await?;
     let (applied, failed) = git
-        .unshelve(&cwd, &req.id, req.remove_applied, &cancel)
+        .unshelve_paths(
+            &cwd,
+            &req.id,
+            req.paths.as_deref(),
+            req.remove_applied,
+            &cancel,
+        )
         .await?;
     Ok(ShelfUnshelveResult { applied, failed })
 }

@@ -77,6 +77,40 @@ beforeEach(() => {
   mocks.backend.shelfListDeleted.mockResolvedValue([]);
   mocks.refresh.mockResolvedValue(undefined);
 });
+it("opens one selection dialog with a fixed repository and never applies on cancellation", async () => {
+  const store = useStashShelfStore(); store.shelves = [shelf('saved')];
+  const pending = deferred(); mocks.dialog.mockReturnValue(pending.promise);
+  const opening = store.promptUnshelve('saved', true);
+  expect(await store.promptUnshelve('saved')).toBe(false);
+  expect(mocks.dialog).toHaveBeenCalledExactlyOnceWith(expect.anything(), { path: 'A', id: 'saved', removeApplied: true, navigation: 0 });
+  pending.resolve(null); await opening;
+  expect(mocks.backend.shelfUnshelve).not.toHaveBeenCalled();
+  mocks.dialog.mockResolvedValue(true); expect(await store.promptUnshelve('saved')).toBe(true);
+  expect(await store.promptUnshelve('missing')).toBe(false);
+});
+
+it("deduplicates selected paths, rejects empty selection, and preserves structured partial results", async () => {
+  const store = useStashShelfStore();
+  expect(await store.unshelveSelected('saved', [], true)).toEqual({ ok: false, result: null });
+  expect(mocks.backend.shelfUnshelve).not.toHaveBeenCalled();
+  const result = { applied: ['one.txt'], failed: ['two.txt'] }; mocks.backend.shelfUnshelve.mockResolvedValue(result);
+  expect(await store.unshelveSelected('saved', ['one.txt', 'two.txt', 'one.txt'], true)).toEqual({ ok: false, result });
+  expect(mocks.backend.shelfUnshelve).toHaveBeenCalledExactlyOnceWith({ path: 'A', id: 'saved', paths: ['one.txt', 'two.txt'], removeApplied: true });
+  expect(store.error).toBe('shelf.applyPartial'); expect(mocks.conflicts).toHaveBeenCalledOnce();
+});
+
+it("keeps selected-path calls guarded and suppresses old failures after same-path navigation", async () => {
+  const store = useStashShelfStore(); const pending = deferred();
+  let navigation = 0; mocks.workspace.navigationToken = () => navigation;
+  mocks.backend.shelfUnshelve.mockReturnValue(pending.promise);
+  const applying = store.unshelveSelected('saved', ['one.txt']);
+  expect(await store.unshelveSelected('saved', ['two.txt'])).toEqual({ ok: false, result: null });
+  navigation++; pending.resolve({ applied: [], failed: ['one.txt'] });
+  expect((await applying).ok).toBe(false);
+  expect(mocks.backend.shelfUnshelve).toHaveBeenCalledOnce(); expect(mocks.toast).not.toHaveBeenCalled();
+  expect(store.error).toBeNull(); expect(store.busy).toBe(false);
+});
+
 it("exports the chosen Shelf without refreshing or applying working changes", async () => {
   const store = useStashShelfStore();
   store.shelves = [shelf("first"), shelf("second")];

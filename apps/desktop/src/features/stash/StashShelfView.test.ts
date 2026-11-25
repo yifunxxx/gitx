@@ -227,14 +227,14 @@ it("discards menu actions after navigation starts or their target disappears", a
 it("keeps applied shelves by default and makes removal an explicit option", async () => {
   mocks.store.shelves = [{ id: "saved", message: "saved shelf", paths: ["a.txt"] }];
   mocks.store.selectedShelfId = "saved";
-  mocks.store.unshelve = vi.fn();
+  mocks.store.promptUnshelve = vi.fn();
   const wrapper = mount(StashShelfView, { props: { mode: "shelf" } });
   const apply = wrapper.findAll("button").find((b) => b.text() === "shelf.unshelve")!;
   await apply.trigger("click");
-  expect(mocks.store.unshelve).toHaveBeenLastCalledWith("saved", false);
+  expect(mocks.store.promptUnshelve).toHaveBeenLastCalledWith("saved", false);
   await wrapper.get('input[type="checkbox"]').setValue(true);
   await apply.trigger("click");
-  expect(mocks.store.unshelve).toHaveBeenLastCalledWith("saved", true);
+  expect(mocks.store.promptUnshelve).toHaveBeenLastCalledWith("saved", true);
   mocks.store.busy = true;
   await flushPromises();
   expect(wrapper.get("fieldset").attributes("disabled")).toBeDefined();

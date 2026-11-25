@@ -31,6 +31,7 @@ beforeEach(() => {
     setShowDeleted: vi.fn(),
     restoreShelf: vi.fn(),
     unshelve: vi.fn(),
+    promptUnshelve: vi.fn(),
     promptRenameShelf: vi.fn(),
     promptExportShelf: vi.fn(),
     previewShelf: vi.fn(),
@@ -97,8 +98,16 @@ it("uses a stable active ID for context actions after reordering", async () => {
   await flushPromises();
   menuItems()[0]!.click();
   await flushPromises();
-  expect(mocks.store.unshelve).toHaveBeenCalledExactlyOnceWith("second", false);
+  expect(mocks.store.promptUnshelve).toHaveBeenCalledExactlyOnceWith("second", false);
+  expect(mocks.store.unshelve).not.toHaveBeenCalled();
   expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+it("opens the selection workflow from the toolbar without applying immediately", async () => {
+  const wrapper = create(); await wrapper.get('[data-entry="shelf"]').trigger('click');
+  await wrapper.findAll('button').find(b => b.text() === 'shelf.unshelve')!.trigger('click');
+  expect(mocks.store.promptUnshelve).toHaveBeenCalledExactlyOnceWith('first', false);
+  expect(mocks.store.unshelve).not.toHaveBeenCalled();
 });
 
 it("exports through the toolbar and a context menu with a stable target", async () => {
