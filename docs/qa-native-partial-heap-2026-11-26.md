@@ -65,3 +65,5 @@ baseline至final增加1,926,208 bytes（约1.837MiB），最后静置阶段只�
 关键证据为`target.json`、`fixture-before.json`、`updates.jsonl`、`restorations.jsonl`、`cycles-result.json`、各阶段JSON及三份heapsnapshot、`heap-analysis.json`、`model-analysis.json`、`summary.json`、原生截图、`observed-processes.json`、`observed-exit.json`和`restoration.json`。采集、分析及恢复脚本同目录保留。
 
 本轮只交付报告、统一台账及[更新后的七项目标索引](qa-acceptance-2026-11-26.md)，不重复运行未变的产品全量测试。当前11项已知未关闭事项继续；持续快滚、原生终端/拖拽边界、CPU归因和最终组合验收仍未完成。提交前再次fetch及两分支快进检查成功，仍包含master5241dd5及交付c3c6e2f；提交推送结果在台账补记。
+
+交付提交`e302ddd2f384586883cbc82e643ab2b1383c4756`首次推送成功，远端完整SHA一致。文档检查、200个QA本地链接及差异检查通过；补记前再次同步检查成功。以上待交付描述由此覆盖。
