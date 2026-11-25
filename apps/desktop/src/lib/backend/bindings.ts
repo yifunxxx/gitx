@@ -122,6 +122,9 @@ export const commands = {
   async fsReadDir(req: FsReadDirReq): Promise<FsEntry[]> {
     return await TAURI_INVOKE("fs_read_dir", { req });
   },
+  async fsMutate(req: FsMutateReq): Promise<FsMutateResult> {
+    return await TAURI_INVOKE("fs_mutate", { req });
+  },
   async fsSearchFiles(req: FsSearchReq): Promise<FsSearchResult> {
     return await TAURI_INVOKE("fs_search_files", { req });
   },
@@ -1002,6 +1005,17 @@ export type FixupIntoReq = {
 export type FsCancelSearchReq = { sessionId: string; generation: number };
 export type FsEntry = { name: string; path: string; kind: FsEntryKind };
 export type FsEntryKind = "file" | "directory";
+export type FsMutateReq = { folderPath: string; operation: FsOperation; items: FsMutation[] };
+export type FsMutateResult = { completed: FsMutation[]; failures: FsMutationFailure[] };
+export type FsMutation = {
+  path: string;
+  /**
+   * Exact workspace-relative destination, including the new name.
+   */
+  destination: string | null;
+};
+export type FsMutationFailure = { path: string; message: string };
+export type FsOperation = "createFile" | "createDirectory" | "rename" | "copy" | "move" | "delete";
 export type FsReadDirReq = {
   folderPath: string;
   dir: string;

@@ -1083,5 +1083,26 @@
     "contentPlaceholder": "搜索整个工作区中已保存的文本",
     "caseSensitive": "区分大小写",
     "contentScope": "按字面文本匹配，每行显示首个匹配。UTF-8文件每个最多5 MiB，总计100 MiB；不搜索未保存草稿。"
+  },
+  "fileOps": {
+    "createFile": "新建文件…",
+    "createDirectory": "新建文件夹…",
+    "rename": "重命名…",
+    "copy": "复制到…",
+    "move": "移动到…",
+    "namePrompt": "输入选中文件夹内的名称，不会覆盖已有条目。",
+    "destinationPrompt": "输入相对工作区的目标路径，包含新名称。不会覆盖已有条目。",
+    "destinationFolderPrompt": "输入相对工作区的目标文件夹，留空表示工作区根目录。",
+    "editorBusy": "请等待相关文件加载或保存完成。",
+    "repositoryRootProtected": "工作区打开期间，无法移动、重命名或删除仓库根目录。",
+    "resolveConflictsFirst": "请先解决相关文件的 Git 冲突，再移动、重命名或删除。",
+    "copySavedContent": "选中的文件有未保存修改。是否复制磁盘上已保存的内容？",
+    "failed": "部分文件操作失败",
+    "completed": "文件操作完成",
+    "destinationOpen": "移动前请先关闭目标路径的编辑器标签。",
+    "delete": "移到回收站",
+    "deleteConfirm": "将这些项目及其内容移到系统回收站？回收失败时保留原文件。",
+    "unsavedDelete": "请先保存或放弃相关编辑器草稿，再删除文件。",
+    "deletedDraft": "文件已回收；关闭前请复制保留此草稿。"
   }
 }

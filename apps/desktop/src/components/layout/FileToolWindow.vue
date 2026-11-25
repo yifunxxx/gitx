@@ -1,18 +1,28 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ChevronDown, ChevronRight, LoaderCircle, RefreshCw } from "@lucide/vue";
+import {
+  ChevronDown,
+  ChevronRight,
+  FilePlus,
+  FolderPlus,
+  LoaderCircle,
+  RefreshCw,
+} from "@lucide/vue";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import VirtualList from "@/components/common/VirtualList.vue";
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
+import { owningRepository } from "@/features/file-tree/fileRepository";
 import { useFileTreeStore } from "@/stores/fileTreeStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
+import { useFileOperationsStore } from "@/stores/fileOperationsStore";
+import type { FsOperation } from "@/lib/backend";
 import { useHistoryStore } from "@/stores/historyStore";
 import { openChangeDiff } from "@/features/commit/openChangeDiff";
 import { statusClass } from "@/features/commit/statusColor";
@@ -44,6 +54,7 @@ const workspace = useWorkspaceStore();
 const layout = useLayoutStore();
 const changes = useChangesStore();
 const viewer = useFileViewerStore();
+const operations = useFileOperationsStore();
 const history = useHistoryStore();
 const tree = ref<HTMLElement | null>(null);
 const list = ref<{
@@ -61,6 +72,9 @@ const currentIndex = computed(() =>
   ),
 );
 const current = computed(() => files.rows[currentIndex.value]);
+const selectedRows = computed(() =>
+  files.rows.filter((row) => files.selectedPath === row.path),
+);
 const rowId = (row: FileRow) => `${prefix}-${encodeURIComponent(row.key)}`;
 const activeDescendant = computed(() =>
   current.value && list.value?.isIndexVisible(currentIndex.value)
@@ -77,9 +91,16 @@ const statuses = computed(
 );
 
 function repoPath(row: FileRow) {
+  const repository = owner(row);
+  if (repository && repository.id !== workspace.repoId) return null;
   return workspace.isRepo && workspace.folderPath && workspace.repoPath
     ? relativeToRoot(workspace.folderPath, row.path, workspace.repoPath)
     : null;
+}
+function owner(row: FileRow) {
+  return workspace.folderPath
+    ? owningRepository(workspace.folderPath, row.path, workspace.roots ?? [])
+    : undefined;
 }
 function change(row: FileRow) {
   const path = repoPath(row);
@@ -208,6 +229,18 @@ function menuAction(action: FileAction) {
   closeMenu();
   if (target) void runAction(action, target.row, target);
 }
+function operate(operation: FsOperation, row?: FileRow) {
+  closeMenu();
+  if (operation === "createFile" || operation === "createDirectory") {
+    const parent =
+      row?.kind === "directory" ? row.path : (row?.path.split("/").slice(0, -1).join("/") ?? "");
+    void operations.run(operation, [parent]);
+  } else if (row)
+    void operations.run(
+      operation,
+      operation === "rename" ? [row.path] : selectedRows.value.map((item) => item.path),
+    );
+}
 async function selectIndex(index: number) {
   const row = files.rows[Math.min(Math.max(index, 0), files.rows.length - 1)];
   if (!row) return;
@@ -226,6 +259,18 @@ function onKeydown(event: KeyboardEvent) {
     return;
   const row = current.value;
   if (!row) return;
+  if (event.key === "Delete" && !event.shiftKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) operate("delete", row);
+    return;
+  }
+  if (event.key === "F2" && !event.shiftKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat && selectedRows.value.length === 1) operate("rename", row);
+    return;
+  }
   if ((event.key === "F10" && event.shiftKey) || (event.key === "ContextMenu" && !event.shiftKey)) {
     event.preventDefault();
     event.stopPropagation();
@@ -284,16 +329,30 @@ function onKeydown(event: KeyboardEvent) {
       class="flex h-8 shrink-0 items-center justify-between border-b px-3 text-xs font-medium"
     >
       <span>{{ t("toolWindows.file") }}</span>
-      <button
-        type="button"
-        class="rounded p-1 hover:bg-accent disabled:opacity-40"
-        :title="t('fileTree.refresh')"
-        :aria-label="t('fileTree.refresh')"
-        :disabled="!workspace.folderPath || files.loading"
-        @click="files.refreshExpanded()"
-      >
-        <RefreshCw class="h-3.5 w-3.5" :class="files.loading ? 'animate-spin' : ''" />
-      </button>
+      <div class="flex items-center gap-1">
+        <button
+          v-for="operation in ['createFile', 'createDirectory'] as const"
+          :key="operation"
+          type="button"
+          class="rounded p-1 hover:bg-accent disabled:opacity-40"
+          :disabled="!workspace.folderPath || operations.busy"
+          :title="t(`fileOps.${operation}`)"
+          :aria-label="t(`fileOps.${operation}`)"
+          @click="operate(operation, files.selectedPath ? current : undefined)"
+        >
+          <component :is="operation === 'createFile' ? FilePlus : FolderPlus" class="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          class="rounded p-1 hover:bg-accent disabled:opacity-40"
+          :title="t('fileTree.refresh')"
+          :aria-label="t('fileTree.refresh')"
+          :disabled="!workspace.folderPath || files.loading"
+          @click="files.refreshExpanded()"
+        >
+          <RefreshCw class="h-3.5 w-3.5" :class="files.loading ? 'animate-spin' : ''" />
+        </button>
+      </div>
     </header>
     <EmptyState v-if="!workspace.folderPath" :title="t('empty.noFolder')" />
     <template v-else>
@@ -364,14 +423,14 @@ function onKeydown(event: KeyboardEvent) {
               role="treeitem"
               :aria-label="row.name"
               :aria-level="row.depth + 1"
-              :aria-selected="row.path === files.selectedPath"
+              :aria-selected="files.selectedPath === row.path"
               :aria-expanded="row.kind === 'directory' ? row.expanded : undefined"
               :aria-busy="row.loading || undefined"
               :data-path="row.path"
               :data-kind="row.kind"
               :title="row.error ?? row.path"
               class="flex h-6 cursor-default select-none items-center gap-1 pr-2 hover:bg-hover-surface"
-              :class="row.path === files.selectedPath ? 'bg-accent' : ''"
+              :class="files.selectedPath === row.path ? 'bg-accent' : ''"
               :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
               @click="click(row, $event)"
               @dblclick="row.kind === 'file' && runAction('openFile', row)"
@@ -438,6 +497,25 @@ function onKeydown(event: KeyboardEvent) {
       @close="closeMenu"
     >
       <template v-if="menu">
+        <button
+          v-for="operation in [
+            'createFile',
+            'createDirectory',
+            'rename',
+            'copy',
+            'move',
+            'delete',
+          ] as const"
+          :key="operation"
+          type="button"
+          role="menuitem"
+          class="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent disabled:opacity-40"
+          :disabled="operations.busy || (operation === 'rename' && selectedRows.length !== 1)"
+          @click="operate(operation, menu.row)"
+        >
+          {{ t(`fileOps.${operation}`) }}
+        </button>
+        <div role="separator" class="my-1 border-t" />
         <template v-if="menu.row.kind === 'file'">
           <button
             type="button"
@@ -451,7 +529,7 @@ function onKeydown(event: KeyboardEvent) {
             type="button"
             role="menuitem"
             class="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
-            :disabled="!projectFileDiffSection(change(menu.row))"
+            :disabled="selectedRows.length !== 1 || !projectFileDiffSection(change(menu.row))"
             @click="menuAction('showDiff')"
           >
             {{ t("commitTw.showDiff") }}
@@ -460,7 +538,7 @@ function onKeydown(event: KeyboardEvent) {
             type="button"
             role="menuitem"
             class="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
-            :disabled="!canHistory(menu.row)"
+            :disabled="selectedRows.length !== 1 || !canHistory(menu.row)"
             @click="menuAction('showHistory')"
           >
             {{ t("commitTw.showHistory") }}

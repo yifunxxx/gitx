@@ -1083,5 +1083,26 @@
     "contentPlaceholder": "Search saved text across this workspace",
     "caseSensitive": "Match case",
     "contentScope": "Literal text; first match per line. UTF-8 files up to 5 MiB; 100 MiB total. Unsaved edits are not searched."
+  },
+  "fileOps": {
+    "createFile": "New File…",
+    "createDirectory": "New Folder…",
+    "rename": "Rename…",
+    "copy": "Copy To…",
+    "move": "Move To…",
+    "namePrompt": "Enter a name inside the selected folder. Existing entries will not be overwritten.",
+    "destinationPrompt": "Destination path relative to the workspace, including the new name. Existing entries will not be overwritten.",
+    "destinationFolderPrompt": "Destination folder relative to the workspace. Leave empty for the workspace root.",
+    "editorBusy": "Wait for the affected file to finish loading or saving.",
+    "repositoryRootProtected": "Repository roots cannot be moved, renamed or deleted while this workspace is open.",
+    "resolveConflictsFirst": "Resolve this file's Git conflicts before moving, renaming or deleting it.",
+    "copySavedContent": "Some selected files have unsaved edits. Copy the saved content on disk?",
+    "failed": "Some file operations failed",
+    "completed": "File operation completed",
+    "destinationOpen": "Close the destination editor tab before moving files.",
+    "delete": "Move to Recycle Bin",
+    "deleteConfirm": "Move these entries and their contents to the system Recycle Bin? If recycling fails, the original is kept.",
+    "unsavedDelete": "Save or discard affected editor drafts before deleting.",
+    "deletedDraft": "File recycled; copy this draft before closing."
   }
 }

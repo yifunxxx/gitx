@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   reveal: vi.fn(),
   openDirectory: vi.fn(),
   clipboard: vi.fn(),
+  operation: vi.fn(),
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/stores/fileTreeStore", () => ({ useFileTreeStore: () => mocks.tree }));
@@ -25,6 +26,9 @@ vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws })
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
 vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: mocks.open }) }));
+vi.mock("@/stores/fileOperationsStore", () => ({
+  useFileOperationsStore: () => ({ busy: false, run: mocks.operation }),
+}));
 vi.mock("@/stores/historyStore", () => ({
   useHistoryStore: () => ({ openFileHistory: mocks.history }),
 }));

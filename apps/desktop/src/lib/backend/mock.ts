@@ -897,6 +897,9 @@ export const mockBackend: Backend = {
     workspaceTexts.set(`${req.folderPath}/${req.filePath}`, req.content);
     return null;
   },
+  async fsMutate() {
+    throw new Error("File operations require the desktop application");
+  },
   async fsSearchFiles(req) {
     if (req.content) throw new Error("Content search requires the desktop application");
     const paths = ["README.md", "src/main.ts", ...files.map((file) => file.path)];

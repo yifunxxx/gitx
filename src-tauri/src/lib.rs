@@ -25,6 +25,7 @@ use commands::conflicts::{
 use commands::credential::{credential_session_clear, credential_session_set};
 use commands::diff::diff_file;
 use commands::filesystem::{fs_read_dir, fs_read_file, fs_write_file};
+use commands::filesystem_ops::fs_mutate;
 use commands::filesystem_search::{fs_cancel_search, fs_search_files};
 use commands::history::{
     blame_file, blob_read, checkout_path_from_rev, file_history, list_refs, log_changed_files,
@@ -124,6 +125,7 @@ pub fn run() {
             status_get,
             file_write_worktree,
             fs_read_dir,
+            fs_mutate,
             fs_search_files,
             fs_cancel_search,
             fs_read_file,

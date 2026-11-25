@@ -98,6 +98,25 @@ it("renders the first asynchronous file result after the loading host is replace
   expect(editor(wrapper).state.doc.toString()).toBe("base\nworking\n");
   expect(wrapper.findAll(".cm-editor")).toHaveLength(1);
 });
+it("preserves the editor instance and undo on rename and can reopen the old path", async () => {
+  mocks.fsReadFile.mockResolvedValue("original");
+  const store = useFileViewerStore();
+  await store.open("a.txt", { folderPath: "C:/plain" });
+  const id = store.activeId!;
+  const wrapper = mount(FileViewer, { props: { tabId: id } });
+  await flushPromises();
+  const view = editor(wrapper);
+  view.dispatch({ changes: { from: 0, to: 8, insert: "draft" } });
+  store.applyFileMutation("C:/plain", "rename", [{ path: "a.txt", destination: "b.txt" }]);
+  await flushPromises();
+  expect(editor(wrapper)).toBe(view);
+  expect(store.activeId).toBe(id);
+  expect(store.tabs[0]?.path).toBe("b.txt");
+  undo(view);
+  expect(view.state.doc.toString()).toBe("original");
+  await store.open("a.txt", { folderPath: "C:/plain" });
+  expect(new Set(store.tabs.map((tab) => tab.id)).size).toBe(2);
+});
 
 it("displays an asynchronous load failure instead of a blank document", async () => {
   const response = deferred();

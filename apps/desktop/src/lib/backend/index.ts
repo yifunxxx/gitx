@@ -9,6 +9,8 @@ import type {
   FsReadDirReq,
   FsReadFileReq,
   FsWriteFileReq,
+  FsMutateReq,
+  FsMutateResult,
   FsSearchReq,
   FsSearchResult,
   FsCancelSearchReq,
@@ -218,6 +220,7 @@ export type Backend = {
   fsReadDir(req: FsReadDirReq): Promise<FsEntry[]>;
   fsReadFile(req: FsReadFileReq): Promise<string>;
   fsWriteFile(req: FsWriteFileReq): Promise<null>;
+  fsMutate(req: FsMutateReq): Promise<FsMutateResult>;
   fsSearchFiles(req: FsSearchReq): Promise<FsSearchResult>;
   fsCancelSearch(req: FsCancelSearchReq): Promise<null>;
   stagePaths(req: PathsReq): Promise<null>;
@@ -391,6 +394,7 @@ export const tauriBackend: Backend = {
   fsReadDir: (req) => commands.fsReadDir(req),
   fsReadFile: (req) => commands.fsReadFile(req),
   fsWriteFile: (req) => commands.fsWriteFile(req),
+  fsMutate: (req) => commands.fsMutate(req),
   fsSearchFiles: (req) => commands.fsSearchFiles(req),
   fsCancelSearch: (req) => commands.fsCancelSearch(req),
   stagePaths: (req) => commands.stagePaths(req),

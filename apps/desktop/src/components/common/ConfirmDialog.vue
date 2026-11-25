@@ -38,7 +38,11 @@ function onEscape(event: KeyboardEvent) {
       aria-modal="true"
     >
       <h2 class="text-sm font-semibold">{{ props.title }}</h2>
-      <p class="mt-2 text-xs text-muted-foreground">{{ props.message }}</p>
+      <p
+        class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-muted-foreground"
+      >
+        {{ props.message }}
+      </p>
       <div class="mt-4 flex justify-end gap-2">
         <Button variant="ghost" size="sm" @click="cancel">{{ t("common.cancel") }}</Button>
         <Button size="sm" :variant="props.destructive ? 'destructive' : 'default'" @click="confirm">

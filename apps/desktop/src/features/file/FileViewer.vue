@@ -314,6 +314,7 @@ const menuActions = computed(() => {
       <span v-if="!tab.folderPath" class="text-muted-foreground">vs HEAD</span>
       <span v-if="tab.dirty" class="text-muted-foreground">· {{ t("editor.unsaved") }}</span>
       <span v-if="tab.saving" class="text-muted-foreground">· {{ t("editor.saving") }}</span>
+      <span v-if="tab.deletedOnDisk" class="text-warning">{{ t("fileOps.deletedDraft") }}</span>
     </div>
     <div v-if="tab.loading" class="p-4 text-xs text-muted-foreground">Loading…</div>
     <div

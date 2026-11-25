@@ -1,7 +1,8 @@
 import { defineStore } from "pinia";
+import { owningRepository } from "@/features/file-tree/fileRepository";
 import { reactive, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
-import type { DiffHunk } from "@/lib/backend";
+import type { DiffHunk, FsMutation, FsOperation } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useLayoutStore } from "./layoutStore";
 import { useChangesStore } from "./changesStore";
@@ -9,6 +10,7 @@ import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 import { relativeToRoot } from "@/lib/projectFilePath";
+import { workspacePathKey } from "@/lib/workspacePath";
 
 export type FileViewerTab = {
   id: string;
@@ -22,6 +24,8 @@ export type FileViewerTab = {
   hunks: DiffHunk[];
   loading: boolean;
   saving: boolean;
+  fileOperationPending?: boolean;
+  deletedOnDisk?: boolean;
   reveal?: { line: number; column: number };
   editable: boolean;
   dirty: boolean;
@@ -32,6 +36,7 @@ export type FileViewerTab = {
 export const useFileViewerStore = defineStore("fileViewer", () => {
   const tabs = ref<FileViewerTab[]>([]);
   const activeId = ref<string | null>(null);
+  const fileMutationPending = ref(false);
   const workspace = useWorkspaceStore();
   watch(
     () => [workspace.repoPath, workspace.folderPath, workspace.appliedOpenToken?.()],
@@ -42,14 +47,22 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     { flush: "sync" },
   );
 
-  async function open(filePath: string, source?: { folderPath: string | null; line?: number; column?: number }) {
+  async function open(
+    filePath: string,
+    source?: { folderPath: string | null; line?: number; column?: number },
+  ) {
+    if (fileMutationPending.value) return;
     const workspace = useWorkspaceStore();
     const layout = useLayoutStore();
     const sourceRoot = source?.folderPath ?? workspace.repoPath;
     if (!sourceRoot) return;
     const sourceFilePath = filePath;
+    const owner = owningRepository(sourceRoot, filePath, workspace.roots ?? []);
     const repoRelative =
-      workspace.isRepo && workspace.repoPath && workspace.repoId
+      workspace.isRepo &&
+      workspace.repoPath &&
+      workspace.repoId &&
+      (!owner || owner.id === workspace.repoId)
         ? relativeToRoot(sourceRoot, filePath, workspace.repoPath)
         : null;
     const folderPath = repoRelative === null ? sourceRoot : undefined;
@@ -64,7 +77,12 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       return;
     }
 
-    const id = folderPath ? `file:${JSON.stringify([folderPath, filePath])}` : `file:${filePath}`;
+    const pathId = folderPath
+      ? `file:${JSON.stringify([folderPath, filePath])}`
+      : `file:${filePath}`;
+    const id = tabs.value.some((tab) => tab.id === pathId)
+      ? `${pathId}:${crypto.randomUUID()}`
+      : pathId;
     const tab = reactive<FileViewerTab>({
       id,
       path: filePath,
@@ -142,7 +160,15 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     const targetId = id ?? activeId.value;
     const tab = tabs.value.find((t) => t.id === targetId);
     if (!tab || (!tab.folderPath && (!workspace.repoPath || !workspace.repoId))) return false;
-    if (!tab.editable || tab.loading || tab.saving) return false;
+    if (
+      !tab.editable ||
+      tab.loading ||
+      tab.saving ||
+      fileMutationPending.value ||
+      tab.fileOperationPending ||
+      tab.deletedOnDisk
+    )
+      return false;
     if (!tab.dirty) return true;
 
     const repoPath = workspace.repoPath;
@@ -215,6 +241,54 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     return save(activeId.value);
   }
 
+  function affectedByFiles(folder: string, paths: string[]) {
+    return tabs.value.filter((tab) => {
+      const root = tab.folderPath ?? workspace.repoPath;
+      const relative = root ? relativeToRoot(root, tab.path, folder) : null;
+      return relative !== null && paths.some((path) => withinFilePath(folder, relative, path));
+    });
+  }
+
+  function withinFilePath(folder: string, path: string, parent: string) {
+    const key = workspacePathKey(`${folder}/${path}`);
+    const parentKey = workspacePathKey(`${folder}/${parent}`);
+    return key === parentKey || key.startsWith(`${parentKey}/`);
+  }
+
+  function applyFileMutation(folder: string, operation: FsOperation, completed: FsMutation[]) {
+    if (operation === "delete") {
+      for (const tab of affectedByFiles(
+        folder,
+        completed.map((item) => item.path),
+      )) {
+        // Edits entered while the OS was recycling must never be discarded.
+        if (tab.dirty) tab.deletedOnDisk = true;
+        else closeTab(tab.id);
+      }
+      return;
+    }
+    if (operation !== "rename" && operation !== "move") return;
+    for (const tab of tabs.value) {
+      const root = tab.folderPath ?? workspace.repoPath;
+      const relative = root ? relativeToRoot(root, tab.path, folder) : null;
+      if (relative === null) continue;
+      const item = completed.find((item) => withinFilePath(folder, relative, item.path));
+      if (!item?.destination) continue;
+      const nextPath = item.destination + relative.slice(item.path.length);
+      const owner = owningRepository(folder, nextPath, workspace.roots ?? []);
+      const repoRelative =
+        workspace.isRepo && workspace.repoPath && (!owner || owner.id === workspace.repoId)
+          ? relativeToRoot(folder, nextPath, workspace.repoPath)
+          : null;
+      tab.folderPath = repoRelative === null ? folder : undefined;
+      tab.path = repoRelative ?? nextPath;
+      tab.title = tab.path.split("/").at(-1)!;
+      // The editor instance owns selection and undo history. Its identity must
+      // survive a path change; open() resolves tabs by current path instead.
+      tab.hunks = [];
+    }
+  }
+
   function closeTab(id: string) {
     const idx = tabs.value.findIndex((t) => t.id === id);
     if (idx < 0) return;
@@ -227,5 +301,16 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     }
   }
 
-  return { tabs, activeId, open, setDocument, save, saveActive, closeTab };
+  return {
+    tabs,
+    activeId,
+    fileMutationPending,
+    open,
+    setDocument,
+    save,
+    saveActive,
+    closeTab,
+    affectedByFiles,
+    applyFileMutation,
+  };
 });

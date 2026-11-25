@@ -66,6 +66,29 @@ it("opens and saves non-Git text without invoking Git operations", async () => {
   expect(mocks.refresh).not.toHaveBeenCalled();
 });
 
+it("keeps a dirty document through a directory move and saves to its new path", async () => {
+  const store = useFileViewerStore();
+  await store.open("src/a.txt", { folderPath: "C:/folder" });
+  const tab = store.tabs[0]!;
+  store.setDocument(tab.id, "unsaved text");
+  tab.fileOperationPending = true;
+  expect(await store.saveActive()).toBe(false);
+  expect(mocks.fsWriteFile).not.toHaveBeenCalled();
+  store.applyFileMutation("C:/folder", "move", [{ path: "src", destination: "dest" }]);
+  tab.fileOperationPending = false;
+  expect(tab.path).toBe("dest/a.txt");
+  expect(tab.dirty).toBe(true);
+  expect(store.activeId).toBe(tab.id);
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fsWriteFile).toHaveBeenCalledWith({
+    folderPath: "C:/folder",
+    filePath: "dest/a.txt",
+    content: "unsaved text",
+  });
+  await store.open("src/a.txt", { folderPath: "C:/folder" });
+  expect(new Set(store.tabs.map((item) => item.id)).size).toBe(2);
+});
+
 it("keeps newer draft edits made while a non-Git save is pending", async () => {
   const store = useFileViewerStore();
   await store.open("note.txt");
@@ -78,6 +101,36 @@ it("keeps newer draft edits made while a non-Git save is pending", async () => {
   write.resolve(null);
   await saving;
   expect(tab).toMatchObject({ baseline: "first", text: "later", dirty: true, saving: false });
+});
+it("closes only successfully recycled clean tabs and preserves late drafts", async () => {
+  const store = useFileViewerStore();
+  await store.open("a", { folderPath: "C:/folder" });
+  await store.open("b", { folderPath: "C:/folder" });
+  await store.open("c", { folderPath: "C:/folder" });
+  const draft = store.tabs[1]!;
+  store.setDocument(draft.id, "late edit");
+  store.applyFileMutation("C:/folder", "delete", [
+    { path: "a", destination: null },
+    { path: "b", destination: null },
+  ]);
+  expect(store.tabs.map((tab) => tab.path)).toEqual(["b", "c"]);
+  expect(draft.deletedOnDisk).toBe(true);
+  expect(draft.text).toBe("late edit");
+  expect(await store.save(draft.id)).toBe(false);
+});
+it("opens another nested repository using its disk path instead of the active parent's Git path", async () => {
+  mocks.workspace.isRepo = true;
+  mocks.workspace.roots = [
+    { id: "folder", worktreeRoot: "C:/folder" },
+    { id: "nested", worktreeRoot: "C:/folder/nested" },
+  ];
+  const store = useFileViewerStore();
+  await store.open("nested/a.txt", { folderPath: "C:/folder" });
+  expect(mocks.fsReadFile).toHaveBeenCalledWith({
+    folderPath: "C:/folder",
+    filePath: "nested/a.txt",
+  });
+  expect(mocks.diffFile).not.toHaveBeenCalled();
 });
 
 it("keeps read failures uneditable and write failures dirty", async () => {
@@ -92,6 +145,39 @@ it("keeps read failures uneditable and write failures dirty", async () => {
   expect(await store.saveActive()).toBe(false);
   expect(store.tabs[1]!.dirty).toBe(true);
   expect(mocks.toast).toHaveBeenCalledOnce();
+});
+
+it("blocks opening and saving during a filesystem mutation then resumes", async () => {
+  const store = useFileViewerStore();
+  await store.open("a");
+  store.setDocument(store.activeId!, "draft");
+  store.fileMutationPending = true;
+  await store.open("b");
+  expect(store.tabs).toHaveLength(1);
+  expect(await store.saveActive()).toBe(false);
+  store.fileMutationPending = false;
+  expect(await store.saveActive()).toBe(true);
+});
+
+it("remaps a case-insensitive source into an inactive nested repository without losing its draft", async () => {
+  mocks.workspace.isRepo = true;
+  mocks.workspace.roots = [{ id: "nested", worktreeRoot: "C:/folder/nested" }];
+  const store = useFileViewerStore();
+  await store.open("SRC/a.txt", { folderPath: "C:/folder" });
+  store.setDocument(store.activeId!, "draft");
+  expect(store.affectedByFiles("C:/folder", ["src"])).toHaveLength(1);
+  store.applyFileMutation("C:/folder", "move", [{ path: "src", destination: "nested" }]);
+  expect(store.tabs[0]).toMatchObject({
+    path: "nested/a.txt",
+    folderPath: "C:/folder",
+    dirty: true,
+  });
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fsWriteFile).toHaveBeenCalledWith({
+    folderPath: "C:/folder",
+    filePath: "nested/a.txt",
+    content: "draft",
+  });
 });
 
 it("ignores a closed/reopened tab's stale read and a same-path reopened workspace save", async () => {
