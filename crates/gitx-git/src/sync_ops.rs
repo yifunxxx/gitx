@@ -120,6 +120,13 @@ impl GitRunner {
             .rev_parse(cwd, "HEAD", cancel)
             .await
             .unwrap_or_default();
+        // An unborn branch has no old commit. Compare its first checkout to
+        // an empty tree while retaining the absent old HEAD in the result.
+        let old_tree = if old.is_empty() {
+            self.empty_tree(cwd, cancel).await?
+        } else {
+            old.clone()
+        };
         // Squash and --no-commit can update the index without advancing HEAD.
         // Compare index trees so pre-existing staged files are not reported as
         // files downloaded by this pull.
@@ -181,7 +188,7 @@ impl GitRunner {
         let index_changed = new_index.is_some() && new_index != old_index;
         let updated = head_changed || index_changed || pending_merge;
         let updated_files = if head_changed {
-            self.name_status(cwd, &old, &new, cancel)
+            self.name_status(cwd, &old_tree, &new, cancel)
                 .await
                 .unwrap_or_default()
         } else if let (Some(before), Some(after)) = (&old_index, &new_index) {
