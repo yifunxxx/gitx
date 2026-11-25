@@ -115,6 +115,13 @@ export const SETTINGS_PAGES: SettingPage[] = [
         control: { kind: "boolean" },
         scope: "app",
       },
+      {
+        id: "compactFileTree",
+        titleKey: "settings.fields.compactFileTree",
+        control: { kind: "boolean" },
+        scope: "app",
+        path: "compactFileTree",
+      },
     ],
   },
   {

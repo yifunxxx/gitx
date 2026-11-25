@@ -69,6 +69,7 @@ it("exposes independent File visibility settings with both translations", () => 
   expect(page.fields.map((field) => field.path)).toEqual([
     "showIgnoredInFileTree",
     "showHiddenInFileTree",
+    "compactFileTree",
   ]);
   for (const locale of ["en", "zh-CN"] as const) {
     for (const key of [

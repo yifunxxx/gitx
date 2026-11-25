@@ -252,14 +252,16 @@ it("associates each editable field with its visible title", async () => {
 it("saves File tree visibility independently from Commit ignored files", async () => {
   await button("Project Files").trigger("click");
   const controls = host.findAll('fieldset input[type="checkbox"]');
-  expect(controls).toHaveLength(2);
+  expect(controls).toHaveLength(3);
   await controls[0]!.setValue(true);
   await controls[1]!.setValue(true);
+  await controls[2]!.setValue(true);
   await button("Apply").trigger("click");
   await flushPromises();
   expect(backend.settingsSet.mock.calls[0]![0]).toMatchObject({
     showIgnoredInFileTree: true,
     showHiddenInFileTree: true,
+    compactFileTree: true,
     showIgnoredFiles: false,
   });
 });

@@ -28,6 +28,7 @@ const defaultSettings: AppSettings = {
   showIgnoredFiles: false,
   showIgnoredInFileTree: false,
   showHiddenInFileTree: false,
+  compactFileTree: false,
   logIndexing: true,
   keymapOverrides: {},
   git: {

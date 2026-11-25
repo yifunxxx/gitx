@@ -15,6 +15,7 @@ import EmptyState from "@/components/common/EmptyState.vue";
 import ErrorState from "@/components/common/ErrorState.vue";
 import VirtualList from "@/components/common/VirtualList.vue";
 import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
+import FileRootSelector from "@/features/file-tree/FileRootSelector.vue";
 import { owningRepository } from "@/features/file-tree/fileRepository";
 import { useFileTreeStore } from "@/stores/fileTreeStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -36,6 +37,7 @@ import { changeLocation } from "@/features/commit/changeLocation";
 import {
   projectFileDiffSection,
   projectFileStatusLabel,
+  aggregateFolderChanges,
 } from "@/features/file-tree/projectFileStatus";
 import { relativeToRoot } from "@/lib/projectFilePath";
 import { requestTerminalDirectory } from "@/features/terminal/terminalDirectoryRequest";
@@ -96,6 +98,11 @@ const statuses = computed(
         ? changes.snapshot.files.map((file) => [file.path, file])
         : [],
     ),
+);
+const folderChanges = computed(() =>
+  workspace.folderPath && workspace.repoPath
+    ? aggregateFolderChanges([...statuses.value.values()], workspace.repoPath, workspace.folderPath)
+    : new Map<string, number>(),
 );
 
 function repoPath(row: FileRow) {
@@ -479,6 +486,7 @@ function drop(event: DragEvent, row?: FileRow) {
     </header>
     <EmptyState v-if="!workspace.folderPath" :title="t('empty.noFolder')" />
     <template v-else>
+      <FileRootSelector v-if="workspace.roots?.length > 1" />
       <div class="shrink-0 border-b p-2">
         <input
           v-model="files.filter"
@@ -555,7 +563,12 @@ function drop(event: DragEvent, row?: FileRow) {
               :aria-busy="row.loading || undefined"
               :data-path="row.path"
               :data-kind="row.kind"
-              :title="row.error ?? row.path"
+              :title="
+                row.error ??
+                (row.kind === 'directory' && folderChanges.get(row.path)
+                  ? `${row.path} · ${t('fileTree.changedCount', { count: folderChanges.get(row.path) })}`
+                  : row.path)
+              "
               class="flex h-6 cursor-default select-none items-center gap-1 pr-2 hover:bg-hover-surface"
               :class="[
                 files.selectedPaths.includes(row.path) ? 'bg-accent' : '',
@@ -594,11 +607,23 @@ function drop(event: DragEvent, row?: FileRow) {
                 <ChevronRight v-else class="h-3 w-3" />
               </button>
               <span v-else class="w-4 shrink-0" />
+              <span
+                v-if="workspace.roots?.length > 1 && owner(row)"
+                class="max-w-20 truncate rounded border px-1 text-[10px] text-muted-foreground"
+                :title="owner(row)?.worktreeRoot"
+                >{{ owner(row)?.displayName }}</span
+              >
               <FileTypeIcon
                 :name="row.name"
                 :kind="row.kind === 'directory' ? 'folder' : 'file'"
                 :expanded="row.expanded"
               />
+              <span
+                v-if="row.kind === 'directory' && folderChanges.get(row.path)"
+                class="text-warning"
+                :aria-label="t('fileTree.changedCount', { count: folderChanges.get(row.path) })"
+                >●</span
+              >
               <span
                 class="min-w-0 flex-1 truncate"
                 :class="change(row) ? statusClass(change(row)!.kind) : 'text-foreground'"

@@ -50,6 +50,7 @@ export const useSettingsStore = defineStore("settings", () => {
       showIgnoredFiles: false,
       showIgnoredInFileTree: false,
       showHiddenInFileTree: false,
+      compactFileTree: false,
       logIndexing: true,
       keymapOverrides: {},
       git: {

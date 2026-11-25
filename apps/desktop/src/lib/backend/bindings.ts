@@ -598,6 +598,7 @@ export type AppSettings = {
    */
   showIgnoredInFileTree?: boolean;
   showHiddenInFileTree?: boolean;
+  compactFileTree?: boolean;
   /**
    * Enable SQLite Log indexing (#103). Default on.
    */

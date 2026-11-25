@@ -190,6 +190,8 @@ pub struct AppSettings {
     pub show_ignored_in_file_tree: bool,
     #[serde(default)]
     pub show_hidden_in_file_tree: bool,
+    #[serde(default)]
+    pub compact_file_tree: bool,
     /// Enable SQLite Log indexing (#103). Default on.
     #[serde(default = "default_log_indexing")]
     pub log_indexing: bool,
@@ -225,6 +227,7 @@ impl Default for AppSettings {
             show_ignored_files: false,
             show_ignored_in_file_tree: false,
             show_hidden_in_file_tree: false,
+            compact_file_tree: false,
             log_indexing: true,
             git: GitSettings::default(),
             keymap_overrides: HashMap::new(),
@@ -242,11 +245,13 @@ mod file_tree_settings_tests {
         let fields = stored.as_object_mut().unwrap();
         fields.remove("showIgnoredInFileTree");
         fields.remove("showHiddenInFileTree");
+        fields.remove("compactFileTree");
         fields.insert("showIgnoredFiles".into(), serde_json::json!(true));
         let settings: AppSettings = serde_json::from_value(stored).unwrap();
         assert!(settings.show_ignored_files);
         assert!(!settings.show_ignored_in_file_tree);
         assert!(!settings.show_hidden_in_file_tree);
+        assert!(!settings.compact_file_tree);
     }
 
     #[test]
@@ -254,12 +259,14 @@ mod file_tree_settings_tests {
         let settings = AppSettings {
             show_ignored_in_file_tree: true,
             show_hidden_in_file_tree: true,
+            compact_file_tree: true,
             ..AppSettings::default()
         };
         let loaded: AppSettings =
             serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
         assert!(loaded.show_ignored_in_file_tree);
         assert!(loaded.show_hidden_in_file_tree);
+        assert!(loaded.compact_file_tree);
         assert!(!loaded.show_ignored_files);
     }
 }

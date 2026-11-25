@@ -18,6 +18,8 @@
 - 最终竞态/路径/菜单定向：36 项通过；类型检查、Vite生产构建、`pnpm lint`（含 Rust fmt/Clippy）通过。8 项现有 lint 警告；Vite保留已有大 chunk 提示。
 - Rust filesystem/operations/search：20 项通过、1 项默认忽略；设置2项通过。默认忽略的真实Windows回收/恢复测试单独执行1项通过：普通文件、含文件目录均能回收后恢复，锁定文件回收失败后原文件仍在。
 - Windows原生阶段构建通过，隔离测试程序 SHA256 `8AE7E5288B3B2BF994313E1B399E07BF2709848D0451CFF54A2FC6409356060E`。其后补修内容搜索关闭对话框后的编辑器焦点、确认框多行路径显示；最终构建身份另记。
+- 最终Windows程序SHA256 `0B5166A17CD4070AEBFD4FEC9BA622E01E1138EB97D9F68C44AC0B3B1C99D643`，复查内容搜索打开后焦点为`cm-content`、第二行文本`😀中文 Needle native`的DOM偏移5（显示列6）、对话框已关闭，截图与只读诊断一致。
+- 独立提交拆分验证：E1暂存源码类型检查及4文件54项通过；E2暂存源码类型检查及5文件41项通过。E1首次拆分快照遗留两个拖拽模板绑定导致类型检查失败，已修正拆分后重验，最终工作区源码未因此改动。
 - 本机Chrome真实鼠标事件、实际Vue组件/Pinia/DialogHost、mock后端边界：目录移动确认、Ctrl复制、根目录落点、拒绝子孙落点、悬停Commit再拖入changelist、搜索关闭后的焦点与UTF-16列定位六项通过，无页面异常。证据 `test-results/qa083-native/browser-check.mjs`、`browser-check.log`、`browser-check-result.json`；这是浏览器交互证据，文件系统实效另由Rust与原生验证。
 
 ## 原生界面
@@ -41,4 +43,6 @@
 
 起始及阶段同步包含master `6bf02dbfde1f26bcfaafa1fdc0e46647305b1cf4`。E3 `2f8b25179afe25a7e7c6cb1cfcf1b269e9a984f3`、E4 `f2c84ab046a36e68d876faa581dd7fe9437815fe`均已独立提交推送并核对远端。E4一次预提交fetch失败后误提交，随后同步成功、确认无新提交再推送，未跳过最终基线核对。后续多次SSL10054/443超时后重试成功，master和交付分支均已包含；无持久Git配置变更。
 
-E1/E2/E5收尾及独立提交待补记。既有11项其他QA待办保持，本报告不将其计为本File任务缺陷，也不计算整体完成率。
+E4焦点补修`f9b5d34`、E1`a32e69b`、E2`d32abae`均已独立提交推送。E5收尾提交另记。最终测试程序、浏览器及调试端口退出，用户原设置SHA256保持`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`，隔离fixture和日志保留便于复现，用户安装版未替换。
+
+本轮新增QA083–087五项功能改进已实现并完成上述验证；原生树内/changelist拖拽仍受输入工具限制，没有声称原生端到端通过。既有11项其他QA待办保持，本报告不将其计为本File任务缺陷，也不计算整体完成率。

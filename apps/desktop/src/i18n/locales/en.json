@@ -389,7 +389,10 @@
     "actionFailed": "File action failed",
     "refresh": "Refresh files",
     "tree": "Project files",
-    "retryDirectory": "Retry loading {name}"
+    "retryDirectory": "Retry loading {name}",
+    "changedCount": "{count} changed files",
+    "activeRepository": "Active repository",
+    "saveBeforeSwitch": "Save or discard editor and merge drafts before switching repositories."
   },
   "rewrite": {
     "operationFailed": "{operation} failed",
@@ -617,7 +620,8 @@
       "groupBranchesByDirectory": "Group branches by directory",
       "showRecentBranches": "Show recent branches",
       "showTags": "Show tags",
-      "showUpdateInfo": "Open Update Info"
+      "showUpdateInfo": "Open Update Info",
+      "compactFileTree": "Compact loaded single-child folders"
     },
     "theme": {
       "system": "System",
@@ -1100,10 +1104,10 @@
     "failed": "Some file operations failed",
     "completed": "File operation completed",
     "destinationOpen": "Close the destination editor tab before moving files.",
+    "noChangesToMove": "Select changed files belonging to this repository.",
     "delete": "Move to Recycle Bin",
     "deleteConfirm": "Move these entries and their contents to the system Recycle Bin? If recycling fails, the original is kept.",
     "unsavedDelete": "Save or discard affected editor drafts before deleting.",
-    "deletedDraft": "File recycled; copy this draft before closing.",
-    "noChangesToMove": "Select changed files belonging to this repository."
+    "deletedDraft": "File recycled; copy this draft before closing."
   }
 }

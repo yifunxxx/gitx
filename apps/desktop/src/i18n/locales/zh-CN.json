@@ -389,7 +389,10 @@
     "actionFailed": "文件操作失败",
     "refresh": "刷新文件",
     "tree": "项目文件",
-    "retryDirectory": "重试加载 {name}"
+    "retryDirectory": "重试加载 {name}",
+    "changedCount": "{count}个更改的文件",
+    "activeRepository": "当前仓库",
+    "saveBeforeSwitch": "切换仓库前，请先保存或放弃文件编辑器及合并草稿。"
   },
   "rewrite": {
     "operationFailed": "{operation}失败",
@@ -617,7 +620,8 @@
       "groupBranchesByDirectory": "按目录分组分支",
       "showRecentBranches": "显示 Recent 分支",
       "showTags": "显示 Tags",
-      "showUpdateInfo": "打开 Update Info"
+      "showUpdateInfo": "打开 Update Info",
+      "compactFileTree": "紧凑显示已加载的单子目录"
     },
     "theme": {
       "system": "跟随系统",
@@ -1100,10 +1104,10 @@
     "failed": "部分文件操作失败",
     "completed": "文件操作完成",
     "destinationOpen": "移动前请先关闭目标路径的编辑器标签。",
+    "noChangesToMove": "请选择属于当前仓库的已更改文件。",
     "delete": "移到回收站",
     "deleteConfirm": "将这些项目及其内容移到系统回收站？回收失败时保留原文件。",
     "unsavedDelete": "请先保存或放弃相关编辑器草稿，再删除文件。",
-    "deletedDraft": "文件已回收；关闭前请复制保留此草稿。",
-    "noChangesToMove": "请选择属于当前仓库的已更改文件。"
+    "deletedDraft": "文件已回收；关闭前请复制保留此草稿。"
   }
 }

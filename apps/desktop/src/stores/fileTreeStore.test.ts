@@ -68,6 +68,28 @@ it("does not list unopened folders; opens one directory and reuses its cache", a
   expect(mocks.fsReadDir).toHaveBeenCalledTimes(2);
   expect(store.rows[1]).toMatchObject({ key: "file:src/app.ts", depth: 1 });
 });
+it("compacts only loaded single-directory chains and refreshes their hidden parents", async () => {
+  mocks.settings.settings.compactFileTree = true;
+  mocks.fsReadDir.mockImplementation(
+    async ({ dir: path }) =>
+      ({ "": [dir("src")], src: [dir("src/one")], "src/one": [file("src/one/a")] })[
+        path as string
+      ] ?? [],
+  );
+  const store = useFileTreeStore();
+  await store.loadRoot();
+  expect(mocks.fsReadDir).toHaveBeenCalledTimes(1);
+  await store.expand("src");
+  expect(store.rows[0]).toMatchObject({ name: "src/one", path: "src/one", compactRoot: "src" });
+  await store.expand("src/one");
+  expect(store.rows[1]?.path).toBe("src/one/a");
+  mocks.fsReadDir.mockClear();
+  await store.refreshExpanded();
+  expect(mocks.fsReadDir.mock.calls.map(([req]) => req.dir)).toEqual(["", "src", "src/one"]);
+  mocks.settings.settings.compactFileTree = false;
+  expect(store.rows.map((row) => row.name)).toEqual(["src", "one", "a"]);
+});
+
 it("coalesces directory requests and ignores an old workspace completion", async () => {
   const old = deferred();
   mocks.fsReadDir.mockReturnValueOnce(old.promise);

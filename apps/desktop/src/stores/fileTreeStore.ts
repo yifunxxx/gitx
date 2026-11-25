@@ -18,6 +18,8 @@ export type FileTreeRow = FsEntry & {
   expanded: boolean;
   loading: boolean;
   error: string | null;
+  /** Original directory at the start of a compact chain. */
+  compactRoot?: string;
 };
 
 export const useFileTreeStore = defineStore("fileTree", () => {
@@ -53,11 +55,33 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   const visibleRows = computed(() => {
     const result: FileTreeRow[] = [];
     function visit(path: string, depth: number) {
-      for (const entry of directories.get(path)?.entries ?? []) {
+      for (const original of directories.get(path)?.entries ?? []) {
+        let entry = original;
+        let name = entry.name;
+        // Compact only directories loaded through normal expansion. Rendering
+        // never starts a recursive scan of unopened project subtrees.
+        if (settings.settings?.compactFileTree && entry.kind === "directory") {
+          for (let count = 0; count < 256; count++) {
+            const childState = directories.get(entry.path);
+            const child = childState?.entries[0];
+            if (
+              !childState?.loaded ||
+              childState.error ||
+              childState.entries.length !== 1 ||
+              child?.kind !== "directory" ||
+              !expanded.has(entry.path)
+            )
+              break;
+            name += `/${child.name}`;
+            entry = child;
+          }
+        }
         const state = directories.get(entry.path);
         const open = entry.kind === "directory" && expanded.has(entry.path);
         result.push({
           ...entry,
+          name,
+          compactRoot: original.path !== entry.path ? original.path : undefined,
           key: `${entry.kind}:${entry.path}`,
           depth,
           expanded: open,
@@ -223,8 +247,7 @@ export const useFileTreeStore = defineStore("fileTree", () => {
         const paths = [...expanded].sort((a, b) => a.split("/").length - b.split("/").length);
         for (const path of paths) {
           if (epoch !== generation) return;
-          if (visibleRows.value.some((row) => row.path === path && row.expanded))
-            await loadDir(path);
+          if (expanded.has(path)) await loadDir(path);
         }
       } while (epoch === generation && refreshAgain);
     })();
