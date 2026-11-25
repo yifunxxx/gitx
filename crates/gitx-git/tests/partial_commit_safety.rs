@@ -51,7 +51,9 @@ async fn index_lock_rejects_before_creating_a_commit() {
         head,
         "locked index must prevent HEAD advancing"
     );
-    assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert_eq!(error.code, gitx_core::ErrorCode::IndexLocked);
+    assert!(error.message.contains("index.lock"));
     assert_eq!(std::fs::read(cwd.join(".git/index")).unwrap(), index);
     assert_eq!(
         std::fs::read(cwd.join(".git/index.lock")).unwrap(),

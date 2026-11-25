@@ -181,16 +181,7 @@ impl GitRunner {
             }
         }
         let index = git_dir.join("index");
-        let lock_path = git_dir.join("index.lock");
-        let lock = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-            .map_err(io)?;
-        let _lock = CommitIndexLock {
-            path: lock_path,
-            file: Some(lock),
-        };
+        let _lock = CommitIndexLock::acquire(&git_dir)?;
         let gitx = git_dir.join("gitx");
         fs::create_dir_all(&gitx).map_err(io)?;
         let temporary = tempfile::Builder::new()

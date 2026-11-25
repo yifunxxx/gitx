@@ -178,25 +178,31 @@ it("does not implicitly submit from file search or checkboxes and keeps message 
   expect(mocks.commit.commitFiles).not.toHaveBeenCalled();
 });
 
-it("keeps message, selection and hooks on failure so the same dialog can retry", async () => {
-  const wrapper = fixture();
-  mocks.commit.commitFiles.mockRejectedValueOnce(new Error("hook rejected"));
-  await wrapper.get("textarea").setValue("retry draft");
-  await wrapper.get('input[aria-label="src/a.ts"]').setValue(false);
-  await wrapper.get('input[aria-label="commit.runHooks"]').setValue(false);
-  await wrapper.get("form").trigger("submit");
-  await flushPromises();
-  expect(wrapper.get('[role="alert"]').text()).toContain("hook rejected");
-  expect(wrapper.get<HTMLTextAreaElement>("textarea").element.value).toBe("retry draft");
-  expect(wrapper.getComponent(PathChecklist).props("modelValue")).toEqual(["src/b.ts"]);
-  expect(mocks.close).not.toHaveBeenCalled();
-  await wrapper.get("form").trigger("submit");
-  await flushPromises();
-  expect(mocks.commit.commitFiles).toHaveBeenLastCalledWith(["src/b.ts"], "retry draft", false, [
-    { path: "src/b.ts", listIds: ["default"] },
-  ]);
-  expect(mocks.close).toHaveBeenCalledExactlyOnceWith(committed, 54);
-});
+it.each([
+  [new Error("hook rejected"), "hook rejected"],
+  [{ code: "indexLocked", message: "File exists (os error 80)" }, "commit.indexLocked"],
+])(
+  "keeps message, selection and hooks on failure %s so the same dialog can retry",
+  async (cause, message) => {
+    const wrapper = fixture();
+    mocks.commit.commitFiles.mockRejectedValueOnce(cause);
+    await wrapper.get("textarea").setValue("retry draft");
+    await wrapper.get('input[aria-label="src/a.ts"]').setValue(false);
+    await wrapper.get('input[aria-label="commit.runHooks"]').setValue(false);
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain(message);
+    expect(wrapper.get<HTMLTextAreaElement>("textarea").element.value).toBe("retry draft");
+    expect(wrapper.getComponent(PathChecklist).props("modelValue")).toEqual(["src/b.ts"]);
+    expect(mocks.close).not.toHaveBeenCalled();
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(mocks.commit.commitFiles).toHaveBeenLastCalledWith(["src/b.ts"], "retry draft", false, [
+      { path: "src/b.ts", listIds: ["default"] },
+    ]);
+    expect(mocks.close).toHaveBeenCalledExactlyOnceWith(committed, 54);
+  },
+);
 
 it.each(["navigation", "unmount"])(
   "ignores pending submission feedback after %s",

@@ -164,7 +164,7 @@ async fn path_commit_respects_an_existing_index_lock() {
     let index = fs::read(git_dir.join("index")).unwrap();
     let head = git(&runner, cwd, &["rev-parse", "HEAD"]).await;
     fs::write(git_dir.join("index.lock"), "other process owns this lock").unwrap();
-    assert!(runner
+    let error = runner
         .commit_create_ex(
             cwd,
             "locked",
@@ -172,10 +172,12 @@ async fn path_commit_respects_an_existing_index_lock() {
             false,
             Some(&["README.md".into()]),
             None,
-            &cancel
+            &cancel,
         )
         .await
-        .is_err());
+        .unwrap_err();
+    assert_eq!(error.code, gitx_core::ErrorCode::IndexLocked);
+    assert!(error.message.contains("index.lock"));
     assert_eq!(fs::read(git_dir.join("index")).unwrap(), index);
     assert_eq!(git(&runner, cwd, &["rev-parse", "HEAD"]).await, head);
     assert_eq!(

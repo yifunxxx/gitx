@@ -5,7 +5,7 @@ import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { toast } from "@/composables/useToast";
 import { useRewriteStore } from "./rewriteStore";
-import { formatErrorMessage } from "@/lib/errors";
+import { formatCommitError, formatErrorMessage } from "@/lib/errors";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { useBranchesStore } from "./branchesStore";
 import { useLogStore } from "./logStore";
@@ -247,7 +247,7 @@ export const useCommitStore = defineStore("commit", () => {
       } else {
         toast({
           title: "Commit failed",
-          description: formatErrorMessage(e),
+          description: formatCommitError(e, i18n.global.t("commit.indexLocked")),
         });
       }
       throw e;

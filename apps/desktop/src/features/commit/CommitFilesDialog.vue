@@ -8,7 +8,7 @@ import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
 import { useCommitStore } from "@/stores/commitStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
-import { formatErrorMessage } from "@/lib/errors";
+import { formatCommitError } from "@/lib/errors";
 import { fileStatusGlyph } from "./fileStatusGlyph";
 
 const props = defineProps<{ initialPaths: string[]; section: ChangesSection }>();
@@ -84,7 +84,7 @@ async function submit() {
       : await commit.commitFiles(paths, message.value, runHooks.value);
     if (result && source.current()) closeDialog(result, dialogId);
   } catch (cause) {
-    if (source.current()) error.value = formatErrorMessage(cause);
+    if (source.current()) error.value = formatCommitError(cause, t("commit.indexLocked"));
   } finally {
     submitting.value = false;
   }

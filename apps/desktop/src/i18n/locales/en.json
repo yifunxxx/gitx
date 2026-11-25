@@ -896,6 +896,7 @@
     "workspaceTab": "Workspace"
   },
   "commit": {
+    "indexLocked": "Could not acquire the Git index lock (index.lock). Wait for other Git operations to finish, then retry. If it persists, check repository permissions and the lock file.",
     "amend": "Amend",
     "amendTip": "Rewrite the latest commit (clean worktree, or with staged changes; replaces the previous message and content)",
     "amendTarget": "Target",

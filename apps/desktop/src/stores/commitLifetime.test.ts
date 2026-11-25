@@ -3,6 +3,7 @@ import { createPinia, disposePinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
 import { flushPromises } from "@vue/test-utils";
 import { useCommitStore } from "./commitStore";
+import { i18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
   workspace: {} as any,
@@ -61,6 +62,21 @@ afterEach(() => {
   disposePinia(pinia);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("explains index locks and preserves the panel draft and selection", async () => {
+  const store = useCommitStore();
+  store.message = "retry after lock";
+  const error = { code: "indexLocked", message: "File exists (os error 80)" };
+  mocks.backend.commitCreate.mockRejectedValueOnce(error);
+  await expect(store.commit()).rejects.toEqual(error);
+  expect(mocks.toast).toHaveBeenCalledWith({
+    title: "Commit failed",
+    description: i18n.global.t("commit.indexLocked"),
+  });
+  expect(store.message).toBe("retry after lock");
+  expect(mocks.changes.setChecked).not.toHaveBeenCalled();
+  expect(store.committing).toBe(false);
 });
 
 const invalidations = [

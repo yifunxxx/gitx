@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatCommitError,
   formatErrorMessage,
   formatGitDetectError,
   invokeErrorCode,
 } from "./errors";
+
+describe("formatCommitError", () => {
+  it.each(["indexLocked", "IndexLocked"])("localizes the stable %s code", (code) => {
+    expect(
+      formatCommitError({ code, message: "File exists (os error 80)" }, "index lock help"),
+    ).toBe("index lock help");
+  });
+  it("preserves other failures including lock permission diagnostics", () => {
+    expect(formatCommitError({ code: "fsError", message: "Access denied" }, "lock help")).toBe(
+      "Access denied",
+    );
+  });
+});
 
 describe("formatErrorMessage", () => {
   it("reads AppError-shaped invoke payloads", () => {
@@ -16,9 +30,7 @@ describe("formatErrorMessage", () => {
   });
 
   it("does not stringify plain objects as [object Object]", () => {
-    expect(formatErrorMessage({ code: "gitNotFound" })).not.toBe(
-      "[object Object]",
-    );
+    expect(formatErrorMessage({ code: "gitNotFound" })).not.toBe("[object Object]");
   });
 
   it("prefers Error.message", () => {
@@ -33,19 +45,13 @@ describe("formatErrorMessage", () => {
 describe("formatGitDetectError", () => {
   it("maps gitNotFound to localized copy", () => {
     expect(
-      formatGitDetectError(
-        { code: "gitNotFound", message: "spawn failed" },
-        "未找到 git",
-      ),
+      formatGitDetectError({ code: "gitNotFound", message: "spawn failed" }, "未找到 git"),
     ).toBe("未找到 git");
   });
 
   it("passes through other codes", () => {
     expect(
-      formatGitDetectError(
-        { code: "gitTooOld", message: "git 1.0.0 is older" },
-        "未找到 git",
-      ),
+      formatGitDetectError({ code: "gitTooOld", message: "git 1.0.0 is older" }, "未找到 git"),
     ).toBe("git 1.0.0 is older");
   });
 });

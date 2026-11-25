@@ -896,6 +896,7 @@
     "workspaceTab": "工作区"
   },
   "commit": {
+    "indexLocked": "无法取得 Git 索引锁（index.lock）。请等待其他 Git 操作结束后重试；若仍失败，请检查仓库权限和锁文件状态。",
     "amend": "Amend",
     "amendTip": "修改最近一次提交（需工作区干净，或配合已暂存改动；会覆盖上次提交说明与内容）",
     "amendTarget": "目标",

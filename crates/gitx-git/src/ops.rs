@@ -15,6 +15,30 @@ pub(crate) struct CommitIndexLock {
     pub(crate) file: Option<std::fs::File>,
 }
 
+impl CommitIndexLock {
+    pub(crate) fn acquire(git_dir: &Path) -> Result<Self, AppError> {
+        let path = git_dir.join("index.lock");
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    AppError::new(
+                        ErrorCode::IndexLocked,
+                        "Git index.lock already exists. Wait for other Git operations to finish, then retry.",
+                    )
+                } else {
+                    AppError::new(ErrorCode::FsError, format!("cannot lock Git index: {error}"))
+                }
+            })?;
+        Ok(Self {
+            path,
+            file: Some(file),
+        })
+    }
+}
+
 impl Drop for CommitIndexLock {
     fn drop(&mut self) {
         self.file.take();
@@ -494,16 +518,7 @@ impl GitRunner {
     ) -> Result<CommitResult, AppError> {
         let git_dir = self.git_dir(cwd, cancel).await?;
         let index = git_dir.join("index");
-        let lock_path = git_dir.join("index.lock");
-        let lock = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("lock index: {e}")))?;
-        let _lock = CommitIndexLock {
-            path: lock_path,
-            file: Some(lock),
-        };
+        let _lock = CommitIndexLock::acquire(&git_dir)?;
         let temporary = tempfile::Builder::new()
             .prefix("commit-index-")
             .tempfile_in(git_dir.join("gitx"))

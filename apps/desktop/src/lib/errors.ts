@@ -58,6 +58,14 @@ export function invokeErrorCode(err: unknown): string | null {
   return typeof err.code === "string" ? err.code : null;
 }
 
+/** Keep other commit failures intact while making an index lock actionable. */
+export function formatCommitError(err: unknown, indexLockedMessage: string): string {
+  const code = invokeErrorCode(err);
+  return code === "indexLocked" || code === "IndexLocked"
+    ? indexLockedMessage
+    : formatErrorMessage(err);
+}
+
 /** Prefer localized Git-not-found copy; otherwise the real backend message. */
 export function formatGitDetectError(
   err: unknown,
