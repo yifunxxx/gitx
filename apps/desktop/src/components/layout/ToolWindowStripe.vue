@@ -1,13 +1,31 @@
 <script setup lang="ts">
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useI18n } from "vue-i18n";
+import { onBeforeUnmount } from "vue";
+import { activeFileDrag } from "@/features/file-tree/fileDrag";
 
 const layout = useLayoutStore();
 const { t } = useI18n();
+let dragTimer: ReturnType<typeof setTimeout> | undefined;
+function hoverCommit(event: DragEvent) {
+  if (!activeFileDrag.value) return;
+  event.preventDefault();
+  if (!dragTimer)
+    dragTimer = setTimeout(() => {
+      if (activeFileDrag.value) layout.showLeftTab("commit");
+    }, 450);
+}
+function leaveCommit() {
+  clearTimeout(dragTimer);
+  dragTimer = undefined;
+}
+onBeforeUnmount(leaveCommit);
 </script>
 
 <template>
-  <aside class="glass-chrome flex w-8 shrink-0 flex-col items-center gap-1 border-r bg-dbx-chrome py-2">
+  <aside
+    class="glass-chrome flex w-8 shrink-0 flex-col items-center gap-1 border-r bg-dbx-chrome py-2"
+  >
     <button
       type="button"
       :aria-pressed="
@@ -21,6 +39,9 @@ const { t } = useI18n();
           : ''
       "
       @click="layout.toggleLeftTab('commit')"
+      @dragover="hoverCommit"
+      @dragleave="leaveCommit"
+      @drop.prevent="leaveCommit"
     >
       Commit
     </button>

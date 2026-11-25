@@ -1103,6 +1103,7 @@
     "delete": "移到回收站",
     "deleteConfirm": "将这些项目及其内容移到系统回收站？回收失败时保留原文件。",
     "unsavedDelete": "请先保存或放弃相关编辑器草稿，再删除文件。",
-    "deletedDraft": "文件已回收；关闭前请复制保留此草稿。"
+    "deletedDraft": "文件已回收；关闭前请复制保留此草稿。",
+    "noChangesToMove": "请选择属于当前仓库的已更改文件。"
   }
 }

@@ -1103,6 +1103,7 @@
     "delete": "Move to Recycle Bin",
     "deleteConfirm": "Move these entries and their contents to the system Recycle Bin? If recycling fails, the original is kept.",
     "unsavedDelete": "Save or discard affected editor drafts before deleting.",
-    "deletedDraft": "File recycled; copy this draft before closing."
+    "deletedDraft": "File recycled; copy this draft before closing.",
+    "noChangesToMove": "Select changed files belonging to this repository."
   }
 }

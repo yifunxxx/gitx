@@ -16,11 +16,54 @@ import IndeterminateCheckbox from "@/components/common/IndeterminateCheckbox.vue
 import { markContextHandled } from "@/lib/contextMenu";
 import { useI18n } from "vue-i18n";
 import { statusClass } from "./statusColor";
+import { currentFileDrag, endFileDrag } from "@/features/file-tree/fileDrag";
+import { relativeToRoot } from "@/lib/projectFilePath";
+import { toast } from "@/composables/useToast";
 
 const { t } = useI18n();
 const changes = useChangesStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
+const dropSection = ref<string | null>(null);
+function draggedChanges() {
+  const source = currentFileDrag(
+    workspace.folderPath,
+    workspace.navigationToken(),
+    workspace.appliedOpenToken(),
+  );
+  if (!source || !workspace.repoPath || changes.snapshot?.repoId !== workspace.repoId) return [];
+  const selected = source.paths
+    .map((path) => relativeToRoot(source.folder, path, workspace.repoPath!))
+    .filter((path): path is string => path !== null);
+  return changes.snapshot.files
+    .filter(
+      (file) =>
+        file.kind !== "ignored" &&
+        selected.some((path) => file.path === path || file.path.startsWith(`${path}/`)),
+    )
+    .map((file) => file.path);
+}
+function dragOverList(event: DragEvent, row: Row) {
+  dropSection.value = null;
+  if (row.kind !== "header" || !row.section.startsWith("changelist:") || !draggedChanges().length)
+    return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  dropSection.value = row.section;
+}
+async function dropOnList(event: DragEvent, row: Row) {
+  dragOverList(event, row);
+  const paths = draggedChanges();
+  const accepted =
+    dropSection.value === row.section &&
+    row.kind === "header" &&
+    row.section.startsWith("changelist:");
+  dropSection.value = null;
+  endFileDrag();
+  if (accepted && paths.length)
+    await changes.moveToChangelist(paths, row.section.slice("changelist:".length));
+  else toast({ title: t("fileOps.noChangesToMove") });
+}
 const emit = defineEmits<{
   openDiff: [path: string, section: ChangesSection];
   openFile: [path: string];
@@ -556,6 +599,10 @@ function labelFor(node: PathTreeNode<FileMeta>) {
           @click="onClick(row, $event)"
           @dblclick="onDblClick(row, $event)"
           @contextmenu="onContext(row, $event)"
+          @dragover="dragOverList($event, row)"
+          @dragleave="dropSection = null"
+          @drop.prevent="dropOnList($event, row)"
+          :data-drop-target="dropSection === row.section && row.kind === 'header'"
         >
           <button
             v-if="expandable(row)"
@@ -611,6 +658,10 @@ function labelFor(node: PathTreeNode<FileMeta>) {
 
 <style scoped>
 .changes-tree:focus-visible [data-current="true"] {
+  outline: 1px solid var(--color-ring);
+  outline-offset: -1px;
+}
+.changes-tree [data-drop-target="true"] {
   outline: 1px solid var(--color-ring);
   outline-offset: -1px;
 }

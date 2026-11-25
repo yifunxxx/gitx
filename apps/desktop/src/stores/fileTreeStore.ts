@@ -26,6 +26,8 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   const directories = reactive(new Map<string, Directory>());
   const expanded = reactive(new Set<string>());
   const selectedPath = ref<string | null>(null);
+  const selectedPaths = ref<string[]>([]);
+  let selectionAnchor: string | null = null;
   const filter = ref("");
   const initialized = ref(false);
   const pending = new Map<string, Promise<void>>();
@@ -85,6 +87,42 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   });
   const loading = computed(() => !!directories.get("")?.loading);
   const error = computed(() => directories.get("")?.error ?? null);
+
+  function select(path: string, options: { toggle?: boolean; range?: boolean } = {}) {
+    const paths = rows.value.map((row) => row.path);
+    if (!paths.includes(path)) return;
+    if (options.range && selectionAnchor && paths.includes(selectionAnchor)) {
+      const a = paths.indexOf(selectionAnchor),
+        b = paths.indexOf(path);
+      const range = paths.slice(Math.min(a, b), Math.max(a, b) + 1);
+      selectedPaths.value = options.toggle
+        ? [...new Set([...selectedPaths.value, ...range])]
+        : range;
+    } else if (options.toggle) {
+      selectedPaths.value = selectedPaths.value.includes(path)
+        ? selectedPaths.value.filter((item) => item !== path)
+        : [...selectedPaths.value, path];
+      selectionAnchor = path;
+    } else {
+      selectedPaths.value = [path];
+      selectionAnchor = path;
+    }
+    selectedPath.value = path;
+  }
+  function selectAll() {
+    selectedPaths.value = rows.value.map((row) => row.path);
+    selectedPath.value = selectedPaths.value[0] ?? null;
+    selectionAnchor = selectedPath.value;
+  }
+  // Hidden or vanished rows cannot remain accidental batch-operation targets.
+  watch(
+    rows,
+    (visible) => {
+      const paths = new Set(visible.map((row) => row.path));
+      selectedPaths.value = selectedPaths.value.filter((path) => paths.has(path));
+    },
+    { flush: "sync" },
+  );
 
   async function loadDir(path: string): Promise<void> {
     const folderPath = workspace.folderPath;
@@ -157,7 +195,7 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   }
   function collapse(path: string) {
     expanded.delete(path);
-    if (selectedPath.value?.startsWith(`${path}/`)) selectedPath.value = path;
+    if (selectedPath.value?.startsWith(`${path}/`)) select(path);
   }
   async function toggle(path: string) {
     if (expanded.has(path)) collapse(path);
@@ -205,6 +243,8 @@ export const useFileTreeStore = defineStore("fileTree", () => {
       pending.clear();
       expanded.clear();
       selectedPath.value = null;
+      selectedPaths.value = [];
+      selectionAnchor = null;
       filter.value = "";
       initialized.value = false;
       refreshing = null;
@@ -223,6 +263,9 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   return {
     rows,
     selectedPath,
+    selectedPaths,
+    select,
+    selectAll,
     filter,
     loading,
     error,

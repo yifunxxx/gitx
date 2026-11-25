@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { createPinia, disposePinia, setActivePinia } from "pinia";
 import { nextTick } from "vue";
 import ToolWindowStripe from "./ToolWindowStripe.vue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { i18n } from "@/i18n";
+import { activeFileDrag, endFileDrag } from "@/features/file-tree/fileDrag";
 
 enableAutoUnmount(afterEach);
 let pinia: ReturnType<typeof createPinia>;
@@ -15,9 +16,26 @@ beforeEach(() => {
   i18n.global.locale.value = "en";
 });
 afterEach(() => {
+  endFileDrag();
+  vi.useRealTimers();
   disposePinia(pinia);
   localStorage.clear();
   i18n.global.locale.value = "en";
+});
+it("reveals Commit after hovering with a File drag and cancels early exits", async () => {
+  vi.useFakeTimers();
+  const wrapper = mount(ToolWindowStripe, { global: { plugins: [i18n] } });
+  const layout = useLayoutStore();
+  layout.showLeftTab("file");
+  activeFileDrag.value = { folder: "C:/p", paths: ["a"], navigation: 1, applied: 1 };
+  const commit = wrapper.findAll("button")[0]!;
+  await commit.trigger("dragover");
+  await commit.trigger("dragleave");
+  await vi.advanceTimersByTimeAsync(500);
+  expect(layout.activeLeftTab).toBe("file");
+  await commit.trigger("dragover");
+  await vi.advanceTimersByTimeAsync(450);
+  expect(layout.activeLeftTab).toBe("commit");
 });
 
 it("places File below Commit, switches tabs, and closes/reopens the selected File dock", async () => {

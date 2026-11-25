@@ -5,6 +5,7 @@ import FileToolWindow from "./FileToolWindow.vue";
 import type { FileTreeRow } from "@/stores/fileTreeStore";
 import type { FileChange } from "@/lib/backend";
 import { terminalDirectoryRequests } from "@/features/terminal/terminalDirectoryRequest";
+import { activeFileDrag, endFileDrag } from "@/features/file-tree/fileDrag";
 
 const mocks = vi.hoisted(() => ({
   tree: {} as any,
@@ -20,7 +21,10 @@ const mocks = vi.hoisted(() => ({
   clipboard: vi.fn(),
   operation: vi.fn(),
 }));
-vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock("vue-i18n", async (original) => ({
+  ...(await original<typeof import("vue-i18n")>()),
+  useI18n: () => ({ t: (key: string) => key }),
+}));
 vi.mock("@/stores/fileTreeStore", () => ({ useFileTreeStore: () => mocks.tree }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
@@ -97,6 +101,14 @@ beforeEach(() => {
   mocks.tree = reactive({
     rows: [row("src", "directory"), row("changed.txt"), row("clean.txt")],
     selectedPath: null,
+    selectedPaths: [] as string[],
+    select(path: string, options: { toggle?: boolean } = {}) {
+      this.selectedPath = path as any;
+      this.selectedPaths = options.toggle ? [...this.selectedPaths, path] : [path];
+    },
+    selectAll() {
+      this.selectedPaths = this.rows.map((row) => row.path);
+    },
     filter: "",
     loading: false,
     error: null,
@@ -130,10 +142,34 @@ beforeEach(() => {
   mocks.changes = reactive({ snapshot: { repoId: "repo", files: [change("changed.txt")] } });
 });
 afterEach(() => {
+  endFileDrag();
   wrapper?.unmount();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+it("keeps multiselection in context menus and copies all selected paths", async () => {
+  create();
+  await item("changed.txt").trigger("click");
+  await item("clean.txt").trigger("click", { ctrlKey: true });
+  await menu("changed.txt");
+  command("copyRelativePath").click();
+  await flushPromises();
+  expect(mocks.clipboard).toHaveBeenCalledWith("changed.txt\nclean.txt");
+  expect(mocks.tree.selectedPaths).toHaveLength(2);
+});
+it("drops selected files into a directory, supports copy and rejects stale navigation", async () => {
+  create();
+  await item("changed.txt").trigger("click");
+  const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
+  await item("changed.txt").trigger("dragstart", { dataTransfer });
+  expect(activeFileDrag.value?.paths).toEqual(["changed.txt"]);
+  await item("src").trigger("drop", { dataTransfer, ctrlKey: true });
+  expect(mocks.operation).toHaveBeenCalledWith("copy", ["changed.txt"], "src");
+  await item("changed.txt").trigger("dragstart", { dataTransfer });
+  mocks.ws.navigation++;
+  await item("src").trigger("drop", { dataTransfer });
+  expect(mocks.operation).toHaveBeenCalledTimes(1);
 });
 
 it("loads only when File is shown and reloads a reopened same-path workspace", async () => {

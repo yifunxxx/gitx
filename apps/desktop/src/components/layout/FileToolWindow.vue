@@ -22,6 +22,12 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { useFileOperationsStore } from "@/stores/fileOperationsStore";
+import {
+  currentFileDrag,
+  endFileDrag,
+  startFileDrag,
+  validFileDrop,
+} from "@/features/file-tree/fileDrag";
 import type { FsOperation } from "@/lib/backend";
 import { useHistoryStore } from "@/stores/historyStore";
 import { openChangeDiff } from "@/features/commit/openChangeDiff";
@@ -73,8 +79,10 @@ const currentIndex = computed(() =>
 );
 const current = computed(() => files.rows[currentIndex.value]);
 const selectedRows = computed(() =>
-  files.rows.filter((row) => files.selectedPath === row.path),
+  files.rows.filter((row) => files.selectedPaths.includes(row.path)),
 );
+const dropTarget = ref<string | null>(null);
+let expandTimer: ReturnType<typeof setTimeout> | undefined;
 const rowId = (row: FileRow) => `${prefix}-${encodeURIComponent(row.key)}`;
 const activeDescendant = computed(() =>
   current.value && list.value?.isIndexVisible(currentIndex.value)
@@ -129,6 +137,7 @@ watch(
   ],
   () => {
     closeMenu();
+    clearDrop();
     if (visible.value && workspace.folderPath) void files.loadRoot();
   },
   { immediate: true, flush: "sync" },
@@ -142,6 +151,8 @@ watch(
 onBeforeUnmount(() => {
   disposed = true;
   closeMenu();
+  clearDrop();
+  endFileDrag();
 });
 
 function capture(row: FileRow) {
@@ -210,24 +221,66 @@ async function runAction(action: FileAction, row: FileRow, source = capture(row)
   }
 }
 
-function select(row: FileRow) {
-  files.selectedPath = row.path;
+function select(row: FileRow, event?: MouseEvent | KeyboardEvent) {
+  files.select(row.path, { toggle: event?.ctrlKey || event?.metaKey, range: event?.shiftKey });
   tree.value?.focus({ preventScroll: true });
 }
 function click(row: FileRow, event: MouseEvent) {
-  select(row);
-  if (row.kind === "directory" && event.detail < 2) void files.toggle(row.path);
+  select(row, event);
+  if (
+    row.kind === "directory" &&
+    event.detail < 2 &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.shiftKey
+  )
+    void files.toggle(row.path);
 }
 function openMenu(row: FileRow, event: MouseEvent) {
   markContextHandled(event);
-  select(row);
+  if (!files.selectedPaths.includes(row.path)) select(row);
+  else files.selectedPath = row.path;
   const source = capture(row);
   if (source) menu.value = { row, x: event.clientX, y: event.clientY, ...source };
 }
-function menuAction(action: FileAction) {
+async function menuAction(action: FileAction) {
   const target = menu.value;
+  const rows = selectedRows.value;
   closeMenu();
-  if (target) void runAction(action, target.row, target);
+  if (!target?.current()) return;
+  if (action === "copyPath" || action === "copyRelativePath") {
+    const text = rows
+      .map((row) =>
+        action === "copyRelativePath"
+          ? row.path
+          : changeLocation(target.folder, row.path, row.kind === "directory").path,
+      )
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      if (target.current())
+        toast({ title: t("fileTree.actionFailed"), description: formatErrorMessage(error) });
+    }
+  } else if (action === "openExplorer" && rows.length > 1) {
+    if (!isTauri()) {
+      toast({ title: t("terminal.desktopOnly") });
+      return;
+    }
+    try {
+      await revealItemInDir(
+        rows.map((row) => changeLocation(target.folder, row.path, row.kind === "directory").path),
+      );
+    } catch (error) {
+      if (target.current())
+        toast({ title: t("fileTree.actionFailed"), description: formatErrorMessage(error) });
+    }
+  } else if (action === "openFile") {
+    for (const row of rows) {
+      if (!target.current()) break;
+      await runAction(action, row, target);
+    }
+  } else await runAction(action, target.row, target);
 }
 function operate(operation: FsOperation, row?: FileRow) {
   closeMenu();
@@ -241,14 +294,26 @@ function operate(operation: FsOperation, row?: FileRow) {
       operation === "rename" ? [row.path] : selectedRows.value.map((item) => item.path),
     );
 }
-async function selectIndex(index: number) {
+async function selectIndex(index: number, event?: KeyboardEvent) {
   const row = files.rows[Math.min(Math.max(index, 0), files.rows.length - 1)];
   if (!row) return;
-  select(row);
+  select(row, event);
   await nextTick();
   if (!disposed && current.value?.key === row.key) list.value?.scrollToIndex(currentIndex.value);
 }
 function onKeydown(event: KeyboardEvent) {
+  if (
+    event.target === event.currentTarget &&
+    !event.isComposing &&
+    (event.ctrlKey || event.metaKey) &&
+    !event.altKey &&
+    event.key.toLowerCase() === "a"
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    files.selectAll();
+    return;
+  }
   if (
     event.target !== event.currentTarget ||
     event.isComposing ||
@@ -283,7 +348,7 @@ function onKeydown(event: KeyboardEvent) {
     return;
   }
   if (
-    event.shiftKey ||
+    (event.shiftKey && !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) ||
     ![
       "ArrowDown",
       "ArrowUp",
@@ -299,10 +364,10 @@ function onKeydown(event: KeyboardEvent) {
     return;
   event.preventDefault();
   event.stopPropagation();
-  if (event.key === "ArrowDown") void selectIndex(currentIndex.value + 1);
-  else if (event.key === "ArrowUp") void selectIndex(currentIndex.value - 1);
-  else if (event.key === "Home") void selectIndex(0);
-  else if (event.key === "End") void selectIndex(files.rows.length - 1);
+  if (event.key === "ArrowDown") void selectIndex(currentIndex.value + 1, event);
+  else if (event.key === "ArrowUp") void selectIndex(currentIndex.value - 1, event);
+  else if (event.key === "Home") void selectIndex(0, event);
+  else if (event.key === "End") void selectIndex(files.rows.length - 1, event);
   else if (event.key === "ArrowRight") {
     if (row.kind === "directory" && !row.expanded) void files.expand(row.path);
     else if ((files.rows[currentIndex.value + 1]?.depth ?? -1) > row.depth)
@@ -321,12 +386,70 @@ function onKeydown(event: KeyboardEvent) {
     else void runAction("openFile", row);
   }
 }
+function clearDrop() {
+  dropTarget.value = null;
+  clearTimeout(expandTimer);
+}
+function dragStart(row: FileRow, event: DragEvent) {
+  if (operations.busy || !workspace.folderPath) {
+    event.preventDefault();
+    return;
+  }
+  if (!files.selectedPaths.includes(row.path)) select(row);
+  startFileDrag(event, {
+    folder: workspace.folderPath,
+    navigation: workspace.navigationToken(),
+    applied: workspace.appliedOpenToken(),
+    paths: selectedRows.value.map((item) => item.path),
+  });
+}
+function dragOver(event: DragEvent, row?: FileRow) {
+  const source = currentFileDrag(
+    workspace.folderPath,
+    workspace.navigationToken(),
+    workspace.appliedOpenToken(),
+  );
+  const directory =
+    row?.kind === "directory" ? row.path : row ? row.path.split("/").slice(0, -1).join("/") : "";
+  const copy = event.ctrlKey || event.altKey;
+  if (operations.busy || !source || !validFileDrop(source.paths, directory, copy, source.folder)) {
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+    clearDrop();
+    return;
+  }
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = copy ? "copy" : "move";
+  if (dropTarget.value !== directory) {
+    clearDrop();
+    dropTarget.value = directory;
+    if (row?.kind === "directory" && !row.expanded)
+      expandTimer = setTimeout(() => {
+        void files.expand(row.path);
+      }, 650);
+  }
+}
+function drop(event: DragEvent, row?: FileRow) {
+  dragOver(event, row);
+  const directory = dropTarget.value;
+  const source = currentFileDrag(
+    workspace.folderPath,
+    workspace.navigationToken(),
+    workspace.appliedOpenToken(),
+  );
+  clearDrop();
+  endFileDrag();
+  if (directory !== null && source)
+    void operations.run(event.ctrlKey || event.altKey ? "copy" : "move", source.paths, directory);
+}
 </script>
 
 <template>
   <section class="flex h-full min-h-0 flex-col bg-sidebar" data-gitx-context="projectFiles">
     <header
       class="flex h-8 shrink-0 items-center justify-between border-b px-3 text-xs font-medium"
+      :class="dropTarget === '' ? 'ring-1 ring-inset ring-ring' : ''"
+      @dragover.prevent="dragOver($event)"
+      @drop.prevent="drop($event)"
     >
       <span>{{ t("toolWindows.file") }}</span>
       <div class="flex items-center gap-1">
@@ -389,12 +512,16 @@ function onKeydown(event: KeyboardEvent) {
         v-else
         ref="tree"
         role="tree"
+        aria-multiselectable="true"
         tabindex="0"
         :aria-label="t('fileTree.tree')"
         :aria-activedescendant="activeDescendant"
         class="flex min-h-0 flex-1 flex-col text-xs outline-none"
         @keydown="onKeydown"
         @focus.self="list?.scrollToIndex(currentIndex)"
+        @dragover="dragOver($event)"
+        @drop.prevent="drop($event)"
+        @dragleave="clearDrop"
       >
         <div
           v-if="files.error"
@@ -423,18 +550,29 @@ function onKeydown(event: KeyboardEvent) {
               role="treeitem"
               :aria-label="row.name"
               :aria-level="row.depth + 1"
-              :aria-selected="files.selectedPath === row.path"
+              :aria-selected="files.selectedPaths.includes(row.path)"
               :aria-expanded="row.kind === 'directory' ? row.expanded : undefined"
               :aria-busy="row.loading || undefined"
               :data-path="row.path"
               :data-kind="row.kind"
               :title="row.error ?? row.path"
               class="flex h-6 cursor-default select-none items-center gap-1 pr-2 hover:bg-hover-surface"
-              :class="files.selectedPath === row.path ? 'bg-accent' : ''"
+              :class="[
+                files.selectedPaths.includes(row.path) ? 'bg-accent' : '',
+                dropTarget === row.path ? 'ring-1 ring-inset ring-ring' : '',
+              ]"
               :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
               @click="click(row, $event)"
               @dblclick="row.kind === 'file' && runAction('openFile', row)"
               @contextmenu="openMenu(row, $event)"
+              :draggable="!operations.busy"
+              @dragstart="dragStart(row, $event)"
+              @dragend="
+                clearDrop();
+                endFileDrag();
+              "
+              @dragover.stop="dragOver($event, row)"
+              @drop.stop.prevent="drop($event, row)"
             >
               <button
                 v-if="row.kind === 'directory'"

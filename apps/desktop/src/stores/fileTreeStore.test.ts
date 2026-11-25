@@ -16,6 +16,26 @@ const deferred = () => {
   });
   return { promise, resolve };
 };
+it("selects ranges and toggles items, then removes hidden and collapsed batch targets", async () => {
+  mocks.fsReadDir.mockResolvedValueOnce([dir("src"), file("a"), file("b"), file("c")]);
+  const store = useFileTreeStore();
+  await store.loadRoot();
+  store.select("a");
+  store.select("c", { range: true });
+  expect(store.selectedPaths).toEqual(["a", "b", "c"]);
+  store.select("b", { toggle: true });
+  expect(store.selectedPaths).toEqual(["a", "c"]);
+  store.filter = "c";
+  expect(store.selectedPaths).toEqual(["c"]);
+  store.filter = "";
+  mocks.fsReadDir.mockResolvedValueOnce([file("src/child")]);
+  await store.expand("src");
+  store.selectAll();
+  store.collapse("src");
+  expect(store.selectedPaths).not.toContain("src/child");
+  mocks.workspace.token++;
+  expect(store.selectedPaths).toEqual([]);
+});
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
@@ -48,7 +68,6 @@ it("does not list unopened folders; opens one directory and reuses its cache", a
   expect(mocks.fsReadDir).toHaveBeenCalledTimes(2);
   expect(store.rows[1]).toMatchObject({ key: "file:src/app.ts", depth: 1 });
 });
-
 it("coalesces directory requests and ignores an old workspace completion", async () => {
   const old = deferred();
   mocks.fsReadDir.mockReturnValueOnce(old.promise);

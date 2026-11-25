@@ -6,6 +6,7 @@ import ChangesTree from "./ChangesTree.vue";
 import { useChangesStore } from "@/stores/changesStore";
 import type { FileChange } from "@/lib/backend";
 import { wasContextHandled } from "@/lib/contextMenu";
+import { activeFileDrag, endFileDrag } from "@/features/file-tree/fileDrag";
 
 const mocks = vi.hoisted(() => ({ workspace: {} as any, settings: {} as any }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
@@ -28,7 +29,10 @@ beforeEach(() => {
     },
   );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  endFileDrag();
+});
 
 function change(path: string, kind: FileChange["kind"] = "modified"): FileChange {
   return {
@@ -53,6 +57,31 @@ function fixture(files = [change("src/nested/a.ts"), change("b.ts"), change("c.t
     wrapper.get(`[role="treeitem"][aria-label="${name}"][data-section="${section}"]`);
   return { wrapper, tree, folder, store };
 }
+it("maps File directory drags to changed descendants in the active repository", async () => {
+  Object.assign(mocks.workspace, {
+    folderPath: "C:/p",
+    repoPath: "C:/p/repo",
+    repoId: "fixture",
+    navigationToken: () => 1,
+    appliedOpenToken: () => 1,
+  });
+  const { wrapper, store } = fixture();
+  const move = vi.spyOn(store, "moveToChangelist").mockResolvedValue(null);
+  activeFileDrag.value = {
+    folder: "C:/p",
+    paths: ["repo/src", "other/a"],
+    navigation: 1,
+    applied: 1,
+  };
+  const header = wrapper.get(
+    '[role="treeitem"][data-section="changelist:default"][aria-level="1"]',
+  );
+  await header.trigger("drop", { dataTransfer: { dropEffect: "" } });
+  expect(move).toHaveBeenCalledExactlyOnceWith(["src/nested/a.ts"], "default");
+  activeFileDrag.value = { folder: "C:/p", paths: ["repo/src"], navigation: 0, applied: 1 };
+  await header.trigger("drop", { dataTransfer: { dropEffect: "" } });
+  expect(move).toHaveBeenCalledTimes(1);
+});
 
 it.each([false, true])(
   "opens a nested directory menu while preserving checks, file selection and collapsed=%s",
