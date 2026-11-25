@@ -104,4 +104,4 @@
 
 ## 当前界面边界
 
-普通本地文件 Diff 已提供逐块 Stage/Unstage/Rollback 按钮，支持范围及预览核对见差异教程。按块分配 Changelist 仍未提供。专门的子模块注册、托管平台账号管理、PR Review 与 MR 工具也不属于当前界面。安装包与截图以 Windows 为准，存在其他平台快捷键定义不代表已有对应原生发行包。
+普通本地文件 Diff 已提供逐块 Stage/Unstage/Rollback 按钮，支持范围及预览核对见差异教程。Changelist 的 HEAD→Local 差异支持按块归属，选择规则及限制见提交教程。专门的子模块注册、托管平台账号管理、PR Review 与 MR 工具也不属于当前界面。安装包与截图以 Windows 为准，存在其他平台快捷键定义不代表已有对应原生发行包。

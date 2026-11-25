@@ -39,7 +39,7 @@ File 的显示规则和 Commit 的忽略文件规则分别保存。
 | Show options before update | 是否在更新项目前显示策略选择框 |
 | Fetch after adding a remote | 新建 Remote 后是否立即 Fetch |
 | Cherry-pick suffix on protected sources | 适用时在说明中附上 cherry-pick 来源提交 |
-| Allow per-hunk changelists | 当前存在的偏好项；本版本尚无按块分配 Changelist 的可操作 UI，请使用文件分组或按行暂存 |
+| Allow per-hunk changelists | 在 Changelist 的 HEAD → Local Diff 中按修改块分配列表；关闭后保留已有块归属与提交范围 |
 | Fork parent remote name | Sync Fork 使用的父仓库 remote，默认 upstream |
 | Commit tool window mode | Docked / Window / Float，参见[布局](./workspace) |
 | Enable Log indexing | 控制日志索引相关能力；需要时在 Log 重建索引 |

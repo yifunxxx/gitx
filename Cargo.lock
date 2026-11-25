@@ -1426,6 +1426,7 @@ name = "gitx-diff"
 version = "0.1.47"
 dependencies = [
  "gitx-core",
+ "sha2",
  "similar",
 ]
 

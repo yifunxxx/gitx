@@ -4,6 +4,9 @@ use gitx_core::{DiffHunk, IgnoreWhitespace};
 use similar::{Algorithm, ChangeTag, TextDiff};
 use std::time::{Duration, Instant};
 
+mod changelist_anchors;
+pub use changelist_anchors::{content_token, hunk_anchors, map_hunk_anchors};
+
 const TOO_LARGE_BYTES: usize = 5 * 1024 * 1024;
 /// Soft line-count gate: prefer Histogram + short deadline above this.
 const LARGE_LINE_COUNT: usize = 8_000;

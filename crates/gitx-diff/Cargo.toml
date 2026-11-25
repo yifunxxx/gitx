@@ -9,3 +9,4 @@ description = "Text diff / merge3 / partial-stage stubs"
 [dependencies]
 gitx-core = { workspace = true }
 similar = "2"
+sha2 = "0.10"

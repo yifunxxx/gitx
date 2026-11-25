@@ -1,7 +1,7 @@
 import { useChangesStore, type ChangesSection } from "@/stores/changesStore";
 import { useDiffStore } from "@/stores/diffStore";
 
-/** Use the layer with actual changes when a changelist combines both layers. */
+/** Changelists own the complete HEAD-to-worktree change, independent of staging. */
 export function openChangeDiff(path: string, section: ChangesSection) {
   const changes = useChangesStore();
   const stagedChange = changes.staged.find((file) => file.path === path);
@@ -11,8 +11,13 @@ export function openChangeDiff(path: string, section: ChangesSection) {
     // Show Diff stays read-only; conflict editing remains in the Merge editor.
     return useDiffStore().openFileDiff(path, "head", "worktree");
   }
-  const stagedOnly = section.startsWith("changelist:") && !!stagedChange && !unstagedChange;
-  if (section === "staged" || stagedOnly) {
+  if (section.startsWith("changelist:") || (section === "unversioned" && !changes.stagingMode)) {
+    const original = stagedChange?.origPath ?? unstagedChange?.origPath;
+    return original
+      ? useDiffStore().openFileDiff(path, "head", "worktree", { leftPath: original })
+      : useDiffStore().openFileDiff(path, "head", "worktree");
+  }
+  if (section === "staged") {
     // Status origPath belongs to the HEAD side of a staged rename/copy.
     // The index and worktree already use the destination path.
     if (

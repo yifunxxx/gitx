@@ -774,10 +774,12 @@ export const mockBackend: Backend = {
     return JSON.parse(JSON.stringify(settings));
   },
   async settingsSet(next) {
-    settings = JSON.parse(JSON.stringify({
-      ...next,
-      recentWorkspaces: settings.recentWorkspaces ?? [],
-    }));
+    settings = JSON.parse(
+      JSON.stringify({
+        ...next,
+        recentWorkspaces: settings.recentWorkspaces ?? [],
+      }),
+    );
     return JSON.parse(JSON.stringify(settings));
   },
   async jobList() {
@@ -904,9 +906,18 @@ export const mockBackend: Backend = {
   async fsSearchFiles(req) {
     if (req.content) throw new Error("Content search requires the desktop application");
     const paths = ["README.md", "src/main.ts", ...files.map((file) => file.path)];
-    return { matches: paths.filter((path) => path.toLowerCase().includes(req.query.toLowerCase())).map((path) => ({ path, score: 0, line: null, column: null, preview: null })), scanned: paths.length, skipped: 0, truncated: false };
+    return {
+      matches: paths
+        .filter((path) => path.toLowerCase().includes(req.query.toLowerCase()))
+        .map((path) => ({ path, score: 0, line: null, column: null, preview: null })),
+      scanned: paths.length,
+      skipped: 0,
+      truncated: false,
+    };
   },
-  async fsCancelSearch() { return null; },
+  async fsCancelSearch() {
+    return null;
+  },
   async stagePaths(req) {
     emitConsole("cmd", `git add -A -- ${req.paths.join(" ")}`);
     for (const p of req.paths) {
@@ -968,6 +979,8 @@ export const mockBackend: Backend = {
     };
   },
   async commitCreate(req) {
+    if (req.changelistFiles?.some((file) => file.expectedToken != null))
+      throw new Error("Partial changelist commits require the desktop application");
     if (!req.message.trim()) {
       throw { code: "emptyCommitMessage", message: "commit message is empty" };
     }
@@ -979,9 +992,10 @@ export const mockBackend: Backend = {
     );
     emitConsole("stdout", `[main ${sha.slice(0, 7)}] ${req.message.trim().split("\n")[0]}`);
     if (req.amend) amendMessage = req.message;
-    // Clear staged mock files
+    const selected = req.changelistFiles?.map((file) => file.path) ?? req.paths;
+    // Match path-scoped commits in the desktop contract.
     for (const f of [...files]) {
-      if (f.indexStatus !== "." && f.indexStatus !== "?") {
+      if (selected ? selected.includes(f.path) : f.indexStatus !== "." && f.indexStatus !== "?") {
         const i = files.indexOf(f);
         if (i >= 0) files.splice(i, 1);
       }
@@ -1430,7 +1444,9 @@ export const mockBackend: Backend = {
   async repoStateGet() {
     return { isShallow: false };
   },
-  async smartRestoreChanges() { return null; },
+  async smartRestoreChanges() {
+    return null;
+  },
   async repoOpStateGet() {
     return {
       kind: "normal" as const,
@@ -1802,9 +1818,7 @@ export const mockBackend: Backend = {
       throw new Error("default Changes list cannot be deleted");
     }
     const target =
-      req.moveTo ??
-      mockChangelists.lists.find((l) => l.active && l.id !== req.id)?.id ??
-      "default";
+      req.moveTo ?? mockChangelists.lists.find((l) => l.active && l.id !== req.id)?.id ?? "default";
     for (const a of mockChangelists.assignments) {
       if (a.listId === req.id) a.listId = target;
     }
@@ -1825,6 +1839,9 @@ export const mockBackend: Backend = {
       else mockChangelists.assignments.push({ path: p, listId: req.targetListId, hunkRanges: [] });
     }
     return structuredClone(mockChangelists);
+  },
+  async changelistMoveHunks() {
+    throw new Error("Moving individual blocks requires the desktop application");
   },
   async stashList() {
     return structuredClone(mockStashes);
@@ -1913,11 +1930,11 @@ export const mockBackend: Backend = {
     const entry = mockShelves.find((s) => s.id === req.id);
     if (!entry) throw { code: "notFound", message: "shelf not found" };
     const selected = new Set(req.paths ?? entry.paths);
-    if (!selected.size || [...selected].some(path => !entry.paths.includes(path)))
+    if (!selected.size || [...selected].some((path) => !entry.paths.includes(path)))
       throw { code: "invalidArgument", message: "Select files still present in the Shelf" };
-    const applied = entry.paths.filter(path => selected.has(path));
+    const applied = entry.paths.filter((path) => selected.has(path));
     if (req.removeApplied !== false) {
-      const remaining = entry.paths.filter(path => !selected.has(path));
+      const remaining = entry.paths.filter((path) => !selected.has(path));
       if (!remaining.length) moveShelfToDeleted(req.id);
       else entry.paths = remaining;
     }

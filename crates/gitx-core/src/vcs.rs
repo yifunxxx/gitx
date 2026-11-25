@@ -693,7 +693,7 @@ pub struct ResetPreview {
 // ─── M6: Changelists / Stash / Shelf / Patch / Ignore ───────────────────────
 
 /// Content-anchor for per-hunk changelist assignment (#52).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HunkAnchor {
     pub before: Vec<String>,
@@ -705,7 +705,7 @@ pub struct HunkAnchor {
     pub new_lines: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PathAssignment {
     pub path: String,
@@ -715,7 +715,7 @@ pub struct PathAssignment {
     pub hunk_ranges: Vec<HunkAnchor>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangelistInfo {
     pub id: String,
@@ -729,6 +729,40 @@ pub struct ChangelistInfo {
 pub struct ChangelistsState {
     pub lists: Vec<ChangelistInfo>,
     pub assignments: Vec<PathAssignment>,
+    /// Computed only for files that have partial assignments; never persisted.
+    #[serde(default)]
+    pub partial_files: Vec<ChangelistFileState>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignedHunk {
+    pub index: u32,
+    pub list_id: String,
+    pub anchor: HunkAnchor,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangelistFileState {
+    pub path: String,
+    pub content_token: String,
+    pub hunks: Vec<AssignedHunk>,
+    /// The exact diff to which the derived ownership labels belong.
+    pub preview_hunks: Vec<DiffHunk>,
+    pub problem: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangelistCommitFile {
+    pub path: String,
+    /// Empty is allowed only for unassigned, whole files (e.g. unversioned).
+    pub list_ids: Vec<String>,
+    #[serde(default)]
+    pub expected_token: Option<String>,
 }
 
 impl Default for ChangelistsState {
@@ -741,6 +775,8 @@ impl Default for ChangelistsState {
                 active: true,
             }],
             assignments: Vec::new(),
+            partial_files: Vec::new(),
+            warnings: Vec::new(),
         }
     }
 }

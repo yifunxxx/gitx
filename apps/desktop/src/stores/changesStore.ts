@@ -1,7 +1,13 @@
 import { defineStore } from "pinia";
 import { computed, ref, shallowRef, watch } from "vue";
 import { getBackend } from "@/lib/backend";
-import type { ChangelistsState, FileChange, StatusSnapshot } from "@/lib/backend";
+import type {
+  ChangelistCommitFile,
+  ChangelistFileState,
+  ChangelistsState,
+  FileChange,
+  StatusSnapshot,
+} from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 import { formatErrorMessage } from "@/lib/errors";
@@ -39,6 +45,19 @@ function sameChangelists(a: ChangelistsState | null, b: ChangelistsState): boole
   if (a === b) return true;
   if (!a || a.lists.length !== b.lists.length || a.assignments.length !== b.assignments.length)
     return false;
+  const leftFiles = a.partialFiles ?? [];
+  const rightFiles = b.partialFiles ?? [];
+  if (
+    leftFiles.length !== rightFiles.length ||
+    leftFiles.some(
+      (file, i) =>
+        file.path !== rightFiles[i]!.path ||
+        file.contentToken !== rightFiles[i]!.contentToken ||
+        file.problem !== rightFiles[i]!.problem,
+    ) ||
+    JSON.stringify(a.warnings ?? []) !== JSON.stringify(b.warnings ?? [])
+  )
+    return false;
   for (let i = 0; i < a.lists.length; i++) {
     const left = a.lists[i]!;
     const right = b.lists[i]!;
@@ -59,7 +78,7 @@ function sameChangelists(a: ChangelistsState | null, b: ChangelistsState): boole
     const rightHunks = right.hunkRanges ?? [];
     if (leftHunks.length !== rightHunks.length) return false;
     for (let h = 0; h < leftHunks.length; h++) {
-      if (leftHunks[h] !== rightHunks[h]) return false;
+      if (JSON.stringify(leftHunks[h]) !== JSON.stringify(rightHunks[h])) return false;
     }
   }
   return true;
@@ -107,6 +126,7 @@ export const useChangesStore = defineStore("changes", () => {
   const selectedSection = ref<ChangesSection | null>(null);
   /** Paths checked for changelist-mode commit. */
   const checkedPaths = ref<string[]>([]);
+  const checkedSelections = shallowRef<Record<string, ChangelistCommitFile>>({});
   const localVersion = ref(0);
   /** Monotonic generation — drop stale refresh results. */
   let refreshGen = 0;
@@ -134,6 +154,7 @@ export const useChangesStore = defineStore("changes", () => {
       selectedPaths.value = [];
       selectedSection.value = null;
       checkedPaths.value = [];
+      checkedSelections.value = {};
       loading.value = false;
       error.value = null;
     },
@@ -148,7 +169,12 @@ export const useChangesStore = defineStore("changes", () => {
   const files = computed(() => snapshot.value?.files ?? []);
   const staged = computed(() => files.value.filter(isStaged));
   const unstaged = computed(() => files.value.filter(isUnstaged));
-  const unversioned = computed(() => files.value.filter(isUntracked));
+  const unversioned = computed(() =>
+    files.value.filter(
+      (file) =>
+        isUntracked(file) && (stagingMode.value || !partialFilesByPath.value.has(file.path)),
+    ),
+  );
   const ignored = computed(() => files.value.filter(isIgnored));
   const changed = computed(() => files.value.filter(isChanged));
 
@@ -160,12 +186,72 @@ export const useChangesStore = defineStore("changes", () => {
   const assignmentByPath = computed(() => {
     const map = new Map<string, string>();
     for (const assignment of changelists.value?.assignments ?? []) {
-      map.set(assignment.path, assignment.listId);
+      if (!assignment.hunkRanges?.length) map.set(assignment.path, assignment.listId);
     }
     return map;
   });
 
   const checkedSet = computed(() => new Set(checkedPaths.value));
+  const partialFilesByPath = computed(() => {
+    const map = new Map<string, ChangelistFileState>(
+      (changelists.value?.partialFiles ?? []).map((file) => [file.path, file]),
+    );
+    // Metadata writes return before the derived preview is refreshed. Keep a
+    // conservative partial marker during that interval (and on read failure).
+    for (const assignment of changelists.value?.assignments ?? []) {
+      if (assignment.hunkRanges?.length && !map.has(assignment.path))
+        map.set(assignment.path, {
+          path: assignment.path,
+          contentToken: "",
+          hunks: [],
+          previewHunks: [],
+          problem: "Refresh and review block ownership before committing.",
+        });
+    }
+    return map;
+  });
+  function partialForPath(path: string) {
+    return partialFilesByPath.value.get(path);
+  }
+  function listIdsForPath(path: string): string[] {
+    const partial = partialForPath(path);
+    if (partial) {
+      const ids = partial.hunks.map((hunk) => hunk.listId);
+      if (!ids.length)
+        ids.push(
+          ...(changelists.value?.assignments ?? [])
+            .filter((a) => a.path === path)
+            .map((a) => a.listId),
+        );
+      return [...new Set(ids.length ? ids : [activeListId.value])];
+    }
+    return [listIdForPath(path)];
+  }
+  function isChecked(path: string, section?: ChangesSection): boolean {
+    if (!checkedSet.value.has(path)) return false;
+    const selection = checkedSelections.value[path];
+    return (
+      !selection ||
+      !section?.startsWith("changelist:") ||
+      selection.listIds.includes(section.slice(11))
+    );
+  }
+  function commitSelection(paths: string[], section?: ChangesSection): ChangelistCommitFile[] {
+    return paths.map((path) => {
+      const partial = partialForPath(path);
+      return {
+        path,
+        listIds: section?.startsWith("changelist:") ? [section.slice(11)] : listIdsForPath(path),
+        ...(partial ? { expectedToken: partial.contentToken } : {}),
+      };
+    });
+  }
+  function checkedCommitSelection(): ChangelistCommitFile[] {
+    return checkedPaths.value.map((path) => {
+      const file = checkedSelections.value[path] ?? commitSelection([path])[0]!;
+      return { ...file, listIds: [...file.listIds] };
+    });
+  }
 
   function listIdForPath(path: string): string {
     return assignmentByPath.value.get(path) ?? activeListId.value;
@@ -173,11 +259,14 @@ export const useChangesStore = defineStore("changes", () => {
 
   const filesByList = computed(() => {
     const groups = new Map<string, FileChange[]>();
-    for (const file of changed.value) {
-      const id = listIdForPath(file.path);
-      let files = groups.get(id);
-      if (!files) groups.set(id, (files = []));
-      files.push(file);
+    for (const file of files.value.filter(
+      (file) => isChanged(file) || (isUntracked(file) && partialFilesByPath.value.has(file.path)),
+    )) {
+      for (const id of listIdsForPath(file.path)) {
+        let files = groups.get(id);
+        if (!files) groups.set(id, (files = []));
+        files.push(file);
+      }
     }
     return groups;
   });
@@ -207,8 +296,8 @@ export const useChangesStore = defineStore("changes", () => {
     if (!checked.size) return states;
     function summarize(section: ChangesSection, files: FileChange[]) {
       if (!files.length) return;
-      const first = checked.has(files[0]!.path);
-      const mixed = files.some((file) => checked.has(file.path) !== first);
+      const first = isChecked(files[0]!.path, section);
+      const mixed = files.some((file) => isChecked(file.path, section) !== first);
       states.set(section, mixed ? "partial" : first ? "all" : "none");
     }
     for (const [id, files] of filesByList.value) summarize(`changelist:${id}`, files);
@@ -226,13 +315,7 @@ export const useChangesStore = defineStore("changes", () => {
     const paths = pathsForSection(section);
     if (!paths.length) return;
     const state = checkStateForSection(section);
-    const set = new Set(checkedPaths.value);
-    if (state === "all") {
-      for (const p of paths) set.delete(p);
-    } else {
-      for (const p of paths) set.add(p);
-    }
-    checkedPaths.value = [...set];
+    setCheckedInSection(paths, section, state !== "all");
   }
 
   async function refreshChangelists() {
@@ -276,6 +359,15 @@ export const useChangesStore = defineStore("changes", () => {
         ++changelistRequest;
         if (!stagingMode.value) changelists.value = result;
         error.value = null;
+        if (!stagingMode.value && result.assignments.some((item) => item.hunkRanges?.length)) {
+          // A successful write stays successful even if its derived read fails.
+          try {
+            const resolved = await getBackend().changelistList({ path });
+            if (current() && !stagingMode.value) changelists.value = resolved;
+          } catch (e) {
+            if (current()) error.value = formatErrorMessage(e);
+          }
+        }
         return result;
       } catch (e) {
         if (current()) error.value = formatErrorMessage(e);
@@ -336,8 +428,30 @@ export const useChangesStore = defineStore("changes", () => {
       // Drop checks that no longer exist.
       if (checkedPaths.value.length) {
         const known = new Set(next.files.map((f) => f.path));
-        const kept = checkedPaths.value.filter((p) => known.has(p));
-        if (kept.length !== checkedPaths.value.length) checkedPaths.value = kept;
+        const selections = { ...checkedSelections.value };
+        let pruned = false;
+        const kept = checkedPaths.value.filter((path) => {
+          if (!known.has(path)) {
+            delete selections[path];
+            return false;
+          }
+          const selection = selections[path];
+          if (!selection || !changelists.value || stagingMode.value) return true;
+          const available = new Set(listIdsForPath(path));
+          const listIds = selection.listIds.filter((id) => available.has(id));
+          if (listIds.length === selection.listIds.length) return true;
+          pruned = true;
+          if (!listIds.length) {
+            delete selections[path];
+            return false;
+          }
+          selections[path] = { ...selection, listIds };
+          return true;
+        });
+        if (pruned || kept.length !== checkedPaths.value.length) {
+          checkedPaths.value = kept;
+          checkedSelections.value = selections;
+        }
       }
     } catch (e) {
       if (current()) error.value = formatErrorMessage(e);
@@ -367,28 +481,66 @@ export const useChangesStore = defineStore("changes", () => {
     selectedSection.value = null;
   }
 
-  function toggleChecked(path: string) {
-    if (checkedPaths.value.includes(path)) {
-      checkedPaths.value = checkedPaths.value.filter((p) => p !== path);
-    } else {
-      checkedPaths.value = [...checkedPaths.value, path];
-    }
+  function toggleChecked(path: string, section?: ChangesSection) {
+    setCheckedInSection([path], section, !isChecked(path, section));
   }
 
-  function setChecked(paths: string[]) {
+  function setChecked(paths: string[], section?: ChangesSection) {
     checkedPaths.value = [...paths];
+    checkedSelections.value = Object.fromEntries(
+      commitSelection(paths, section).map((file) => [file.path, file]),
+    );
+  }
+
+  function setCheckedInSection(
+    paths: string[],
+    section: ChangesSection | undefined,
+    checked: boolean,
+  ) {
+    const next = new Set(checkedPaths.value);
+    const selections = { ...checkedSelections.value };
+    for (const path of paths) {
+      if (section?.startsWith("changelist:")) {
+        const id = section.slice(11);
+        const ids = new Set(
+          next.has(path) ? (selections[path]?.listIds ?? listIdsForPath(path)) : [],
+        );
+        if (checked) ids.add(id);
+        else ids.delete(id);
+        // Adding/removing a list must not renew the token of an older check.
+        if (ids.size) {
+          next.add(path);
+          selections[path] = {
+            ...(selections[path] ?? commitSelection([path], section)[0]!),
+            listIds: [...ids],
+          };
+        } else {
+          next.delete(path);
+          delete selections[path];
+        }
+      } else if (checked) {
+        next.add(path);
+        selections[path] = commitSelection([path], section)[0]!;
+      } else {
+        next.delete(path);
+        delete selections[path];
+      }
+    }
+    checkedPaths.value = [...next];
+    checkedSelections.value = selections;
   }
 
   function checkAllInList(listId: string) {
     const paths = filesForChangelist(listId).map((f) => f.path);
-    const set = new Set(checkedPaths.value);
-    for (const p of paths) set.add(p);
-    checkedPaths.value = [...set];
+    setCheckedInSection(paths, `changelist:${listId}`, true);
   }
 
   function uncheckAllInList(listId: string) {
-    const drop = new Set(filesForChangelist(listId).map((f) => f.path));
-    checkedPaths.value = checkedPaths.value.filter((p) => !drop.has(p));
+    setCheckedInSection(
+      filesForChangelist(listId).map((f) => f.path),
+      `changelist:${listId}`,
+      false,
+    );
   }
 
   async function stage(paths: string[]) {
@@ -518,6 +670,13 @@ export const useChangesStore = defineStore("changes", () => {
     selectedPaths,
     selectedSection,
     checkedPaths,
+    checkedSelections,
+    isChecked,
+    partialForPath,
+    listIdsForPath,
+    commitSelection,
+    checkedCommitSelection,
+    setCheckedInSection,
     stagingMode,
     showIgnoredFiles,
     staged,

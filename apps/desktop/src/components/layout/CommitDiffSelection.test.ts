@@ -138,7 +138,7 @@ describe.each(["tree", "context", "shortcut"] as const)("%s change diff", (entry
       expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
         "中文 added.txt",
         "head",
-        "index",
+        "worktree",
         {
           leftPath: "old name.txt",
         },
@@ -146,14 +146,15 @@ describe.each(["tree", "context", "shortcut"] as const)("%s change diff", (entry
     },
   );
 
-  it("uses the destination path on both sides of an unstaged edit after a staged rename", async () => {
+  it("uses the original HEAD path for a renamed changelist file including its worktree edits", async () => {
     mocks.changes.staged = [{ path: "中文 added.txt", origPath: "old name.txt", indexStatus: "R" }];
     mocks.changes.unstaged = [{ path: "中文 added.txt" }];
     await open(entry, "changelist:default");
     expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
       "中文 added.txt",
-      "index",
+      "head",
       "worktree",
+      { leftPath: "old name.txt" },
     );
   });
 
@@ -164,28 +165,32 @@ describe.each(["tree", "context", "shortcut"] as const)("%s change diff", (entry
       // Other files' unstaged changes must not affect the selected file.
       mocks.changes.unstaged = [{ path: "other.txt", kind: "modified" }];
       await open(entry, "changelist:default");
-      expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith("中文 added.txt", "head", "index");
+      expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
+        "中文 added.txt",
+        "head",
+        "worktree",
+      );
     },
   );
 
-  it("shows unstaged edits when the file has both staged and unstaged changes", async () => {
+  it("shows all HEAD-to-worktree edits when a changelist file has both staging layers", async () => {
     mocks.changes.staged = [{ path: "中文 added.txt" }];
     mocks.changes.unstaged = [{ path: "中文 added.txt" }];
     await open(entry, "changelist:default");
     expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
       "中文 added.txt",
-      "index",
+      "head",
       "worktree",
     );
   });
 
   it.each(["unstaged", "unversioned", "ignored", "changelist:other"] as ChangesSection[])(
-    "keeps the working-tree comparison for %s without a staged-only change",
+    "uses the appropriate base for %s without a staged-only change",
     async (section) => {
       await open(entry, section);
       expect(mocks.openFileDiff).toHaveBeenCalledExactlyOnceWith(
         "中文 added.txt",
-        "index",
+        section === "unversioned" || section.startsWith("changelist:") ? "head" : "index",
         "worktree",
       );
     },

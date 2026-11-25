@@ -246,3 +246,46 @@ it("separates same-name file and folder checks, focus, context and range selecti
   await nextTick();
   expect(old().attributes("aria-selected")).toBe("true");
 });
+
+it("isolates folder and header checks for the same partial file shown in two lists", async () => {
+  const { folder, store } = fixture(["src/a.ts"]);
+  store.changelists = {
+    lists: [
+      { id: "default", name: "Changes", comment: "", active: true },
+      { id: "other", name: "Other", comment: "", active: false },
+    ],
+    assignments: [],
+    partialFiles: [
+      {
+        path: "src/a.ts",
+        contentToken: "reviewed",
+        previewHunks: [],
+        problem: null,
+        hunks: ["default", "other"].map((listId, index) => ({
+          index,
+          listId,
+          anchor: {
+            before: [],
+            after: [],
+            changeHash: String(index),
+            oldStart: index,
+            oldLines: 1,
+            newStart: index,
+            newLines: 1,
+          },
+        })),
+      },
+    ],
+    warnings: [],
+  };
+  await nextTick();
+  await folder("src", "changelist:other").get("input").setValue(true);
+  expect(folder("src", "changelist:default").attributes("aria-checked")).toBe("false");
+  expect(store.checkStateForSection("changelist:other")).toBe("all");
+  store.toggleCheckSection("changelist:default");
+  await nextTick();
+  await folder("src", "changelist:other").get("input").setValue(false);
+  expect(store.checkedCommitSelection()).toEqual([
+    { path: "src/a.ts", listIds: ["default"], expectedToken: "reviewed" },
+  ]);
+});

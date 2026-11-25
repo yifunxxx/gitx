@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, reactive, ref, watch } from "vue";
-import { getBackend, type CommitResult } from "@/lib/backend";
+import { getBackend, type ChangelistCommitFile, type CommitResult } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useChangesStore } from "./changesStore";
 import { toast } from "@/composables/useToast";
@@ -79,7 +79,7 @@ export const useCommitStore = defineStore("commit", () => {
     { flush: "sync" },
   );
   watch(
-    () => [changes.stagingMode, ...changes.checkedPaths],
+    () => [changes.stagingMode, ...changes.checkedPaths, changes.checkedSelections],
     () => {
       ++selectionRevision;
     },
@@ -124,7 +124,12 @@ export const useCommitStore = defineStore("commit", () => {
 
   // Dialog submissions own their message and file selection. They share the
   // repository lock and refresh flow without replacing the panel's draft.
-  async function commitFiles(paths: string[], text: string, hooks = true) {
+  async function commitFiles(
+    paths: string[],
+    text: string,
+    hooks = true,
+    selections?: ChangelistCommitFile[],
+  ) {
     if (committing.value || useRewriteStore().busy || !paths.length || !text.trim()) return;
     const source = captureOperation();
     if (!source.current() || !source.path || !source.repoId) return;
@@ -136,7 +141,9 @@ export const useCommitStore = defineStore("commit", () => {
         message: text,
         amend: false,
         noVerify: !hooks,
-        paths: [...new Set(paths)],
+        ...(selections
+          ? { changelistFiles: selections.map((file) => ({ ...file, listIds: [...file.listIds] })) }
+          : { paths: [...new Set(paths)] }),
       });
       if (source.current()) {
         notifyCommitted(result);
@@ -196,6 +203,15 @@ export const useCommitStore = defineStore("commit", () => {
     const ordinaryDraft = draftBeforeAmend;
     const paths =
       !changes.stagingMode && changes.checkedPaths.length ? [...changes.checkedPaths] : null;
+    const selections = paths ? changes.checkedCommitSelection() : null;
+    if (
+      !changes.stagingMode &&
+      !paths &&
+      changes.changelists?.assignments.some((item) => item.hunkRanges?.length)
+    ) {
+      toast({ title: i18n.global.t("changelist.selectBeforeCommit") });
+      return;
+    }
     pendingPaths.add(source.path);
     try {
       const result = await getBackend().commitCreate({
@@ -204,7 +220,7 @@ export const useCommitStore = defineStore("commit", () => {
         message: message.value,
         amend: wasAmend,
         noVerify: !runHooks.value,
-        paths,
+        ...(selections ? { changelistFiles: selections } : { paths }),
       });
       if (!source.current()) return result;
       notifyCommitted(result);

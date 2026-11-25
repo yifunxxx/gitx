@@ -4,7 +4,7 @@ use crate::{
     partial_ops::{decode_partial_text, partial_is_link, validate_partial_path, PartialSelection},
     GitInvocation, GitRunner, OpKind,
 };
-use gitx_core::{AppError, CommitResult, ErrorCode, PartialFileSelection};
+use gitx_core::{AppError, ChangelistsState, CommitResult, ErrorCode, PartialFileSelection};
 use std::{collections::HashSet, fs, path::Path};
 use tokio_util::sync::CancellationToken;
 
@@ -24,17 +24,48 @@ fn index_bytes(path: &Path) -> Result<Option<Vec<u8>>, AppError> {
     }
 }
 
-fn regular_worktree_file(cwd: &Path, path: &str) -> Result<Vec<u8>, AppError> {
+fn regular_worktree_file(cwd: &Path, path: &str) -> Result<Option<Vec<u8>>, AppError> {
     let full = cwd.join(path);
     let mut current = cwd.to_path_buf();
     for component in Path::new(path).components() {
         current.push(component);
-        let meta = fs::symlink_metadata(&current).map_err(io)?;
+        let meta = match fs::symlink_metadata(&current) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(io(error)),
+        };
         if partial_is_link(&meta) || (current == full && !meta.is_file()) {
             return Err(invalid("partial commits require a regular worktree file"));
         }
     }
-    fs::read(full).map_err(io)
+    fs::read(full).map(Some).map_err(io)
+}
+
+pub(crate) enum CommitSelection {
+    Lines(PartialFileSelection),
+    Hunks {
+        path: String,
+        indexes: Vec<u32>,
+        token: String,
+    },
+    Whole {
+        path: String,
+    },
+}
+impl CommitSelection {
+    fn path(&self) -> &str {
+        match self {
+            Self::Lines(selection) => &selection.path,
+            Self::Hunks { path, .. } | Self::Whole { path } => path,
+        }
+    }
+    fn empty(&self) -> bool {
+        match self {
+            Self::Lines(selection) => selection.selected_lines.is_empty(),
+            Self::Hunks { indexes, .. } => indexes.is_empty(),
+            Self::Whole { .. } => false,
+        }
+    }
 }
 
 impl GitRunner {
@@ -104,25 +135,31 @@ impl GitRunner {
         partial: &[PartialFileSelection],
         cancel: &CancellationToken,
     ) -> Result<CommitResult, AppError> {
-        // WSL invocation currently forwards native paths/env to wsl.exe, not
-        // translated Linux paths and GIT_INDEX_FILE. Never risk a real-index
-        // commit when a private index cannot be guaranteed.
-        if self.wsl_distro.is_some()
-            || crate::detect::parse_wsl_unc_path(&cwd.to_string_lossy()).is_some()
-            || self
-                .git_bin
-                .split_whitespace()
-                .next()
-                .is_some_and(|bin| bin.eq_ignore_ascii_case("wsl.exe"))
-        {
-            return Err(invalid(
-                "partial commits with WSL Git are not supported; use a whole-file commit",
-            ));
-        }
+        let selected = partial
+            .iter()
+            .cloned()
+            .map(CommitSelection::Lines)
+            .collect::<Vec<_>>();
+        self.commit_selections(cwd, message, amend, no_verify, &selected, None, cancel)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn commit_selections(
+        &self,
+        cwd: &Path,
+        message: &str,
+        amend: bool,
+        no_verify: bool,
+        partial: &[CommitSelection],
+        expected_state: Option<&ChangelistsState>,
+        cancel: &CancellationToken,
+    ) -> Result<CommitResult, AppError> {
+        self.validate_partial_commit_backend(cwd)?;
         let mut seen = HashSet::new();
         for selection in partial {
-            validate_partial_path(&selection.path)?;
-            let key = Path::new(&selection.path)
+            validate_partial_path(selection.path())?;
+            let key = Path::new(selection.path())
                 .components()
                 .filter(|component| !matches!(component, std::path::Component::CurDir))
                 .collect::<std::path::PathBuf>()
@@ -130,7 +167,7 @@ impl GitRunner {
                 .replace('\\', "/");
             #[cfg(windows)]
             let key = key.to_lowercase();
-            if selection.selected_lines.is_empty() || !seen.insert(key) {
+            if selection.empty() || !seen.insert(key) {
                 return Err(invalid("select changed lines once per file"));
             }
         }
@@ -204,50 +241,50 @@ impl GitRunner {
 
         let mut worktree_snapshots = Vec::new();
         for (number, selection) in partial.iter().enumerate() {
-            let path = &selection.path;
+            let path = selection.path();
+            let raw = regular_worktree_file(cwd, path)?;
+            if matches!(selection, CommitSelection::Whole { .. }) {
+                for index in [commit_index.as_path(), result_index.as_ref()] {
+                    self.run(
+                        invocation(
+                            index,
+                            vec!["add".into(), "-A".into(), "--".into(), path.into()],
+                        ),
+                        cancel,
+                    )
+                    .await?;
+                }
+                worktree_snapshots.push((path, raw));
+                continue;
+            }
+            if let CommitSelection::Hunks { token, .. } = selection {
+                let state = gitx_meta::load_changelists(&git_dir)?;
+                if self
+                    .changelist_preview(cwd, path, &state, cancel)
+                    .await?
+                    .state
+                    .content_token
+                    != *token
+                {
+                    return Err(invalid("file or block ownership changed while preparing commit; refresh and review"));
+                }
+            }
             let base = match &head {
                 Some(oid) => self.partial_revision_blob(cwd, path, oid, cancel).await?,
                 None => None,
             };
             let staged = self.partial_index_blob(cwd, path, cancel).await?;
-            if base.is_some() && staged.is_none() {
+            if base.is_some() && staged.is_none() && raw.is_some() {
                 return Err(invalid(
                     "a staged file deletion requires a whole-file commit",
                 ));
             }
-            let raw = regular_worktree_file(cwd, path)?;
-            decode_partial_text(raw.clone())?;
-            // Arbitrary filters/encoding transformations do not have a reliable
-            // line mapping. Normal Git EOL cleaning is handled before selection.
-            let attrs = self
-                .run(
-                    GitInvocation::new(
-                        cwd,
-                        [
-                            "check-attr",
-                            "-z",
-                            "filter",
-                            "working-tree-encoding",
-                            "ident",
-                            "--",
-                            path,
-                        ],
-                    ),
-                    cancel,
-                )
-                .await?;
-            for attr in attrs
-                .stdout
-                .split(|byte| *byte == 0)
-                .collect::<Vec<_>>()
-                .chunks(3)
-            {
-                if attr.len() == 3 && !matches!(attr[2], b"unspecified" | b"unset") {
-                    return Err(invalid(
-                        "filtered or encoded files require a whole-file commit",
-                    ));
-                }
+            if raw.is_none() && matches!(selection, CommitSelection::Lines(_)) {
+                return Err(invalid("line selections require an existing worktree file"));
             }
+            decode_partial_text(raw.clone().unwrap_or_default())?;
+            self.validate_partial_commit_attributes(cwd, path, cancel)
+                .await?;
             if base.is_none() && staged.is_none() {
                 match self
                     .run(
@@ -268,7 +305,7 @@ impl GitRunner {
                         ["hash-object", "-w", "--stdin", &format!("--path={path}")],
                     )
                     .kind(OpKind::Write)
-                    .stdin(raw.clone()),
+                    .stdin(raw.clone().unwrap_or_default()),
                     cancel,
                 )
                 .await?;
@@ -286,12 +323,21 @@ impl GitRunner {
                 Some(&work),
                 &gitx_diff::DiffComputeOptions::default(),
             );
-            PartialSelection::Lines(&selection.selected_lines).validate(&hunks)?;
-            let selected = gitx_diff::apply_selected_lines_to_base(
-                base_text,
-                &work,
-                &selection.selected_lines,
-            );
+            let selected = match selection {
+                CommitSelection::Lines(selection) => {
+                    PartialSelection::Lines(&selection.selected_lines).validate(&hunks)?;
+                    gitx_diff::apply_selected_lines_to_base(
+                        base_text,
+                        &work,
+                        &selection.selected_lines,
+                    )
+                }
+                CommitSelection::Hunks { indexes, .. } => {
+                    PartialSelection::Hunks(indexes, None).validate(&hunks)?;
+                    gitx_diff::apply_selected_hunks_to_base(base_text, &work, indexes)
+                }
+                CommitSelection::Whole { .. } => unreachable!(),
+            };
             if selected == base_text {
                 return Err(AppError::new(
                     ErrorCode::NothingToCommit,
@@ -331,17 +377,40 @@ impl GitRunner {
                 })?;
                 decode_partial_text(out.stdout)?
             };
-            self.partial_commit_put(cwd, &commit_index, path, mode, &selected, cancel)
+            if raw.is_none() {
+                if !merged.is_empty() {
+                    return Err(invalid(
+                        "file deletion overlaps staged changes; review staged content",
+                    ));
+                }
+                for index in [commit_index.as_path(), result_index.as_ref()] {
+                    self.run(
+                        invocation(
+                            index,
+                            vec![
+                                "update-index".into(),
+                                "--force-remove".into(),
+                                "--".into(),
+                                path.into(),
+                            ],
+                        ),
+                        cancel,
+                    )
+                    .await?;
+                }
+            } else {
+                self.partial_commit_put(cwd, &commit_index, path, mode, &selected, cancel)
+                    .await?;
+                self.partial_commit_put(
+                    cwd,
+                    &result_index,
+                    path,
+                    staged.as_ref().map_or(mode, |blob| blob.mode.as_str()),
+                    &merged,
+                    cancel,
+                )
                 .await?;
-            self.partial_commit_put(
-                cwd,
-                &result_index,
-                path,
-                staged.as_ref().map_or(mode, |blob| blob.mode.as_str()),
-                &merged,
-                cancel,
-            )
-            .await?;
+            }
             worktree_snapshots.push((path, raw));
         }
         // Also rejects unresolved entries outside the selected files.
@@ -365,6 +434,14 @@ impl GitRunner {
             return Err(invalid(
                 "HEAD or index changed while preparing commit; refresh and retry",
             ));
+        }
+        if let Some(expected) = expected_state {
+            let actual = gitx_meta::load_changelists(&git_dir)?;
+            if actual.lists != expected.lists || actual.assignments != expected.assignments {
+                return Err(invalid(
+                    "changelist assignments changed before commit; refresh and review",
+                ));
+            }
         }
         let mut args = vec![
             "commit".into(),
@@ -460,6 +537,65 @@ impl GitRunner {
             result.warning = Some(format!("Commit succeeded, but the index could not be updated: {detail}. Recovery files retained at {}.", retained.display()));
         }
         Ok(result)
+    }
+
+    pub(crate) fn validate_partial_commit_backend(&self, cwd: &Path) -> Result<(), AppError> {
+        // WSL invocation currently forwards native paths/env to wsl.exe, not
+        // translated Linux paths and GIT_INDEX_FILE. Never risk a real-index
+        // commit when a private index cannot be guaranteed.
+        if self.wsl_distro.is_some()
+            || crate::detect::parse_wsl_unc_path(&cwd.to_string_lossy()).is_some()
+            || self
+                .git_bin
+                .split_whitespace()
+                .next()
+                .is_some_and(|bin| bin.eq_ignore_ascii_case("wsl.exe"))
+        {
+            return Err(invalid(
+                "partial commits with WSL Git are not supported; use a whole-file commit",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn validate_partial_commit_attributes(
+        &self,
+        cwd: &Path,
+        path: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        // Arbitrary filters/encoding transformations do not have a reliable
+        // line mapping. Normal Git EOL cleaning is handled before selection.
+        let attrs = self
+            .run(
+                GitInvocation::new(
+                    cwd,
+                    [
+                        "check-attr",
+                        "-z",
+                        "filter",
+                        "working-tree-encoding",
+                        "ident",
+                        "--",
+                        path,
+                    ],
+                ),
+                cancel,
+            )
+            .await?;
+        for attr in attrs
+            .stdout
+            .split(|byte| *byte == 0)
+            .collect::<Vec<_>>()
+            .chunks(3)
+        {
+            if attr.len() == 3 && !matches!(attr[2], b"unspecified" | b"unset") {
+                return Err(invalid(
+                    "filtered or encoded files require a whole-file commit",
+                ));
+            }
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]

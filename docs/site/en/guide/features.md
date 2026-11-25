@@ -104,4 +104,4 @@ Use Find Action (`Ctrl+Shift+A`) to search. Availability depends on repository s
 
 ## Current UI boundaries
 
-Per-hunk Stage/Unstage/Rollback controls are available in ordinary live file diffs; see the Diff guide for supported comparisons and preview checks. Per-hunk changelist assignment remains unavailable. Dedicated submodule registration, hosting-account management, PR Review, and platform MR tools are also outside this UI. Windows is the documented installer and screenshot platform; key definitions for other platforms do not establish published native packages.
+Per-hunk Stage/Unstage/Rollback controls are available in ordinary live file diffs; see the Diff guide for supported comparisons and preview checks. Changelist HEAD-to-Local diffs also offer block assignment; see the Commit guide for selection and safety boundaries. Dedicated submodule registration, hosting-account management, PR Review, and platform MR tools are also outside this UI. Windows is the documented installer and screenshot platform; key definitions for other platforms do not establish published native packages.

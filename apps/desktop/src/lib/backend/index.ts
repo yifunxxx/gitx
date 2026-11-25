@@ -139,6 +139,7 @@ import type {
   ChangelistDeleteReq,
   ChangelistIdReq,
   ChangelistMoveReq,
+  ChangelistHunksReq,
   ChangelistsState,
   StashPathReq,
   StashCreateReq,
@@ -324,6 +325,7 @@ export type Backend = {
   changelistDelete(req: ChangelistDeleteReq): Promise<ChangelistsState>;
   changelistSetActive(req: ChangelistIdReq): Promise<ChangelistsState>;
   changelistMove(req: ChangelistMoveReq): Promise<ChangelistsState>;
+  changelistMoveHunks(req: ChangelistHunksReq): Promise<ChangelistsState>;
   stashList(req: StashPathReq): Promise<StashEntry[]>;
   stashCreate(req: StashCreateReq): Promise<null>;
   stashApply(req: StashRefReq): Promise<null>;
@@ -494,6 +496,7 @@ export const tauriBackend: Backend = {
   changelistDelete: (req) => commands.changelistDelete(req),
   changelistSetActive: (req) => commands.changelistSetActive(req),
   changelistMove: (req) => commands.changelistMove(req),
+  changelistMoveHunks: (req) => commands.changelistMoveHunks(req),
   stashList: (req) => commands.stashList(req),
   stashCreate: (req) => commands.stashCreate(req),
   stashApply: (req) => commands.stashApply(req),

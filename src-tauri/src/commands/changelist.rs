@@ -54,11 +54,14 @@ pub struct ChangelistMoveReq {
     pub target_list_id: String,
 }
 
-async fn git_dir(state: &AppState, path: &str) -> Result<PathBuf, AppError> {
-    let cwd = PathBuf::from(path);
-    let git = state.git.read().await;
-    let cancel = CancellationToken::new();
-    git.git_dir(&cwd, &cancel).await
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangelistHunksReq {
+    pub path: String,
+    pub file_path: String,
+    pub hunk_indexes: Vec<u32>,
+    pub expected_hunks: Vec<gitx_core::DiffHunk>,
+    pub target_list_id: String,
 }
 
 #[tauri::command]
@@ -67,8 +70,38 @@ pub async fn changelist_list(
     state: State<'_, AppState>,
     req: ChangelistPathReq,
 ) -> Result<ChangelistsState, AppError> {
-    let dir = git_dir(&state, &req.path).await?;
-    gitx_meta::load_changelists(&dir)
+    let git = state.git.read().await;
+    git.changelist_resolve(&PathBuf::from(&req.path), &CancellationToken::new())
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn changelist_move_hunks(
+    state: State<'_, AppState>,
+    req: ChangelistHunksReq,
+) -> Result<ChangelistsState, AppError> {
+    if !state.settings.read().await.git.allow_per_hunk_changelists {
+        return Err(AppError::new(
+            ErrorCode::InvalidArgument,
+            "enable per-hunk changelists in settings first",
+        ));
+    }
+    let git = state.git.read().await;
+    let cancel = CancellationToken::new();
+    let _permits = state
+        .scheduler
+        .acquire_repo_write(&git, &req.path, &cancel)
+        .await?;
+    git.changelist_move_hunks(
+        &PathBuf::from(&req.path),
+        &req.file_path,
+        &req.hunk_indexes,
+        &req.expected_hunks,
+        &req.target_list_id,
+        &cancel,
+    )
+    .await
 }
 
 #[tauri::command]

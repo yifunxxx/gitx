@@ -39,7 +39,7 @@ File visibility and Commit's ignored-file setting are stored independently.
 | Show options before update | Show the strategy chooser before updating |
 | Fetch after adding a remote | Fetch immediately after adding a remote |
 | Cherry-pick suffix on protected sources | Append source commit information when applicable |
-| Allow per-hunk changelists | A stored preference; this version has no working hunk-assignment UI. Use file grouping or line staging |
+| Allow per-hunk changelists | Assign blocks in Changelist HEAD → Local Diff; disabling preserves existing ownership and commit scope |
 | Fork parent remote name | Parent remote for Sync Fork, normally upstream |
 | Commit tool window mode | Docked / Window / Float; see [layout](./workspace) |
 | Enable Log indexing | Control log-index functionality; rebuild from Log when needed |

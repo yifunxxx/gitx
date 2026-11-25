@@ -22,6 +22,8 @@ pub struct CommitCreateReq {
     /// Line-level partial commit (#66).
     #[serde(default)]
     pub partial: Option<Vec<gitx_core::PartialFileSelection>>,
+    #[serde(default)]
+    pub changelist_files: Option<Vec<gitx_core::ChangelistCommitFile>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -55,8 +57,17 @@ pub async fn commit_create(
         .scheduler
         .acquire_repo_write(&git, &req.path, &cancel)
         .await?;
-    let result = git
-        .commit_create_ex(
+    let result = if let Some(files) = &req.changelist_files {
+        if req.paths.is_some() || req.partial.is_some() {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "choose a single commit selection mode",
+            ));
+        }
+        git.commit_changelist_files(&cwd, &req.message, req.amend, req.no_verify, files, &cancel)
+            .await?
+    } else {
+        git.commit_create_ex(
             &cwd,
             &req.message,
             req.amend,
@@ -65,7 +76,8 @@ pub async fn commit_create(
             req.partial.as_deref(),
             &cancel,
         )
-        .await?;
+        .await?
+    };
     let _ = app.emit(
         "console://line",
         serde_json::json!({

@@ -14,7 +14,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => mocks.diffs }));
-vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ refresh: mocks.refresh }) }));
+vi.mock("@/stores/settingsStore", () => ({
+  useSettingsStore: () => ({ settings: { stagingMode: true } }),
+}));
+vi.mock("@/stores/changesStore", () => ({
+  useChangesStore: () => ({ stagingMode: true, refresh: mocks.refresh }),
+}));
 vi.mock("@/composables/useConfirm", () => ({ promptDialog: mocks.prompt }));
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => ({ stageLines: mocks.stageLines }) }));
@@ -22,7 +27,10 @@ vi.mock("@/lib/backend", () => ({ getBackend: () => ({ stageLines: mocks.stageLi
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return { promise, resolve, reject };
 }
 
@@ -31,28 +39,42 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.workspace = reactive({ repoPath: "A", repoId: "A" });
   const tab = {
-    id: "index:worktree:first.txt", path: "first.txt", kind: "file",
-    left: "index", right: "worktree", loading: false,
-    collapseUnchanged: true, unified: false, ignoreWhitespace: "none",
+    id: "index:worktree:first.txt",
+    path: "first.txt",
+    kind: "file",
+    left: "index",
+    right: "worktree",
+    loading: false,
+    collapseUnchanged: true,
+    unified: false,
+    ignoreWhitespace: "none",
     result: {
-      binary: false, tooLarge: false,
-      hunks: [{ header: "@@ -1 +1,3 @@", oldStart: 1, newStart: 1, lines: [" old", "+new", "+third"] }],
+      binary: false,
+      tooLarge: false,
+      hunks: [
+        { header: "@@ -1 +1,3 @@", oldStart: 1, newStart: 1, lines: [" old", "+new", "+third"] },
+      ],
     },
   };
   mocks.diffs = reactive({
-    activeId: tab.id, tabs: [tab],
-    openFileDiff: vi.fn(), reloadTab: vi.fn(),
-    getPaneViewState: vi.fn(), savePaneViewState: vi.fn(),
+    activeId: tab.id,
+    tabs: [tab],
+    openFileDiff: vi.fn(),
+    reloadTab: vi.fn(),
+    getPaneViewState: vi.fn(),
+    savePaneViewState: vi.fn(),
   });
   mocks.prompt.mockResolvedValue("2");
   mocks.stageLines.mockResolvedValue(undefined);
   mocks.refresh.mockResolvedValue(undefined);
   wrapper = shallowMount(DiffViewer, {
     props: { tabId: tab.id },
-    global: { stubs: {
-      Tip: { template: "<div><slot /></div>" },
-      Button: { template: "<button><slot /></button>" },
-    } },
+    global: {
+      stubs: {
+        Tip: { template: "<div><slot /></div>" },
+        Button: { template: "<button><slot /></button>" },
+      },
+    },
   });
 });
 afterEach(() => wrapper.unmount());
@@ -66,7 +88,8 @@ async function click() {
 }
 
 it.each(["repo", "repo round trip", "tab", "tab round trip", "result", "unmount"])(
-  "discards line input after a %s change", async (change) => {
+  "discards line input after a %s change",
+  async (change) => {
     const input = deferred<string>();
     mocks.prompt.mockReturnValue(input.promise);
     await click();
@@ -103,18 +126,26 @@ it("prevents duplicate prompts and writes until the operation finishes", async (
 });
 
 it.each(["2.5", "2,NaN", "-2", "0", "4294967296", "1e2", "0x10"])(
-  "rejects invalid line input %s without staging a subset", async (input) => {
+  "rejects invalid line input %s without staging a subset",
+  async (input) => {
     mocks.prompt.mockResolvedValue(input);
     await click();
     expect(mocks.stageLines).not.toHaveBeenCalled();
-    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "diff.noValidLines" }));
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "diff.noValidLines" }),
+    );
   },
 );
 
 it("deduplicates valid lines and refreshes the original tab without reopening it", async () => {
   mocks.prompt.mockResolvedValue("2, 2 3");
   await click();
-  expect(mocks.stageLines).toHaveBeenCalledWith({ repoId: "A", path: "A", filePath: "first.txt", lines: [2, 3] });
+  expect(mocks.stageLines).toHaveBeenCalledWith({
+    repoId: "A",
+    path: "A",
+    filePath: "first.txt",
+    lines: [2, 3],
+  });
   expect(mocks.refresh).toHaveBeenCalledTimes(1);
   expect(mocks.diffs.reloadTab).toHaveBeenCalledWith("index:worktree:first.txt");
   expect(mocks.diffs.openFileDiff).not.toHaveBeenCalled();
@@ -123,9 +154,13 @@ it("deduplicates valid lines and refreshes the original tab without reopening it
 it("shows backend errors and permits retry", async () => {
   mocks.stageLines.mockRejectedValueOnce({ message: "index.lock exists" });
   await click();
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-    title: "diff.stageLinesFailed", description: "index.lock exists", persistent: true,
-  }));
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "diff.stageLinesFailed",
+      description: "index.lock exists",
+      persistent: true,
+    }),
+  );
   expect(mocks.refresh).not.toHaveBeenCalled();
   await click();
   expect(mocks.stageLines).toHaveBeenCalledTimes(2);
@@ -148,20 +183,27 @@ it("reports refresh failure separately after a successful write", async () => {
   mocks.refresh.mockRejectedValueOnce({ message: "refresh failed" });
   await click();
   expect(mocks.stageLines).toHaveBeenCalledTimes(1);
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-    title: "diff.stagedRefreshFailed", description: "refresh failed", persistent: true,
-  }));
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "diff.stagedRefreshFailed",
+      description: "refresh failed",
+      persistent: true,
+    }),
+  );
 });
 
 it.each(["1", "2, 999"])("rejects unchanged or out-of-range input %s", async (input) => {
   mocks.prompt.mockResolvedValue(input);
   await click();
   expect(mocks.stageLines).not.toHaveBeenCalled();
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "diff.onlyChangedLines" }));
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ title: "diff.onlyChangedLines" }),
+  );
 });
 
 it.each(["head", "binary", "tooLarge", "loading", "historical", "empty", "deletions"])(
-  "does not offer line staging for %s comparisons", async (kind) => {
+  "does not offer line staging for %s comparisons",
+  async (kind) => {
     const tab = mocks.diffs.tabs[0];
     if (kind === "head") tab.left = "head";
     else if (kind === "historical") tab.leftRev = "abc123";

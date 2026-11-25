@@ -12,8 +12,8 @@ use commands::app::{
     settings_get, settings_reload, settings_set, StartupOpenPath,
 };
 use commands::changelist::{
-    changelist_create, changelist_delete, changelist_list, changelist_move, changelist_rename,
-    changelist_set_active,
+    changelist_create, changelist_delete, changelist_list, changelist_move, changelist_move_hunks,
+    changelist_rename, changelist_set_active,
 };
 use commands::clone_cmd::{clone_check_url, clone_run, repo_state_get, unshallow_run};
 use commands::commit::{commit_create, commit_head_message};
@@ -231,6 +231,7 @@ pub fn run() {
             changelist_delete,
             changelist_set_active,
             changelist_move,
+            changelist_move_hunks,
             stash_list,
             stash_create,
             stash_apply,

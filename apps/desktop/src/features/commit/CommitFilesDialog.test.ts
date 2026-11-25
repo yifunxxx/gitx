@@ -48,6 +48,9 @@ beforeEach(() => {
   });
   mocks.changes = reactive({
     stagingMode: false,
+    commitSelection(paths: string[]) {
+      return paths.map((path) => ({ path, listIds: ["default"] }));
+    },
     available: ["src/a.ts", "src/b.ts", "other.txt"],
     pathsForSection(section: string) {
       return section === "changelist:default" ? this.available : [];
@@ -87,6 +90,7 @@ it("commits the adjusted original subset with the dialog message and closes afte
     ["src/b.ts"],
     "selected files\n\nbody",
     true,
+    [{ path: "src/b.ts", listIds: ["default"] }],
   );
   expect(mocks.close).toHaveBeenCalledExactlyOnceWith(committed, 54);
 });
@@ -110,6 +114,7 @@ it("prunes vanished files and revalidates even before a refresh watcher runs", a
     ["src/b.ts"],
     "selected files",
     true,
+    [{ path: "src/b.ts", listIds: ["default"] }],
   );
   expect(mocks.close).toHaveBeenCalledExactlyOnceWith(committed, 54);
 });
@@ -187,7 +192,9 @@ it("keeps message, selection and hooks on failure so the same dialog can retry",
   expect(mocks.close).not.toHaveBeenCalled();
   await wrapper.get("form").trigger("submit");
   await flushPromises();
-  expect(mocks.commit.commitFiles).toHaveBeenLastCalledWith(["src/b.ts"], "retry draft", false);
+  expect(mocks.commit.commitFiles).toHaveBeenLastCalledWith(["src/b.ts"], "retry draft", false, [
+    { path: "src/b.ts", listIds: ["default"] },
+  ]);
   expect(mocks.close).toHaveBeenCalledExactlyOnceWith(committed, 54);
 });
 
@@ -218,3 +225,26 @@ it("explains the staging scope and invalidates on mode change", async () => {
   await wrapper.get("form").trigger("submit");
   expect(mocks.close).not.toHaveBeenCalled();
 });
+
+it.each(["whole to partial", "partial to whole"])(
+  "submits the frozen scope after %s in an open dialog",
+  async (change) => {
+    const old = {
+      path: "src/a.ts",
+      listIds: ["default"],
+      ...(change === "partial to whole" ? { expectedToken: "old-preview" } : {}),
+    };
+    mocks.changes.commitSelection = () => [old, { path: "src/b.ts", listIds: ["default"] }];
+    const wrapper = fixture();
+    mocks.changes.commitSelection = () => [
+      { path: "src/a.ts", listIds: ["other"], expectedToken: "new-preview" },
+    ];
+    await wrapper.get('input[aria-label="src/b.ts"]').setValue(false);
+    await wrapper.get("textarea").setValue("frozen");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(mocks.commit.commitFiles).toHaveBeenCalledExactlyOnceWith(["src/a.ts"], "frozen", true, [
+      old,
+    ]);
+  },
+);

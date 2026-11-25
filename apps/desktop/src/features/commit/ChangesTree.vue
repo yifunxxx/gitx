@@ -265,7 +265,7 @@ const folderChecks = computed(() => {
       let any = false;
       let all = true;
       if (node.file) {
-        any = checked.value.has(node.file.change.path);
+        any = changes.isChecked(node.file.change.path, group.section);
         all = any;
       }
       for (const child of node.children ?? []) {
@@ -376,7 +376,7 @@ function checkState(row: Row): boolean | "mixed" | undefined {
   if (row.kind === "file")
     return row.node.children?.length
       ? (folderChecks.value.get(row.node) ?? false)
-      : checked.value.has(filePath(row)!);
+      : changes.isChecked(filePath(row)!, row.section);
   const state = changes.checkStateForSection(row.section);
   return state === "partial" ? "mixed" : state === "all";
 }
@@ -386,18 +386,17 @@ function toggleCheck(row: Row) {
   if (row.kind === "header") changes.toggleCheckSection(row.section);
   else if (row.node.children?.length) {
     const remove = checkState(row) === true;
-    const next = new Set(checked.value);
+    const paths: string[] = [];
     const stack = [row.node];
     while (stack.length) {
       const node = stack.pop()!;
       if (node.file) {
-        if (remove) next.delete(node.file.change.path);
-        else next.add(node.file.change.path);
+        paths.push(node.file.change.path);
       }
       for (const child of node.children ?? []) stack.push(child);
     }
-    changes.setChecked([...next]);
-  } else changes.toggleChecked(filePath(row)!);
+    changes.setCheckedInSection(paths, row.section, !remove);
+  } else changes.toggleChecked(filePath(row)!, row.section);
 }
 function isSelected(row: Row) {
   const path = filePath(row);
@@ -649,6 +648,12 @@ function labelFor(node: PathTreeNode<FileMeta>) {
             >
               {{ labelFor(row.node) }}
             </span>
+            <span
+              v-if="filePath(row) && changes.partialForPath(filePath(row)!)"
+              class="ml-auto shrink-0 text-[10px] text-muted-foreground"
+              :title="t('changelist.partialHint')"
+              >{{ t("changelist.partial") }}</span
+            >
           </template>
         </div>
       </template>

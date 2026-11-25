@@ -22,11 +22,20 @@ const mocks = vi.hoisted(() => ({
   statusGet: vi.fn(),
   refresh: vi.fn(),
   toast: vi.fn(),
+  settings: {} as any,
+  openDialog: vi.fn(),
+  changelistMoveHunks: vi.fn(),
+  changelistList: vi.fn(),
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
-vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => ({ settings: { stagingMode: true } }) }));
+vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
+vi.mock("@/composables/useDialog", () => ({
+  openDialog: mocks.openDialog,
+  closeDialog: vi.fn(),
+  useDialogState: () => ({ value: null }),
+}));
 vi.mock("@/composables/useConfirm", () => ({
   confirmDialog: mocks.confirm,
   promptDialog: mocks.prompt,
@@ -81,9 +90,16 @@ beforeEach(async () => {
     },
   });
   mocks.layout = reactive({ activeEditorKind: "diff", bottomOpen: false, bottomMaximized: false });
+  mocks.settings = reactive({
+    settings: { stagingMode: true, git: { allowPerHunkChangelists: true } },
+  });
   mocks.diffFile.mockImplementation(async () => result());
   mocks.confirm.mockResolvedValue(true);
   mocks.statusGet.mockResolvedValue({ repoId: "A", version: 1, files: [], branch: null });
+  mocks.changelistList.mockResolvedValue({
+    lists: [{ id: "default", name: "Changes", active: true }],
+    assignments: [],
+  });
   const changes = useChangesStore();
   const realRefresh = changes.refresh;
   mocks.refresh.mockImplementation(() => realRefresh());
@@ -344,4 +360,112 @@ it("offers pure-deletion blocks in all four layouts and serializes with legacy l
   input.resolve("1");
   await flushPromises();
   expect(mocks.stageLines).toHaveBeenCalledOnce();
+});
+
+async function changelistFixture() {
+  mocks.settings.settings.stagingMode = false;
+  patch({ left: "head", right: "worktree" });
+  useChangesStore().changelists = {
+    lists: [
+      { id: "default", name: "Changes", comment: "", active: true },
+      { id: "other", name: "Feature", comment: "", active: false },
+    ],
+    assignments: [],
+    partialFiles: [
+      {
+        path: "file.txt",
+        contentToken: "token",
+        problem: null,
+        previewHunks: result().hunks,
+        hunks: [
+          {
+            index: 0,
+            listId: "other",
+            anchor: {
+              before: [],
+              after: [],
+              changeHash: "hash",
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 1,
+            },
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+  await flushPromises();
+}
+
+it("shows a block owner only for the exact preview, and keeps a disabled owner when the setting is off", async () => {
+  await changelistFixture();
+  expect(pane().props("hunkControls")![0]!.labels![0]).toBe("Feature");
+  patch({ result: { ...result(), hunks: [{ ...result().hunks[0]!, lines: ["-old", "+newer"] }] } });
+  await flushPromises();
+  expect(pane().props("hunkControls")![0]!.labels![0]).toBe("changelist.reviewRequired");
+  mocks.settings.settings.git.allowPerHunkChangelists = false;
+  await flushPromises();
+  expect(pane().props("hunkControls")![0]!.disabled).toBe(true);
+  await act("changelist");
+  expect(mocks.openDialog).not.toHaveBeenCalled();
+});
+
+it("assigns the exact reviewed block and keeps controls busy through selection and refresh", async () => {
+  await changelistFixture();
+  const choice = deferred<string>(),
+    write = deferred<void>(),
+    refresh = deferred<void>();
+  mocks.openDialog.mockReturnValue(choice.promise);
+  mocks.changelistMoveHunks.mockReturnValue(write.promise);
+  mocks.refresh.mockReturnValue(refresh.promise);
+  await act("changelist");
+  await act("changelist");
+  expect(mocks.openDialog).toHaveBeenCalledOnce();
+  expect(pane().props("hunkBusy")).toBe(true);
+  choice.resolve("other");
+  await flushPromises();
+  expect(mocks.changelistMoveHunks).toHaveBeenCalledExactlyOnceWith({
+    path: "C:/A",
+    filePath: "file.txt",
+    hunkIndexes: [0],
+    expectedHunks: result().hunks,
+    targetListId: "other",
+  });
+  write.resolve();
+  await flushPromises();
+  expect(pane().props("hunkBusy")).toBe(true);
+  refresh.resolve();
+  await flushPromises();
+  expect(pane().props("hunkBusy")).toBe(false);
+});
+
+it.each(["navigation", "preview", "setting", "cancel"])(
+  "does not assign after %s during list selection",
+  async (change) => {
+    await changelistFixture();
+    const choice = deferred<string | null>();
+    mocks.openDialog.mockReturnValue(choice.promise);
+    await act("changelist");
+    if (change === "navigation") mocks.workspace.token++;
+    if (change === "preview") patch({ result: { ...result(), rightText: "changed" } });
+    if (change === "setting") mocks.settings.settings.git.allowPerHunkChangelists = false;
+    choice.resolve(change === "cancel" ? null : "other");
+    await flushPromises();
+    expect(mocks.changelistMoveHunks).not.toHaveBeenCalled();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  },
+);
+
+it("treats successful assignment followed by read failure as an applied action and retries reads only", async () => {
+  await changelistFixture();
+  mocks.openDialog.mockResolvedValue("other");
+  mocks.changelistList.mockRejectedValueOnce(new Error("metadata read failed"));
+  await act("changelist");
+  expect(wrapper.text()).toContain("diff.hunkRefreshFailed");
+  await review().trigger("click");
+  await flushPromises();
+  expect(mocks.changelistMoveHunks).toHaveBeenCalledOnce();
+  expect(wrapper.text()).not.toContain("diff.hunkRefreshFailed");
 });

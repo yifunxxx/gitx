@@ -49,6 +49,9 @@ beforeEach(() => {
   mocks.changes = reactive({
     stagingMode: false,
     checkedPaths: ["first.txt"],
+    checkedCommitSelection() {
+      return this.checkedPaths.map((path: string) => ({ path, listIds: ["default"] }));
+    },
     setChecked: vi.fn(),
     refresh: vi.fn(),
   });
@@ -201,7 +204,9 @@ it("does not clear a newer file selection after a successful commit", async () =
   pending.resolve(committed);
   await operation;
   expect(mocks.changes.setChecked).not.toHaveBeenCalled();
-  expect(mocks.backend.commitCreate.mock.calls[0][0].paths).toEqual(["first.txt"]);
+  expect(mocks.backend.commitCreate.mock.calls[0][0].changelistFiles).toEqual([
+    { path: "first.txt", listIds: ["default"] },
+  ]);
 });
 
 it("marks Amend selected during loading but prevents a commit before the head message is ready", async () => {

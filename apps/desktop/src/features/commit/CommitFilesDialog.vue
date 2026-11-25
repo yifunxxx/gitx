@@ -36,6 +36,11 @@ const candidateFiles = computed<PathChecklistItem[]>(() => {
     });
 });
 const selectedPaths = ref(candidateFiles.value.map((file) => file.path));
+// Preserve what was reviewed when the window opened. A background refresh
+// must not silently replace a partial selection's content/ownership token.
+const initialSelection = stagingMode
+  ? undefined
+  : changes.commitSelection(initialPaths, props.section);
 watch(candidateFiles, (files) => {
   const available = new Set(files.map((file) => file.path));
   selectedPaths.value = selectedPaths.value.filter((path) => available.has(path));
@@ -73,7 +78,10 @@ async function submit() {
   submitting.value = true;
   error.value = "";
   try {
-    const result = await commit.commitFiles(paths, message.value, runHooks.value);
+    const selections = initialSelection?.filter((file) => paths.includes(file.path));
+    const result = selections
+      ? await commit.commitFiles(paths, message.value, runHooks.value, selections)
+      : await commit.commitFiles(paths, message.value, runHooks.value);
     if (result && source.current()) closeDialog(result, dialogId);
   } catch (cause) {
     if (source.current()) error.value = formatErrorMessage(cause);

@@ -7,33 +7,55 @@ import CodeMirrorDiff from "./CodeMirrorDiff.vue";
 
 const mocks = vi.hoisted(() => ({ diffs: {} as any }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => mocks.diffs }));
-vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => ({ repoId: "repo", repoPath: "repo" }) }));
+vi.mock("@/stores/workspaceStore", () => ({
+  useWorkspaceStore: () => ({ repoId: "repo", repoPath: "repo" }),
+}));
+vi.mock("@/stores/settingsStore", () => ({
+  useSettingsStore: () => ({ settings: { stagingMode: true } }),
+}));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({}) }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   mocks.diffs = reactive({
-    activeId: "diff", getPaneViewState: vi.fn(), savePaneViewState: vi.fn(),
-    tabs: [{
-      id: "diff", path: "file.txt", kind: "file", left: "head", right: "index",
-      loading: false, textsLoaded: true, collapseUnchanged: false, unified: false,
-      ignoreWhitespace: "none", result: {
-        leftText: "left\n".repeat(200), rightText: "right\n".repeat(20),
-        hunks: [], binary: false, tooLarge: false,
+    activeId: "diff",
+    getPaneViewState: vi.fn(),
+    savePaneViewState: vi.fn(),
+    tabs: [
+      {
+        id: "diff",
+        path: "file.txt",
+        kind: "file",
+        left: "head",
+        right: "index",
+        loading: false,
+        textsLoaded: true,
+        collapseUnchanged: false,
+        unified: false,
+        ignoreWhitespace: "none",
+        result: {
+          leftText: "left\n".repeat(200),
+          rightText: "right\n".repeat(20),
+          hunks: [],
+          binary: false,
+          tooLarge: false,
+        },
       },
-    }],
+    ],
   });
 });
 
 async function create() {
   const wrapper = shallowMount(DiffViewer, {
     props: { tabId: "diff" },
-    global: { stubs: {
-      CodeMirrorDiff: false,
-      Tip: { template: "<div><slot /></div>" },
-      Button: { template: "<button><slot /></button>" },
-    } },
+    global: {
+      stubs: {
+        CodeMirrorDiff: false,
+        Tip: { template: "<div><slot /></div>" },
+        Button: { template: "<button><slot /></button>" },
+      },
+    },
   });
   await flushPromises();
   const panes = wrapper.findAll(".cm-scroller").map((pane) => pane.element as HTMLElement);
@@ -50,12 +72,18 @@ function limitScroll(pane: HTMLElement, maxTop: number, maxLeft: number) {
   let left = 0;
   Object.defineProperties(pane, {
     scrollTop: {
-      configurable: true, get: () => top,
-      set: (value: number) => { top = Math.max(0, Math.min(maxTop, value)); },
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = Math.max(0, Math.min(maxTop, value));
+      },
     },
     scrollLeft: {
-      configurable: true, get: () => left,
-      set: (value: number) => { left = Math.max(0, Math.min(maxLeft, value)); },
+      configurable: true,
+      get: () => left,
+      set: (value: number) => {
+        left = Math.max(0, Math.min(maxLeft, value));
+      },
     },
   });
 }
@@ -109,9 +137,9 @@ it("does not carry scroll suppression into editors replaced by refreshed content
   expect(left.scrollTop).toBe(80);
   scroll(right, 200, 20);
   expect(left.scrollTop).toBe(80);
-  const destroy = wrapper.findAll(".cm-editor").map((pane) =>
-    vi.spyOn(EditorView.findFromDOM(pane.element as HTMLElement)!, "destroy"),
-  );
+  const destroy = wrapper
+    .findAll(".cm-editor")
+    .map((pane) => vi.spyOn(EditorView.findFromDOM(pane.element as HTMLElement)!, "destroy"));
   wrapper.unmount();
   destroy.forEach((call) => expect(call).toHaveBeenCalledOnce());
   scroll(nextRight, 120, 0);

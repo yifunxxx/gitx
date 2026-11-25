@@ -425,6 +425,9 @@ export const commands = {
   async changelistMove(req: ChangelistMoveReq): Promise<ChangelistsState> {
     return await TAURI_INVOKE("changelist_move", { req });
   },
+  async changelistMoveHunks(req: ChangelistHunksReq): Promise<ChangelistsState> {
+    return await TAURI_INVOKE("changelist_move_hunks", { req });
+  },
   async stashList(req: StashPathReq): Promise<StashEntry[]> {
     return await TAURI_INVOKE("stash_list", { req });
   },
@@ -625,6 +628,7 @@ export type AppUpdateInfo = {
   notes: string;
 };
 export type AppearanceSettings = { theme: string; palette: string; cornerStyle: string };
+export type AssignedHunk = { index: number; listId: string; anchor: HunkAnchor };
 export type BlameLine = {
   line: number;
   sha: string;
@@ -686,6 +690,14 @@ export type BranchRenameReq = {
 export type BranchRestoreReq = { path: string; name: string; sha: string };
 export type BranchUpdateReq = { path: string; local: string; remoteRef: string };
 export type ChangedFile = { path: string; status: string; origPath: string | null };
+export type ChangelistCommitFile = {
+  path: string;
+  /**
+   * Empty is allowed only for unassigned, whole files (e.g. unversioned).
+   */
+  listIds: string[];
+  expectedToken?: string | null;
+};
 export type ChangelistCreateReq = {
   path: string;
   name: string;
@@ -693,12 +705,37 @@ export type ChangelistCreateReq = {
   setActive?: boolean;
 };
 export type ChangelistDeleteReq = { path: string; id: string; moveTo: string | null };
+export type ChangelistFileState = {
+  path: string;
+  contentToken: string;
+  hunks: AssignedHunk[];
+  /**
+   * The exact diff to which the derived ownership labels belong.
+   */
+  previewHunks: DiffHunk[];
+  problem: string | null;
+};
+export type ChangelistHunksReq = {
+  path: string;
+  filePath: string;
+  hunkIndexes: number[];
+  expectedHunks: DiffHunk[];
+  targetListId: string;
+};
 export type ChangelistIdReq = { path: string; id: string };
 export type ChangelistInfo = { id: string; name: string; comment: string; active: boolean };
 export type ChangelistMoveReq = { path: string; paths: string[]; targetListId: string };
 export type ChangelistPathReq = { path: string };
 export type ChangelistRenameReq = { path: string; id: string; name: string };
-export type ChangelistsState = { lists: ChangelistInfo[]; assignments: PathAssignment[] };
+export type ChangelistsState = {
+  lists: ChangelistInfo[];
+  assignments: PathAssignment[];
+  /**
+   * Computed only for files that have partial assignments; never persisted.
+   */
+  partialFiles?: ChangelistFileState[];
+  warnings?: string[];
+};
 /**
  * File path list presentation: directory tree vs flat paths.
  * Used by Commit TW Changes (`changes_list_mode`) and Log Changed Files
@@ -761,6 +798,7 @@ export type CommitCreateReq = {
    * Line-level partial commit (#66).
    */
   partial?: PartialFileSelection[] | null;
+  changelistFiles?: ChangelistCommitFile[] | null;
 };
 export type CommitDetails = {
   sha: string;

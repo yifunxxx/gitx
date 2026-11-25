@@ -35,7 +35,10 @@ fn load_changelists_unlocked(git_dir: &Path) -> Result<ChangelistsState, AppErro
 
 fn save_changelists(git_dir: &Path, state: &ChangelistsState) -> Result<(), AppError> {
     ensure_meta_dir(git_dir)?;
-    crate::transaction::write_json(&changelists_path(git_dir), state)
+    let mut persisted = state.clone();
+    persisted.partial_files.clear();
+    persisted.warnings.clear();
+    crate::transaction::write_json(&changelists_path(git_dir), &persisted)
 }
 
 pub fn create_changelist(
@@ -156,7 +159,6 @@ pub fn delete_changelist(
         for a in &mut state.assignments {
             if a.list_id == id {
                 a.list_id = target.clone();
-                a.hunk_ranges.clear();
             }
         }
         if was_active {
@@ -194,17 +196,50 @@ pub fn move_paths(
             return Err(AppError::new(ErrorCode::NotFound, "changelist not found"));
         }
         for path in paths {
-            if let Some(existing) = state.assignments.iter_mut().find(|a| a.path == *path) {
-                existing.list_id = target_list_id.to_string();
-                existing.hunk_ranges.clear();
-            } else {
-                state.assignments.push(PathAssignment {
-                    path: path.clone(),
-                    list_id: target_list_id.to_string(),
-                    hunk_ranges: Vec::new(),
-                });
-            }
+            state
+                .assignments
+                .retain(|assignment| assignment.path != *path);
+            state.assignments.push(PathAssignment {
+                path: path.clone(),
+                list_id: target_list_id.to_string(),
+                hunk_ranges: Vec::new(),
+            });
         }
+        save_changelists(git_dir, &state)?;
+        Ok(state)
+    })
+}
+
+/// Replace only the reviewed file's assignments. A read/recompute/write race
+/// cannot overwrite a simultaneous list edit or whole-file move.
+pub fn replace_hunk_assignments(
+    git_dir: &Path,
+    path: &str,
+    expected: &ChangelistsState,
+    assignments: Vec<PathAssignment>,
+) -> Result<ChangelistsState, AppError> {
+    crate::transaction::with_metadata_access(git_dir, || {
+        let mut state = load_changelists_unlocked(git_dir)?;
+        if state.lists != expected.lists || state.assignments != expected.assignments {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "changelists changed; refresh and review before retrying",
+            ));
+        }
+        if assignments.iter().any(|assignment| {
+            assignment.path != path
+                || assignment.hunk_ranges.is_empty()
+                || !state.lists.iter().any(|list| list.id == assignment.list_id)
+        }) {
+            return Err(AppError::new(
+                ErrorCode::InvalidArgument,
+                "invalid hunk assignment",
+            ));
+        }
+        state
+            .assignments
+            .retain(|assignment| assignment.path != path);
+        state.assignments.extend(assignments);
         save_changelists(git_dir, &state)?;
         Ok(state)
     })

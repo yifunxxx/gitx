@@ -750,7 +750,7 @@
     "openExplorer": "Open in File Explorer",
     "openTerminal": "Open in Terminal",
     "commitFiles": "Commit Files…",
-    "commitFilesHint": "Commit the current contents of the checked files with this message.",
+    "commitFilesHint": "Commit the checked files in this changelist. For files assigned by block, only blocks belonging to this list are included.",
     "commitFilesStagingHint": "Commit the current contents of the checked files, including their unstaged edits. Other staged files stay staged.",
     "committingFiles": "Committing selected files…",
     "rollback": "Rollback…",
@@ -789,7 +789,14 @@
     "deleted": "Changelist deleted",
     "unversioned": "Unversioned Files",
     "ignored": "Ignored Files",
-    "namePlaceholder": "Changelist name"
+    "namePlaceholder": "Changelist name",
+    "partial": "Partial",
+    "partialHint": "This file is assigned by block. Only blocks in this list will be committed.",
+    "reviewRequired": "Review needed",
+    "moveBlock": "Assign block {block}",
+    "reassignHint": "Unmatched and new blocks join the active list. Review every current block in this file before confirming.",
+    "moveBlockAction": "Assign to changelist",
+    "selectBeforeCommit": "Select changelist files before committing."
   },
   "stash": {
     "section": "Stashes",

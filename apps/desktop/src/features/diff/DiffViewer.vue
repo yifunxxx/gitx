@@ -7,6 +7,9 @@ import Skeleton from "@/components/common/Skeleton.vue";
 import { useDiffStore } from "@/stores/diffStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { openDialog } from "@/composables/useDialog";
+import HunkChangelistDialog from "./HunkChangelistDialog.vue";
 import { getBackend } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
@@ -31,6 +34,7 @@ const { t } = useI18n();
 const diffs = useDiffStore();
 const changes = useChangesStore();
 const workspace = useWorkspaceStore();
+const settings = useSettingsStore();
 
 type DiffPane = { applyScroll: (left?: number, top?: number) => void };
 const leftPane = ref<DiffPane | null>(null);
@@ -47,13 +51,21 @@ const tab = computed(() => diffs.tabs.find((t) => t.id === props.tabId));
 const result = computed(() => tab.value?.result);
 
 const visibleHunks = computed(() => result.value?.hunks ?? []);
-const waitingForTexts = computed(() =>
-  !tab.value?.collapseUnchanged && !tab.value?.textsLoaded &&
-  !result.value?.binary && !result.value?.tooLarge,
+const waitingForTexts = computed(
+  () =>
+    !tab.value?.collapseUnchanged &&
+    !tab.value?.textsLoaded &&
+    !result.value?.binary &&
+    !result.value?.tooLarge,
 );
-const unifiedHunks = computed(() => tab.value?.collapseUnchanged
-  ? visibleHunks.value
-  : expandUnifiedHunks(visibleHunks.value, result.value?.leftText ?? "", result.value?.rightText ?? ""),
+const unifiedHunks = computed(() =>
+  tab.value?.collapseUnchanged
+    ? visibleHunks.value
+    : expandUnifiedHunks(
+        visibleHunks.value,
+        result.value?.leftText ?? "",
+        result.value?.rightText ?? "",
+      ),
 );
 
 const collapsed = computed(() => {
@@ -73,9 +85,7 @@ const rightText = computed(() => {
 const enableInline = computed(() => countHunkLines(visibleHunks.value) <= 900);
 
 /** Rebuild panes only for this tab's content or display mode. */
-const paintKey = computed(
-  () => tab.value ? diffViewKey(tab.value) : "",
-);
+const paintKey = computed(() => (tab.value ? diffViewKey(tab.value) : ""));
 
 function localizeSideLabel(label: string | undefined): string {
   if (!label) return "";
@@ -116,20 +126,36 @@ let previewGeneration = 0;
 // Synchronous invalidation also catches A → B → A navigation in one tick.
 watch(
   [
-    () => workspace.repoId, () => workspace.repoPath, () => workspace.navigationToken?.(),
-    () => props.tabId, () => diffs.activeId,
-    () => tab.value?.path, () => tab.value?.left, () => tab.value?.right,
-    () => tab.value?.leftRev, () => tab.value?.rightRev, () => tab.value?.leftPath,
+    () => workspace.repoId,
+    () => workspace.repoPath,
+    () => workspace.navigationToken?.(),
+    () => props.tabId,
+    () => diffs.activeId,
+    () => tab.value?.path,
+    () => tab.value?.left,
+    () => tab.value?.right,
+    () => tab.value?.leftRev,
+    () => tab.value?.rightRev,
+    () => tab.value?.leftPath,
+    () => changes.stagingMode,
+    () => settings.settings?.git?.allowPerHunkChangelists,
   ],
-  () => { stageGeneration += 1; hunkError.value = ""; },
+  () => {
+    stageGeneration += 1;
+    hunkError.value = "";
+  },
   { flush: "sync" },
 );
 watch(
   [() => tab.value?.result, () => tab.value?.loading, () => tab.value?.ignoreWhitespace],
-  () => { previewGeneration += 1; },
+  () => {
+    previewGeneration += 1;
+  },
   { flush: "sync" },
 );
-onBeforeUnmount(() => { stageGeneration += 1; });
+onBeforeUnmount(() => {
+  stageGeneration += 1;
+});
 
 const stageableLines = computed(() => {
   const lines = new Set<number>();
@@ -142,12 +168,19 @@ const stageableLines = computed(() => {
   }
   return lines;
 });
-const canStage = computed(() =>
-  tab.value?.kind === "file" && tab.value.left === "index" &&
-  tab.value.right === "worktree" && !tab.value.leftRev && !tab.value.rightRev &&
-  (!tab.value.leftPath || tab.value.leftPath === tab.value.path) &&
-  !tab.value.loading && !tab.value.error && stageableLines.value.size > 0 &&
-  !result.value?.binary && !result.value?.tooLarge,
+const canStage = computed(
+  () =>
+    tab.value?.kind === "file" &&
+    tab.value.left === "index" &&
+    tab.value.right === "worktree" &&
+    !tab.value.leftRev &&
+    !tab.value.rightRev &&
+    (!tab.value.leftPath || tab.value.leftPath === tab.value.path) &&
+    !tab.value.loading &&
+    !tab.value.error &&
+    stageableLines.value.size > 0 &&
+    !result.value?.binary &&
+    !result.value?.tooLarge,
 );
 
 async function stageSelectedLines() {
@@ -169,8 +202,10 @@ async function stageSelectedLines() {
     if (!current() || preview !== previewGeneration || raw == null || !raw.trim()) return;
     const tokens = raw.trim().split(/[,\s]+/);
     const lines = [...new Set(tokens.map(Number))];
-    if (tokens.some((s) => !/^\d+$/.test(s)) ||
-        lines.some((n) => !Number.isInteger(n) || n <= 0 || n > 0xffffffff)) {
+    if (
+      tokens.some((s) => !/^\d+$/.test(s)) ||
+      lines.some((n) => !Number.isInteger(n) || n <= 0 || n > 0xffffffff)
+    ) {
       toast({ title: t("diff.noValidLines") });
       return;
     }
@@ -188,11 +223,12 @@ async function stageSelectedLines() {
     await changes.refresh();
     if (current()) await diffs.reloadTab(id);
   } catch (error) {
-    if (current()) toast({
-      title: t(staged ? "diff.stagedRefreshFailed" : "diff.stageLinesFailed"),
-      description: formatErrorMessage(error),
-      persistent: true,
-    });
+    if (current())
+      toast({
+        title: t(staged ? "diff.stagedRefreshFailed" : "diff.stageLinesFailed"),
+        description: formatErrorMessage(error),
+        persistent: true,
+      });
   } finally {
     stagingLines.value = false;
   }
@@ -200,30 +236,82 @@ async function stageSelectedLines() {
 
 const hunkSource = computed(() => {
   const value = tab.value;
-  if (!value || value.kind !== "file" || value.leftRev || value.rightRev ||
-      (value.leftPath && value.leftPath !== value.path) || !result.value ||
-      result.value.binary || result.value.tooLarge || !visibleHunks.value.length) return null;
+  if (
+    !value ||
+    value.kind !== "file" ||
+    value.leftRev ||
+    value.rightRev ||
+    (value.leftPath && value.leftPath !== value.path) ||
+    !result.value ||
+    result.value.binary ||
+    result.value.tooLarge ||
+    !visibleHunks.value.length
+  )
+    return null;
   if (value.left === "index" && value.right === "worktree") return "local";
   if (value.left === "head" && value.right === "index") return "staged";
+  if (
+    !changes.stagingMode &&
+    value.left === "head" &&
+    value.right === "worktree" &&
+    (settings.settings?.git?.allowPerHunkChangelists !== false ||
+      changes.partialForPath?.(value.path)) &&
+    changes.snapshot?.files.find((file) => file.path === value.path)?.kind !== "unmerged"
+  )
+    return "changelist";
   return null;
 });
 const hunkControls = computed<HunkControl[]>(() => {
   if (!hunkSource.value || tab.value?.ignoreWhitespace !== "none") return [];
+  if (hunkSource.value === "changelist") {
+    const partial = tab.value && changes.partialForPath?.(tab.value.path);
+    const names = new Map((changes.changelists?.lists ?? []).map((list) => [list.id, list.name]));
+    const labels: Record<number, string> = {};
+    const matching =
+      partial && JSON.stringify(partial.previewHunks) === JSON.stringify(visibleHunks.value);
+    const owners = new Map((partial?.hunks ?? []).map((hunk) => [hunk.index, hunk]));
+    for (const hunk of visibleHunks.value) {
+      const owner = matching && owners.get(hunk.index);
+      labels[hunk.index] = partial
+        ? owner && !partial.problem
+          ? (names.get(owner.listId) ?? "…")
+          : t("changelist.reviewRequired")
+        : (names.get(changes.listIdForPath(tab.value!.path)) ?? t("changelist.default"));
+    }
+    return [
+      {
+        action: "changelist",
+        label: t("changelist.moveBlockAction"),
+        labels,
+        disabled: settings.settings?.git?.allowPerHunkChangelists === false,
+      },
+    ];
+  }
   return hunkSource.value === "local"
-    ? [{ action: "stage", label: t("diff.stageHunk") }, { action: "revert", label: t("diff.revertHunk") }]
+    ? [
+        { action: "stage", label: t("diff.stageHunk") },
+        { action: "revert", label: t("diff.revertHunk") },
+      ]
     : [{ action: "unstage", label: t("diff.unstageHunk") }];
 });
-const hunkDisabled = computed(() => hunkBusy.value || stagingLines.value || !!tab.value?.loading || !!tab.value?.error);
-const sideHunkAnchors = computed(() => collapsed.value?.hunkStarts ??
-  visibleHunks.value.map(hunk => ({ index: hunk.index, line: Math.max(1, hunk.newStart) })));
-const unifiedAnchors = computed(() => unifiedHunkAnchors(visibleHunks.value, !tab.value?.collapseUnchanged));
+const hunkDisabled = computed(
+  () => hunkBusy.value || stagingLines.value || !!tab.value?.loading || !!tab.value?.error,
+);
+const sideHunkAnchors = computed(
+  () =>
+    collapsed.value?.hunkStarts ??
+    visibleHunks.value.map((hunk) => ({ index: hunk.index, line: Math.max(1, hunk.newStart) })),
+);
+const unifiedAnchors = computed(() =>
+  unifiedHunkAnchors(visibleHunks.value, !tab.value?.collapseUnchanged),
+);
 
 async function refreshHunkView(id: string, current: () => boolean) {
   const refreshed = await Promise.allSettled([changes.refresh(), diffs.reloadTab(id)]);
   if (!current()) return;
   for (const result of refreshed) if (result.status === "rejected") throw result.reason;
   // Both stores record read errors instead of rejecting their refresh promise.
-  const error = changes.error || diffs.tabs.find(item => item.id === id)?.error;
+  const error = changes.error || diffs.tabs.find((item) => item.id === id)?.error;
   if (error) throw new Error(error);
 }
 
@@ -237,37 +325,74 @@ async function reviewHunks() {
     if (current()) hunkError.value = "";
   } catch (error) {
     if (current()) hunkError.value = `${t("diff.loadFailed")}: ${formatErrorMessage(error)}`;
-  } finally { hunkBusy.value = false; }
+  } finally {
+    hunkBusy.value = false;
+  }
 }
 
 async function runHunk(index: number, action: HunkAction) {
   const source = tab.value;
-  if (!source || hunkDisabled.value || !hunkControls.value.some(item => item.action === action) ||
-      !visibleHunks.value.some(hunk => hunk.index === index)) return;
+  if (
+    !source ||
+    hunkDisabled.value ||
+    !hunkControls.value.some((item) => item.action === action && !item.disabled) ||
+    !visibleHunks.value.some((hunk) => hunk.index === index)
+  )
+    return;
   const { repoId, repoPath } = workspace;
   if (!repoId || !repoPath || diffs.activeId !== props.tabId) return;
   const generation = stageGeneration;
   const preview = previewGeneration;
   const current = () => generation === stageGeneration;
   const req = {
-    repoId, path: repoPath, filePath: source.path, hunkIndexes: [index],
-    expectedHunks: visibleHunks.value.map(hunk => ({ ...hunk, lines: [...hunk.lines] })),
+    repoId,
+    path: repoPath,
+    filePath: source.path,
+    hunkIndexes: [index],
+    expectedHunks: visibleHunks.value.map((hunk) => ({ ...hunk, lines: [...hunk.lines] })),
   };
   hunkBusy.value = true;
   hunkError.value = "";
   let applied = false;
   try {
-    if (action === "revert" && !await confirmDialog({
-      title: t("diff.revertHunk"),
-      message: t("diff.revertHunkConfirm", { path: source.path, block: index + 1 }),
-      destructive: true,
-    })) return;
+    if (
+      action === "revert" &&
+      !(await confirmDialog({
+        title: t("diff.revertHunk"),
+        message: t("diff.revertHunkConfirm", { path: source.path, block: index + 1 }),
+        destructive: true,
+      }))
+    )
+      return;
     if (!current()) return;
     if (preview !== previewGeneration) {
       hunkError.value = t("diff.hunkPreviewChanged");
       return;
     }
     const backend = getBackend();
+    if (action === "changelist") {
+      const target = await openDialog(HunkChangelistDialog, {
+        path: source.path,
+        block: index + 1,
+        lists: (changes.changelists?.lists ?? []).map((list) => ({ ...list })),
+        problem: changes.partialForPath?.(source.path)?.problem ?? undefined,
+      });
+      if (!current() || !target || typeof target !== "string") return;
+      if (preview !== previewGeneration) {
+        hunkError.value = t("diff.hunkPreviewChanged");
+        return;
+      }
+      await backend.changelistMoveHunks({
+        path: repoPath,
+        filePath: source.path,
+        hunkIndexes: [index],
+        expectedHunks: req.expectedHunks,
+        targetListId: target,
+      });
+      applied = true;
+      if (current()) await refreshHunkView(source.id, current);
+      return;
+    }
     if (action === "stage") await backend.stageHunks(req);
     else if (action === "unstage") await backend.unstageHunks(req);
     else await backend.revertHunks(req);
@@ -276,7 +401,8 @@ async function runHunk(index: number, action: HunkAction) {
     await refreshHunkView(source.id, current);
     if (current()) toast({ title: t("diff.hunkApplied") });
   } catch (error) {
-    if (current()) hunkError.value = `${t(applied ? "diff.hunkRefreshFailed" : "diff.hunkFailed")}: ${formatErrorMessage(error)}`;
+    if (current())
+      hunkError.value = `${t(applied ? "diff.hunkRefreshFailed" : "diff.hunkFailed")}: ${formatErrorMessage(error)}`;
   } finally {
     hunkBusy.value = false;
   }
@@ -332,18 +458,43 @@ async function runHunk(index: number, action: HunkAction) {
         </Button>
       </Tip>
       <Tip v-if="canStage" :text="t('toolbar.diffStageLines')">
-        <Button size="xs" variant="outline" :disabled="stagingLines || hunkBusy" @click="stageSelectedLines">
+        <Button
+          size="xs"
+          variant="outline"
+          :disabled="stagingLines || hunkBusy"
+          @click="stageSelectedLines"
+        >
           {{ t("diff.stageSelectedLines") }}
         </Button>
       </Tip>
     </div>
 
-    <div v-if="hunkSource" class="flex shrink-0 items-center gap-2 border-b px-3 py-1 text-[11px] text-muted-foreground" role="status">
-      {{ hunkBusy ? t("diff.hunkApplying") : tab.ignoreWhitespace !== 'none' ? t("diff.hunkWhitespaceHint") : t("diff.hunkActionsHint") }}
+    <div
+      v-if="hunkSource"
+      class="flex shrink-0 items-center gap-2 border-b px-3 py-1 text-[11px] text-muted-foreground"
+      role="status"
+    >
+      {{
+        hunkBusy
+          ? t("diff.hunkApplying")
+          : tab.ignoreWhitespace !== "none"
+            ? t("diff.hunkWhitespaceHint")
+            : t("diff.hunkActionsHint")
+      }}
     </div>
-    <div v-if="hunkError" class="flex shrink-0 items-center gap-2 border-b p-2 text-xs text-destructive" role="alert">
+    <div
+      v-if="hunkError"
+      class="flex shrink-0 items-center gap-2 border-b p-2 text-xs text-destructive"
+      role="alert"
+    >
       <span class="min-w-0 flex-1 break-words">{{ hunkError }}</span>
-      <Button size="xs" variant="outline" :disabled="hunkBusy || stagingLines || tab.loading" @click="reviewHunks">{{ t("diff.refreshHunks") }}</Button>
+      <Button
+        size="xs"
+        variant="outline"
+        :disabled="hunkBusy || stagingLines || tab.loading"
+        @click="reviewHunks"
+        >{{ t("diff.refreshHunks") }}</Button
+      >
     </div>
 
     <div v-if="tab.error" class="space-y-2 border-b p-3 text-xs" role="alert">
@@ -371,7 +522,10 @@ async function runHunk(index: number, action: HunkAction) {
       <div v-if="result.eolMismatch">{{ t("diff.eolMismatchShort") }}</div>
     </div>
     <div v-else-if="result && !waitingForTexts" class="relative flex min-h-0 flex-1 flex-col">
-      <div v-if="!result.hunks.length" class="shrink-0 border-b px-3 py-1.5 text-xs text-muted-foreground">
+      <div
+        v-if="!result.hunks.length"
+        class="shrink-0 border-b px-3 py-1.5 text-xs text-muted-foreground"
+      >
         {{ t("diff.noDifferences") }}
       </div>
       <div

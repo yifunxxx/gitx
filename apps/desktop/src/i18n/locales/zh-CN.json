@@ -750,7 +750,7 @@
     "openExplorer": "在文件资源管理器中打开",
     "openTerminal": "在终端打开",
     "commitFiles": "提交文件…",
-    "commitFilesHint": "使用此提交说明提交勾选文件的当前内容。",
+    "commitFilesHint": "使用此说明提交勾选文件在当前列表中的修改；按块分配的文件只提交属于当前列表的块。",
     "commitFilesStagingHint": "提交勾选文件的当前内容，包括其未暂存修改；其他已暂存文件仍保持暂存。",
     "committingFiles": "正在提交所选文件…",
     "rollback": "回滚…",
@@ -789,7 +789,14 @@
     "deleted": "变更列表已删除",
     "unversioned": "未版本控制的文件",
     "ignored": "已忽略的文件",
-    "namePlaceholder": "变更列表名称"
+    "namePlaceholder": "变更列表名称",
+    "partial": "部分",
+    "partialHint": "此文件按修改块分配；只提交当前列表拥有的块。",
+    "reviewRequired": "需复核",
+    "moveBlock": "分配修改块 {block}",
+    "reassignHint": "未匹配和新增的块会归入活动列表。请核对当前文件所有修改块，再确认分配。",
+    "moveBlockAction": "分配到变更列表",
+    "selectBeforeCommit": "请先勾选要提交的变更列表文件。"
   },
   "stash": {
     "section": "Stash 列表",

@@ -361,7 +361,7 @@ async function commitFilesSelected(target: ChangesTarget) {
       await changes.stage(target.paths);
     }
   } else if (target.section !== "ignored") {
-    changes.setChecked([...target.paths]);
+    changes.setChecked([...target.paths], target.section);
   }
   if (!target.current()) return;
   await focusCommitUi();
@@ -601,7 +601,23 @@ async function runCtx(action: string) {
         <Skeleton class="h-4 w-1/2" />
         <Skeleton class="h-4 w-3/4" />
       </div>
-      <ChangesTree v-else @open-diff="openDiff" @open-file="openFile" @context="onContext" />
+      <template v-else>
+        <div
+          v-if="changes.changelists?.warnings?.length"
+          role="status"
+          class="max-h-28 shrink-0 overflow-auto border-b px-3 py-2 text-xs text-amber-600 dark:text-amber-400"
+        >
+          {{ t("changelist.reviewRequired") }}
+          <div
+            v-for="warning in changes.changelists.warnings"
+            :key="warning"
+            class="mt-1 break-words"
+          >
+            {{ warning }}
+          </div>
+        </div>
+        <ChangesTree @open-diff="openDiff" @open-file="openFile" @context="onContext" />
+      </template>
       <CommitMessageEditor v-if="showMessageEditor" />
       <div v-else class="border-t px-2 py-1 text-[11px] text-muted-foreground">
         {{ t("commitTw.controlsHidden") }}

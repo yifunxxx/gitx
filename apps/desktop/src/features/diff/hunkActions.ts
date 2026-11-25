@@ -2,9 +2,14 @@ import { RangeSet, type EditorState } from "@codemirror/state";
 import { GutterMarker, ViewPlugin, gutter, type EditorView } from "@codemirror/view";
 import type { DiffHunk } from "@/lib/backend";
 
-export type HunkAction = "stage" | "unstage" | "revert";
+export type HunkAction = "stage" | "unstage" | "revert" | "changelist";
 export type HunkAnchor = { index: number; line: number };
-export type HunkControl = { action: HunkAction; label: string };
+export type HunkControl = {
+  action: HunkAction;
+  label: string;
+  labels?: Record<number, string>;
+  disabled?: boolean;
+};
 
 /** Expanded unified documents add deleted rows before later original hunks. */
 export function unifiedHunkAnchors(hunks: DiffHunk[], expanded: boolean): HunkAnchor[] {
@@ -40,10 +45,17 @@ class Actions extends GutterMarker {
         button.dataset.hunkIndex = String(index);
         button.dataset.hunkAction = control.action;
         button.textContent =
-          control.action === "stage" ? "+" : control.action === "unstage" ? "−" : "↶";
-        button.title = `${control.label} (${index + 1})`;
+          control.action === "changelist"
+            ? `${control.labels?.[index] ?? "…"} ▾`
+            : control.action === "stage"
+              ? "+"
+              : control.action === "unstage"
+                ? "−"
+                : "↶";
+        if (control.action === "changelist") button.classList.add("diff-hunk-list");
+        button.title = `${control.label}${control.labels?.[index] ? `: ${control.labels[index]}` : ""} (${index + 1})`;
         button.setAttribute("aria-label", button.title);
-        button.disabled = this.disabled;
+        button.disabled = this.disabled || !!control.disabled;
         button.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();

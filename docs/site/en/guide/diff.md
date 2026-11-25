@@ -34,7 +34,7 @@ These actions work in both layouts with unchanged content collapsed or expanded,
 
 Buttons stay disabled while the action runs, and the task queue shows the operation. Changes and the current Diff refresh afterward. If the write succeeds but refresh fails, the message distinguishes the two; use **Refresh and review** without repeating the write. If background or external edits change the preview, the old block is rejected. Refresh and review before retrying.
 
-Block actions are available only for normal text files in the two comparisons above. Show all whitespace changes first; historical comparisons, rename comparisons, Combined Diff, binary and oversized files do not expose these actions. Per-hunk changelist assignment is still unavailable. The web demo cannot execute real Git block operations; use the desktop application.
+Block actions are available only for normal text files in the comparisons above. Show all whitespace changes first; historical comparisons, rename comparisons, Combined Diff, binary and oversized files do not expose these actions. In Changelist mode, **HEAD → Local** offers a list-name control beside each block. See [Commits and changelists](./commit) for assignment and selection rules. The web demo cannot execute real Git block operations; use the desktop application.
 
 ## Stage individual lines
 

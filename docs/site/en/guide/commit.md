@@ -31,7 +31,13 @@ For a commit containing only part of one file, use [partial staging](./diff) and
 3. Use the list menu to make it active, rename it, or delete it. The active list receives new changes; deleting a list does not delete files from disk.
 4. Check only the current task's files when committing. A changelist does not create a Git branch or push anything.
 
-The current UI manages lists by file. Although Settings contains “Allow per-hunk changelists,” this version does not expose a working hunk-assignment control. Use staging mode and line staging when you need finer control over commit content.
+Enable Settings → Git → **Allow per-hunk changelists**, then open a file from a changelist in **HEAD → Local** Diff. Click the list name beside a block to assign it. One file can appear in multiple lists with a Partial marker. File, folder and list checkboxes select only that list’s blocks; the multiple-file **Commit Files** dialog uses the same scope.
+
+New independent blocks join the active list; uniquely matched blocks retain their owner after line shifts. Merged, split or ambiguous edits show Review needed. Refresh, review every block in the file, then reassign. Checks preserve the preview from selection time: changed content or ownership rejects an old commit. Uncheck and review before checking again, or reopen the commit dialog.
+
+A whole-file move or drag replaces all block assignments for that file. Deleting a list moves only its blocks. Disabling the setting disables assignment controls but preserves existing ownership and commit scope. With partial assignments present, explicitly check files instead of implicitly committing the index with no selection.
+
+Partial commits retain unselected worktree content and compatible staged changes; overlapping staged changes are rejected before committing. New text files and file deletions are supported. Use whole-file assignment for empty files or mode-only changes. Binary/large files, symlinks, custom filters/encodings, rename comparisons and WSL Git do not support block assignment. Commit non-regular files separately when also committing partial files.
 
 ## Commit selected files
 

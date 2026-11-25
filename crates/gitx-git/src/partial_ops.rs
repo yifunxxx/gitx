@@ -536,7 +536,7 @@ impl GitRunner {
             .map(Some)
     }
 
-    async fn partial_head_blob(
+    pub(crate) async fn partial_head_blob(
         &self,
         cwd: &Path,
         path: &str,
