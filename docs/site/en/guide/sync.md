@@ -15,6 +15,14 @@ HTTPS and SSH use Git's authentication environment. For an HTTPS credential prom
 | Pull / Update Project | Fetch and integrate using a strategy | Can change files, history, or enter a conflict state |
 | Push (`Ctrl+Shift+K`) | Send local commits to a remote | Primarily changes remote references |
 
+## Automatic Fetch
+
+Set **Auto-fetch interval** in Settings > Git to 1–1440 minutes and save; 0 disables it. Opening or switching repositories, or changing the interval, starts a full interval. It fetches all remotes of the active repository without merging your branch. A successful manual Fetch restarts the interval.
+
+Hidden windows, an offline system, and running tasks defer it. On resuming, at most one Fetch runs; missed intervals do not accumulate. The bottom-left task queue shows the cancellable background Fetch. A later write to the same repository cancels it and takes priority. An already started Fetch may finish after disabling the setting or changing repositories, but its old result does not populate the current view.
+
+Background Fetch never opens the credential dialog automatically. Use **Fetch now** in its notification to authenticate. Other errors notify after three consecutive failures; inspect Console for details. Each failure streak produces one notification while interval retries continue. Repositories without remotes are skipped.
+
 ## Pull a specific branch
 
 1. Open **Pull** and choose the remote and branch.

@@ -9,6 +9,7 @@ import { i18n } from "@/i18n";
 
 vi.mock("@/composables/useRepositoryRefresh", () => ({ useRepositoryRefresh: () => {} }));
 vi.mock("@/composables/useAppEvents", () => ({ useAppEvents: () => {} }));
+vi.mock("@/composables/useAutoFetch", () => ({ useAutoFetch: () => {} }));
 vi.mock("@/composables/useWindowTitle", () => ({ useWindowTitle: () => {} }));
 vi.mock("@/stores/settingsStore", () => ({
   useSettingsStore: () => ({ settings: null, load: async () => {} }),

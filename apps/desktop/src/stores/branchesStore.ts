@@ -57,13 +57,13 @@ export const useBranchesStore = defineStore("branches", () => {
   const filteredRemote = computed(() => filterRefs(refs.value?.remote ?? [], search.value));
   const filteredTags = computed(() => filterRefs(refs.value?.tags ?? [], search.value));
 
-  async function refresh() {
+  async function refresh(stillCurrent: () => boolean = () => true) {
     if (favoriteWrites) return;
     const generation = ++refreshGeneration;
     const ws = workspace();
     const path = ws.repoPath;
     const navigation = ws.navigationToken();
-    const current = () => generation === refreshGeneration && ws.repoPath === path && ws.navigationToken() === navigation;
+    const current = () => stillCurrent() && generation === refreshGeneration && ws.repoPath === path && ws.navigationToken() === navigation;
     if (!ws.repoPath || !ws.isRepo) {
       refs.value = null;
       remotes.value = [];
@@ -340,7 +340,7 @@ export const useBranchesStore = defineStore("branches", () => {
     await source.refresh();
   }
 
-  async function fetch(remote?: string) {
+  async function fetch(remote?: string, options: { background?: boolean; current?: () => boolean } = {}) {
     if (fetching.value) return null;
     const ws = workspace();
     if (!ws.repoPath) {
@@ -349,37 +349,43 @@ export const useBranchesStore = defineStore("branches", () => {
     }
     const path = ws.repoPath;
     const request = repositoryGeneration;
+    const navigation = ws.navigationToken();
+    const current = () => request === repositoryGeneration && ws.repoPath === path &&
+      ws.navigationToken() === navigation && (options.current?.() ?? true);
+    if (!current()) return null;
     const url = (remote ? remotes.value.find((r) => r.name === remote) : remotes.value[0])
       ?.fetchUrl;
     const jobs = useJobsStore();
     const jobId = `fetch-${Date.now()}`;
     fetching.value = true;
-    jobs.started({
+    // Background fetch owns a cancellable native job, avoiding duplicate rows.
+    if (!options.background) jobs.started({
       id: jobId,
       title: remote ? `Fetching ${remote}…` : "Fetching remotes…",
     });
     const run = async () => {
-      if (request !== repositoryGeneration) return null;
+      if (!current()) return null;
       const summary = await getBackend().fetchRun({
         path,
         remote: remote ?? null,
         prune: true,
+        background: options.background ?? false,
       });
-      if (request !== repositoryGeneration) return null;
+      if (!current()) return null;
       lastFetchAt.value = Date.now();
       hasUnfetched.value = false;
-      await refresh();
+      await refresh(current);
       return summary;
     };
     try {
       return await run();
     } catch (e) {
-      if (request !== repositoryGeneration) throw e;
+      if (!current() || options.background) throw e;
       const retryOk = await handleAuthFailure(e, {
         title: String(i18n.global.t("auth.title")),
         url,
       });
-      if (request !== repositoryGeneration) throw e;
+      if (!current()) throw e;
       if (retryOk) {
         try {
           return await run();
@@ -399,13 +405,13 @@ export const useBranchesStore = defineStore("branches", () => {
         action: {
           label: String(i18n.global.t("auth.enterCredentials")),
           onClick: () => {
-            if (request !== repositoryGeneration) return;
+            if (!current()) return;
             void handleAuthFailure(e, {
               title: String(i18n.global.t("auth.title")),
               url,
             })
               .then(async (ok) => {
-                if (ok && request === repositoryGeneration) await fetch(remote);
+                if (ok && current()) await fetch(remote);
               })
               .catch(() => {
                 /* fetch reports its own error */
@@ -416,7 +422,7 @@ export const useBranchesStore = defineStore("branches", () => {
       throw e;
     } finally {
       fetching.value = false;
-      jobs.finished(jobId);
+      if (!options.background) jobs.finished(jobId);
     }
   }
 

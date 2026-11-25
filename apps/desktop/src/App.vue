@@ -31,6 +31,7 @@ import { i18n } from "@/i18n";
 
 import { useAppEvents } from "@/composables/useAppEvents";
 import { useRepositoryRefresh } from "@/composables/useRepositoryRefresh";
+import { useAutoFetch } from "@/composables/useAutoFetch";
 import { useWindowTitle } from "@/composables/useWindowTitle";
 import { createWorkspaceOpen } from "@/composables/useWorkspaceOpen";
 import { getBackend } from "@/lib/backend";
@@ -55,6 +56,7 @@ const settings = useSettingsStore();
 const updates = useUpdateStore();
 const consoleStore = useConsoleStore();
 useAppEvents();
+useAutoFetch();
 
 const releaseKeymap = setKeymapOverridesProvider(() => settings.settings?.keymapOverrides);
 

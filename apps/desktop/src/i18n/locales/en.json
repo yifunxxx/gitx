@@ -514,6 +514,7 @@
   },
   "operations": {
     "open": "Opening project",
+    "autoFetch": "Automatically fetching remotes",
     "init": "Enabling Git",
     "branchCreate": "Creating branch",
     "branchRename": "Renaming branch",
@@ -949,6 +950,9 @@
     "retryPush": "Retry push"
   },
   "branches": {
+    "autoFetchAuth": "Auto Fetch needs credentials — fetch manually to sign in",
+    "autoFetchFailed": "Auto Fetch failed repeatedly — see Console for details",
+    "fetchNow": "Fetch now",
     "multiRootFailed": "Checkout did not complete in every repository",
     "refreshFailed": "Could not refresh the repository after checkout",
     "rollbackFailed": "Recovery failed",

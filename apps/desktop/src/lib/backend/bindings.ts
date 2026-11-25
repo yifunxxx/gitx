@@ -950,7 +950,15 @@ export type ErrorCode =
   | "multiRootFailed";
 export type ExcludePathReq = { path: string };
 export type FavoritesToggleReq = { path: string; fullName: string };
-export type FetchRunReq = { path: string; remote: string | null; prune: boolean | null };
+export type FetchRunReq = {
+  path: string;
+  remote: string | null;
+  prune: boolean | null;
+  /**
+   * Low priority, cancellable fetch with non-interactive frontend feedback.
+   */
+  background: boolean | null;
+};
 export type FetchSummary = {
   remote: string;
   newBranches: number;

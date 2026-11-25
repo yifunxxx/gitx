@@ -32,7 +32,7 @@ File 的显示规则和 Commit 的忽略文件规则分别保存。
 | Update method | Merge / Rebase / Reset 的默认更新策略；Reset 会移除远端没有的本地提交 |
 | Clean working tree using | 更新时保存本地修改使用 Stash 或 Shelve |
 | Combine Stashes and Shelves | 合并或分开显示底部两类保存记录 |
-| Auto-fetch interval | 0 表示关闭，允许 0–1440 分钟；本版本保存该偏好，但未接通可确认的定时 Fetch 调度，请主动使用 Fetch |
+| Auto-fetch interval | 0 表示关闭；1–1440 分钟定时 Fetch 当前仓库的所有远端。隐藏窗口、离线或有运行中任务时延后；后台认证失败仅提示手动 Fetch |
 | Protected branches | main/master 等名称或模式，用于限制强推等适用操作；不替代远程服务器保护 |
 | Use credential helper | 启用 Git 凭据助手；记住凭据失败时按提示处理，不代表凭据已经保存 |
 | Execute branch operations on all roots | 多仓库分支操作的范围开关，尤其影响检出；执行后逐个检查 root |

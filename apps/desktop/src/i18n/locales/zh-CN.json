@@ -514,6 +514,7 @@
   },
   "operations": {
     "open": "正在打开项目",
+    "autoFetch": "正在自动获取远程更新",
     "init": "正在启用 Git",
     "branchCreate": "正在创建分支",
     "branchRename": "正在重命名分支",
@@ -949,6 +950,9 @@
     "retryPush": "重试推送"
   },
   "branches": {
+    "autoFetchAuth": "自动 Fetch 需要凭据，请手动 Fetch 完成认证",
+    "autoFetchFailed": "自动 Fetch 连续失败，请在 Console 查看详情",
+    "fetchNow": "立即 Fetch",
     "multiRootFailed": "多仓库切换未全部完成",
     "refreshFailed": "无法刷新切换后的仓库状态",
     "rollbackFailed": "恢复失败",

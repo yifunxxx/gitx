@@ -1,12 +1,12 @@
 use crate::state::AppState;
 use gitx_core::{
-    AppError, FetchSummary, IncomingCheck, PullResult, PushPreview, PushResult,
+    AppError, FetchSummary, IncomingCheck, JobKind, PullResult, PushPreview, PushResult, RepoId,
     SubmoduleUpdatePolicy, SubmoduleUpdateResult, SyncForkResult, UpdateInfo, UpdateMethod,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{Emitter, State};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -15,6 +15,8 @@ pub struct FetchRunReq {
     pub path: String,
     pub remote: Option<String>,
     pub prune: Option<bool>,
+    /// Low priority, cancellable fetch with non-interactive frontend feedback.
+    pub background: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -70,6 +72,7 @@ pub struct IncomingCheckReq {
 #[tauri::command]
 #[specta::specta]
 pub async fn fetch_run(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     req: FetchRunReq,
 ) -> Result<FetchSummary, AppError> {
@@ -78,6 +81,50 @@ pub async fn fetch_run(
     let tags = settings.git.fetch_tags;
     drop(settings);
     let git = state.git.read().await;
+    if req.background.unwrap_or(false) {
+        let job = state
+            .jobs
+            .start(
+                JobKind::Network,
+                format!("Auto Fetch · {}", req.path),
+                vec![RepoId::new(&req.path)],
+                true,
+                true,
+            )
+            .await;
+        let _ = app.emit(
+            "job://started",
+            serde_json::json!({
+                "id": job.info.id, "title": job.info.title, "cancellable": true,
+            }),
+        );
+        let result = state
+            .scheduler
+            .with_background_repo_write(
+                &git,
+                &req.path,
+                &job.cancel,
+                git.fetch_run(
+                    &path,
+                    req.remote.as_deref(),
+                    req.prune.unwrap_or(true),
+                    tags,
+                    &job.cancel,
+                ),
+            )
+            .await;
+        state
+            .jobs
+            .finish(
+                &job.info.id,
+                result.is_ok(),
+                result.as_ref().err().cloned(),
+                None,
+            )
+            .await;
+        let _ = app.emit("job://finished", serde_json::json!({ "id": job.info.id }));
+        return result;
+    }
     let cancel = CancellationToken::new();
     let _permits = state
         .scheduler

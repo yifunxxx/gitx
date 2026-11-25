@@ -32,7 +32,7 @@ File visibility and Commit's ignored-file setting are stored independently.
 | Update method | Default Merge / Rebase / Reset strategy; Reset removes local commits absent from the remote |
 | Clean working tree using | Use Stash or Shelve to preserve local edits during updates |
 | Combine Stashes and Shelves | Show the two record types together or separately |
-| Auto-fetch interval | 0 means off; accepts 0–1440 minutes. This version saves the preference, but no active timed Fetch scheduling is established; use Fetch manually |
+| Auto-fetch interval | 0 means off; 1–1440 minutes fetches all remotes of the active repository. Hidden windows, offline state, and running tasks defer it. Authentication failures offer a manual Fetch |
 | Protected branches | Names/patterns such as main/master constrain applicable force operations; not a replacement for server rules |
 | Use credential helper | Enable Git credential-helper use; a failed save warning means credentials were not necessarily remembered |
 | Execute branch operations on all roots | Control multi-root scope, particularly checkout; inspect each root afterward |

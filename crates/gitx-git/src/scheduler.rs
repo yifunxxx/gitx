@@ -9,12 +9,44 @@ use tokio_util::sync::CancellationToken;
 /// Per-repo Write/NetworkWrite mutual exclusion; Read concurrent.
 pub struct RepoScheduler {
     write_locks: Mutex<HashMap<String, Weak<Semaphore>>>,
+    priority: std::sync::Mutex<PriorityState>,
+}
+
+#[derive(Default)]
+struct PriorityState {
+    foreground: HashMap<String, usize>,
+    background: Vec<Weak<BackgroundRequest>>,
+}
+
+struct BackgroundRequest {
+    keys: Vec<String>,
+    cancel: CancellationToken,
+}
+
+struct ForegroundRequest<'a> {
+    state: &'a std::sync::Mutex<PriorityState>,
+    keys: Vec<String>,
+}
+
+impl Drop for ForegroundRequest<'_> {
+    fn drop(&mut self) {
+        let mut state = self.state.lock().expect("scheduler priority poisoned");
+        for key in &self.keys {
+            if let Some(count) = state.foreground.get_mut(key) {
+                *count -= 1;
+                if *count == 0 {
+                    state.foreground.remove(key);
+                }
+            }
+        }
+    }
 }
 
 impl Default for RepoScheduler {
     fn default() -> Self {
         Self {
             write_locks: Mutex::new(HashMap::new()),
+            priority: std::sync::Mutex::new(PriorityState::default()),
         }
     }
 }
@@ -51,6 +83,7 @@ impl RepoScheduler {
         let acquire = async {
             loop {
                 let keys = repository_keys(git, repos, destinations, cancel).await?;
+                let _priority = self.foreground_request(&keys);
                 let permits = self.acquire_writes(&keys).await;
                 // A queued remove/create may have changed the repository's
                 // identity. Never run using keys discovered before that change.
@@ -65,6 +98,79 @@ impl RepoScheduler {
             _ = cancel.cancelled() => Err(AppError::new(ErrorCode::Cancelled, "operation cancelled")),
             result = acquire => result,
         }
+    }
+
+    fn foreground_request(&self, keys: &[String]) -> ForegroundRequest<'_> {
+        let mut state = self.priority.lock().expect("scheduler priority poisoned");
+        state.background.retain(|request| {
+            let Some(request) = request.upgrade() else {
+                return false;
+            };
+            if request.keys.iter().any(|key| keys.contains(key)) {
+                request.cancel.cancel();
+            }
+            true
+        });
+        for key in keys {
+            *state.foreground.entry(key.clone()).or_default() += 1;
+        }
+        ForegroundRequest {
+            state: &self.priority,
+            keys: keys.to_vec(),
+        }
+    }
+
+    /// Background ref updates never queue ahead of user writes. They share the
+    /// same canonical repository locks, and a later foreground writer cancels
+    /// the operation. The supplied future must honor `cancel` before releasing
+    /// its permits (GitRunner terminates the cancelled process tree).
+    pub async fn with_background_repo_write<F, T>(
+        &self,
+        git: &GitRunner,
+        repo: &str,
+        cancel: &CancellationToken,
+        f: F,
+    ) -> Result<T, AppError>
+    where
+        F: std::future::Future<Output = Result<T, AppError>>,
+    {
+        let cancelled = || {
+            AppError::new(
+                ErrorCode::Cancelled,
+                "background fetch deferred or cancelled",
+            )
+        };
+        let keys = repository_keys(git, &[repo.into()], &[], cancel).await?;
+        let _registration = {
+            let mut state = self.priority.lock().expect("scheduler priority poisoned");
+            if keys.iter().any(|key| state.foreground.contains_key(key)) {
+                return Err(cancelled());
+            }
+            state
+                .background
+                .retain(|request| request.strong_count() > 0);
+            let request = Arc::new(BackgroundRequest {
+                keys: keys.clone(),
+                cancel: cancel.clone(),
+            });
+            state.background.push(Arc::downgrade(&request));
+            request
+        };
+        let mut permits = Vec::with_capacity(keys.len());
+        for key in &keys {
+            permits.push(
+                self.write_sem(key)
+                    .await
+                    .try_acquire_owned()
+                    .map_err(|_| cancelled())?,
+            );
+        }
+        if cancel.is_cancelled()
+            || keys != repository_keys(git, &[repo.into()], &[], cancel).await?
+        {
+            return Err(cancelled());
+        }
+        f.await
     }
 
     pub async fn with_repo_permit<F, T>(

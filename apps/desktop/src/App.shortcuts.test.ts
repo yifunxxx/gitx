@@ -21,6 +21,7 @@ vi.mock("@/stores/updateStore", () => ({
 }));
 vi.mock("@/composables/useRepositoryRefresh", () => ({ useRepositoryRefresh: () => {} }));
 vi.mock("@/composables/useAppEvents", () => ({ useAppEvents: () => {} }));
+vi.mock("@/composables/useAutoFetch", () => ({ useAutoFetch: () => {} }));
 let wrapper: ReturnType<typeof shallowMount>;
 let input: HTMLInputElement;
 const key = (init: KeyboardEventInit, target: EventTarget = input) => {
