@@ -13,6 +13,7 @@ mod jobs;
 mod multi_root_checkout;
 mod multi_root_ops;
 mod ops;
+mod partial_commit;
 mod partial_ops;
 mod patch_ops;
 mod paths;

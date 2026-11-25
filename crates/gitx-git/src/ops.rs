@@ -10,9 +10,9 @@ use gitx_core::{
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
-struct CommitIndexLock {
-    path: std::path::PathBuf,
-    file: Option<std::fs::File>,
+pub(crate) struct CommitIndexLock {
+    pub(crate) path: std::path::PathBuf,
+    pub(crate) file: Option<std::fs::File>,
 }
 
 impl Drop for CommitIndexLock {
@@ -425,6 +425,25 @@ impl GitRunner {
             ));
         }
 
+        if let Some(partial) = partial {
+            // Do not fall back to committing the entire index for an empty
+            // partial request, or silently ignore a simultaneous path selection.
+            if partial.is_empty() || paths.is_some_and(|paths| !paths.is_empty()) {
+                return Err(AppError::new(
+                    ErrorCode::InvalidArgument,
+                    "provide nonempty partial selections without a whole-file selection",
+                ));
+            }
+            let result = self
+                .commit_partial(cwd, trimmed, amend, no_verify, partial, cancel)
+                .await?;
+            return if result.warning.is_some() {
+                Ok(result)
+            } else {
+                Ok(self.restore_after_commit(cwd, result).await)
+            };
+        }
+
         // Linked worktrees have a `.git` *file*; always resolve the real git dir.
         let gitx_dir = self.git_dir(cwd, cancel).await?.join("gitx");
         std::fs::create_dir_all(&gitx_dir)
@@ -432,18 +451,6 @@ impl GitRunner {
         let msg_path = gitx_dir.join("COMMIT_EDITMSG");
         std::fs::write(&msg_path, format!("{trimmed}\n"))
             .map_err(|e| AppError::new(ErrorCode::FsError, format!("write commit message: {e}")))?;
-
-        // Partial line selections → temporary index.
-        if let Some(partial) = partial {
-            if !partial.is_empty() {
-                let result = self
-                    .commit_partial(cwd, &msg_path, amend, no_verify, partial, cancel)
-                    .await;
-                let _ = std::fs::remove_file(&msg_path);
-                let result = result?;
-                return Ok(self.restore_after_commit(cwd, result).await);
-            }
-        }
 
         let mut args = vec![
             "commit".to_string(),
@@ -573,190 +580,6 @@ impl GitRunner {
         Ok(result)
     }
 
-    async fn commit_partial(
-        &self,
-        cwd: &Path,
-        msg_path: &Path,
-        amend: bool,
-        no_verify: bool,
-        partial: &[gitx_core::PartialFileSelection],
-        cancel: &CancellationToken,
-    ) -> Result<CommitResult, AppError> {
-        let git_dir = self.git_dir(cwd, cancel).await?;
-        let gitx = git_dir.join("gitx");
-        std::fs::create_dir_all(&gitx)
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("create gitx dir: {e}")))?;
-        let tmp_index = gitx.join("partial-index");
-        let _ = std::fs::remove_file(&tmp_index);
-
-        // Seed from HEAD (or an empty tree), not the live index — unrelated staged
-        // files must stay out of the partial commit and remain staged afterward.
-        let head_ok = self
-            .run(
-                GitInvocation::new(cwd, ["rev-parse", "--verify", "HEAD"])
-                    .kind(OpKind::Read)
-                    .git_bin(self.git_bin.clone()),
-                cancel,
-            )
-            .await
-            .is_ok();
-        self.run_with_index_env(
-            cwd,
-            &tmp_index,
-            if head_ok {
-                vec!["read-tree".into(), "HEAD".into()]
-            } else {
-                vec!["read-tree".into(), "--empty".into()]
-            },
-            cancel,
-        )
-        .await?;
-
-        for sel in partial {
-            let head_bytes = self
-                .read_blob_side(cwd, &sel.path, DiffSide::Head, cancel)
-                .await?;
-            let work_bytes = self
-                .read_blob_side(cwd, &sel.path, DiffSide::Worktree, cancel)
-                .await?;
-            let head_text = gitx_diff::decode_lossy(head_bytes.as_deref()).unwrap_or_default();
-            let work_text = gitx_diff::decode_lossy(work_bytes.as_deref()).unwrap_or_default();
-            let new_text = gitx_diff::apply_selected_lines_to_base(
-                &head_text,
-                &work_text,
-                &sel.selected_lines,
-            );
-            let mode = self
-                .file_mode_in_index(cwd, &sel.path, cancel)
-                .await
-                .unwrap_or_else(|_| "100644".into());
-            self.stage_hunk_text_in_index(cwd, &tmp_index, &sel.path, &new_text, &mode, cancel)
-                .await?;
-        }
-
-        let mut args = vec![
-            "commit".to_string(),
-            "-F".to_string(),
-            msg_path.to_string_lossy().into_owned(),
-            "--cleanup=strip".to_string(),
-        ];
-        if amend {
-            args.push("--amend".into());
-        }
-        if no_verify {
-            args.push("--no-verify".into());
-        }
-
-        // Run commit with GIT_INDEX_FILE via a wrapper script approach:
-        // `git -c ...` cannot set env; use std::process with env for this one call.
-        let result = self.run_with_index_env(cwd, &tmp_index, args, cancel).await;
-
-        // Only on success: reset selected paths on the real index so remaining
-        // worktree lines stay unstaged. Failed commits must leave the index alone.
-        if result.is_ok() {
-            let paths: Vec<String> = partial.iter().map(|p| p.path.clone()).collect();
-            let _ = self
-                .run(
-                    GitInvocation::new(cwd, {
-                        let mut a = vec!["reset".into(), "-q".into(), "--".into()];
-                        a.extend(paths);
-                        a
-                    })
-                    .kind(OpKind::Write)
-                    .git_bin(self.git_bin.clone()),
-                    cancel,
-                )
-                .await;
-        }
-
-        let _ = std::fs::remove_file(&tmp_index);
-        result
-    }
-
-    async fn stage_hunk_text_in_index(
-        &self,
-        cwd: &Path,
-        index_file: &Path,
-        path: &str,
-        new_index_text: &str,
-        mode: &str,
-        cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
-        let inv = GitInvocation::new(
-            cwd,
-            ["hash-object", "-w", "--stdin", &format!("--path={path}")],
-        )
-        .kind(OpKind::Write)
-        .git_bin(self.git_bin.clone())
-        .stdin(new_index_text.as_bytes().to_vec());
-        let out = self.run(inv, cancel).await?;
-        let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        let cacheinfo = format!("{mode},{sha},{path}");
-        self.run_with_index_env(
-            cwd,
-            index_file,
-            vec![
-                "update-index".into(),
-                "--add".into(),
-                "--cacheinfo".into(),
-                cacheinfo,
-            ],
-            cancel,
-        )
-        .await
-        .map(|_| ())
-    }
-
-    async fn run_with_index_env(
-        &self,
-        cwd: &Path,
-        index_file: &Path,
-        args: Vec<String>,
-        cancel: &CancellationToken,
-    ) -> Result<CommitResult, AppError> {
-        // For non-commit commands we only care about success; for commit we parse result.
-        let is_commit = args.first().map(|s| s.as_str()) == Some("commit");
-        let mut cmd = tokio::process::Command::new(&self.git_bin);
-        cmd.args(&args)
-            .current_dir(cwd)
-            .env("GIT_INDEX_FILE", index_file)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        crate::process_win::hide_console_tokio(&mut cmd);
-        if cancel.is_cancelled() {
-            return Err(AppError::new(ErrorCode::Cancelled, "cancelled"));
-        }
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| AppError::new(ErrorCode::GitCommandFailed, format!("spawn git: {e}")))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            if stderr.contains("nothing to commit") {
-                return Err(AppError::new(
-                    ErrorCode::NothingToCommit,
-                    "nothing to commit",
-                ));
-            }
-            return Err(AppError::new(
-                ErrorCode::GitCommandFailed,
-                format!("git {} failed", args.first().unwrap_or(&"?".into())),
-            )
-            .with_stderr(stderr)
-            .with_exit_code(output.status.code().unwrap_or(1)));
-        }
-        if !is_commit {
-            return Ok(CommitResult {
-                warning: None,
-                sha: String::new(),
-                subject: String::new(),
-                amended: false,
-            });
-        }
-        let amend = args.iter().any(|a| a == "--amend");
-        self.commit_result_from_head(cwd, amend, cancel).await
-    }
-
     async fn run_commit_and_result(
         &self,
         cwd: &Path,
@@ -773,7 +596,7 @@ impl GitRunner {
         self.commit_result_from_head(cwd, amend, cancel).await
     }
 
-    async fn commit_result_from_head(
+    pub(crate) async fn commit_result_from_head(
         &self,
         cwd: &Path,
         amend: bool,
@@ -1390,7 +1213,7 @@ pub(crate) fn pathspec_nul(paths: &[String]) -> Vec<u8> {
     buf
 }
 
-fn classify_commit_error(err: AppError) -> AppError {
+pub(crate) fn classify_commit_error(err: AppError) -> AppError {
     let stderr = err.git_stderr.clone().unwrap_or_default();
     if stderr.contains("nothing to commit") {
         return AppError::new(ErrorCode::NothingToCommit, "nothing to commit");

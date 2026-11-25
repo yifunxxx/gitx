@@ -91,7 +91,7 @@ fn partial_error(message: &str) -> AppError {
     AppError::new(ErrorCode::GitCommandFailed, message)
 }
 
-fn partial_is_link(metadata: &std::fs::Metadata) -> bool {
+pub(crate) fn partial_is_link(metadata: &std::fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -580,11 +580,21 @@ impl GitRunner {
             }
             Err(error) => return Err(error),
         };
+        self.partial_revision_blob(cwd, path, &head, cancel).await
+    }
+
+    pub(crate) async fn partial_revision_blob(
+        &self,
+        cwd: &Path,
+        path: &str,
+        revision: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<PartialBlob>, AppError> {
         let out = self
             .run(
                 GitInvocation::new(
                     cwd,
-                    ["--literal-pathspecs", "ls-tree", "-z", &head, "--", path],
+                    ["--literal-pathspecs", "ls-tree", "-z", revision, "--", path],
                 )
                 .git_bin(self.git_bin.clone()),
                 cancel,
