@@ -1,4 +1,6 @@
-use super::filesystem::{filter_ignored_cancel, read_dir_entries, FsEntryKind, FsReadDirReq};
+use super::filesystem::{
+    filter_ignored_cancel, read_dir_entries, read_file, FsEntryKind, FsReadDirReq, FsReadFileReq,
+};
 use crate::state::AppState;
 use gitx_core::{AppError, ErrorCode};
 use gitx_git::GitRunner;
@@ -19,6 +21,10 @@ pub struct FsSearchReq {
     pub show_ignored: bool,
     pub session_id: String,
     pub generation: u32,
+    #[serde(default)]
+    pub content: bool,
+    #[serde(default)]
+    pub case_sensitive: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -33,6 +39,9 @@ pub struct FsCancelSearchReq {
 pub struct FsSearchMatch {
     pub path: String,
     pub score: u32,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    pub preview: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
@@ -169,12 +178,72 @@ fn fuzzy_score(path: &str, query: &str) -> Option<u32> {
         .or_else(|| subsequence(&path, &query).map(|score| 1000 + score))
 }
 
+fn content_matches(
+    path: &str,
+    text: &str,
+    query: &str,
+    sensitive: bool,
+    limit: usize,
+) -> Vec<FsSearchMatch> {
+    let query = if sensitive {
+        query.to_owned()
+    } else {
+        query.to_lowercase()
+    };
+    let mut result = Vec::new();
+    for (number, line) in text.lines().enumerate() {
+        // Preserve the mapping from lowercased UTF-8 offsets to the original
+        // UTF-16 editor column (e.g. emoji or expanding Unicode lowercase).
+        let (haystack, positions) = if sensitive {
+            (line.to_owned(), Vec::new())
+        } else {
+            let mut folded = String::new();
+            let mut positions = Vec::new();
+            for (offset, character) in line.char_indices() {
+                for lower in character.to_lowercase() {
+                    for _ in 0..lower.len_utf8() {
+                        positions.push(offset);
+                    }
+                    folded.push(lower);
+                }
+            }
+            (folded, positions)
+        };
+        if let Some(index) = haystack.find(&query) {
+            let byte = if sensitive { index } else { positions[index] };
+            let before = &line[..byte];
+            // Bound IPC output even for a multi-megabyte single line.
+            let start = before.char_indices().rev().nth(60).map_or(0, |(i, _)| i);
+            let preview: String = line[start..].chars().take(240).collect();
+            result.push(FsSearchMatch {
+                path: path.into(),
+                score: 0,
+                line: Some(number as u32 + 1),
+                column: Some(before.encode_utf16().count() as u32 + 1),
+                preview: Some(if start > 0 {
+                    format!("…{preview}")
+                } else {
+                    preview
+                }),
+            });
+            if result.len() >= limit {
+                break;
+            }
+        }
+    }
+    result
+}
+
 async fn search_files(
     req: FsSearchReq,
     git: &GitRunner,
     cancel: &CancellationToken,
 ) -> Result<FsSearchResult, AppError> {
-    let query = req.query.trim();
+    let query = if req.content {
+        req.query.as_str()
+    } else {
+        req.query.trim()
+    };
     if query.is_empty() {
         return Ok(FsSearchResult::default());
     }
@@ -184,6 +253,7 @@ async fn search_files(
     let mut pending = VecDeque::from([String::new()]);
     let mut visited = HashSet::new();
     let mut result = FsSearchResult::default();
+    let mut text_bytes = 0usize;
     let start = Instant::now();
     while let Some(dir) = pending.pop_front() {
         if cancel.is_cancelled() {
@@ -223,6 +293,11 @@ async fn search_files(
             if cancel.is_cancelled() {
                 return Err(cancelled());
             }
+            if start.elapsed() > Duration::from_secs(15) {
+                result.truncated = true;
+                pending.clear();
+                break;
+            }
             if entry.name.eq_ignore_ascii_case(".git") || entry.name.starts_with(".gitx-copy-") {
                 continue;
             }
@@ -233,10 +308,39 @@ async fn search_files(
                 } else {
                     result.skipped += 1;
                 }
+            } else if req.content {
+                let read = FsReadFileReq {
+                    folder_path: req.folder_path.clone(),
+                    file_path: entry.path.clone(),
+                };
+                match tokio::task::spawn_blocking(move || read_file(&read))
+                    .await
+                    .map_err(error)?
+                {
+                    Ok(text) => {
+                        text_bytes += text.len();
+                        result.matches.extend(content_matches(
+                            &entry.path,
+                            &text,
+                            query,
+                            req.case_sensitive,
+                            501 - result.matches.len(),
+                        ));
+                        if result.matches.len() > 500 || text_bytes >= 100 * 1024 * 1024 {
+                            result.truncated = true;
+                            result.matches.truncate(500);
+                            return Ok(result);
+                        }
+                    }
+                    Err(_) => result.skipped += 1,
+                }
             } else if let Some(score) = fuzzy_score(&entry.path, query) {
                 result.matches.push(FsSearchMatch {
                     path: entry.path,
                     score,
+                    line: None,
+                    column: None,
+                    preview: None,
                 });
             }
             if result.scanned >= 100_000 {
@@ -283,6 +387,8 @@ mod tests {
             show_ignored: false,
             session_id: "test".into(),
             generation: 1,
+            content: false,
+            case_sensitive: false,
         }
     }
     #[test]
@@ -374,5 +480,70 @@ mod tests {
         assert!(new.is_cancelled());
         assert!(begin(&id, 3).is_err());
         assert!(!begin(&id, 4).unwrap().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn content_search_finds_lines_and_skips_binary_and_large_files() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("deep")).unwrap();
+        std::fs::write(
+            root.path().join("deep/text.txt"),
+            "first\r\n😀中文 Needle\r\nneedle\n",
+        )
+        .unwrap();
+        std::fs::write(root.path().join("binary"), b"needle\0").unwrap();
+        let file = std::fs::File::create(root.path().join("large")).unwrap();
+        file.set_len(6 * 1024 * 1024).unwrap();
+        let mut request = req(root.path(), "needle");
+        request.content = true;
+        let result = search_files(
+            request.clone(),
+            &GitRunner::default(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.matches.len(), 2);
+        assert_eq!(
+            (result.matches[0].line, result.matches[0].column),
+            (Some(2), Some(6))
+        );
+        assert_eq!(result.skipped, 2);
+        request.case_sensitive = true;
+        assert_eq!(
+            search_files(request, &GitRunner::default(), &CancellationToken::new())
+                .await
+                .unwrap()
+                .matches
+                .len(),
+            1
+        );
+    }
+    #[test]
+    fn content_preview_and_results_are_bounded_and_unicode_columns_are_original() {
+        let text = format!("{}İNEEDLE\n", "😀".repeat(300));
+        let result = content_matches("a", &text, "needle", false, 1);
+        assert_eq!(result[0].column, Some(602));
+        assert!(result[0].preview.as_ref().unwrap().chars().count() <= 241);
+        assert_eq!(
+            content_matches("a", "hit\nhit\nhit", "hit", true, 2).len(),
+            2
+        );
+    }
+    #[tokio::test]
+    async fn file_search_caps_results_and_marks_truncation() {
+        let root = tempfile::tempdir().unwrap();
+        for index in 0..510 {
+            std::fs::write(root.path().join(format!("match{index}")), "text").unwrap();
+        }
+        let result = search_files(
+            req(root.path(), "match"),
+            &GitRunner::default(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.matches.len(), 500);
+        assert!(result.truncated);
     }
 }

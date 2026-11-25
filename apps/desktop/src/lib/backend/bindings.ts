@@ -1009,7 +1009,13 @@ export type FsReadDirReq = {
   showHidden: boolean;
 };
 export type FsReadFileReq = { folderPath: string; filePath: string };
-export type FsSearchMatch = { path: string; score: number };
+export type FsSearchMatch = {
+  path: string;
+  score: number;
+  line: number | null;
+  column: number | null;
+  preview: string | null;
+};
 export type FsSearchReq = {
   folderPath: string;
   query: string;
@@ -1017,6 +1023,8 @@ export type FsSearchReq = {
   showIgnored: boolean;
   sessionId: string;
   generation: number;
+  content?: boolean;
+  caseSensitive?: boolean;
 };
 export type FsSearchResult = {
   matches: FsSearchMatch[];

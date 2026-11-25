@@ -1077,7 +1077,11 @@
     "hint": "Find files in the whole workspace, including unopened folders.",
     "results": "Matching files",
     "limited": "Search limit reached. Refine the query; these results are incomplete.",
-    "skipped": "Could not search {count} folders.",
-    "visibility": "Uses the File tool window's hidden and ignored file settings. Git metadata is excluded."
+    "skipped": "Skipped {count} unreadable, binary, oversized files or directories.",
+    "visibility": "Uses the File tool window's hidden and ignored file settings. Git metadata is excluded.",
+    "contentTitle": "Find in Files…",
+    "contentPlaceholder": "Search saved text across this workspace",
+    "caseSensitive": "Match case",
+    "contentScope": "Literal text; first match per line. UTF-8 files up to 5 MiB; 100 MiB total. Unsaved edits are not searched."
   }
 }

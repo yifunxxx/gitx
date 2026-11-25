@@ -28,6 +28,18 @@ export function registerM7Actions() {
   const syncingForks = ref(new Set<string>());
   const updatingSubmodules = ref(new Set<string>());
   registerAction({
+    id: "File.FindInFiles",
+    title: "Find in Files…",
+    titleKey: "fileSearch.contentTitle",
+    description: "Search text across the workspace 全局内容搜索",
+    defaultShortcuts: { mac: ["mod+shift+f"], win: ["mod+shift+f"], linux: ["mod+shift+f"] },
+    scope: "global",
+    enabled: () => !!useWorkspaceStore().folderPath,
+    async run() {
+      await openDialog(FileSearchDialog, { content: true });
+    },
+  });
+  registerAction({
     id: "File.GoToFile",
     title: "Go to File…",
     titleKey: "fileSearch.title",

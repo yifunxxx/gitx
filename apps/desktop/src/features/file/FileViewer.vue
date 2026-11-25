@@ -181,8 +181,12 @@ function canApplyClipboard(
   state: EditorState,
 ) {
   return (
-    view === target && tab.value === current && store.tabs.includes(current) &&
-    current.editable && !current.loading && target.state.doc === state.doc &&
+    view === target &&
+    tab.value === current &&
+    store.tabs.includes(current) &&
+    current.editable &&
+    !current.loading &&
+    target.state.doc === state.doc &&
     target.state.selection.eq(state.selection)
   );
 }
@@ -243,6 +247,21 @@ function mount() {
   });
 }
 
+function revealPosition() {
+  const target = tab.value?.reveal;
+  if (!view || !target || tab.value?.loading) return;
+  const line = view.state.doc.line(
+    Math.max(1, Math.min(view.state.doc.lines, Math.floor(target.line))),
+  );
+  const position = line.from + Math.max(0, Math.min(line.length, Math.floor(target.column) - 1));
+  view.dispatch({
+    selection: { anchor: position },
+    effects: EditorView.scrollIntoView(position, { y: "center" }),
+  });
+  view.focus();
+}
+watch(() => tab.value?.reveal, revealPosition, { flush: "post" });
+
 onBeforeUnmount(() => {
   closeMenu();
   release();
@@ -255,7 +274,10 @@ watch(
     () => tab.value?.editable,
     () => tab.value?.loadGeneration,
   ],
-  mount,
+  () => {
+    mount();
+    revealPosition();
+  },
   // Loading replaces the host with v-if; wait until Vue has mounted its replacement.
   { flush: "post" },
 );
@@ -283,7 +305,8 @@ const menuActions = computed(() => {
     v-if="tab"
     class="flex h-full min-h-0 flex-col"
     @keydown="
-      ($event.key === 'ContextMenu' || ($event.shiftKey && $event.key === 'F10')) && openMenu($event)
+      ($event.key === 'ContextMenu' || ($event.shiftKey && $event.key === 'F10')) &&
+      openMenu($event)
     "
   >
     <div class="flex h-8 items-center gap-2 border-b bg-dbx-chrome px-2 text-xs">

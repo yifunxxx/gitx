@@ -209,7 +209,7 @@ pub async fn fs_read_dir(
     Ok(entries)
 }
 
-fn read_file(req: &FsReadFileReq) -> Result<String, AppError> {
+pub(super) fn read_file(req: &FsReadFileReq) -> Result<String, AppError> {
     let path = resolve_entry(&req.folder_path, &req.file_path, false)?;
     let file = std::fs::File::open(path).map_err(fs_error)?;
     let metadata = file.metadata().map_err(fs_error)?;

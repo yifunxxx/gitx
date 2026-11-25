@@ -1077,7 +1077,11 @@
     "hint": "搜索整个工作区中的文件，包括未展开的文件夹。",
     "results": "匹配文件",
     "limited": "已达到搜索上限。当前结果不完整，请缩小查询范围。",
-    "skipped": "有 {count} 个文件夹未能搜索。",
-    "visibility": "沿用文件工具窗的隐藏和忽略文件设置，不搜索 Git 元数据。"
+    "skipped": "跳过了{count}个无法读取、二进制、过大文件或目录。",
+    "visibility": "沿用文件工具窗的隐藏和忽略文件设置，不搜索 Git 元数据。",
+    "contentTitle": "在文件中查找…",
+    "contentPlaceholder": "搜索整个工作区中已保存的文本",
+    "caseSensitive": "区分大小写",
+    "contentScope": "按字面文本匹配，每行显示首个匹配。UTF-8文件每个最多5 MiB，总计100 MiB；不搜索未保存草稿。"
   }
 }

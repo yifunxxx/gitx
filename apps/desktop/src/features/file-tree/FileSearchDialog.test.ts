@@ -128,3 +128,26 @@ it("changing visibility cancels and reruns the search with the new settings", as
   await flushPromises();
   expect(mocks.fsSearchFiles.mock.lastCall?.[0].showHidden).toBe(true);
 });
+it("searches saved content with case preference and navigates to its line and column", async () => {
+  wrapper.unmount();
+  wrapper = mount(FileSearchDialog, { props: { content: true }, attachTo: document.body });
+  mocks.fsSearchFiles.mockResolvedValue({
+    ...response("deep/a.txt"),
+    matches: [{ path: "deep/a.txt", score: 0, line: 22, column: 5, preview: "a matching line" }],
+  });
+  await wrapper.get('input[type="checkbox"]').setValue(true);
+  await query("matching");
+  expect(mocks.fsSearchFiles.mock.lastCall?.[0]).toMatchObject({
+    content: true,
+    caseSensitive: true,
+  });
+  expect(wrapper.text()).toContain("deep/a.txt:22:5");
+  expect(wrapper.text()).toContain("a matching line");
+  await wrapper.get('input[type="search"]').trigger("keydown", { key: "Enter" });
+  await flushPromises();
+  expect(mocks.open).toHaveBeenCalledWith("deep/a.txt", {
+    folderPath: "C:/plain",
+    line: 22,
+    column: 5,
+  });
+});

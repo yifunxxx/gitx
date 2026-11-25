@@ -17,6 +17,8 @@ it("registers workspace-wide file search on Ctrl/Cmd+P without requiring Git", (
   expect(action.defaultShortcuts?.win).toEqual(["mod+p"]);
   expect(action.defaultShortcuts?.mac).toEqual(["mod+p"]);
   expect(searchActions("Go to File", ctx).map((entry) => entry.id)).toContain(action.id);
+  expect(getAction("File.FindInFiles")?.defaultShortcuts?.win).toEqual(["mod+shift+f"]);
+  expect(getAction("File.FindInFiles")?.enabled?.(ctx)).toBe(true);
 });
 let pinia: ReturnType<typeof createPinia>;
 beforeEach(() => {

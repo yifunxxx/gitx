@@ -64,6 +64,24 @@ function deferred() {
 const result = (text: string) => ({ rightText: text, hunks: [] });
 const editor = (wrapper: ReturnType<typeof mount>) =>
   EditorView.findFromDOM(wrapper.get(".cm-editor").element as HTMLElement)!;
+it("reveals a search result after loading and keeps a cached draft and undo history", async () => {
+  mocks.fsReadFile.mockResolvedValue("first\n😀 match\nlast");
+  const store = useFileViewerStore();
+  const pending = store.open("a.txt", { folderPath: "C:/plain", line: 2, column: 4 });
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await pending;
+  await flushPromises();
+  const view = editor(wrapper);
+  expect(view.state.selection.main.head).toBe(9);
+  view.dispatch({ changes: { from: view.state.doc.length, insert: " draft" } });
+  await store.open("a.txt", { folderPath: "C:/plain", line: 999, column: 999 });
+  await flushPromises();
+  expect(editor(wrapper)).toBe(view);
+  expect(view.state.selection.main.head).toBe(view.state.doc.length);
+  expect(view.state.doc.toString()).toContain(" draft");
+  undo(view);
+  expect(view.state.doc.toString()).not.toContain(" draft");
+});
 
 it("renders the first asynchronous file result after the loading host is replaced", async () => {
   const response = deferred();
@@ -409,7 +427,8 @@ it.each(["cut", "paste"])(
   "still applies a current %s operation as an undoable edit",
   async (action) => {
     const clipboard = deferred();
-    if (action === "cut") vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(clipboard.promise);
+    if (action === "cut")
+      vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(clipboard.promise);
     else vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
     mocks.diffFile.mockResolvedValueOnce(result("hello world"));
     const store = useFileViewerStore();

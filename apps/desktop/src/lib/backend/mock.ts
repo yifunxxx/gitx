@@ -898,8 +898,9 @@ export const mockBackend: Backend = {
     return null;
   },
   async fsSearchFiles(req) {
+    if (req.content) throw new Error("Content search requires the desktop application");
     const paths = ["README.md", "src/main.ts", ...files.map((file) => file.path)];
-    return { matches: paths.filter((path) => path.toLowerCase().includes(req.query.toLowerCase())).map((path) => ({ path, score: 0 })), scanned: paths.length, skipped: 0, truncated: false };
+    return { matches: paths.filter((path) => path.toLowerCase().includes(req.query.toLowerCase())).map((path) => ({ path, score: 0, line: null, column: null, preview: null })), scanned: paths.length, skipped: 0, truncated: false };
   },
   async fsCancelSearch() { return null; },
   async stagePaths(req) {

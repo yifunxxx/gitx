@@ -22,6 +22,7 @@ export type FileViewerTab = {
   hunks: DiffHunk[];
   loading: boolean;
   saving: boolean;
+  reveal?: { line: number; column: number };
   editable: boolean;
   dirty: boolean;
   /** Bumped when a load finishes so the editor remounts once, not on each save. */
@@ -41,7 +42,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     { flush: "sync" },
   );
 
-  async function open(filePath: string, source?: { folderPath: string | null }) {
+  async function open(filePath: string, source?: { folderPath: string | null; line?: number; column?: number }) {
     const workspace = useWorkspaceStore();
     const layout = useLayoutStore();
     const sourceRoot = source?.folderPath ?? workspace.repoPath;
@@ -57,6 +58,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
 
     const existing = tabs.value.find((t) => t.path === filePath && t.folderPath === folderPath);
     if (existing) {
+      if (source?.line) existing.reveal = { line: source.line, column: source.column ?? 1 };
       activeId.value = existing.id;
       layout.activeEditorKind = "file";
       return;
@@ -76,6 +78,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       editable: true,
       dirty: false,
       loadGeneration: 0,
+      reveal: source?.line ? { line: source.line, column: source.column ?? 1 } : undefined,
     });
     tabs.value.push(tab);
     activeId.value = id;

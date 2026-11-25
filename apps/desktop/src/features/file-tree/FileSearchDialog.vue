@@ -11,7 +11,10 @@ import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { closeDialog, useDialogState } from "@/composables/useDialog";
 import { formatErrorMessage } from "@/lib/errors";
 
+const props = defineProps<{ content?: boolean }>();
 const { t } = useI18n();
+const title = computed(() => t(props.content ? "fileSearch.contentTitle" : "fileSearch.title"));
+const caseSensitive = ref(false);
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const viewer = useFileViewerStore();
@@ -65,6 +68,8 @@ async function search(token: number) {
       showIgnored: !!settings.settings?.showIgnoredInFileTree,
       sessionId,
       generation: token,
+      content: !!props.content,
+      caseSensitive: caseSensitive.value,
     });
     if (current(token)) result.value = response;
   } catch (failure) {
@@ -89,6 +94,7 @@ function schedule() {
 watch(
   () => [
     query.value,
+    caseSensitive.value,
     settings.settings?.showHiddenInFileTree,
     settings.settings?.showIgnoredInFileTree,
   ],
@@ -105,7 +111,10 @@ async function open(match: FsSearchMatch) {
   opening.value = true;
   const token = generation;
   try {
-    await viewer.open(match.path, { folderPath: folder });
+    await viewer.open(match.path, {
+      folderPath: folder,
+      ...(match.line ? { line: match.line, column: match.column ?? 1 } : {}),
+    });
     if (current(token)) close();
   } finally {
     opening.value = false;
@@ -151,12 +160,12 @@ onBeforeUnmount(() => {
     <section
       role="dialog"
       aria-modal="true"
-      :aria-label="t('fileSearch.title')"
+      :aria-label="title"
       class="flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border bg-popover shadow-lg"
     >
       <header class="flex items-center gap-2 border-b px-4 py-3">
         <Search class="h-4 w-4" />
-        <h2 class="min-w-0 flex-1 text-sm font-semibold">{{ t("fileSearch.title") }}</h2>
+        <h2 class="min-w-0 flex-1 text-sm font-semibold">{{ title }}</h2>
         <button
           type="button"
           :aria-label="t('common.close')"
@@ -172,7 +181,7 @@ onBeforeUnmount(() => {
           type="search"
           autofocus
           :aria-label="t('fileSearch.query')"
-          :placeholder="t('fileSearch.placeholder')"
+          :placeholder="t(content ? 'fileSearch.contentPlaceholder' : 'fileSearch.placeholder')"
           :disabled="opening"
           :aria-controls="listId"
           :aria-activedescendant="
@@ -185,6 +194,11 @@ onBeforeUnmount(() => {
         <p class="mt-2 truncate text-xs text-muted-foreground" :title="folder ?? ''">
           {{ folder }}
         </p>
+        <label v-if="content" class="mt-2 flex items-center gap-2 text-xs"
+          ><input v-model="caseSensitive" type="checkbox" :disabled="opening" />{{
+            t("fileSearch.caseSensitive")
+          }}</label
+        >
       </div>
       <div v-if="loading" role="status" class="flex items-center gap-2 px-4 py-3 text-xs">
         <LoaderCircle class="h-4 w-4 animate-spin" />{{ t("fileSearch.searching")
@@ -211,8 +225,8 @@ onBeforeUnmount(() => {
         <VirtualList
           ref="list"
           :items="matches"
-          :item-height="36"
-          :get-key="(match) => match.path"
+          :item-height="content ? 52 : 36"
+          :get-key="(match) => `${match.path}:${match.line ?? 0}`"
           :overscan="8"
         >
           <template #default="{ item: match, index }">
@@ -222,14 +236,21 @@ onBeforeUnmount(() => {
               role="option"
               :aria-selected="selected === index"
               :disabled="opening"
-              class="flex h-9 w-full items-center gap-2 px-4 text-left text-xs hover:bg-accent"
+              class="flex w-full items-center gap-2 px-4 text-left text-xs hover:bg-accent"
+              :style="{ height: content ? '52px' : '36px' }"
               :class="selected === index ? 'bg-accent' : ''"
               @click="open(match)"
             >
-              <FileTypeIcon :name="match.path" kind="file" /><span
-                class="truncate"
-                :title="match.path"
-                >{{ match.path }}</span
+              <FileTypeIcon :name="match.path" kind="file" />
+              <span class="min-w-0 flex-1"
+                ><span class="block truncate" :title="match.path"
+                  >{{ match.path
+                  }}<template v-if="match.line"
+                    >:{{ match.line }}:{{ match.column }}</template
+                  ></span
+                ><span v-if="match.preview != null" class="block truncate text-muted-foreground">{{
+                  match.preview
+                }}</span></span
               >
             </button>
           </template>
@@ -243,6 +264,7 @@ onBeforeUnmount(() => {
       </p>
       <footer class="border-t px-4 py-2 text-xs text-muted-foreground">
         {{ t("fileSearch.visibility") }}
+        <span v-if="content"> {{ t("fileSearch.contentScope") }}</span>
       </footer>
     </section>
   </div>
