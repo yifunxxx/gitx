@@ -171,15 +171,23 @@ export const useFileTreeStore = defineStore("fileTree", () => {
         if (!current() || revision !== state.revision) return;
         state.entries = entries;
         state.loaded = true;
-        // Remove vanished descendants, including cached selections and expansion.
+        // Evict vanished directory generations before reusing a path. A newly
+        // created directory must not wait for the old directory's pending read;
+        // current() also prevents that late read from touching the new cache.
         const children = new Set(entries.map((entry) => `${entry.kind}:${entry.path}`));
-        for (const child of expanded) {
+        const vanished = (child: string) => {
+          if (child === path || (path && !child.startsWith(`${path}/`))) return false;
           const relative = path ? child.slice(path.length + 1) : child;
-          if (path && !child.startsWith(`${path}/`)) continue;
           const first = relative.split("/")[0]!;
           const direct = path ? `${path}/${first}` : first;
-          if (!children.has(`directory:${direct}`)) expanded.delete(child);
+          return !children.has(`directory:${direct}`);
+        };
+        for (const child of directories.keys()) {
+          if (!vanished(child)) continue;
+          directories.delete(child);
+          pending.delete(child);
         }
+        for (const child of expanded) if (vanished(child)) expanded.delete(child);
         if (selectedPath.value && (!path || selectedPath.value.startsWith(`${path}/`))) {
           const relative = path ? selectedPath.value.slice(path.length + 1) : selectedPath.value;
           const first = relative.split("/")[0]!;
