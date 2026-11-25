@@ -20,7 +20,7 @@ For a commit containing only part of one file, use [partial staging](./diff) and
 5. Enter a message: summarize the purpose on the first line, then add a blank line and details if needed. Check **Run Git hooks**, then Commit.
 6. Wait for the result and inspect the new Log entry and its files. On failure, read the message and Console, resolve the cause, and retry with the preserved draft.
 
-![Commit and the side-by-side diff](/screenshots/commit-diff-en.png)
+![Commit and the side-by-side diff](/screenshots/commit-diff-en.jpg)
 
 **Commit and Push** connects the commit entry point to the Push dialog. You still need to inspect the push destination. A refresh warning after a successful commit does not mean the commit failed; check Log before retrying.
 

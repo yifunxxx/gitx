@@ -9,7 +9,7 @@ File shows the workspace's files, including unchanged ones. It also works with o
 3. Single-click to select. Double-click or press Enter to open a text editor. Edit and press `Ctrl+S`; the unsaved marker clears when saving completes.
 4. The editor context menu provides Undo, Redo, Cut, Copy, Paste, Select All, and Save.
 
-![The File tree and text editor](/screenshots/files-en.png)
+![The File tree and text editor](/screenshots/files-en.jpg)
 
 Git markers show changes. Parent-directory markers summarize changed descendants. With compact directories enabled, a loaded single-child directory chain can appear as `src/components/ui`.
 

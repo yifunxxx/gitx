@@ -2,7 +2,7 @@
 
 Press `Ctrl+,` or the toolbar gear. Choose a page on the left, or search by name and keyword. **Apply** saves without closing, **OK** saves and closes, and **Cancel** discards unapplied changes. A live appearance preview is not the same as saving it.
 
-![Appearance settings in the native app](/screenshots/settings-en.png)
+![Appearance settings in the native app](/screenshots/settings-en.jpg)
 
 ## Appearance and Project Files
 

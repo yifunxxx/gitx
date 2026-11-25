@@ -9,7 +9,7 @@ File 工具窗显示工作区中的文件，未修改的文件也在这里。普
 3. 单击选中文件，双击或 Enter 打开文本编辑器。输入后按 `Ctrl+S` 保存，标签中的未保存状态随之消失。
 4. 通过编辑器右键菜单使用 Undo、Redo、Cut、Copy、Paste、Select All 和 Save。
 
-![File 树与文件编辑器](/screenshots/files-en.png)
+![File 树与文件编辑器](/screenshots/files-en.jpg)
 
 树上的 Git 标记表示文件变更，父目录上的标记汇总子级状态。设置中启用紧凑目录后，已加载的单子目录链会合并显示，例如 `src/components/ui`。
 

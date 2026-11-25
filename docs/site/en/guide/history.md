@@ -4,7 +4,7 @@
 
 Click **Show Log** in the toolbar or **Log** in the bottom panel. Graph lines show parent relationships; rows show messages, authors, dates, and branch/tag labels. Select a commit to read its full message, parents, and Changed Files. Open a changed file to inspect that commit's diff.
 
-![Example commit graph and branch list](/screenshots/history-en.png)
+![Example commit graph and branch list](/screenshots/history-en.jpg)
 
 Ctrl-click selects multiple commits; Shift extends a range. The context menu can copy a revision, create a branch/tag, check out, compare, cherry-pick, or [rewrite history](./rewrite). Write actions depend on the number selected and repository state.
 

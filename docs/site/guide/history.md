@@ -4,7 +4,7 @@
 
 点击顶部 **Show Log** 或底部 **Log**。图线表示父子关系，文本显示说明、作者、日期和分支/标签。选中一行，右侧显示完整提交说明、父提交及 Changed Files；点击文件查看这一提交的差异。
 
-![示例仓库的提交图和分支](/screenshots/history-en.png)
+![示例仓库的提交图和分支](/screenshots/history-en.jpg)
 
 用 Ctrl 多选或 Shift 连选提交。右键可复制修订号、新建分支/标签、检出、比较、Cherry-pick 或执行[历史整理](./rewrite)。写操作随选中数量和仓库状态启用。
 

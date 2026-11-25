@@ -17,7 +17,7 @@ Neither is automatic cloud backup. Use exported patches or another backup method
 4. **Keep index** retains staged content, useful when putting the rest of your work aside.
 5. Confirm, then check that the record exists and inspect the changes left in the working tree.
 
-![The Stashes & Shelves panel](/screenshots/stash-en.png)
+![The Stashes & Shelves panel](/screenshots/stash-en.jpg)
 
 ## Restore or remove a stash
 

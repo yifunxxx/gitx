@@ -24,7 +24,7 @@
 3. Toggle case sensitivity if needed and wait for the results.
 4. Each result shows its path, line, column, and a snippet. Open it to focus the matching location.
 
-![Workspace text search and matching locations](/screenshots/search-en.png)
+![Workspace text search and matching locations](/screenshots/search-en.jpg)
 
 Only the first match per line is shown. Columns use UTF-16 positions, so an emoji may occupy two columns. Existing unsaved editor drafts are preserved. Because search reads disk, check the position again if the open draft differs from the saved file.
 

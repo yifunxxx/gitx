@@ -10,7 +10,7 @@ Double-click a file in Changes, or select it and press `Ctrl+D`. First inspect t
 | Staged → Local | Index versus disk: content not yet staged |
 | Revision → Revision / Local | Two commits, or historical content versus the working file; generally a reading view |
 
-![A Staged-to-Local side-by-side diff](/screenshots/commit-diff-en.png)
+![A Staged-to-Local side-by-side diff](/screenshots/commit-diff-en.jpg)
 
 Red marks removed content and green marks additions. Left-hand line numbers belong to the old version; right-hand numbers belong to the new version. Renames use the corresponding path on each side.
 

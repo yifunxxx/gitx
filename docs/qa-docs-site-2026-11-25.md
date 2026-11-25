@@ -56,4 +56,10 @@
 
 提交前首次 fetch 遇到 SSL 10054；重试使用单次 HTTP/1.1 成功，远端 master 仍为 `59a9313`，当前 HEAD 已包含，尚无远端 docs-site 分支。期间只整理/验证现有文档。
 
-已通过仓库 API 开启 GitHub Pages，Source 为 GitHub Actions，计划地址为 `https://yifunxxx.github.io/gitx/`。提交、推送、CI 和线上访问证据将在部署完成后补记；此时不声称已上线。
+功能提交 `f5921aafa77f4a07bc455dbe091ae833f7f91a6c` 已推送到 `codex/docs-site`，独立 ls-remote 核对一致。GitHub Pages Source 为 GitHub Actions，保留原 master 发布策略并增加精确交付分支规则，没有放开所有分支。
+
+首次 [Documentation 运行 45621858296](https://github.com/yifunxxx/gitx/actions/runs/45621858296) 的 build / deploy 均成功，2026-11-25 21:16:58 +08:00 完成。CI 同样检查了两语 44 页和 1,924 条产物引用。正式地址：中文 `https://yifunxxx.github.io/gitx/`，英文 `https://yifunxxx.github.io/gitx/en/`，HTTPS 已启用。
+
+线上真实 Chromium 完成两语首页和指南 HTTP 200、图片、同章节切换、搜索、深色刷新保持、390px 目录导航，无 console/pageerror。首次远端浏览器脚本在 URL 提前更新时立即断言语言，出现等待不足；改为等待语言和标题完成更新后全部通过，未修改产品来绕过断言。
+
+交付前统一图片扩展名与真实编码：原生接口返回的 7 张 JPEG 使用 `.jpg`，另 2 张实际 PNG 保持 `.png`，不改变画面。此补记及文件名调整单独提交，后续部署证据记于统一台账。

@@ -2,7 +2,7 @@
 
 ## The five main areas
 
-![The main workspace with Commit, Diff, and Log](/screenshots/commit-diff-en.png)
+![The main workspace with Commit, Diff, and Log](/screenshots/commit-diff-en.jpg)
 
 | Area | Purpose |
 | --- | --- |

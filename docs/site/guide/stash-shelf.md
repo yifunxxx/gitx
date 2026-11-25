@@ -17,7 +17,7 @@
 4. **Keep index** 保留暂存区状态，适合把其余工作暂时放下。
 5. 确认后检查列表出现对应记录，并检查 Changes 中留下的内容。
 
-![Stashes & Shelves 面板](/screenshots/stash-en.png)
+![Stashes & Shelves 面板](/screenshots/stash-en.jpg)
 
 ## 恢复和清理 Stash
 

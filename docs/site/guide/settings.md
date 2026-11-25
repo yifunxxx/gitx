@@ -2,7 +2,7 @@
 
 按 `Ctrl+,` 或顶部齿轮打开 Settings。左侧选择页面，顶部可按名称、关键词搜索。**Apply** 保存但不关闭，**OK** 保存并关闭，**Cancel** 放弃尚未应用的修改；外观预览不等于已保存。
 
-![中文外观设置](/screenshots/settings-zh.png)
+![中文外观设置](/screenshots/settings-zh.jpg)
 
 ## 外观与项目文件
 

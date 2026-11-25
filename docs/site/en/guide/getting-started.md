@@ -40,7 +40,7 @@ Press `Ctrl+,`, open **Settings → Appearance → Language**, and choose **Engl
 5. Enter a useful message, such as `Add project introduction`. Leave **Run Git hooks** enabled and click **Commit**.
 6. Check the new entry in **Log**, including its message and files. Committed changes leave the pending list; unrelated edits remain.
 
-![Commit selection, side-by-side diff, and Log in the native app](/screenshots/commit-diff-en.png)
+![Commit selection, side-by-side diff, and Log in the native app](/screenshots/commit-diff-en.jpg)
 
 The left panel selects commit content, the center compares versions, and the bottom shows history.
 
