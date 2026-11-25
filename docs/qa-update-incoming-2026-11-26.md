@@ -31,4 +31,6 @@
 
 ## 后续与交付
 
-普通Pull也将`old..new`结果传给相同Incoming视图，已另登记QA-101代码候选，待独立复现并核查FETCH_HEAD及squash/no-commit语义。QA100本轮独立提交推送状态随后补记，其他原11项已知事项继续。
+普通Pull也将`old..new`结果传给相同Incoming视图，已另登记QA-101代码候选，待独立复现并核查FETCH_HEAD及squash/no-commit语义。其他原11项已知事项继续，含QA101共12项。
+
+提交前及补记前fetch/两分支检查成功，已包含master`5241dd5`。功能提交`a801ce9201a887ef94a06364624d826791b9acb2`首次推送成功，ls-remote完整SHA一致，无凭据提示；QA100关闭。文档站点校验、267个QA本地链接及差异检查通过。
