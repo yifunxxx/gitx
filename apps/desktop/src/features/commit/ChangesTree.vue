@@ -80,6 +80,8 @@ const emit = defineEmits<{
 }>();
 type FileMeta = PathTreeFileMeta & { change: FileChange };
 type Section = { section: ChangesSection; label: string; files: FileChange[]; active?: boolean };
+type SectionModel = { readonly metas: FileMeta[]; readonly nodes: PathTreeNode<FileMeta>[] };
+type ModeledSection = Section & { model: SectionModel };
 type Position = {
   key: string;
   section: ChangesSection;
@@ -110,7 +112,28 @@ const listMode = computed<ChangesListMode>(() => settings.settings?.git?.changes
 
 // Building/sorting the path trees depends only on repository data, never on
 // scrolling, selection or expanding a folder.
-const sections = computed(() => {
+function sectionModel(files: FileChange[]): SectionModel {
+  // Keep the model independent of the header. Renames can reuse it without
+  // retaining a chain of previous sections or making collapsed sections eager.
+  let metas: FileMeta[] | undefined;
+  let nodes: PathTreeNode<FileMeta>[] | undefined;
+  const getMetas = () =>
+    (metas ??= files.map((file) => ({
+      path: file.path,
+      origPath: file.origPath,
+      change: file,
+      directoryLeaf: file.path.endsWith("/") || file.path.endsWith("\\"),
+    })));
+  return {
+    get metas() {
+      return getMetas();
+    },
+    get nodes() {
+      return (nodes ??= buildPathTree(getMetas()));
+    },
+  };
+}
+const sections = computed<ModeledSection[]>((previous) => {
   const groups: Section[] = changes.stagingMode
     ? [
         { section: "staged", label: "Staged", files: changes.staged },
@@ -131,29 +154,16 @@ const sections = computed(() => {
   });
   if (changes.showIgnoredFiles)
     groups.push({ section: "ignored", label: t("changelist.ignored"), files: changes.ignored });
-  return groups.map((group) => {
-    // Keep each status snapshot's model lazy. Header counts need no path tree,
-    // and a collapsed section must not block input elsewhere during refresh.
-    // Expanding uses the latest captured files; toggling folders reuses the model.
-    let metas: FileMeta[] | undefined;
-    let nodes: PathTreeNode<FileMeta>[] | undefined;
-    const getMetas = () =>
-      (metas ??= group.files.map((file) => ({
-        path: file.path,
-        origPath: file.origPath,
-        change: file,
-        directoryLeaf: file.path.endsWith("/") || file.path.endsWith("\\"),
-      })));
-    return {
-      ...group,
-      get metas() {
-        return getMetas();
-      },
-      get nodes() {
-        return (nodes ??= buildPathTree(getMetas()));
-      },
-    };
+  const before = new Map(previous?.map((group) => [group.section, group]));
+  const next = groups.map((group) => {
+    const old = before.get(group.section);
+    const sameFiles = old?.files === group.files;
+    if (sameFiles && old.label === group.label && old.active === group.active) return old;
+    return { ...group, model: sameFiles ? old.model : sectionModel(group.files) };
   });
+  return previous?.length === next.length && next.every((group, index) => group === previous[index])
+    ? previous
+    : next;
 });
 const isEmpty = computed(() => sections.value.every((section) => !section.files.length));
 const rows = computed<Row[]>(() => {
@@ -178,7 +188,7 @@ const rows = computed<Row[]>(() => {
     if (!header.expanded) continue;
 
     if (flat) {
-      const files = [...group.metas].sort((a, b) => a.path.localeCompare(b.path));
+      const files = [...group.model.metas].sort((a, b) => a.path.localeCompare(b.path));
       files.forEach((meta, position) => {
         const name = meta.path.replace(/\\/g, "/");
         out.push({
@@ -204,7 +214,7 @@ const rows = computed<Row[]>(() => {
 
     // Iterative DFS — preserve parent keys for ArrowLeft / collapse ancestry.
     const stack: { nodes: PathTreeNode<FileMeta>[]; parent: string; index: number }[] = [
-      { nodes: group.nodes, parent: key, index: 0 },
+      { nodes: group.model.nodes, parent: key, index: 0 },
     ];
     while (stack.length) {
       const frame = stack[stack.length - 1]!;
@@ -254,7 +264,7 @@ const folderChecks = computed(() => {
     // data or checks change, never by scanning descendants during row rendering.
     if (group.section === "ignored" || collapsed.value.has(JSON.stringify([group.section])))
       continue;
-    const stack = group.nodes.map((node) => ({ node, visited: false }));
+    const stack = group.model.nodes.map((node) => ({ node, visited: false }));
     while (stack.length) {
       const { node, visited } = stack.pop()!;
       if (node.children?.length && !visited) {

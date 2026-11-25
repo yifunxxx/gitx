@@ -115,6 +115,10 @@ function isChanged(f: FileChange): boolean {
   return isStaged(f) || isUnstaged(f);
 }
 
+function sameFileReferences(a: FileChange[] | undefined, b: FileChange[]): boolean {
+  return !!a && a.length === b.length && a.every((file, index) => file === b[index]);
+}
+
 export const useChangesStore = defineStore("changes", () => {
   // Shallow: large status/assignment payloads must not be deep-proxied or
   // trigger full tree rebuilds when background refreshes return identical data.
@@ -169,12 +173,13 @@ export const useChangesStore = defineStore("changes", () => {
   const files = computed(() => snapshot.value?.files ?? []);
   const staged = computed(() => files.value.filter(isStaged));
   const unstaged = computed(() => files.value.filter(isUnstaged));
-  const unversioned = computed(() =>
-    files.value.filter(
+  const unversioned = computed<FileChange[]>((previous) => {
+    const next = files.value.filter(
       (file) =>
         isUntracked(file) && (stagingMode.value || !partialFilesByPath.value.has(file.path)),
-    ),
-  );
+    );
+    return sameFileReferences(previous, next) ? previous! : next;
+  });
   const ignored = computed(() => files.value.filter(isIgnored));
   const changed = computed(() => files.value.filter(isChanged));
 
@@ -257,7 +262,7 @@ export const useChangesStore = defineStore("changes", () => {
     return assignmentByPath.value.get(path) ?? activeListId.value;
   }
 
-  const filesByList = computed(() => {
+  const filesByList = computed<Map<string, FileChange[]>>((previous) => {
     const groups = new Map<string, FileChange[]>();
     for (const file of files.value.filter(
       (file) => isChanged(file) || (isUntracked(file) && partialFilesByPath.value.has(file.path)),
@@ -268,11 +273,21 @@ export const useChangesStore = defineStore("changes", () => {
         files.push(file);
       }
     }
-    return groups;
+    // Fresh hunk previews/tokens must publish without rebuilding the file tree
+    // when membership and file status are unchanged. Retain only current groups.
+    for (const [id, files] of groups) {
+      const before = previous?.get(id);
+      if (sameFileReferences(before, files)) groups.set(id, before!);
+    }
+    return previous?.size === groups.size &&
+      [...groups].every(([id, files]) => previous.get(id) === files)
+      ? previous
+      : groups;
   });
 
+  const emptyFiles: FileChange[] = [];
   function filesForChangelist(listId: string): FileChange[] {
-    return filesByList.value.get(listId) ?? [];
+    return filesByList.value.get(listId) ?? emptyFiles;
   }
 
   /** Paths that show checkboxes in a Changes section (changelist mode). */
