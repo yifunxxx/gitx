@@ -1,5 +1,5 @@
 import { GitBranch, GitFork, Layers, PanelBottom } from "@lucide/vue";
-import { nextTick, ref } from "vue";
+import { defineAsyncComponent, nextTick, ref } from "vue";
 import { registerAction } from "../registry";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorktreesStore } from "@/stores/worktreesStore";
@@ -13,6 +13,11 @@ import { formatErrorMessage } from "@/lib/errors";
 import { submoduleFeedback } from "@/lib/submoduleFeedback";
 import { useChangesStore } from "@/stores/changesStore";
 import { focusCommitUi } from "@/features/commit/focusCommitUi";
+import { openDialog } from "@/composables/useDialog";
+
+const FileSearchDialog = defineAsyncComponent(
+  () => import("@/features/file-tree/FileSearchDialog.vue"),
+);
 
 function hasRepo() {
   const ws = useWorkspaceStore();
@@ -22,6 +27,18 @@ function hasRepo() {
 export function registerM7Actions() {
   const syncingForks = ref(new Set<string>());
   const updatingSubmodules = ref(new Set<string>());
+  registerAction({
+    id: "File.GoToFile",
+    title: "Go to File…",
+    titleKey: "fileSearch.title",
+    description: "Find a file anywhere in the workspace 按文件名跳转",
+    defaultShortcuts: { mac: ["mod+p"], win: ["mod+p"], linux: ["mod+p"] },
+    scope: "global",
+    enabled: () => !!useWorkspaceStore().folderPath,
+    async run() {
+      await openDialog(FileSearchDialog);
+    },
+  });
   registerAction({
     id: "ToolWindow.ShowFile",
     title: "Show File Tool Window",

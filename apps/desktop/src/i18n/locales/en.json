@@ -1066,5 +1066,18 @@
     "installStartedTitle": "Installer launched",
     "installStartedBody": "Finish the installer to complete the update, then reopen gitx.",
     "installFailed": "Could not launch the installer"
+  },
+  "fileSearch": {
+    "title": "Go to File…",
+    "query": "File name or path",
+    "placeholder": "Type a file name or path…",
+    "searching": "Searching workspace…",
+    "stopped": "Search cancelled. Edit the query to search again.",
+    "empty": "No matching files",
+    "hint": "Find files in the whole workspace, including unopened folders.",
+    "results": "Matching files",
+    "limited": "Search limit reached. Refine the query; these results are incomplete.",
+    "skipped": "Could not search {count} folders.",
+    "visibility": "Uses the File tool window's hidden and ignored file settings. Git metadata is excluded."
   }
 }

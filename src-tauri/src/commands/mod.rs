@@ -7,6 +7,7 @@ pub mod conflicts;
 pub mod credential;
 pub mod diff;
 pub mod filesystem;
+pub mod filesystem_search;
 pub mod history;
 pub mod ignore;
 pub mod index_ops;

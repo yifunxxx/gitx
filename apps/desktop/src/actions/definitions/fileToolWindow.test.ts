@@ -6,8 +6,18 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { SETTINGS_PAGES } from "@/features/settings/schema";
 import { i18n } from "@/i18n";
 import type { ActionContext } from "../types";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const ctx: ActionContext = { repoIds: [], selection: {}, source: "palette", place: "FindAction" };
+it("registers workspace-wide file search on Ctrl/Cmd+P without requiring Git", () => {
+  const action = getAction("File.GoToFile")!;
+  expect(action.enabled?.(ctx)).toBe(false);
+  useWorkspaceStore().folderPath = "C:/plain";
+  expect(action.enabled?.(ctx)).toBe(true);
+  expect(action.defaultShortcuts?.win).toEqual(["mod+p"]);
+  expect(action.defaultShortcuts?.mac).toEqual(["mod+p"]);
+  expect(searchActions("Go to File", ctx).map((entry) => entry.id)).toContain(action.id);
+});
 let pinia: ReturnType<typeof createPinia>;
 beforeEach(() => {
   localStorage.clear();

@@ -1066,5 +1066,18 @@
     "installStartedTitle": "已启动安装程序",
     "installStartedBody": "请完成安装程序以更新，然后重新打开 gitx。",
     "installFailed": "无法启动安装程序"
+  },
+  "fileSearch": {
+    "title": "跳转到文件…",
+    "query": "文件名或路径",
+    "placeholder": "输入文件名或路径…",
+    "searching": "正在搜索工作区…",
+    "stopped": "搜索已取消，修改查询可重新搜索。",
+    "empty": "没有匹配的文件",
+    "hint": "搜索整个工作区中的文件，包括未展开的文件夹。",
+    "results": "匹配文件",
+    "limited": "已达到搜索上限。当前结果不完整，请缩小查询范围。",
+    "skipped": "有 {count} 个文件夹未能搜索。",
+    "visibility": "沿用文件工具窗的隐藏和忽略文件设置，不搜索 Git 元数据。"
   }
 }

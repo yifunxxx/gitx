@@ -96,7 +96,7 @@ fn hidden(name: &str, metadata: &std::fs::Metadata) -> bool {
     }
 }
 
-fn read_dir_entries(req: &FsReadDirReq) -> Result<(PathBuf, Vec<FsEntry>), AppError> {
+pub(super) fn read_dir_entries(req: &FsReadDirReq) -> Result<(PathBuf, Vec<FsEntry>), AppError> {
     let directory = resolve_entry(&req.folder_path, &req.dir, true)?;
     let root = Path::new(&req.folder_path)
         .canonicalize()
@@ -154,6 +154,15 @@ async fn filter_ignored(
     directory: &Path,
     entries: &mut Vec<FsEntry>,
 ) -> Result<(), AppError> {
+    filter_ignored_cancel(git, directory, entries, &CancellationToken::new()).await
+}
+
+pub(super) async fn filter_ignored_cancel(
+    git: &GitRunner,
+    directory: &Path,
+    entries: &mut Vec<FsEntry>,
+    cancel: &CancellationToken,
+) -> Result<(), AppError> {
     // Non-Git folders must remain browsable even when Git is unavailable.
     // Do not run check-ignore inside Git's own metadata directory.
     if entries.is_empty()
@@ -173,7 +182,7 @@ async fn filter_ignored(
     let invocation = GitInvocation::new(directory, ["check-ignore", "--stdin", "-z"])
         .git_bin(git.git_bin.clone())
         .stdin(input);
-    let output = match git.run(invocation, &CancellationToken::new()).await {
+    let output = match git.run(invocation, cancel).await {
         Ok(output) => output,
         // check-ignore returns 1 when no supplied entry is ignored.
         Err(error) if error.exit_code == Some(1) => return Ok(()),

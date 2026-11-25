@@ -122,6 +122,12 @@ export const commands = {
   async fsReadDir(req: FsReadDirReq): Promise<FsEntry[]> {
     return await TAURI_INVOKE("fs_read_dir", { req });
   },
+  async fsSearchFiles(req: FsSearchReq): Promise<FsSearchResult> {
+    return await TAURI_INVOKE("fs_search_files", { req });
+  },
+  async fsCancelSearch(req: FsCancelSearchReq): Promise<null> {
+    return await TAURI_INVOKE("fs_cancel_search", { req });
+  },
   async fsReadFile(req: FsReadFileReq): Promise<string> {
     return await TAURI_INVOKE("fs_read_file", { req });
   },
@@ -993,6 +999,7 @@ export type FixupIntoReq = {
   squash: boolean;
   message: string | null;
 };
+export type FsCancelSearchReq = { sessionId: string; generation: number };
 export type FsEntry = { name: string; path: string; kind: FsEntryKind };
 export type FsEntryKind = "file" | "directory";
 export type FsReadDirReq = {
@@ -1002,6 +1009,21 @@ export type FsReadDirReq = {
   showHidden: boolean;
 };
 export type FsReadFileReq = { folderPath: string; filePath: string };
+export type FsSearchMatch = { path: string; score: number };
+export type FsSearchReq = {
+  folderPath: string;
+  query: string;
+  showHidden: boolean;
+  showIgnored: boolean;
+  sessionId: string;
+  generation: number;
+};
+export type FsSearchResult = {
+  matches: FsSearchMatch[];
+  scanned: number;
+  skipped: number;
+  truncated: boolean;
+};
 export type FsWriteFileReq = { folderPath: string; filePath: string; content: string };
 export type GitDetectDto = {
   path: string;

@@ -40,6 +40,12 @@ beforeEach(async () => {
   });
   state.actions = [
     {
+      id: "File.GoToFile",
+      title: "Go to File",
+      defaultShortcuts: { win: ["mod+p"] },
+      run: async () => {},
+    },
+    {
       id: "Settings",
       title: "Settings",
       defaultShortcuts: { win: ["mod+,"] },
@@ -98,6 +104,20 @@ it("honors a rebound Settings shortcut from input without keeping the old bindin
   key({ key: "9", ctrlKey: true, altKey: true });
   expect(state.run).toHaveBeenCalledOnce();
   expect(state.run.mock.calls[0]![0]).toBe("Settings");
+});
+it("opens file search from an editor but respects dialogs and IME", () => {
+  key({ key: "p", ctrlKey: true, isComposing: true });
+  expect(state.run).not.toHaveBeenCalled();
+  key({ key: "p", ctrlKey: true });
+  expect(state.run.mock.lastCall?.[0]).toBe("File.GoToFile");
+  state.run.mockClear();
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  document.body.append(dialog);
+  dialog.append(input);
+  key({ key: "p", ctrlKey: true });
+  expect(state.run).not.toHaveBeenCalled();
+  dialog.remove();
 });
 
 it("leaves other action shortcuts to editors and dialogs", () => {

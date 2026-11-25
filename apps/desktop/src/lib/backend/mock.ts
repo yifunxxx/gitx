@@ -897,6 +897,11 @@ export const mockBackend: Backend = {
     workspaceTexts.set(`${req.folderPath}/${req.filePath}`, req.content);
     return null;
   },
+  async fsSearchFiles(req) {
+    const paths = ["README.md", "src/main.ts", ...files.map((file) => file.path)];
+    return { matches: paths.filter((path) => path.toLowerCase().includes(req.query.toLowerCase())).map((path) => ({ path, score: 0 })), scanned: paths.length, skipped: 0, truncated: false };
+  },
+  async fsCancelSearch() { return null; },
   async stagePaths(req) {
     emitConsole("cmd", `git add -A -- ${req.paths.join(" ")}`);
     for (const p of req.paths) {

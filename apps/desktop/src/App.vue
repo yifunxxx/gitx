@@ -84,7 +84,7 @@ function onKeydown(e: KeyboardEvent) {
   }
   const id = findActionIdByEvent(e);
   // Settings and Save must reach CodeMirror / contentEditable hosts (Ctrl/Cmd+S).
-  const toolWindowAction = id === "ToolWindow.ShowFile" || id === "ToolWindow.ShowCommit";
+  const toolWindowAction = id === "ToolWindow.ShowFile" || id === "ToolWindow.ShowCommit" || id === "File.GoToFile";
   if (
     editing &&
     id !== "Settings" &&
