@@ -11,7 +11,7 @@
 - [File/混合提交/后台Fetch/Log/更新项目组合](qa-file-commit-sync-combination-2026-11-26.md)已在QA099同程序完成，发现并独立修复[QA100传入统计](qa-update-incoming-2026-11-26.md)。QA100程序SHA256为`91790CD213E30E350F358A6275DFF8BDC7F2D1E2A9E7046CB84B4F17A5574075`，相关44项Rust/8项前端、类型/Vite/Windows构建及Clippy通过，原生Rebase同场景重放通过；不将原QA099所有流程宣称在QA100全部重跑。
 - [QA101普通Pull](qa-pull-incoming-2026-11-26.md)已补修Rebase/Merge误计和Squash/no-commit来源遗漏；相关Rust51项及后补空提交1项、前端46项、Windows构建/Clippy通过，原生Rebase/Squash来源及本地内容保持通过。前端未变，复用QA100已构建dist；不将该定向验收写成整版全量复测。
 - [QA102空仓库首次Pull](qa-pull-unborn-2026-11-26.md)已修复文件列表遗漏；相关Rust55项、Windows构建/fmt/Clippy通过，原生首次Pull列出全部新增文件和Incoming，HEAD/index/字节与本地未跟踪内容核对通过。前端继续复用QA100的同一dist，原生重复Pull保持原结果页及仓库数据；空返回契约以自动回归为证。
-- [跨项目晚到响应原生报告](qa-navigation-native-2026-11-26.md)沿用QA102同程序，完成后台status旧成功/旧失败两组受控时序；Changes/Log/分支和任务状态未被污染。首次主读取中活动根切换受原生select输入工具限制，仍保留缺口；7进程退出、fixture与用户设置保持，不新增产品修改或冒充全量重跑。
+- [跨项目晚到响应原生报告](qa-navigation-native-2026-11-26.md)沿用QA102同程序，完成后台status旧成功/旧失败两组受控时序；Changes/Log/分支和任务状态未被污染。后续[活动根续验](qa-initial-root-navigation-2026-11-26.md)用QA108程序验证键盘普通切根及Commit/Log一致，解除普通select输入限制；精确首读竞态因操作间隔超过30秒超时仍未验收，四次方法失败不计通过。补强四种自动组合，42个观察进程身份退出、fixture与用户设置保持；没有新增产品修改，不冒充全量重跑。
 - [QA103 Worktree打开](qa-worktree-opening-2026-11-26.md)补齐共享等待/防重/导航保护，前端完整1976项通过。提交前整合远程0.1.48 e2e33d9（仅版本清单差异），重新类型/Vite/Windows构建；同一新程序原生取消/重试、受控首读等待及双击独立窗口通过，9进程退出、两个工作树和用户设置保持。完整逻辑套件在升级前0.1.47运行，不冒充版本升级后全部重跑。
 
 ## 七项目标映射

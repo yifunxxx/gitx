@@ -12,6 +12,8 @@ import { useWorktreesStore } from "@/stores/worktreesStore";
 import CommitToolWindow from "@/components/layout/CommitToolWindow.vue";
 import LogView from "@/features/log/LogView.vue";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
+import FileRootSelector from "@/features/file-tree/FileRootSelector.vue";
+import type { LogPage, RefsList, StatusSnapshot } from "@/lib/backend";
 
 const m = vi.hoisted(() => ({
   backend: {
@@ -31,6 +33,7 @@ const m = vi.hoisted(() => ({
   opState: vi.fn(),
   pick: vi.fn(),
   choose: vi.fn(),
+  toast: vi.fn(),
 }));
 vi.mock("@/lib/backend", async () => {
   const { withBackendActivity } = await import("@/lib/backend/activity");
@@ -47,13 +50,19 @@ vi.mock("@/stores/rewriteStore", () => ({
   useRewriteStore: () => ({ busy: false, refreshOpState: m.opState }),
 }));
 vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => ({}) }));
-vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({}) }));
+vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ tabs: [] }) }));
+vi.mock("@/stores/fileOperationsStore", () => ({
+  useFileOperationsStore: () => ({ busy: false }),
+}));
+vi.mock("@/stores/conflictsStore", () => ({
+  useConflictsStore: () => ({ mergeTabs: [] }),
+}));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({}) }));
 vi.mock("@/stores/compareStore", () => ({ useCompareStore: () => ({}) }));
 vi.mock("@/stores/repoAtRevStore", () => ({ useRepoAtRevStore: () => ({}) }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({}) }));
 vi.mock("@/stores/syncStore", () => ({ useSyncStore: () => ({}) }));
-vi.mock("@/composables/useToast", () => ({ toast: vi.fn() }));
+vi.mock("@/composables/useToast", () => ({ toast: m.toast }));
 vi.mock("@/lib/utils", async (original) => ({
   ...(await original<object>()),
   isTauri: () => true,
@@ -253,36 +262,147 @@ it.each(["cancel picker", "fail backend"] as const)(
   },
 );
 
-it("retires initial-read ownership on an active-root switch", async () => {
-  const entry = createWorkspaceOpen((key) => key);
-  const ws = useWorkspaceStore();
-  const files = deferred(status());
-  m.backend.statusGet.mockReturnValueOnce(files.promise);
-  m.backend.workspaceOpen.mockResolvedValueOnce({
-    ...opened("repo"),
-    roots: ["repo", "nested"].map((path) => ({
-      id: path,
-      worktreeRoot: path,
-      gitDir: `${path}/.git`,
-      commonDir: `${path}/.git`,
-      isWorktree: false,
-      displayName: path,
-      color: "#123456",
-      isSubmodule: false,
-    })),
-  });
-  mountPanels();
-  const opening = track(entry.openRecent("repo"));
-  await flushPromises();
-  ws.setActiveRepo("nested");
-  await flushPromises();
-  shallowMount(BranchesPane, { global: { plugins: [pinia, i18n] } });
-  await flushPromises();
-  expect(m.backend.statusGet).toHaveBeenLastCalledWith(expect.objectContaining({ path: "nested" }));
-  expect(m.backend.logQuery).toHaveBeenLastCalledWith(expect.objectContaining({ path: "nested" }));
-  expect(m.backend.refsList).toHaveBeenLastCalledWith(expect.objectContaining({ path: "nested" }));
-  files.resolve(status());
-  await opening;
-  expect(useChangesStore().snapshot?.repoId).toBe("nested");
-  expect(useJobsStore().count).toBe(0);
-});
+it.each([
+  ["success", false],
+  ["failure", false],
+  ["success", true],
+  ["failure", true],
+] as const)(
+  "isolates old %s after a root selection (new opening pending: %s)",
+  async (outcome, reopen) => {
+    const entry = createWorkspaceOpen((key) => key);
+    const ws = useWorkspaceStore();
+    const parentStatus: StatusSnapshot = {
+      ...status(),
+      branch: { head: "parent", upstream: null, ahead: 0, behind: 0, detached: false },
+    };
+    const parentHistory: LogPage = {
+      commits: [
+        {
+          sha: "parent",
+          shortSha: "parent",
+          parents: [],
+          subject: "PARENT",
+          author: "QA",
+          authorEmail: "qa@example.test",
+          authorTime: 1,
+          refs: ["refs/heads/parent"],
+          graph: { lane: 0, color: 0, edges: [] },
+        },
+      ],
+      nextOffset: 1,
+      truncated: false,
+    };
+    const parentRefs: RefsList = {
+      local: [
+        {
+          name: "parent",
+          fullName: "refs/heads/parent",
+          kind: "localBranch",
+          sha: "parent",
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+          isHead: true,
+          subject: "PARENT",
+          committerTime: 1,
+          peeledSha: null,
+          isFavorite: false,
+        },
+      ],
+      remote: [],
+      tags: [],
+      recent: [],
+      current: "parent",
+      detached: false,
+    };
+    const files = deferred(parentStatus);
+    const history = deferred(parentHistory);
+    const branches = deferred(parentRefs);
+    m.backend.statusGet.mockReturnValueOnce(files.promise);
+    m.backend.logQuery.mockReturnValueOnce(history.promise);
+    m.backend.refsList.mockReturnValueOnce(branches.promise);
+    m.backend.workspaceOpen.mockResolvedValueOnce({
+      ...opened("repo"),
+      roots: ["repo", "nested"].map((path) => ({
+        id: path,
+        worktreeRoot: path,
+        gitDir: `${path}/.git`,
+        commonDir: `${path}/.git`,
+        isWorktree: false,
+        displayName: path,
+        color: "#123456",
+        isSubmodule: false,
+      })),
+    });
+    mountPanels();
+    const opening = track(entry.openRecent("repo"));
+    await flushPromises();
+    expect(entry.pending.value).toBe(true);
+    expect(useJobsStore().running.map((job) => job.message)).toEqual(["repo"]);
+    const selector = shallowMount(FileRootSelector, { global: { plugins: [pinia, i18n] } });
+    await selector.get("select").setValue("nested");
+    await flushPromises();
+    expect(ws.folderPath).toBe("repo");
+    expect(ws.repoPath).toBe("nested");
+    expect(selector.get("select").element.value).toBe("nested");
+    expect(entry.pending.value).toBe(false);
+    shallowMount(BranchesPane, { global: { plugins: [pinia, i18n] } });
+    await flushPromises();
+    expect(m.backend.statusGet).toHaveBeenLastCalledWith(
+      expect.objectContaining({ path: "nested" }),
+    );
+    expect(m.backend.logQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ path: "nested" }),
+    );
+    expect(m.backend.refsList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ path: "nested" }),
+    );
+    const nextFiles = deferred(status("next"));
+    let nextOpening: Promise<void> | undefined;
+    if (reopen) {
+      m.backend.statusGet.mockReturnValueOnce(nextFiles.promise);
+      nextOpening = track(entry.openRecent("next"));
+      await flushPromises();
+      expect(entry.pending.value).toBe(true);
+      expect(useChangesStore().loading).toBe(true);
+      expect(useJobsStore().running.map((job) => job.message)).toEqual(["repo", "next"]);
+    }
+    const currentStatus = useChangesStore().snapshot;
+    const currentCommits = useLogStore().commits;
+    const currentRefs = useBranchesStore().refs;
+    const currentBranch = ws.branch;
+    if (outcome === "success") {
+      files.resolve(parentStatus);
+      history.resolve(parentHistory);
+      branches.resolve(parentRefs);
+    } else {
+      const error = new Error("Obsolete parent read failed");
+      files.reject(error);
+      history.reject(error);
+      branches.reject(error);
+    }
+    await opening;
+    await flushPromises();
+    expect(useChangesStore().snapshot).toBe(currentStatus);
+    expect(useLogStore().commits).toBe(currentCommits);
+    expect(useBranchesStore().refs).toBe(currentRefs);
+    expect(ws.branch).toBe(currentBranch);
+    expect([useChangesStore().error, useLogStore().error, useBranchesStore().error]).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    expect(m.toast).not.toHaveBeenCalled();
+    expect(entry.pending.value).toBe(reopen);
+    expect(useChangesStore().loading).toBe(reopen);
+    expect(useJobsStore().running.map((job) => job.message)).toEqual(reopen ? ["next"] : []);
+    if (nextOpening) {
+      nextFiles.resolve(status("next"));
+      await nextOpening;
+    }
+    expect(useChangesStore().snapshot?.repoId).toBe(reopen ? "next" : "nested");
+    expect(entry.pending.value).toBe(false);
+    expect(useJobsStore().count).toBe(0);
+  },
+);
