@@ -115,10 +115,14 @@ export class TerminalConnection {
       while (this.dimensions && this.id && !this.closed && !this.ended) {
         const dimensions = this.dimensions;
         this.dimensions = null;
-        await this.api.terminalResize({ id: this.id, ...dimensions });
+        try {
+          await this.api.terminalResize({ id: this.id, ...dimensions });
+        } catch (error) {
+          if (!this.closed && !this.ended) this.sink.error(error);
+          // A newer size may have arrived during the failed request. Consume
+          // that pending size, but never automatically retry the failed one.
+        }
       }
-    } catch (error) {
-      if (!this.closed && !this.ended) this.sink.error(error);
     } finally {
       this.resizeRunning = false;
     }

@@ -4,10 +4,12 @@ import { TerminalConnection, type TerminalApi, type TerminalSink } from "./termi
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 const info = { id: "pty", shell: "PowerShell", cwd: "C:/repo" };
 const req = { cwd: info.cwd, shell: "default" as const, cols: 80, rows: 24 };
@@ -135,5 +137,73 @@ it("releases the PTY after a read failure", async () => {
   f.api.terminalRead.mockRejectedValueOnce(new Error("broken IPC"));
   await f.connection.start(req);
   expect(f.sink.error).toHaveBeenCalledOnce();
+  expect(f.api.terminalClose).toHaveBeenCalledExactlyOnceWith("pty");
+});
+
+it("applies the latest queued size after an older resize fails", async () => {
+  const f = fixture();
+  const running = f.connection.start(req);
+  await flushPromises();
+  const first = deferred<null>();
+  f.api.terminalResize.mockReturnValueOnce(first.promise);
+  f.connection.resize(90, 30);
+  f.connection.resize(100, 35);
+  f.connection.resize(120, 40);
+  await flushPromises();
+  expect(f.api.terminalResize).toHaveBeenCalledTimes(1);
+  first.reject(new Error("temporary resize failure"));
+  await flushPromises();
+  await f.connection.close();
+  f.read.resolve({ data: [], exited: true, exitCode: null, error: null });
+  await running;
+  expect(f.api.terminalResize.mock.calls).toEqual([
+    [{ id: "pty", cols: 90, rows: 30 }],
+    [{ id: "pty", cols: 120, rows: 40 }],
+  ]);
+  expect(f.sink.error).toHaveBeenCalledExactlyOnceWith(new Error("temporary resize failure"));
+});
+
+it("does not retry failed sizes and accepts a later explicit resize", async () => {
+  const f = fixture();
+  const running = f.connection.start(req);
+  await flushPromises();
+  const first = deferred<null>();
+  f.api.terminalResize.mockReturnValueOnce(first.promise)
+    .mockRejectedValueOnce(new Error("latest size also failed"));
+  f.connection.resize(90, 30);
+  f.connection.resize(120, 40);
+  first.reject(new Error("first size failed"));
+  await flushPromises();
+  const failedCalls = f.api.terminalResize.mock.calls.slice();
+  await flushPromises();
+  expect(f.api.terminalResize.mock.calls).toEqual(failedCalls);
+  f.connection.resize(130, 45);
+  await flushPromises();
+  await f.connection.close();
+  f.read.resolve({ data: [], exited: true, exitCode: null, error: null });
+  await running;
+  expect(failedCalls).toEqual([
+    [{ id: "pty", cols: 90, rows: 30 }],
+    [{ id: "pty", cols: 120, rows: 40 }],
+  ]);
+  expect(f.api.terminalResize).toHaveBeenLastCalledWith({ id: "pty", cols: 130, rows: 45 });
+  expect(f.sink.error).toHaveBeenCalledTimes(2);
+});
+
+it.each(["close", "exit"])("drops queued sizes and late resize errors after %s", async (end) => {
+  const f = fixture();
+  const running = f.connection.start(req);
+  await flushPromises();
+  const first = deferred<null>();
+  f.api.terminalResize.mockReturnValueOnce(first.promise);
+  f.connection.resize(90, 30);
+  f.connection.resize(120, 40);
+  if (end === "close") await f.connection.close();
+  f.read.resolve({ data: [], exited: true, exitCode: 0, error: null });
+  await running;
+  first.reject(new Error("obsolete resize"));
+  await flushPromises();
+  expect(f.api.terminalResize).toHaveBeenCalledTimes(1);
+  expect(f.sink.error).not.toHaveBeenCalled();
   expect(f.api.terminalClose).toHaveBeenCalledExactlyOnceWith("pty");
 });
