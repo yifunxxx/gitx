@@ -140,6 +140,8 @@ function emptyGraphPresentation() {
 const graphPresentation = shallowRef(emptyGraphPresentation());
 const graphLayout = computed(() => graphPresentation.value.layout);
 const graphCommits = computed(() => graphPresentation.value.commits);
+const treeRows = shallowRef<LogTreeRow[]>([]);
+let treeRaf = 0;
 const layoutWaiters = new Set<() => void>();
 function finishLayout() {
   for (const resolve of layoutWaiters) resolve();
@@ -150,6 +152,12 @@ watch(
   () => {
     graphCursor.value = null;
     graphPresentation.value = emptyGraphPresentation();
+    // Tree rows are also a deferred presentation: a new repository must never
+    // inherit clickable commits or branch headings from the previous one.
+    if (treeRaf) cancelAnimationFrame(treeRaf);
+    treeRaf = 0;
+    treeRows.value = [];
+    finishLayout();
   },
   { flush: "sync" },
 );
@@ -213,10 +221,15 @@ watch(
 
 /** Tree rows are rebuilt off the scroll hot path (rAF) so loadMore appends
  * do not synchronously walk the whole history inside the scroll callback. */
-const treeRows = shallowRef<LogTreeRow[]>([]);
-let treeRaf = 0;
 watch(
-  () => [listMode.value, log.commits, t("log.treeOther")] as const,
+  () =>
+    [
+      listMode.value,
+      log.commits,
+      t("log.treeOther"),
+      workspace.repoPath,
+      workspace.repoId,
+    ] as const,
   ([mode, commits, other]) => {
     if (treeRaf) cancelAnimationFrame(treeRaf);
     treeRaf = 0;

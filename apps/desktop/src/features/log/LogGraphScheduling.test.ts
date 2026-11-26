@@ -8,14 +8,19 @@ import CommitGraphCell from "./CommitGraphCell.vue";
 import LogView from "./LogView.vue";
 import VirtualList from "@/components/common/VirtualList.vue";
 
-const mocks = vi.hoisted(() => ({ ws: {} as any, settings: {} as any, scroll: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  ws: {} as any,
+  settings: {} as any,
+  scroll: vi.fn(),
+  details: vi.fn(),
+}));
 vi.mock("./graphLayout", async (original) => {
   const module = await original<typeof import("./graphLayout")>();
   return { ...module, layoutCommitGraphIncremental: vi.fn(module.layoutCommitGraphIncremental) };
 });
 vi.mock("@/lib/backend", () => ({
   getBackend: () => ({
-    logCommitDetails: async () => null,
+    logCommitDetails: mocks.details,
     logChangedFiles: async () => [],
   }),
 }));
@@ -53,6 +58,7 @@ let nextFrameId = 0;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.details.mockResolvedValue(null);
   frames = new Map();
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frames.set(++nextFrameId, callback);
@@ -328,6 +334,84 @@ it("never carries the previous repository presentation into a newly populated re
   await renderFrame();
   expect(wrapper!.findAll('[role="option"]')).toHaveLength(1);
   expect(wrapper!.findComponent(CommitGraphCell).props("nodeLabel")).toBe("repo-b");
+});
+
+it.each(["pending", "populated"])(
+  "clears old tree rows before the first frame of a %s repository",
+  async (state) => {
+    await mountView("tree");
+    await renderFrame();
+    const log = useLogStore();
+    mocks.ws.repoPath = "B";
+    mocks.ws.repoId = "B";
+    if (state === "pending") log.loading = true;
+    else log.commits = [commit("repo-b")];
+    await nextTick();
+    expect(wrapper!.findAll('[role="option"]')).toHaveLength(0);
+    await renderFrame();
+    expect(wrapper!.findAll('[role="option"]').map((row) => row.text())).toEqual(
+      state === "pending" ? [] : [expect.stringContaining("repo-b")],
+    );
+  },
+);
+
+it("does not dispatch an old visible tree row into the newly populated repository", async () => {
+  await mountView("tree");
+  await renderFrame();
+  mocks.ws.repoPath = "B";
+  mocks.ws.repoId = "B";
+  useLogStore().commits = [commit("repo-b")];
+  await nextTick();
+  const obsolete = wrapper!.findAll('[role="option"]').find((row) => row.text().includes("tip"));
+  if (obsolete) await obsolete.trigger("click");
+  await flushPromises();
+  expect(mocks.details).not.toHaveBeenCalled();
+  expect(useLogStore().selectedSha).not.toBe("tip");
+});
+
+it("keeps the same-repository tree presentation while an ordinary refresh frame is queued", async () => {
+  await mountView("tree");
+  await renderFrame();
+  const displayed = wrapper!.findAll('[role="option"]').map((row) => row.text());
+  useLogStore().commits = [commit("new-tip", ["root"], ["main"]), commit("root")];
+  await nextTick();
+  expect(wrapper!.findAll('[role="option"]').map((row) => row.text())).toEqual(displayed);
+  await renderFrame();
+  expect(wrapper!.findAll('[role="option"]')[0]!.text()).toContain("new-tip");
+});
+
+it("discards pending tree rows across rapid repository changes and selects only the final rows", async () => {
+  await mountView("tree");
+  await renderFrame();
+  useLogStore().commits = [commit("pending-a")];
+  await nextTick();
+  mocks.ws.repoPath = "B";
+  mocks.ws.repoId = "B";
+  useLogStore().commits = [commit("pending-b")];
+  await nextTick();
+  expect(wrapper!.findAll('[role="option"]')).toHaveLength(0);
+  mocks.ws.repoPath = "C";
+  mocks.ws.repoId = "C";
+  useLogStore().commits = [commit("final-c")];
+  await nextTick();
+  expect(wrapper!.findAll('[role="option"]')).toHaveLength(0);
+  await renderFrame();
+  const rows = wrapper!.findAll('[role="option"]');
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.text()).toContain("final-c");
+  await rows[0]!.trigger("click");
+  expect(mocks.details).toHaveBeenCalledExactlyOnceWith({ path: "C", sha: "final-c" });
+});
+
+it("invalidates tree rows on repository identity changes and schedules their replacement", async () => {
+  await mountView("tree");
+  await renderFrame();
+  // A repository identity transition must invalidate even when the path is unchanged.
+  mocks.ws.repoId = "new-id";
+  await nextTick();
+  expect(wrapper!.findAll('[role="option"]')).toHaveLength(0);
+  await renderFrame();
+  expect(wrapper!.findAll('[role="option"]')).toHaveLength(2);
 });
 
 it("preserves the real virtual list's anchor and coherent recycled rows across a prepend", async () => {
