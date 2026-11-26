@@ -52,4 +52,4 @@ Open **Settings → Project Files** to show hidden files, show ignored files, or
 
 ## Text editing limits
 
-File text opening and saving supports UTF-8 without the former 5 MiB cutoff. Binary and invalid UTF-8 files produce a message. Editing needs memory for the entire document; opening large search hits omits the optional HEAD gutter comparison. Resolve conflicts before saving normally. Find in File searches drafts; global search reads disk. See [search and replace](./search).
+The File tree, search results, and Commit's **Open File** read the complete UTF-8 text from disk using the same rules, without the former 5 MiB cutoff. Binary, invalid UTF-8, and unreadable files show a read-only message and cannot be saved as text. Editing needs memory for the entire document; large files omit the optional HEAD gutter comparison. A failed HEAD comparison does not prevent opening valid disk text. Resolve conflicts before saving normally. Find in File searches drafts; global search reads disk. See [search and replace](./search).

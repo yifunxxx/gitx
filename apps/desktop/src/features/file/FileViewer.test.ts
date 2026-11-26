@@ -42,6 +42,8 @@ beforeEach(() => {
   mocks.layout = reactive({ activeEditorKind: "welcome" });
   mocks.fileWriteWorktree.mockResolvedValue(null);
   mocks.fsWriteFile.mockResolvedValue(null);
+  mocks.fsReadFile.mockResolvedValue("base\n");
+  mocks.diffFile.mockResolvedValue({ rightText: "base\n", hunks: [] });
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: {
@@ -85,13 +87,13 @@ it("reveals a search result after loading and keeps a cached draft and undo hist
 
 it("renders the first asynchronous file result after the loading host is replaced", async () => {
   const response = deferred();
-  mocks.diffFile.mockReturnValue(response.promise);
+  mocks.fsReadFile.mockReturnValue(response.promise);
   const store = useFileViewerStore();
   const pending = store.open("a.txt");
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
   expect(wrapper.text()).toContain("Loading");
   expect(wrapper.find(".cm-editor").exists()).toBe(false);
-  response.resolve(result("base\nworking\n"));
+  response.resolve("base\nworking\n");
   await pending;
   await flushPromises();
   expect(wrapper.text()).not.toContain("Loading");
@@ -120,7 +122,7 @@ it("preserves the editor instance and undo on rename and can reopen the old path
 
 it("displays an asynchronous load failure instead of a blank document", async () => {
   const response = deferred();
-  mocks.diffFile.mockReturnValue(response.promise);
+  mocks.fsReadFile.mockReturnValue(response.promise);
   const store = useFileViewerStore();
   const pending = store.open("missing.txt");
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
@@ -130,8 +132,24 @@ it("displays an asynchronous load failure instead of a blank document", async ()
   expect(editor(wrapper).state.doc.toString()).toContain("missing file");
 });
 
+it("renders a rejected binary Commit file read-only and refuses editing or saving", async () => {
+  mocks.fsReadFile.mockRejectedValueOnce(new Error("binary files cannot be edited as text"));
+  mocks.diffFile.mockResolvedValue({ rightText: null, hunks: [], binary: true });
+  const store = useFileViewerStore();
+  await store.open("binary.dat");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  expect(cm.state.facet(EditorState.readOnly)).toBe(true);
+  expect(cm.contentDOM.getAttribute("contenteditable")).toBe("false");
+  store.setDocument(store.activeId!, "overwrite");
+  expect(store.tabs[0]!.text).toContain("binary files cannot be edited as text");
+  expect(await store.saveActive()).toBe(false);
+  expect(mocks.fileWriteWorktree).not.toHaveBeenCalled();
+});
+
 it("renders cached empty files and releases each editor when switching through a loading file", async () => {
-  mocks.diffFile.mockResolvedValueOnce(result(""));
+  mocks.fsReadFile.mockResolvedValueOnce("");
   const store = useFileViewerStore();
   await store.open("empty.txt");
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
@@ -141,12 +159,12 @@ it("renders cached empty files and releases each editor when switching through a
   const firstDestroy = vi.spyOn(first, "destroy");
 
   const response = deferred();
-  mocks.diffFile.mockReturnValueOnce(response.promise);
+  mocks.fsReadFile.mockReturnValueOnce(response.promise);
   const pending = store.open("later.txt");
   await wrapper.setProps({ tabId: store.activeId! });
   expect(wrapper.text()).toContain("Loading");
   expect(firstDestroy).toHaveBeenCalledOnce();
-  response.resolve(result("later"));
+  response.resolve("later");
   await pending;
   await flushPromises();
   const second = editor(wrapper);
@@ -159,16 +177,16 @@ it("renders cached empty files and releases each editor when switching through a
 
 it("clears repository-specific file tabs and ignores an old response after A → B → A", async () => {
   const old = deferred();
-  mocks.diffFile.mockReturnValueOnce(old.promise);
+  mocks.fsReadFile.mockReturnValueOnce(old.promise);
   const store = useFileViewerStore();
   const pending = store.open("a.txt");
   mocks.workspace.repoPath = "repo-B";
   expect(store.tabs).toEqual([]);
   expect(store.activeId).toBeNull();
   mocks.workspace.repoPath = "repo-A";
-  mocks.diffFile.mockResolvedValueOnce(result("current"));
+  mocks.fsReadFile.mockResolvedValueOnce("current");
   await store.open("a.txt");
-  old.resolve(result("obsolete"));
+  old.resolve("obsolete");
   await pending;
   expect(store.tabs).toHaveLength(1);
   expect(store.tabs[0]!.text).toBe("current");
@@ -176,20 +194,20 @@ it("clears repository-specific file tabs and ignores an old response after A →
 
 it("does not overwrite a reopened file with the closed tab's late response", async () => {
   const old = deferred();
-  mocks.diffFile.mockReturnValueOnce(old.promise);
+  mocks.fsReadFile.mockReturnValueOnce(old.promise);
   const store = useFileViewerStore();
   const pending = store.open("a.txt");
   store.closeTab(store.activeId!);
-  mocks.diffFile.mockResolvedValueOnce(result("reopened"));
+  mocks.fsReadFile.mockResolvedValueOnce("reopened");
   await store.open("a.txt");
-  old.resolve(result("closed"));
+  old.resolve("closed");
   await pending;
   expect(store.tabs).toHaveLength(1);
   expect(store.tabs[0]!.text).toBe("reopened");
 });
 
 it("marks the tab dirty after edits and clears dirty when restored to baseline", async () => {
-  mocks.diffFile.mockResolvedValueOnce(result("base\n"));
+  mocks.fsReadFile.mockResolvedValueOnce("base\n");
   const store = useFileViewerStore();
   await store.open("a.txt");
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
@@ -240,7 +258,7 @@ it("writes through Ctrl/Cmd+S path, clears dirty, and refreshes Changes", async 
 });
 
 it("offers Cut/Copy on a selection and Save/Undo on empty editor chrome", async () => {
-  mocks.diffFile.mockResolvedValueOnce(result("hello\n"));
+  mocks.fsReadFile.mockResolvedValueOnce("hello\n");
   const store = useFileViewerStore();
   await store.open("a.txt");
   const wrapper = mount(FileViewer, {
@@ -386,7 +404,7 @@ async function clickEditorMenu(wrapper: ReturnType<typeof mount>, action: string
 it("does not apply a pending paste to a different file or the disposed editor", async () => {
   const clipboard = deferred();
   vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
-  mocks.diffFile.mockResolvedValueOnce(result("first")).mockResolvedValueOnce(result("second"));
+  mocks.fsReadFile.mockResolvedValueOnce("first").mockResolvedValueOnce("second");
   const store = useFileViewerStore();
   await store.open("a.txt");
   const first = store.tabs[0]!;
@@ -408,7 +426,7 @@ it("does not apply a pending paste to a different file or the disposed editor", 
 it("does not cut stale positions after the draft changed while copying", async () => {
   const clipboard = deferred();
   vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(clipboard.promise);
-  mocks.diffFile.mockResolvedValueOnce(result("hello world"));
+  mocks.fsReadFile.mockResolvedValueOnce("hello world");
   const store = useFileViewerStore();
   await store.open("a.txt");
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! }, attachTo: document.body });
@@ -426,7 +444,7 @@ it("does not cut stale positions after the draft changed while copying", async (
 it("abandons pending paste after the user moves the selection", async () => {
   const clipboard = deferred();
   vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
-  mocks.diffFile.mockResolvedValueOnce(result("hello world"));
+  mocks.fsReadFile.mockResolvedValueOnce("hello world");
   const store = useFileViewerStore();
   await store.open("a.txt");
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! }, attachTo: document.body });
@@ -449,7 +467,7 @@ it.each(["cut", "paste"])(
     if (action === "cut")
       vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(clipboard.promise);
     else vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
-    mocks.diffFile.mockResolvedValueOnce(result("hello world"));
+    mocks.fsReadFile.mockResolvedValueOnce("hello world");
     const store = useFileViewerStore();
     await store.open("a.txt");
     const wrapper = mount(FileViewer, {
@@ -474,7 +492,7 @@ it.each(["cut", "paste"])(
 it("abandons a pending paste after closing and reopening the same file", async () => {
   const clipboard = deferred();
   vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
-  mocks.diffFile.mockResolvedValueOnce(result("first")).mockResolvedValueOnce(result("reopened"));
+  mocks.fsReadFile.mockResolvedValueOnce("first").mockResolvedValueOnce("reopened");
   const store = useFileViewerStore();
   await store.open("a.txt");
   const wrapper = mount(FileViewer, { props: { tabId: store.activeId! }, attachTo: document.body });

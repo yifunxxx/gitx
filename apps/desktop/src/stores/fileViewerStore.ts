@@ -110,28 +110,31 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       workspace.navigationToken() === navigation;
     try {
       const backend = getBackend();
-      // Read actual UTF-8 content before opening search hits, including large
-      // files. Large editors omit the optional HEAD gutter diff computation.
-      const fileText =
-        source || folderPath
-          ? await backend.fsReadFile({ folderPath: sourceRoot, filePath: sourceFilePath })
-          : undefined;
+      // Every editing entry point needs strict, complete disk text. A diff can
+      // omit large/binary contents or decode invalid UTF-8 for display only.
+      const text = await backend.fsReadFile({
+        folderPath: sourceRoot,
+        filePath: sourceFilePath,
+      });
       if (!current()) return;
       const diff =
-        folderPath || (fileText?.length ?? 0) > 5 * 1024 * 1024
+        folderPath || text.length > 5 * 1024 * 1024
           ? null
-          : await backend.diffFile({
-              repoId: repoId!,
-              path: repoPath!,
-              filePath,
-              left: "head",
-              right: "worktree",
-            });
-      const text = fileText ?? diff?.rightText ?? "";
+          : await backend
+              .diffFile({
+                repoId: repoId!,
+                path: repoPath!,
+                filePath,
+                left: "head",
+                right: "worktree",
+              })
+              .catch(() => null);
       if (!current()) return;
       tab.text = text;
       tab.baseline = text;
-      tab.hunks = diff?.hunks ?? [];
+      // A failed HEAD read must not prevent editing. Concurrent disk changes
+      // can also make the optional gutter describe a different snapshot.
+      tab.hunks = diff?.rightText === text ? diff.hunks : [];
       tab.dirty = false;
       tab.editable = true;
     } catch (e) {

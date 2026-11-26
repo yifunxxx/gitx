@@ -235,3 +235,129 @@ it("opens a workspace file outside the active repo through filesystem endpoints"
   expect(store.tabs[0]!.folderPath).toBe("C:/workspace");
   expect(mocks.diffFile).not.toHaveBeenCalled();
 });
+
+it("opens a large Commit file from its full disk text and preserves it when saving", async () => {
+  mocks.workspace.isRepo = true;
+  const text = "large line\n".repeat(530_000) + "last line\n";
+  mocks.fsReadFile.mockResolvedValue(text);
+  mocks.diffFile.mockResolvedValue({ rightText: null, hunks: [], tooLarge: true });
+  const store = useFileViewerStore();
+  await store.open("large.txt");
+  const tab = store.tabs[0]!;
+  expect(tab.text.length).toBe(text.length);
+  expect(tab.text === text && tab.baseline === text).toBe(true);
+  expect(tab).toMatchObject({ editable: true, dirty: false });
+  store.setDocument(tab.id, text + "appended\n");
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fileWriteWorktree).toHaveBeenCalledWith(
+    expect.objectContaining({ filePath: "large.txt", content: text + "appended\n" }),
+  );
+  expect(mocks.diffFile).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["binary.dat", "binary files cannot be edited as text", null],
+  ["legacy.txt", "file is not valid UTF-8 text", "replacement �"],
+  ["deleted.txt", "file not found", null],
+])(
+  "does not expose %s from Commit as an editable empty or lossy file",
+  async (path, error, diffText) => {
+    mocks.workspace.isRepo = true;
+    mocks.fsReadFile.mockRejectedValue(new Error(error));
+    mocks.diffFile.mockResolvedValue({ rightText: diffText, hunks: [] });
+    const store = useFileViewerStore();
+    await store.open(path);
+    const tab = store.tabs[0]!;
+    expect(tab.editable).toBe(false);
+    expect(tab.text).toContain(error);
+    store.setDocument(tab.id, "accidental overwrite");
+    expect(await store.saveActive()).toBe(false);
+    expect(mocks.fileWriteWorktree).not.toHaveBeenCalled();
+    expect(mocks.fsWriteFile).not.toHaveBeenCalled();
+    expect(mocks.diffFile).not.toHaveBeenCalled();
+  },
+);
+
+it("retains exact disk text and omits gutters from a different diff snapshot", async () => {
+  mocks.workspace.isRepo = true;
+  const text = "\uFEFFcurrent\r\n中文 😀\r\n";
+  mocks.fsReadFile.mockResolvedValue(text);
+  mocks.diffFile.mockResolvedValue({ rightText: "other snapshot\n", hunks: [{ index: 0 }] });
+  const store = useFileViewerStore();
+  await store.open("note.txt");
+  expect(store.tabs[0]).toMatchObject({ text, baseline: text, hunks: [], editable: true });
+  expect(mocks.fsReadFile).toHaveBeenCalledWith({ folderPath: "C:/folder", filePath: "note.txt" });
+});
+
+it.each([false, true])(
+  "keeps valid text editable when optional Git gutters fail (File source: %s)",
+  async (source) => {
+    mocks.workspace.isRepo = true;
+    mocks.diffFile.mockRejectedValue(new Error("HEAD unavailable"));
+    const store = useFileViewerStore();
+    await store.open("note.txt", source ? { folderPath: "C:/folder" } : undefined);
+    expect(store.tabs[0]).toMatchObject({
+      text: "initial\n",
+      baseline: "initial\n",
+      hunks: [],
+      editable: true,
+    });
+    store.setDocument(store.activeId!, "saved\n");
+    expect(await store.saveActive()).toBe(true);
+    expect(mocks.fileWriteWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "saved\n" }),
+    );
+  },
+);
+
+it.each(["binary HEAD", "large HEAD"])(
+  "opens valid worktree text when the diff omits it for %s",
+  async (reason) => {
+    mocks.workspace.isRepo = true;
+    mocks.diffFile.mockResolvedValue({
+      rightText: null,
+      hunks: [],
+      binary: reason === "binary HEAD",
+      tooLarge: reason === "large HEAD",
+    });
+    const store = useFileViewerStore();
+    await store.open("converted.txt");
+    expect(store.tabs[0]).toMatchObject({ text: "initial\n", editable: true, hunks: [] });
+  },
+);
+
+it("keeps matching HEAD gutter data without using it as the editing source", async () => {
+  mocks.workspace.isRepo = true;
+  const hunks = [{ index: 0 }];
+  mocks.diffFile.mockResolvedValue({ rightText: "initial\n", hunks });
+  const store = useFileViewerStore();
+  await store.open("note.txt");
+  expect(store.tabs[0]).toMatchObject({ text: "initial\n", hunks });
+  expect(mocks.fsReadFile).toHaveBeenCalledOnce();
+});
+
+it.each(["navigation", "reopen"])(
+  "ignores an optional gutter result after %s invalidates the file",
+  async (change) => {
+    mocks.workspace.isRepo = true;
+    const old = deferred();
+    mocks.diffFile.mockReturnValueOnce(old.promise);
+    const store = useFileViewerStore();
+    const pending = store.open("note.txt");
+    await vi.waitFor(() => expect(mocks.diffFile).toHaveBeenCalledOnce());
+    if (change === "navigation") mocks.workspace.token++;
+    else store.closeTab(store.activeId!);
+    mocks.fsReadFile.mockResolvedValue("new file\n");
+    mocks.diffFile.mockResolvedValue({ rightText: "new file\n", hunks: [] });
+    await store.open("note.txt");
+    old.resolve({ rightText: "initial\n", hunks: [{ index: 0 }] });
+    await pending;
+    expect(store.tabs).toHaveLength(1);
+    expect(store.tabs[0]).toMatchObject({
+      text: "new file\n",
+      baseline: "new file\n",
+      hunks: [],
+      loading: false,
+    });
+  },
+);
