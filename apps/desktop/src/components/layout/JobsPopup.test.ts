@@ -59,19 +59,19 @@ it("lists running jobs with progress and cancels a cancellable job", async () =>
   jobs.openPopup({ x: 16, y: 700 });
   mount(JobsPopup, { attachTo: document.body });
   await flushPromises();
-  const menu = document.querySelector('[role="menu"]');
+  const menu = document.querySelector('[role="dialog"]');
   expect(menu?.textContent).toContain("Cloning repository…");
   expect(menu?.textContent).toContain("Receiving objects");
   expect(menu?.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("45");
-  const cancel = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
-    (item) => item.textContent?.trim() === "common.cancel",
-  );
+  const cancel = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((item) => item.textContent?.trim() === "common.cancel");
   expect(cancel).toBeTruthy();
   cancel!.click();
   await flushPromises();
   expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith("clone");
   expect(jobs.count).toBe(1);
-  expect(document.querySelector('[role="menu"]')?.textContent).toContain("status.jobCancelling");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("status.jobCancelling");
   expect(cancel!.disabled).toBe(true);
   jobs.finished("clone");
   expect(jobs.count).toBe(0);
@@ -84,7 +84,7 @@ it("keeps a frontend UI job visible when jobList returns empty", async () => {
   jobs.openPopup({ x: 8, y: 640 });
   mount(JobsPopup, { attachTo: document.body });
   await flushPromises();
-  const menu = document.querySelector('[role="menu"]');
+  const menu = document.querySelector('[role="dialog"]');
   expect(menu?.textContent).toContain("Fetching remotes…");
   expect(menu?.textContent).not.toContain("status.jobsEmpty");
   expect(jobs.count).toBe(1);
@@ -95,13 +95,13 @@ it("shows an empty state when idle and closes on Escape", async () => {
   jobs.openPopup({ x: 8, y: 640 });
   mount(JobsPopup, { attachTo: document.body });
   await flushPromises();
-  expect(document.querySelector('[role="menu"]')?.textContent).toContain("status.jobsEmpty");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("status.jobsEmpty");
   document.activeElement!.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
   );
   await flushPromises();
   expect(jobs.popupOpen).toBe(false);
-  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
 it("keeps reactive store rows when jobs change while open", async () => {
@@ -111,7 +111,7 @@ it("keeps reactive store rows when jobs change while open", async () => {
   await flushPromises();
   jobs.started({ id: "pull", title: "Pulling origin/main…", message: "Fetching…" });
   await flushPromises();
-  expect(document.querySelector('[role="menu"]')?.textContent).toContain("Pulling origin/main…");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Pulling origin/main…");
 });
 
 it("disables cancel immediately, retains it after reopen and allows retry after failure", async () => {
@@ -120,11 +120,15 @@ it("disables cancel immediately, retains it after reopen and allows retry after 
   jobs.started(native, "native");
   mocks.list.mockResolvedValue([native]);
   let reject!: (error: unknown) => void;
-  mocks.cancel.mockReturnValueOnce(new Promise((_resolve, no) => { reject = no; }));
+  mocks.cancel.mockReturnValueOnce(
+    new Promise((_resolve, no) => {
+      reject = no;
+    }),
+  );
   jobs.openPopup();
   mount(JobsPopup, { attachTo: document.body });
   await flushPromises();
-  const cancelButton = () => document.querySelector<HTMLButtonElement>('button[role="menuitem"]')!;
+  const cancelButton = () => document.querySelector<HTMLButtonElement>('[role="dialog"] button')!;
   cancelButton().click();
   await flushPromises();
   expect(cancelButton().disabled).toBe(true);
@@ -135,10 +139,13 @@ it("disables cancel immediately, retains it after reopen and allows retry after 
   jobs.openPopup();
   await flushPromises();
   expect(cancelButton().disabled).toBe(true);
-  expect(document.querySelector('[role="menu"]')?.textContent).toContain("status.jobCancelling");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("status.jobCancelling");
   reject(new Error("IPC unavailable"));
   await flushPromises();
-  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: "status.cancelFailed", description: "IPC unavailable" });
+  expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
+    title: "status.cancelFailed",
+    description: "IPC unavailable",
+  });
   expect(cancelButton().disabled).toBe(false);
   cancelButton().click();
   await flushPromises();
@@ -146,7 +153,7 @@ it("disables cancel immediately, retains it after reopen and allows retry after 
   expect(jobs.count).toBe(1);
   jobs.finished(native.id);
   await flushPromises();
-  expect(document.querySelector('[role="menu"]')?.textContent).toContain("status.jobsEmpty");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("status.jobsEmpty");
 });
 
 it("does not display a stale cancel error after the job has finished", async () => {
@@ -155,11 +162,15 @@ it("does not display a stale cancel error after the job has finished", async () 
   jobs.started(native, "native");
   mocks.list.mockResolvedValue([native]);
   let reject!: (error: unknown) => void;
-  mocks.cancel.mockReturnValueOnce(new Promise((_resolve, no) => { reject = no; }));
+  mocks.cancel.mockReturnValueOnce(
+    new Promise((_resolve, no) => {
+      reject = no;
+    }),
+  );
   jobs.openPopup();
   mount(JobsPopup, { attachTo: document.body });
   await flushPromises();
-  document.querySelector<HTMLButtonElement>('button[role="menuitem"]')!.click();
+  document.querySelector<HTMLButtonElement>('[role="dialog"] button')!.click();
   jobs.finished(native.id);
   reject(new Error("job not found"));
   await flushPromises();

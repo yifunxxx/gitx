@@ -10,15 +10,17 @@ import { formatErrorMessage } from "@/lib/errors";
 const { t } = useI18n();
 const jobs = useJobsStore();
 
-const estimatedHeight = computed(() =>
-  Math.max(72, 28 + (jobs.running.length || 1) * 56),
-);
+const estimatedHeight = computed(() => Math.max(72, 28 + (jobs.running.length || 1) * 56));
 
 function detailFor(job: JobUi) {
   if (job.cancelling) return t("status.jobCancelling");
   if (job.message) return job.message;
   if (job.percent != null) return t("status.jobPercent", { percent: Math.round(job.percent) });
   return t("status.jobRunning");
+}
+
+function jobLabel(job: JobUi) {
+  return job.message ? `${job.title} — ${job.message}` : job.title;
 }
 
 async function onCancel(id: string) {
@@ -32,24 +34,20 @@ async function onCancel(id: string) {
 
 <template>
   <ContextMenuSurface
+    role="dialog"
     :label="t('status.jobsTitle')"
     :open="jobs.popupOpen"
     :anchor-x="jobs.anchorX"
     :anchor-y="jobs.anchorY"
     :width="320"
     :estimated-height="estimatedHeight"
-    min-width-class="min-w-72"
+    min-width-class="w-80 max-w-[calc(100vw-20px)]"
     @close="jobs.closePopup()"
   >
     <div class="px-2 py-1 text-[11px] font-medium text-muted-foreground">
       {{ t("status.jobsTitle") }}
     </div>
-    <div
-      v-if="!jobs.running.length"
-      class="px-2 py-2 text-[12px] text-muted-foreground"
-      role="menuitem"
-      tabindex="-1"
-    >
+    <div v-if="!jobs.running.length" class="px-2 py-2 text-[12px] text-muted-foreground">
       {{ t("status.jobsEmpty") }}
     </div>
     <div
@@ -57,9 +55,13 @@ async function onCancel(id: string) {
       :key="job.id"
       class="flex items-start gap-2 rounded px-2 py-1.5"
     >
-      <LoaderCircle class="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin motion-reduce:animate-none text-muted-foreground" />
+      <LoaderCircle
+        class="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin motion-reduce:animate-none text-muted-foreground"
+      />
       <div class="min-w-0 flex-1">
-        <div class="truncate text-[13px] leading-4 text-foreground" :title="job.title">{{ job.title }}</div>
+        <div class="truncate text-[13px] leading-4 text-foreground" :title="job.title">
+          {{ job.title }}
+        </div>
         <div class="mt-0.5 truncate text-[11px] text-muted-foreground" :title="detailFor(job)">
           {{ detailFor(job) }}
         </div>
@@ -67,12 +69,13 @@ async function onCancel(id: string) {
           v-if="job.percent != null"
           class="mt-1 h-1 overflow-hidden rounded-full bg-muted"
           role="progressbar"
+          :aria-label="jobLabel(job)"
           :aria-valuenow="Math.round(job.percent)"
           aria-valuemin="0"
           aria-valuemax="100"
         >
           <div
-            class="h-full bg-primary transition-[width] duration-150"
+            class="h-full bg-primary transition-[width] duration-150 motion-reduce:transition-none"
             :style="{ width: `${Math.min(100, Math.max(0, job.percent))}%` }"
           />
         </div>
@@ -80,10 +83,10 @@ async function onCancel(id: string) {
       <button
         v-if="job.cancellable"
         type="button"
-        role="menuitem"
+        :aria-label="`${t(job.cancelling ? 'status.jobCancelling' : 'common.cancel')} — ${jobLabel(job)}`"
         :disabled="job.cancelling"
         :aria-disabled="job.cancelling || undefined"
-        class="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-50"
+        class="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[-2px] disabled:cursor-wait disabled:opacity-50"
         @click="onCancel(job.id)"
       >
         {{ t(job.cancelling ? "status.jobCancelling" : "common.cancel") }}

@@ -48,6 +48,7 @@ function toggleJobsPopup(event: MouseEvent) {
       type="button"
       class="flex min-w-0 max-w-[45%] items-center gap-1 rounded px-1 hover:bg-accent/60 hover:text-foreground"
       :aria-expanded="jobs.popupOpen"
+      aria-haspopup="dialog"
       :aria-label="t('status.jobsTitle')"
       :title="jobs.running.map(job => jobTitle(job) + (job.message ? ` — ${job.message}` : '')).join('\n') || busyText"
       @click="toggleJobsPopup"

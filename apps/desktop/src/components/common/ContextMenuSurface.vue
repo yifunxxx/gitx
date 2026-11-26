@@ -11,11 +11,13 @@ const props = withDefaults(
     estimatedHeight?: number;
     minWidthClass?: string;
     label?: string;
+    role?: "menu" | "dialog";
   }>(),
   {
     width: 240,
     estimatedHeight: 320,
     minWidthClass: "min-w-48",
+    role: "menu",
   },
 );
 
@@ -29,6 +31,8 @@ let observer: MutationObserver | undefined;
 let generation = 0;
 let disposed = false;
 const itemSelector = 'button, [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]';
+const controlSelector =
+  'button, input:not([type="hidden"]), textarea, select, a[href], [tabindex]:not([tabindex="-1"])';
 
 function visible(element: HTMLElement) {
   for (let node: HTMLElement | null = element; node; node = node.parentElement) {
@@ -40,7 +44,8 @@ function visible(element: HTMLElement) {
   return true;
 }
 function items() {
-  return Array.from(panel.value?.querySelectorAll<HTMLElement>(itemSelector) ?? []).filter(
+  const selector = props.role === "dialog" ? controlSelector : itemSelector;
+  return Array.from(panel.value?.querySelectorAll<HTMLElement>(selector) ?? []).filter(
     (item) => item.closest('[role="menu"], [role="dialog"]') === panel.value,
   );
 }
@@ -56,14 +61,14 @@ function focusItem(item: HTMLElement | undefined) {
   item?.scrollIntoView?.({ block: "nearest" });
 }
 function syncItems() {
-  for (const item of items()) item.tabIndex = -1;
+  if (props.role === "menu") for (const item of items()) item.tabIndex = -1;
   const active = document.activeElement;
   const available = enabledItems();
   if (
     (active instanceof HTMLElement && items().includes(active) && !available.includes(active)) ||
     (active === document.body && lastFocused && !lastFocused.isConnected)
   )
-    focusItem(available[0]);
+    focusItem(props.role === "menu" ? available[0] : undefined);
 }
 function restoreFocus() {
   const active = document.activeElement;
@@ -113,7 +118,7 @@ watch(
     });
     // An intervening dialog/input must retain its focus while the menu mounts.
     if (document.activeElement === previousFocus || document.activeElement === document.body)
-      focusItem(enabledItems()[0]);
+      focusItem(props.role === "menu" ? enabledItems()[0] : undefined);
   },
   { immediate: true },
 );
@@ -128,15 +133,34 @@ function ownTarget(event: Event) {
 function onKeydown(event: KeyboardEvent) {
   const target = ownTarget(event);
   if (!target) return;
-  // The menu owns its keystrokes; global Git shortcuts must not act on the
-  // underlying selection, even when no menu command matches.
+  // Floating panels own their keystrokes; global Git shortcuts must not act on
+  // the underlying selection while the user is reading or cancelling tasks.
   event.stopPropagation();
-  if (
-    event.defaultPrevented ||
-    event.isComposing ||
-    target.closest('input, textarea, select, [contenteditable="true"]')
-  )
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+  if (props.role === "dialog") {
+    if (event.ctrlKey || event.metaKey || event.altKey || (event.shiftKey && event.key !== "Tab")) {
+      if (event.key === "Enter" || event.key === " ") event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (!event.repeat) emit("close");
+    } else if (event.key === "Tab") {
+      // Reading panels keep their scrollable content in the Tab order. Arrow,
+      // Home/End and Page keys retain native scrolling instead of menu roving.
+      event.preventDefault();
+      const controls = [panel.value!, ...enabledItems()];
+      const index = controls.indexOf(document.activeElement as HTMLElement);
+      const next = event.shiftKey
+        ? (index <= 0 ? controls.length : index) - 1
+        : (index + 1) % controls.length;
+      focusItem(controls[next] === panel.value ? undefined : controls[next]);
+    } else if (event.repeat && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+    }
     return;
+  }
+  if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
   const activation = event.key === "Enter" || event.key === " ";
   const navigation = ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key);
   if (event.ctrlKey || event.metaKey || event.altKey || (event.shiftKey && event.key !== "Tab")) {
@@ -176,6 +200,7 @@ function onKeyup(event: KeyboardEvent) {
   const target = ownTarget(event);
   if (!target) return;
   event.stopPropagation();
+  if (props.role === "dialog") return;
   if (
     !event.isComposing &&
     event.key === " " &&
@@ -184,6 +209,7 @@ function onKeyup(event: KeyboardEvent) {
     event.preventDefault();
 }
 function onActivate(event: MouseEvent) {
+  if (props.role === "dialog") return;
   const item = ownTarget(event)?.closest<HTMLElement>(itemSelector);
   if (item && !enabledItems().includes(item)) {
     event.preventDefault();
@@ -195,6 +221,7 @@ function onActivate(event: MouseEvent) {
   }
 }
 function onPointerMove(event: PointerEvent) {
+  if (props.role === "dialog") return;
   if (event.pointerType === "touch") return;
   const item = ownTarget(event)?.closest<HTMLElement>(itemSelector);
   if (item && item !== document.activeElement && enabledItems().includes(item))
@@ -246,11 +273,18 @@ watch(
     >
       <div
         ref="panel"
-        role="menu"
-        tabindex="-1"
+        :role="role"
+        :tabindex="role === 'dialog' ? 0 : -1"
+        :aria-modal="role === 'dialog' ? true : undefined"
         :aria-label="label"
         class="context-menu-panel absolute z-[9999] overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 shadow-lg ring-1 ring-foreground/10"
-        :class="minWidthClass"
+        :class="[
+          minWidthClass,
+          {
+            'focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[-2px]':
+              role === 'dialog',
+          },
+        ]"
         :style="{
           left: `${place.x}px`,
           top: `${place.y}px`,
