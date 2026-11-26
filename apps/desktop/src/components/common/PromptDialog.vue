@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import { closeDialog } from "@/composables/useDialog";
@@ -20,6 +20,9 @@ const props = withDefaults(
 );
 
 const { t } = useI18n();
+const id = useId();
+const titleId = `${id}-title`;
+const messageId = `${id}-message`;
 const value = ref(props.defaultValue);
 const inputEl = ref<HTMLInputElement | null>(null);
 const canConfirm = computed(() => props.allowEmpty || !!value.value.trim());
@@ -70,15 +73,20 @@ function onEscape(event: KeyboardEvent) {
       class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg animate-in zoom-in-95 duration-100"
       role="dialog"
       aria-modal="true"
+      :aria-labelledby="titleId"
     >
-      <h2 class="text-sm font-semibold">{{ props.title }}</h2>
-      <p v-if="props.message" class="mt-2 text-xs text-muted-foreground">{{ props.message }}</p>
+      <h2 :id="titleId" class="text-sm font-semibold">{{ props.title }}</h2>
+      <p v-if="props.message" :id="messageId" class="mt-2 text-xs text-muted-foreground">
+        {{ props.message }}
+      </p>
       <input
         ref="inputEl"
         v-model="value"
         type="text"
         class="mt-3 h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         :placeholder="props.placeholder"
+        :aria-labelledby="titleId"
+        :aria-describedby="props.message ? messageId : undefined"
         @keydown.enter="onEnter"
       />
       <div class="mt-4 flex justify-end gap-2">

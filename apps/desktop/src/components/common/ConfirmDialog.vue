@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useId } from "vue";
 import { useI18n } from "vue-i18n";
 import { Button } from "@/components/ui/button";
 import { closeDialog } from "@/composables/useDialog";
@@ -11,6 +12,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const titleId = `${useId()}-title`;
 
 function confirm() {
   closeDialog(true);
@@ -36,15 +38,21 @@ function onEscape(event: KeyboardEvent) {
       class="w-full max-w-md rounded-lg border bg-popover p-4 shadow-lg animate-in zoom-in-95 duration-100"
       role="dialog"
       aria-modal="true"
+      :aria-labelledby="titleId"
     >
-      <h2 class="text-sm font-semibold">{{ props.title }}</h2>
+      <h2 :id="titleId" class="text-sm font-semibold">{{ props.title }}</h2>
       <p
-        class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-muted-foreground"
+        class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
+        role="region"
+        tabindex="0"
+        :aria-labelledby="titleId"
       >
         {{ props.message }}
       </p>
       <div class="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" @click="cancel">{{ t("common.cancel") }}</Button>
+        <Button autofocus variant="ghost" size="sm" @click="cancel">{{
+          t("common.cancel")
+        }}</Button>
         <Button size="sm" :variant="props.destructive ? 'destructive' : 'default'" @click="confirm">
           {{ props.confirmLabel ?? t("common.ok") }}
         </Button>
