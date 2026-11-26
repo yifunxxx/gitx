@@ -28,3 +28,5 @@ Log的平铺图文快照已经按仓库同步清空，树形提交行却只在�
 主测试进程及关联WebView退出；两仓库HEAD、Git状态与文件哈希均保持，`verification.json`核对通过。独立设置归档移除，个人设置SHA256仍为`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`，用户安装版未更新。提交前fetch首次OpenSSL失败、schannel重试成功，master和交付分支均已包含、无新提交；文档及差异检查通过。独立推送结果随后补记。
 
 本项解决树形切仓呈现与操作归属；QA034/008持续滚轮、QA040资源归因及其他七项目标验收边界继续保留。
+
+功能提交`41f47740ab9614244293f64303eab26d0cfc3660`首次推送至`codex/checkout-target-safety`成功，ls-remote完整SHA一致，无凭据提示；补记前再次fetch并检查两分支成功。
