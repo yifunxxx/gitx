@@ -154,16 +154,44 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   // Hidden or vanished rows cannot remain accidental batch-operation targets.
   watch(
     rows,
-    (visible) => {
+    (visible, previous) => {
       if (!selectedPaths.value.length && !selectedPath.value && !selectionAnchor) return;
       const paths = new Set(visible.map((row) => row.path));
-      const kept = selectedPaths.value.filter((path) => paths.has(path));
-      if (kept.length !== selectedPaths.value.length) selectedPaths.value = kept;
+      // Compaction replaces a directory row with its only descendant directory.
+      // Preserve that visible representation, but never substitute an unrelated
+      // ancestor for a filtered/deleted row or restore a deselected focus.
+      const aliases = new Map<string, string>();
+      let previousDirectories: Set<string> | undefined;
+      for (const row of visible) {
+        if (!row.compactRoot) continue;
+        previousDirectories ??= new Set(
+          previous?.filter((item) => item.kind === "directory").map((item) => item.path),
+        );
+        for (
+          let end = row.path.lastIndexOf("/");
+          end >= row.compactRoot.length;
+          end = row.path.lastIndexOf("/", end - 1)
+        ) {
+          const parent = row.path.slice(0, end);
+          if (previousDirectories.has(parent)) aliases.set(parent, row.path);
+        }
+      }
+      const resolve = (path: string | null) =>
+        path === null ? null : paths.has(path) ? path : (aliases.get(path) ?? null);
+      const kept = [
+        ...new Set(
+          selectedPaths.value.map(resolve).filter((path): path is string => path !== null),
+        ),
+      ];
+      if (
+        kept.length !== selectedPaths.value.length ||
+        kept.some((path, index) => path !== selectedPaths.value[index])
+      )
+        selectedPaths.value = kept;
       // Focus may intentionally be unselected after Ctrl+click, but it and the
       // range anchor must not outlive their visible row or silently target row 0.
-      if (selectedPath.value && !paths.has(selectedPath.value))
-        selectedPath.value = kept[0] ?? null;
-      if (selectionAnchor && !paths.has(selectionAnchor)) selectionAnchor = selectedPath.value;
+      if (selectedPath.value) selectedPath.value = resolve(selectedPath.value) ?? kept[0] ?? null;
+      if (selectionAnchor) selectionAnchor = resolve(selectionAnchor) ?? selectedPath.value;
     },
     { flush: "sync" },
   );

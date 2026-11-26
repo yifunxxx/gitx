@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createPinia, disposePinia, setActivePinia } from "pinia";
+import { reactive } from "vue";
 import FileToolWindow from "./FileToolWindow.vue";
 import { useFileTreeStore } from "@/stores/fileTreeStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -11,13 +12,14 @@ const m = vi.hoisted(() => ({
   run: vi.fn(),
   open: vi.fn(),
   clipboard: vi.fn(),
+  settings: { settings: { compactFileTree: false } },
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => m.backend }));
 vi.mock("vue-i18n", async (original) => ({
   ...(await original<typeof import("vue-i18n")>()),
   useI18n: () => ({ t: (key: string) => key }),
 }));
-vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => ({ settings: {} }) }));
+vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => m.settings }));
 vi.mock("@/stores/layoutStore", () => ({
   useLayoutStore: () => ({ activeLeftTab: "file", leftOpen: true }),
 }));
@@ -61,6 +63,7 @@ async function deselectLast() {
 }
 beforeEach(async () => {
   vi.resetAllMocks();
+  m.settings = reactive({ settings: { compactFileTree: false } });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -198,4 +201,112 @@ it("selects the collapsed parent when an external collapse hides a focused child
   await flushPromises();
   expect(files.selectedPath).toBe("first");
   expect(files.selectedPaths).toEqual(["first"]);
+});
+
+async function compactFixture() {
+  m.settings.settings.compactFileTree = true;
+  m.backend.fsReadDir.mockImplementation(async ({ dir }: { dir: string }) => {
+    const entries: Record<string, FsEntry[]> = {
+      "": [entry("first", "directory"), entry("src", "directory"), entry("tail.txt")],
+      first: [],
+      src: [entry("src/one", "directory")],
+      "src/one": [entry("src/one/two", "directory")],
+      "src/one/two": [entry("src/one/two/file.txt")],
+    };
+    return entries[dir] ?? [];
+  });
+  await files.refreshExpanded();
+  await flushPromises();
+}
+
+it("continues keyboard navigation through newly compacted directory rows", async () => {
+  await compactFixture();
+  // Ctrl selection leaves the directory closed, so Right owns the expansion.
+  await row("src").trigger("click", { ctrlKey: true });
+  for (const path of ["src/one", "src/one/two"]) {
+    await tree().trigger("keydown", { key: "ArrowRight" });
+    await flushPromises();
+    expect(files.selectedPaths).toEqual([path]);
+    expect(files.selectedPath).toBe(path);
+    expect(row(path).attributes("aria-selected")).toBe("true");
+    expect(tree().attributes("aria-activedescendant")).toBe(row(path).attributes("id"));
+  }
+  await tree().trigger("keydown", { key: "ArrowRight" });
+  await flushPromises();
+  await tree().trigger("keydown", { key: "ArrowRight" });
+  expect(files.selectedPath).toBe("src/one/two/file.txt");
+});
+
+it("keeps a compacted mouse selection as the rename and Shift-range target", async () => {
+  await compactFixture();
+  await row("src").trigger("click");
+  await flushPromises();
+  await tree().trigger("keydown", { key: "F2" });
+  expect(m.run).toHaveBeenCalledExactlyOnceWith("rename", ["src/one"]);
+  await row("tail.txt").trigger("click", { shiftKey: true });
+  expect(files.selectedPaths).toEqual(["src/one", "tail.txt"]);
+});
+
+it("merges only selected aliases when enabling compaction on a loaded chain", async () => {
+  await compactFixture();
+  m.settings.settings.compactFileTree = false;
+  await files.expand("src");
+  await files.expand("src/one");
+  await flushPromises();
+  files.select("first");
+  files.select("src", { toggle: true });
+  files.select("src/one", { toggle: true });
+  m.settings.settings.compactFileTree = true;
+  await flushPromises();
+  expect(files.selectedPaths).toEqual(["first", "src/one/two"]);
+  expect(files.selectedPath).toBe("src/one/two");
+  await row("tail.txt").trigger("click", { shiftKey: true });
+  expect(files.selectedPaths).toEqual(["src/one/two", "tail.txt"]);
+});
+
+it("does not restore a deselected compact focus into the batch selection", async () => {
+  await compactFixture();
+  files.select("tail.txt");
+  files.select("src", { toggle: true });
+  files.select("src", { toggle: true });
+  await files.expand("src");
+  await flushPromises();
+  expect(files.selectedPaths).toEqual(["tail.txt"]);
+  expect(files.selectedPath).toBe("src/one");
+  await tree().trigger("keydown", { key: "F2" });
+  expect(m.run).toHaveBeenCalledExactlyOnceWith("rename", ["tail.txt"]);
+});
+
+it("keeps a newer selection when a slow directory read compacts the old row", async () => {
+  await compactFixture();
+  let finish!: (entries: FsEntry[]) => void;
+  m.backend.fsReadDir.mockImplementationOnce(
+    () =>
+      new Promise<FsEntry[]>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await row("src").trigger("click");
+  await row("tail.txt").trigger("click");
+  finish([entry("src/one", "directory")]);
+  await flushPromises();
+  expect(files.selectedPath).toBe("tail.txt");
+  expect(files.selectedPaths).toEqual(["tail.txt"]);
+  expect(row("src/one").attributes("aria-selected")).toBe("false");
+});
+
+it("does not revive a filtered compact selection and retains a visible leaf when expanded", async () => {
+  await compactFixture();
+  await row("src").trigger("click");
+  await flushPromises();
+  m.settings.settings.compactFileTree = false;
+  await flushPromises();
+  expect(files.selectedPaths).toEqual(["src/one"]);
+  await wrapper.get('input[type="search"]').setValue("tail");
+  m.settings.settings.compactFileTree = true;
+  await wrapper.get('input[type="search"]').setValue("");
+  expect(files.selectedPaths).toEqual([]);
+  expect(files.selectedPath).toBeNull();
+  await row("tail.txt").trigger("click", { shiftKey: true });
+  expect(files.selectedPaths).toEqual(["tail.txt"]);
 });
