@@ -5,7 +5,8 @@ import type { WorktreeInfo } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { toast } from "@/composables/useToast";
 import { confirmDialog } from "@/composables/useConfirm";
-import { chooseOpenProjectTarget } from "@/composables/useOpenProjectChoice";
+import { createWorkspaceOpen } from "@/composables/useWorkspaceOpen";
+import { workspaceOpenState } from "@/composables/workspaceOpenState";
 import { formatErrorMessage } from "@/lib/errors";
 import { i18n } from "@/i18n";
 
@@ -25,6 +26,8 @@ export const useWorktreesStore = defineStore("worktrees", () => {
   const pendingPaths = ref(new Map<string, "mutation" | "prune">());
   const busy = computed(() => pendingPaths.value.has(workspace().repoPath ?? ""));
   const pruning = computed(() => pendingPaths.value.get(workspace().repoPath ?? "") === "prune");
+  const { operation: openOperation } = workspaceOpenState(workspace());
+  const opening = computed(() => openOperation.value?.navigation === workspace().navigationToken());
   watch(
     () => workspace().repoPath,
     () => {
@@ -132,21 +135,7 @@ export const useWorktreesStore = defineStore("worktrees", () => {
   }
 
   async function openWorktree(path: string, preferNewWindow: boolean) {
-    try {
-      const target = await chooseOpenProjectTarget({
-        currentPath: workspace().folderPath,
-        nextPath: path,
-        preferNewWindow,
-      });
-      if (!target) return;
-      if (target === "new") {
-        await getBackend().appOpenNewWindow(path);
-        return;
-      }
-      await workspace().openFolder(path);
-    } catch (e) {
-      toast({ title: formatErrorMessage(e) });
-    }
+    await createWorkspaceOpen(t).openWorktree(path, preferNewWindow);
   }
 
   async function remove(path: string, force: boolean) {
@@ -245,6 +234,7 @@ export const useWorktreesStore = defineStore("worktrees", () => {
     loading,
     busy,
     pruning,
+    opening,
     repositoryToken: () => `${repositoryGeneration}:${workspace().navigationToken()}`,
     error,
     selectedPath,

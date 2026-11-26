@@ -101,10 +101,20 @@ function shortHead(sha: string) {
     <div class="flex h-8 items-center gap-1 border-b px-2">
       <span class="font-medium">{{ t("toolWindows.worktrees") }}</span>
       <div class="flex-1" />
-      <Button size="xs" variant="ghost" :disabled="store.busy" @click="store.createOpen = true">
+      <Button
+        size="xs"
+        variant="ghost"
+        :disabled="store.busy || store.opening"
+        @click="store.createOpen = true"
+      >
         {{ t("worktrees.new") }}
       </Button>
-      <Button size="xs" variant="ghost" :disabled="store.busy" @click="store.openRefOpen = true">
+      <Button
+        size="xs"
+        variant="ghost"
+        :disabled="store.busy || store.opening"
+        @click="store.openRefOpen = true"
+      >
         {{ t("worktrees.openRef") }}
       </Button>
       <Button
@@ -140,6 +150,7 @@ function shortHead(sha: string) {
         v-for="w in store.items"
         :key="w.path"
         type="button"
+        :disabled="store.opening"
         :aria-pressed="store.selectedPath === w.path"
         class="flex w-full cursor-pointer items-center gap-2 border-b border-border/40 px-2 py-1.5 text-left hover:bg-accent/50 focus-visible:outline focus-visible:outline-ring"
         :class="store.selectedPath === w.path ? 'bg-accent' : ''"
@@ -159,14 +170,20 @@ function shortHead(sha: string) {
       </button>
     </div>
 
-    <fieldset :disabled="store.busy" class="flex h-8 items-center gap-1 border-t px-2">
+    <fieldset
+      :disabled="store.busy || store.opening"
+      class="flex h-8 items-center gap-1 border-t px-2"
+    >
       <Button
         size="xs"
         variant="ghost"
-        :disabled="!selected"
+        :disabled="!selected || store.opening"
+        :aria-busy="store.opening"
         @click="selected && store.openWorktree(selected.path, false)"
       >
+        <Loader2 v-if="store.opening" class="mr-1 h-3 w-3 animate-spin" aria-hidden="true" />
         {{ t("worktrees.openHere") }}
+        <span v-if="store.opening" class="sr-only" role="status">{{ t("common.loading") }}</span>
       </Button>
       <Button
         size="xs"

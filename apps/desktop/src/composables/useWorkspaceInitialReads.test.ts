@@ -8,6 +8,7 @@ import { useChangesStore } from "@/stores/changesStore";
 import { useLogStore } from "@/stores/logStore";
 import { useBranchesStore } from "@/stores/branchesStore";
 import { useJobsStore } from "@/stores/jobsStore";
+import { useWorktreesStore } from "@/stores/worktreesStore";
 import CommitToolWindow from "@/components/layout/CommitToolWindow.vue";
 import LogView from "@/features/log/LogView.vue";
 import BranchesPane from "@/features/branches/BranchesPane.vue";
@@ -197,7 +198,7 @@ it("does not let a late panel mount replace reads owned by the opening task", as
   }).toEqual({ loading: [false, false, false], tasks: 0, status: status() });
 });
 
-it.each(["folder", "create", "clone", "enable"] as const)(
+it.each(["folder", "create", "clone", "enable", "worktree"] as const)(
   "%s initializes each panel once through its actual store",
   async (kind) => {
     const entry = createWorkspaceOpen((key) => key);
@@ -210,7 +211,9 @@ it.each(["folder", "create", "clone", "enable"] as const)(
           ? entry.createRepo()
           : kind === "clone"
             ? entry.openCloned("repo")
-            : entry.enableVcs(),
+            : kind === "worktree"
+              ? useWorktreesStore().openWorktree("repo", false)
+              : entry.enableVcs(),
     );
     await flushPromises();
     expect(m.backend.statusGet).toHaveBeenCalledOnce();

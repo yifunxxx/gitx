@@ -50,8 +50,9 @@ export function createWorkspaceOpen(t: (key: string) => string) {
   }
 
   async function open(
-    kind: "recent" | "folder" | "create" | "enable" | "clone",
+    kind: "recent" | "folder" | "create" | "enable" | "clone" | "worktree",
     initialPath?: string,
+    preferNewWindow?: boolean,
   ) {
     if (pending.value) return;
     const id = Symbol("workspace open");
@@ -74,6 +75,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
           : await chooseOpenProjectTarget({
               currentPath: workspace.folderPath,
               nextPath: path,
+              ...(preferNewWindow === undefined ? {} : { preferNewWindow }),
             });
       if (!current()) return;
       if (!target) return;
@@ -85,6 +87,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
           await getBackend().initRun({ path, initialBranch: "main" });
           if (!current()) return;
         }
+        loadingJob = jobs.begin(t("operations.open"), path);
         await getBackend().appOpenNewWindow(path);
         return;
       }
@@ -100,7 +103,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
       await opening;
       if (!current()) return;
       opened = true;
-      if (kind !== "recent" && kind !== "clone") {
+      if (kind !== "recent" && kind !== "clone" && kind !== "worktree") {
         toast({
           title: t(
             kind === "create" || kind === "enable" ? "welcome.repoCreated" : "welcome.opened",
@@ -148,11 +151,23 @@ export function createWorkspaceOpen(t: (key: string) => string) {
   // CloneDialog already announces the completed clone; this phase only opens
   // its result and shares the normal opening progress/error/navigation guards.
   const openCloned = (path: string) => open("clone", path);
+  const openWorktree = (path: string, preferNewWindow = false) =>
+    open("worktree", path, preferNewWindow);
   const createRepo = () => open("create");
   const enableVcs = () =>
     workspace.folderPath ? open("enable", workspace.folderPath) : Promise.resolve();
 
-  return { pending, pendingPath, error, openFolder, openRecent, openCloned, createRepo, enableVcs };
+  return {
+    pending,
+    pendingPath,
+    error,
+    openFolder,
+    openRecent,
+    openCloned,
+    openWorktree,
+    createRepo,
+    enableVcs,
+  };
 }
 
 export function useWorkspaceOpen() {
