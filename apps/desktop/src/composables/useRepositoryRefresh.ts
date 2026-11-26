@@ -53,25 +53,40 @@ export function useRepositoryRefresh(refreshFiles?: () => Promise<void>) {
   let nativeGeneration: number | undefined;
   let logPending = false;
   let configureChain = Promise.resolve();
-  let folderRefresh: Promise<void> | undefined;
+  let folderRefresh: { path: string; navigation: number; appliedOpen: number | null } | undefined;
 
   function refreshNonRepositoryFiles() {
+    const path = ws.folderPath;
+    const navigation = ws.navigationToken();
+    const appliedOpen = ws.appliedOpenToken();
     if (
       disposed ||
       ws.isRepo ||
-      !ws.folderPath ||
+      !path ||
       !refreshFiles ||
-      folderRefresh ||
+      (folderRefresh?.path === path &&
+        folderRefresh.navigation === navigation &&
+        folderRefresh.appliedOpen === appliedOpen) ||
       document.visibilityState === "hidden"
     )
       return;
-    folderRefresh = Promise.resolve()
-      .then(refreshFiles)
+    // A slow read belongs to its published folder, not every subsequent open.
+    // Reopening the same path also creates a new File tree/cache generation.
+    const request = { path, navigation, appliedOpen };
+    folderRefresh = request;
+    const current = () =>
+      !disposed &&
+      !ws.isRepo &&
+      path === ws.folderPath &&
+      navigation === ws.navigationToken() &&
+      appliedOpen === ws.appliedOpenToken();
+    void Promise.resolve()
+      .then(() => (current() ? refreshFiles() : undefined))
       .catch((error) => {
-        if (!disposed) console.append("stderr", formatErrorMessage(error));
+        if (current()) console.append("stderr", formatErrorMessage(error));
       })
       .finally(() => {
-        folderRefresh = undefined;
+        if (folderRefresh === request) folderRefresh = undefined;
       });
   }
 

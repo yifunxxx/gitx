@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     roots: unknown[];
     generation: number;
     navigationToken: () => number;
+    appliedOpenToken: () => number;
   },
   jobs: { count: 0 },
   sync: { updating: false, pulling: false, pushing: false },
@@ -80,6 +81,9 @@ beforeEach(() => {
     roots: [{ id: "A" }],
     generation: 1,
     navigationToken() {
+      return this.generation;
+    },
+    appliedOpenToken() {
       return this.generation;
     },
   });

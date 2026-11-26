@@ -62,6 +62,9 @@ beforeEach(() => {
     navigationToken() {
       return this.generation;
     },
+    appliedOpenToken() {
+      return this.generation;
+    },
   });
   mocks.listen.mockResolvedValue(() => {});
   mocks.backend.workspaceWatch.mockResolvedValue(null);

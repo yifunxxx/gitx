@@ -52,7 +52,8 @@ beforeEach(() => {
   setActivePinia(createPinia());
   mocks.revision = 0;
   mocks.workspace = reactive({ repoId: "repo", repoPath: "repo", isRepo: true,
-    roots: [{ id: "repo" }], generation: 0, navigationToken() { return this.generation; } });
+    roots: [{ id: "repo" }], generation: 0, navigationToken() { return this.generation; },
+    appliedOpenToken() { return this.generation; } });
   mocks.layout = reactive({ activeEditorKind: "diff", bottomOpen: true, bottomMaximized: false });
   mocks.backend.diffFile.mockImplementation(async ({ filePath }) => result(filePath));
   mocks.backend.diffFileAt.mockImplementation(async ({ filePath }) => result(filePath));
