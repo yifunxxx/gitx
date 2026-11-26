@@ -30,3 +30,14 @@
 `cleanup-verification.json`核对本批累计记录的42个PID/创建时间身份全部退出，测试Git代理为0。parent及nested的HEAD、索引树、status和三个文件SHA256均与baseline一致，保留原有未暂存修改。测试settings归档移除；用户settings SHA256仍为`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`，安装版未更新。
 
 证据目录：`E:/IDEAproject/gitx/test-results/qa-initial-root-navigation-20261126`。包含代理源码及哈希、各次目标/进程身份、超时现场、普通切换与Commit截图、回归日志、baseline和恢复核对。此次新增缺陷0、产品修复0，QA036继续保留精确原生验收边界；11项已知未关闭不代表全部潜在问题，整体七项目标继续。提交与推送结果见统一台账。
+
+## 同日后续门控尝试：仍未取得精确原生证据
+
+基线`56ae0ad144e914a05e3350a1a42f624790d73031`，开始前及收尾提交前均fetch并检查master/交付分支，无新提交。沿用QA110程序，SHA256 `B69649D47091893ABC8C56AF32A97CB117EB52517850AFBD284CC23AB01153B7`，独立profile与测试设置，stdout/stderr写入文件。代理真实执行父仓库首次status后最多等待25秒，产品30秒超时不变；代理SHA256 `A5D14945ECD48A3B3ABAE9E3928F1E106257F31FCCBD17A314D113813E19852D`。
+
+- success：先通过GUI保存File布局再重启。首次输入报告`coordinate input geometry is unavailable`；恢复输入前门控已在25014ms自动返回。
+- success-live：同一已激活窗口先打开nested，从最近项目返回parent；确认框就绪后才启用门控。首个窗口读取为空，重新绑定后短暂见Opening project，但输入前门控已在25005ms自动返回。
+
+两次`explicit=false`，均没有release文件；不属于首次读取竞态成功证据。未继续重复同一25秒方法，未开始失败响应组。最后Down普通切根后再次观察确认qa-child/CHILD及Idle，不重复计为新的验收覆盖。
+
+证据目录`E:/IDEAproject/gitx/test-results/qa-root-read-final-20261126`包含Setup/Launch/Observe/Verify脚本、代理源码、baseline、两个阶段的waiting/released及UI记录。`verification.json`确认累计14个观察PID/创建时间身份退出，代理0；两个仓库HEAD/index/status、三个文件和用户settings哈希保持。测试settings已归档移除；用户安装版未更新。本轮新增缺陷0、产品修改0，保留精确原生时序缺口。
