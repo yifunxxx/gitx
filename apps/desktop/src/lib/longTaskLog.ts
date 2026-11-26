@@ -16,16 +16,24 @@ function shouldReport(ms: number, alwaysMs: number): boolean {
   return ms >= alwaysMs || isPerfLogEnabled();
 }
 
-/** Console + optional Rust `log_frontend` (shows in app / desktop logs). */
+let nativeLogPending = false;
+
+/** Console + best-effort Rust mirror; never queue diagnostics behind a stalled sink. */
 export function perfLog(level: "info" | "warn" | "debug", message: string) {
   const line = `[gitx:perf] ${message}`;
   if (level === "warn") console.warn(line);
   else if (level === "debug") console.debug(line);
   else console.info(line);
-  if (!isTauri()) return;
+  if (!isTauri() || nativeLogPending) return;
+  // Reserve before the import as bursts can arrive while the module is loading.
+  // All entries stay in the console; only the optional native mirror is dropped.
+  nativeLogPending = true;
   void import("@/lib/backend/bindings")
     .then(({ commands }) => commands.logFrontend(level, line))
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => {
+      nativeLogPending = false;
+    });
 }
 
 /** Sync section timer — reports when opt-in or slower than `alwaysMs` (default 50). */

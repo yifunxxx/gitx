@@ -40,6 +40,8 @@
 
 ## QA110：日志回调保留线索
 
+后续已完成[QA110输出对照与背压防护](qa-perf-log-backpressure-2026-11-26.md)：同一旧程序改为真实文件输出后logFrontend挂起均0；前端增加唯一待完成上限，修后原生继承输出环境中一轮往返挂起恒1、业务读取正常。以下保留本组原始发现和当时边界，不再重复登记该前端防护为待实现；外部输出环境的精确失败原因没有据此确认。
+
 Promise对象26→148→148，Generator10→36→36；其中函数名为logFrontend的挂起生成器3→27→27，关闭差异没有解除。final快照的非weak引用搜索可见`Window → __TAURI_INTERNALS__.callbacks → 回调闭包 → Promise/反应 → logFrontend生成器`；不是只有未引用的字符串。快照间重新连接调试器，节点ID不用于跨快照身份判断；引用搜索只是当前快照的路径证据，不是完整dominator/retained size分析。
 
 对应源码为longTaskLog.ts的性能日志镜像，经生成bindings调用Rust log_frontend，再进入tracing。尚未确定源于测试启动继承的输出句柄、日志后端阻塞或IPC响应处理；也未证明用户安装版同样发生。新增QA110作为待核查资源项，下一步先做明确输出目的地的原生对照及调用链验证，不基于猜测修改产品。
