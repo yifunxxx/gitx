@@ -158,6 +158,118 @@ it("keeps multiselection in context menus and copies all selected paths", async 
   expect(mocks.clipboard).toHaveBeenCalledWith("changed.txt\nclean.txt");
   expect(mocks.tree.selectedPaths).toHaveLength(2);
 });
+it("handles a large selection without repeatedly scanning every selected path", async () => {
+  const count = 512;
+  mocks.tree.rows = Array.from({ length: count }, (_, i) => row(`file-${i}.txt`));
+  const selected = mocks.tree.rows.map((item: FileTreeRow) => item.path).reverse();
+  let selectionReads = 0;
+  // Count indexed reads, not wall time: menu construction should scale with
+  // rows + selection, including membership checks for rendered rows.
+  mocks.tree.selectedPaths = new Proxy(selected, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/.test(key)) selectionReads++;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  create();
+  await menu("file-0.txt");
+  command("copyRelativePath").click();
+  await flushPromises();
+  expect(mocks.clipboard).toHaveBeenCalledWith(
+    mocks.tree.rows.map((item: FileTreeRow) => item.path).join("\n"),
+  );
+  expect(mocks.tree.selectedPaths).toHaveLength(count);
+  expect(selectionReads).toBeLessThan(count * 20);
+});
+
+it("keeps batch order and live selection across menus, mutation and dragging", async () => {
+  create();
+  mocks.tree.selectedPaths = ["clean.txt", "changed.txt"];
+  await nextTick();
+  expect(item("changed.txt").attributes("aria-selected")).toBe("true");
+  expect(item("clean.txt").attributes("aria-selected")).toBe("true");
+  await menu("changed.txt");
+  expect(command("showDiff").disabled).toBe(true);
+  expect(command("showHistory").disabled).toBe(true);
+  mocks.tree.selectedPaths.splice(0, 1);
+  await nextTick();
+  expect(item("clean.txt").attributes("aria-selected")).toBe("false");
+  expect(command("showDiff").disabled).toBe(false);
+  command("copyRelativePath").click();
+  await flushPromises();
+  expect(mocks.clipboard).toHaveBeenLastCalledWith("changed.txt");
+  await tree().trigger("keydown", { key: "a", ctrlKey: true });
+  const dataTransfer = { setData: vi.fn(), effectAllowed: "" };
+  await item("changed.txt").trigger("dragstart", { dataTransfer });
+  expect(activeFileDrag.value?.paths).toEqual(["src", "changed.txt", "clean.txt"]);
+  mocks.tree.rows = [row("clean.txt"), row("changed.txt")];
+  await nextTick();
+  await menu("changed.txt");
+  command("copyRelativePath").click();
+  await flushPromises();
+  expect(mocks.clipboard).toHaveBeenLastCalledWith("clean.txt\nchanged.txt");
+  mocks.tree.selectedPaths = [];
+  await nextTick();
+  expect(item("changed.txt").attributes("aria-selected")).toBe("false");
+  await item("changed.txt").trigger("dragstart", { dataTransfer });
+  expect(activeFileDrag.value?.paths).toEqual(["changed.txt"]);
+  await menu("clean.txt");
+  expect(mocks.tree.selectedPaths).toEqual(["clean.txt"]);
+});
+
+it("retains selection highlighting after virtual scrolling and clears it after a reset", async () => {
+  mocks.tree.rows = Array.from({ length: 1000 }, (_, i) => row(`file-${i}.txt`));
+  create();
+  await tree().trigger("keydown", { key: "a", ctrlKey: true });
+  const port = wrapper.get(".overflow-auto").element;
+  port.scrollTop = 2400;
+  port.dispatchEvent(new Event("scroll"));
+  await nextTick();
+  expect(wrapper.findAll('[role="treeitem"]').length).toBeLessThan(100);
+  expect(item("file-100.txt").attributes("aria-selected")).toBe("true");
+  mocks.tree.selectedPaths = ["file-101.txt"];
+  await nextTick();
+  expect(item("file-100.txt").attributes("aria-selected")).toBe("false");
+  expect(item("file-101.txt").attributes("aria-selected")).toBe("true");
+  mocks.tree.rows = [row("next.txt")];
+  mocks.tree.selectedPaths = [];
+  mocks.ws.navigation++;
+  await flushPromises();
+  expect(item("next.txt").attributes("aria-selected")).toBe("false");
+});
+
+it.runIf(process.env.GITX_QA_FILE_SELECTION_COST === "1")(
+  "measures menu and drag preparation for large selections",
+  async () => {
+    const samples = [];
+    for (const count of [1000, 5000, 20000]) {
+      mocks.tree.rows = Array.from({ length: count }, (_, i) => row(`file-${i}.txt`));
+      mocks.tree.selectedPaths = [];
+      create();
+      for (let round = 0; round < 3; round++) {
+        mocks.tree.selectedPaths = mocks.tree.rows.map((item: FileTreeRow) => item.path).reverse();
+        const menuStart = performance.now();
+        await menu("file-0.txt");
+        const menuMs = performance.now() - menuStart;
+        command("copyRelativePath").click();
+        await flushPromises();
+        expect(mocks.clipboard.mock.lastCall![0].split("\n")).toHaveLength(count);
+        mocks.tree.selectedPaths = [...mocks.tree.selectedPaths].reverse();
+        const dragStart = performance.now();
+        await item("file-0.txt").trigger("dragstart", {
+          dataTransfer: { setData: vi.fn(), effectAllowed: "" },
+        });
+        const dragMs = performance.now() - dragStart;
+        expect(activeFileDrag.value?.paths).toHaveLength(count);
+        endFileDrag();
+        samples.push({ count, round, menuMs, dragMs });
+      }
+      wrapper.unmount();
+    }
+    console.log("QA105_FILE_SELECTION_COST", JSON.stringify(samples));
+  },
+  120000,
+);
 it("drops selected files into a directory, supports copy and rejects stale navigation", async () => {
   create();
   await item("changed.txt").trigger("click");

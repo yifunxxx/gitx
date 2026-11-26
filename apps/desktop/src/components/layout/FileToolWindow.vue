@@ -80,9 +80,13 @@ const currentIndex = computed(() =>
   ),
 );
 const current = computed(() => files.rows[currentIndex.value]);
-const selectedRows = computed(() =>
-  files.rows.filter((row) => files.selectedPaths.includes(row.path)),
-);
+// Share membership across the visible rows and batch actions. Scanning the
+// selection array for every project row makes Select All + menu/drag quadratic.
+const selectedPathSet = computed(() => new Set(files.selectedPaths));
+const selectedRows = computed(() => {
+  const selected = selectedPathSet.value;
+  return selected.size ? files.rows.filter((row) => selected.has(row.path)) : [];
+});
 const dropTarget = ref<string | null>(null);
 let expandTimer: ReturnType<typeof setTimeout> | undefined;
 const rowId = (row: FileRow) => `${prefix}-${encodeURIComponent(row.key)}`;
@@ -245,7 +249,7 @@ function click(row: FileRow, event: MouseEvent) {
 }
 function openMenu(row: FileRow, event: MouseEvent) {
   markContextHandled(event);
-  if (!files.selectedPaths.includes(row.path)) select(row);
+  if (!selectedPathSet.value.has(row.path)) select(row);
   else files.selectedPath = row.path;
   const source = capture(row);
   if (source) menu.value = { row, x: event.clientX, y: event.clientY, ...source };
@@ -402,7 +406,7 @@ function dragStart(row: FileRow, event: DragEvent) {
     event.preventDefault();
     return;
   }
-  if (!files.selectedPaths.includes(row.path)) select(row);
+  if (!selectedPathSet.value.has(row.path)) select(row);
   startFileDrag(event, {
     folder: workspace.folderPath,
     navigation: workspace.navigationToken(),
@@ -558,7 +562,7 @@ function drop(event: DragEvent, row?: FileRow) {
               role="treeitem"
               :aria-label="row.name"
               :aria-level="row.depth + 1"
-              :aria-selected="files.selectedPaths.includes(row.path)"
+              :aria-selected="selectedPathSet.has(row.path)"
               :aria-expanded="row.kind === 'directory' ? row.expanded : undefined"
               :aria-busy="row.loading || undefined"
               :data-path="row.path"
@@ -571,7 +575,7 @@ function drop(event: DragEvent, row?: FileRow) {
               "
               class="flex h-6 cursor-default select-none items-center gap-1 pr-2 hover:bg-hover-surface"
               :class="[
-                files.selectedPaths.includes(row.path) ? 'bg-accent' : '',
+                selectedPathSet.has(row.path) ? 'bg-accent' : '',
                 dropTarget === row.path ? 'ring-1 ring-inset ring-ring' : '',
               ]"
               :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
