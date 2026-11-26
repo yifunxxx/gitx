@@ -30,6 +30,7 @@ export const operationTitles = {
   unstageLines: "unstage",
   commitCreate: "commit",
   fileWriteWorktree: "save",
+  fsWriteFile: "save",
   checkoutPathFromRev: "restore",
   mergeRun: "merge",
   mergeAbort: "merge",
@@ -125,7 +126,12 @@ export function withBackendActivity<T extends object>(backend: T): T {
           const finish = observer?.({
             titleKey: `operations.${operationTitles[key as keyof typeof operationTitles]}`,
             target: typeof detail === "string" ? detail : undefined,
-            path: typeof req?.path === "string" ? req.path : undefined,
+            path:
+              typeof req?.path === "string"
+                ? req.path
+                : typeof req?.folderPath === "string"
+                  ? req.folderPath
+                  : undefined,
           });
           try {
             const method = Reflect.get(target, key);

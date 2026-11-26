@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   openDirectory: vi.fn(),
   clipboard: vi.fn(),
   operation: vi.fn(),
+  operations: {} as any,
 }));
 vi.mock("vue-i18n", async (original) => ({
   ...(await original<typeof import("vue-i18n")>()),
@@ -31,7 +32,7 @@ vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
 vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: mocks.open }) }));
 vi.mock("@/stores/fileOperationsStore", () => ({
-  useFileOperationsStore: () => ({ busy: false, run: mocks.operation }),
+  useFileOperationsStore: () => mocks.operations,
 }));
 vi.mock("@/stores/historyStore", () => ({
   useHistoryStore: () => ({ openFileHistory: mocks.history }),
@@ -140,6 +141,7 @@ beforeEach(() => {
     activeBottomTab: "log",
   });
   mocks.changes = reactive({ snapshot: { repoId: "repo", files: [change("changed.txt")] } });
+  mocks.operations = reactive({ busy: false, activityTitle: "", run: mocks.operation });
 });
 afterEach(() => {
   endFileDrag();
@@ -157,6 +159,29 @@ it("keeps multiselection in context menus and copies all selected paths", async 
   await flushPromises();
   expect(mocks.clipboard).toHaveBeenCalledWith("changed.txt\nclean.txt");
   expect(mocks.tree.selectedPaths).toHaveLength(2);
+});
+
+it("shows active file work and disables mutation actions until it finishes", async () => {
+  create();
+  expect(wrapper.find('[role="status"]').exists()).toBe(false);
+  mocks.operations.busy = true;
+  await nextTick();
+  // A pending confirmation alone must not claim that disk work has started.
+  expect(wrapper.find('[role="status"]').exists()).toBe(false);
+  mocks.operations.activityTitle = "Copying files";
+  await nextTick();
+  expect(wrapper.get('[role="status"]').text()).toBe("Copying files");
+  expect(wrapper.get('[aria-label="fileOps.createFile"]').attributes("disabled")).toBeDefined();
+  await menu("changed.txt");
+  const rename = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+    (button) => button.textContent === "fileOps.rename",
+  )!;
+  expect(rename.disabled).toBe(true);
+  mocks.operations.busy = false;
+  mocks.operations.activityTitle = "";
+  await nextTick();
+  expect(wrapper.find('[role="status"]').exists()).toBe(false);
+  expect(wrapper.get('[aria-label="fileOps.createFile"]').attributes("disabled")).toBeUndefined();
 });
 it("handles a large selection without repeatedly scanning every selected path", async () => {
   const count = 512;

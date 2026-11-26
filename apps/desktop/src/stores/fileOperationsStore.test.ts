@@ -1,7 +1,9 @@
-import { beforeEach, expect, it, vi } from "vitest";
-import { createPinia, setActivePinia } from "pinia";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createPinia, disposePinia, setActivePinia, type Pinia } from "pinia";
 import { reactive } from "vue";
 import { topLevelPaths, useFileOperationsStore } from "./fileOperationsStore";
+import { useJobsStore } from "./jobsStore";
+import { i18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
   workspace: {} as any,
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   apply: vi.fn(),
   open: vi.fn(),
   snapshot: null as any,
+  jobList: vi.fn(),
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
 vi.mock("./workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
@@ -38,14 +41,19 @@ vi.mock("@/composables/useConfirm", () => ({
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((yes) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
     resolve = yes;
+    reject = no;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
+let pinia: Pinia;
+afterEach(() => disposePinia(pinia));
 beforeEach(() => {
   vi.resetAllMocks();
-  setActivePinia(createPinia());
+  pinia = createPinia();
+  setActivePinia(pinia);
   mocks.workspace = reactive({
     folderPath: "C:/project",
     isRepo: true,
@@ -61,6 +69,144 @@ beforeEach(() => {
   mocks.snapshot = null;
   mocks.confirm.mockResolvedValue(true);
   mocks.fsMutate.mockResolvedValue({ completed: [], failures: [] });
+  mocks.jobList.mockResolvedValue([]);
+});
+
+it.each(["createFile", "createDirectory", "rename", "copy", "move", "delete"] as const)(
+  "keeps %s visible through mutation and refresh, starting only after confirmation",
+  async (operation) => {
+    const answer = deferred<any>(),
+      mutation = deferred<any>(),
+      refresh = deferred<void>();
+    mocks.prompt.mockReturnValue(answer.promise);
+    mocks.confirm.mockReturnValue(answer.promise);
+    mocks.fsMutate.mockReturnValue(mutation.promise);
+    mocks.refreshTree.mockReturnValue(refresh.promise);
+    const jobs = useJobsStore(),
+      store = useFileOperationsStore();
+    const request = store.run(operation, ["a"]);
+    expect(store.busy).toBe(true);
+    expect(jobs.count).toBe(0);
+    answer.resolve(operation === "delete" ? true : "b");
+    await vi.waitFor(() => expect(mocks.fsMutate).toHaveBeenCalledOnce());
+    const title = i18n.global.t(`fileOps.running.${operation}`);
+    expect(jobs.running).toEqual([
+      expect.objectContaining({ title, message: "C:/project", cancellable: false }),
+    ]);
+    expect(store.activityTitle).toBe(title);
+    await jobs.refresh();
+    expect(jobs.count).toBe(1);
+    await store.run(operation, ["duplicate"]);
+    expect(mocks.fsMutate).toHaveBeenCalledOnce();
+    mutation.resolve({ completed: [], failures: [] });
+    await vi.waitFor(() => expect(mocks.refreshTree).toHaveBeenCalledOnce());
+    expect(jobs.count).toBe(1);
+    refresh.resolve();
+    await request;
+    expect(jobs.count).toBe(0);
+    expect(store.busy).toBe(false);
+    expect(store.activityTitle).toBe("");
+  },
+);
+
+it("does not create tasks for cancelled or rejected file operations", async () => {
+  const jobs = useJobsStore(),
+    store = useFileOperationsStore();
+  mocks.prompt.mockResolvedValue(null);
+  await store.run("rename", ["a"]);
+  mocks.confirm.mockResolvedValue(false);
+  await store.run("delete", ["a"]);
+  mocks.prompt.mockResolvedValue("b");
+  mocks.tabs = [{ saving: true }];
+  await store.run("move", ["a"]);
+  expect(mocks.fsMutate).not.toHaveBeenCalled();
+  expect(jobs.count).toBe(0);
+  expect(store.busy).toBe(false);
+});
+
+it("finishes a failed task and allows a successful retry", async () => {
+  const jobs = useJobsStore(),
+    store = useFileOperationsStore();
+  mocks.prompt.mockResolvedValue("b");
+  mocks.fsMutate.mockRejectedValueOnce(new Error("disk unavailable"));
+  await store.run("copy", ["a"]);
+  expect(jobs.count).toBe(0);
+  expect(store.busy).toBe(false);
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ description: "disk unavailable" }),
+  );
+  await store.run("copy", ["a"]);
+  expect(mocks.fsMutate).toHaveBeenCalledTimes(2);
+  expect(jobs.count).toBe(0);
+});
+
+it.each(["success", "failure"])(
+  "keeps a late %s task attributed to its source workspace",
+  async (outcome) => {
+    mocks.prompt.mockResolvedValue("b");
+    const mutation = deferred<any>();
+    mocks.fsMutate.mockReturnValue(mutation.promise);
+    const jobs = useJobsStore(),
+      store = useFileOperationsStore();
+    const request = store.run("move", ["a"]);
+    await vi.waitFor(() => expect(mocks.fsMutate).toHaveBeenCalledOnce());
+    mocks.workspace.folderPath = "C:/other";
+    mocks.workspace.token++;
+    expect(store.activityTitle).toBe("");
+    expect(jobs.running.map((job) => job.message)).toEqual(["C:/project"]);
+    const other = jobs.begin("new workspace task", "C:/other");
+    if (outcome === "success")
+      mutation.resolve({ completed: [{ path: "a", destination: "b" }], failures: [] });
+    else mutation.reject(new Error("old failure"));
+    await request;
+    expect(jobs.running.map((job) => job.id)).toEqual([other]);
+    expect(mocks.apply).not.toHaveBeenCalled();
+    expect(mocks.refreshTree).not.toHaveBeenCalled();
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(store.busy).toBe(false);
+  },
+);
+
+it("finishes partial results and a rejected refresh without leaving a task or repeating disk work", async () => {
+  const jobs = useJobsStore(),
+    store = useFileOperationsStore();
+  mocks.prompt.mockResolvedValue("target");
+  mocks.fsMutate.mockResolvedValue({
+    completed: [{ path: "a", destination: "target/a" }],
+    failures: [{ path: "b", message: "exists" }],
+  });
+  await store.run("copy", ["a", "b"]);
+  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ description: "b: exists" }));
+  expect(jobs.count).toBe(0);
+  mocks.refreshTree.mockRejectedValueOnce(new Error("refresh unavailable"));
+  await store.run("copy", ["a", "b"]);
+  expect(mocks.fsMutate).toHaveBeenCalledTimes(2);
+  expect(jobs.count).toBe(0);
+  expect(store.activityTitle).toBe("");
+  expect(store.busy).toBe(false);
+});
+
+it("does not publish disposed work or finish a replacement store's task", async () => {
+  mocks.prompt.mockResolvedValue("b");
+  const mutation = deferred<any>();
+  mocks.fsMutate.mockReturnValue(mutation.promise);
+  const jobs = useJobsStore(),
+    store = useFileOperationsStore();
+  const request = store.run("move", ["a"]);
+  await vi.waitFor(() => expect(mocks.fsMutate).toHaveBeenCalledOnce());
+  store.$dispose();
+  jobs.$dispose();
+  pinia.state.value.jobs = undefined as any;
+  const replacement = useJobsStore();
+  const next = replacement.begin("new task");
+  mutation.resolve({ completed: [{ path: "a", destination: "b" }], failures: [] });
+  await request;
+  expect(replacement.running.map((job) => job.id)).toEqual([next]);
+  expect(mocks.apply).not.toHaveBeenCalled();
+  expect(mocks.refreshTree).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalled();
+  await store.run("move", ["ignored after disposal"]);
+  expect(mocks.fsMutate).toHaveBeenCalledOnce();
 });
 
 it("creates a file in the selected directory and opens only a successful result", async () => {

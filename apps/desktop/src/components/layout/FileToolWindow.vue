@@ -491,6 +491,16 @@ function drop(event: DragEvent, row?: FileRow) {
     <EmptyState v-if="!workspace.folderPath" :title="t('empty.noFolder')" />
     <template v-else>
       <FileRootSelector v-if="workspace.roots?.length > 1" />
+      <div
+        v-if="operations.activityTitle"
+        class="flex shrink-0 items-center gap-2 border-b px-3 py-1 text-xs text-muted-foreground"
+        role="status"
+      >
+        <LoaderCircle class="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />
+        <span class="truncate" :title="operations.activityTitle">{{
+          operations.activityTitle
+        }}</span>
+      </div>
       <div class="shrink-0 border-b p-2">
         <input
           v-model="files.filter"

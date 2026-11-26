@@ -1119,6 +1119,14 @@
     "contentScope": "按字面文本匹配，每行显示首个匹配。UTF-8文件每个最多5 MiB，总计100 MiB；不搜索未保存草稿。"
   },
   "fileOps": {
+    "running": {
+      "createFile": "正在创建文件",
+      "createDirectory": "正在创建文件夹",
+      "rename": "正在重命名文件或文件夹",
+      "copy": "正在复制文件",
+      "move": "正在移动文件",
+      "delete": "正在将文件移入回收站"
+    },
     "createFile": "新建文件…",
     "createDirectory": "新建文件夹…",
     "rename": "重命名…",

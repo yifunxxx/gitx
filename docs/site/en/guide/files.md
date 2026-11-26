@@ -25,6 +25,8 @@ Git markers show changes. Parent-directory markers summarize changed descendants
 
 Existing destinations are not silently overwritten. A batch can partly succeed; inspect each result. Failed recycling preserves the source instead of falling back to permanent deletion. Restore files through Windows Recycle Bin, then refresh gitx.
 
+Once confirmed work starts, File shows the current operation and the bottom-left task queue shows its name and workspace path until the tree refresh finishes. Waiting for confirmation does not start a running task. Saving a file in an ordinary non-Git folder also appears in the queue.
+
 A directory cannot move into itself or a descendant. Repository roots, conflicted files, destinations outside the workspace, and some link or cross-volume operations have restrictions. Read the failing path and reason before retrying a partly completed operation.
 
 ## Select and drag items

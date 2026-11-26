@@ -1119,6 +1119,14 @@
     "contentScope": "Literal text; first match per line. UTF-8 files up to 5 MiB; 100 MiB total. Unsaved edits are not searched."
   },
   "fileOps": {
+    "running": {
+      "createFile": "Creating file",
+      "createDirectory": "Creating folder",
+      "rename": "Renaming file or folder",
+      "copy": "Copying files",
+      "move": "Moving files",
+      "delete": "Moving files to Recycle Bin"
+    },
     "createFile": "New File…",
     "createDirectory": "New Folder…",
     "rename": "Rename…",

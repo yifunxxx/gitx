@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, onScopeDispose, ref, shallowRef } from "vue";
 import { getBackend, type FsMutation, type FsOperation } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useFileTreeStore } from "./fileTreeStore";
@@ -10,6 +10,7 @@ import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
 import { i18n } from "@/i18n";
 import { workspacePathKey } from "@/lib/workspacePath";
+import { useJobsStore } from "./jobsStore";
 
 export function topLevelPaths(paths: string[]): string[] {
   return [...new Set(paths)].filter(
@@ -22,18 +23,30 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
   const workspace = useWorkspaceStore();
   const tree = useFileTreeStore();
   const viewer = useFileViewerStore();
+  const jobs = useJobsStore();
   const t = i18n.global.t;
+  const activity = shallowRef<{ operation: FsOperation; current: () => boolean } | null>(null);
+  const activityTitle = computed(() =>
+    activity.value?.current() ? t(`fileOps.running.${activity.value.operation}`) : "",
+  );
+  let disposed = false;
+  onScopeDispose(() => {
+    disposed = true;
+    activity.value = null;
+  });
 
   async function run(operation: FsOperation, paths: string[], destination?: string) {
     const folder = workspace.folderPath;
-    if (busy.value || !folder) return;
+    if (disposed || busy.value || !folder) return;
     const navigation = workspace.navigationToken();
     const applied = workspace.appliedOpenToken();
     const current = () =>
+      !disposed &&
       workspace.folderPath === folder &&
       workspace.navigationToken() === navigation &&
       workspace.appliedOpenToken() === applied;
     busy.value = true;
+    let job: string | undefined;
     try {
       paths = topLevelPaths(paths);
       const create = operation === "createFile" || operation === "createDirectory";
@@ -154,6 +167,10 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
         toast({ title: t("fileOps.destinationOpen") });
         return;
       }
+      // Prompts and validation are not running disk work. Keep one task from
+      // dispatch through refresh, including partial failures and navigation.
+      job = jobs.begin(t(`fileOps.running.${operation}`), folder);
+      activity.value = { operation, current };
       for (const tab of affected) tab.fileOperationPending = true;
       viewer.fileMutationPending = true;
       let result;
@@ -183,8 +200,10 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
     } catch (error) {
       if (current()) toast({ title: t("fileOps.failed"), description: formatErrorMessage(error) });
     } finally {
+      if (job !== undefined) jobs.finished(job);
+      activity.value = null;
       busy.value = false;
     }
   }
-  return { busy, run };
+  return { busy, activityTitle, run };
 });
