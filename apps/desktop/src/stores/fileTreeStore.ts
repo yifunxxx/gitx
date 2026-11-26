@@ -1,13 +1,14 @@
 import { defineStore } from "pinia";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, markRaw, reactive, ref, watch } from "vue";
 import { getBackend, type FsEntry } from "@/lib/backend";
 import { formatErrorMessage } from "@/lib/errors";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useSettingsStore } from "./settingsStore";
 
 type Directory = {
-  entries: FsEntry[];
-  loaded: boolean;
+  // Keep the last successful snapshot while a stale directory is re-read.
+  entries: readonly FsEntry[] | null;
+  stale: boolean;
   loading: boolean;
   error: string | null;
   revision: number;
@@ -39,8 +40,8 @@ export const useFileTreeStore = defineStore("fileTree", () => {
     let value = directories.get(path);
     if (!value) {
       directories.set(path, {
-        entries: [],
-        loaded: false,
+        entries: null,
+        stale: true,
         loading: false,
         error: null,
         revision: 0,
@@ -58,36 +59,48 @@ export const useFileTreeStore = defineStore("fileTree", () => {
       for (const original of directories.get(path)?.entries ?? []) {
         let entry = original;
         let name = entry.name;
+        const compactStates: Directory[] | null = entry.kind === "directory" ? [] : null;
         // Compact only directories loaded through normal expansion. Rendering
         // never starts a recursive scan of unopened project subtrees.
         if (settings.settings?.compactFileTree && entry.kind === "directory") {
           for (let count = 0; count < 256; count++) {
             const childState = directories.get(entry.path);
-            const child = childState?.entries[0];
+            const child = childState?.entries?.[0];
             if (
-              !childState?.loaded ||
-              childState.error ||
-              childState.entries.length !== 1 ||
+              childState?.entries?.length !== 1 ||
               child?.kind !== "directory" ||
               !expanded.has(entry.path)
             )
               break;
+            compactStates!.push(childState);
             name += `/${child.name}`;
             entry = child;
           }
         }
-        const state = directories.get(entry.path);
+        if (compactStates) {
+          const state = directories.get(entry.path);
+          if (state) compactStates.push(state);
+        }
         const open = entry.kind === "directory" && expanded.has(entry.path);
-        result.push({
+        const row: FileTreeRow = {
           ...entry,
           name,
           compactRoot: original.path !== entry.path ? original.path : undefined,
           key: `${entry.kind}:${entry.path}`,
           depth,
           expanded: open,
-          loading: !!state?.loading,
-          error: state?.error ?? null,
-        });
+          loading: false,
+          error: null,
+        };
+        // Read transient state in the row consumer, not in the full-tree
+        // computed. Files need no state closures; compact directory rows also
+        // expose loading/errors of their hidden parents.
+        if (compactStates)
+          Object.defineProperties(row, {
+            loading: { get: () => compactStates.some((directory) => directory.loading) },
+            error: { get: () => compactStates.find((directory) => directory.error)?.error ?? null },
+          });
+        result.push(row);
         if (open) visit(entry.path, depth + 1);
       }
     }
@@ -142,8 +155,10 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   watch(
     rows,
     (visible) => {
+      if (!selectedPaths.value.length) return;
       const paths = new Set(visible.map((row) => row.path));
-      selectedPaths.value = selectedPaths.value.filter((path) => paths.has(path));
+      const kept = selectedPaths.value.filter((path) => paths.has(path));
+      if (kept.length !== selectedPaths.value.length) selectedPaths.value = kept;
     },
     { flush: "sync" },
   );
@@ -154,7 +169,7 @@ export const useFileTreeStore = defineStore("fileTree", () => {
     const queued = pending.get(path);
     if (queued) return queued;
     const state = directory(path);
-    if (state.loaded) return;
+    if (!state.stale) return;
     const epoch = generation;
     const revision = state.revision;
     state.loading = true;
@@ -169,8 +184,21 @@ export const useFileTreeStore = defineStore("fileTree", () => {
           showHidden: !!settings.settings?.showHiddenInFileTree,
         });
         if (!current() || revision !== state.revision) return;
-        state.entries = entries;
-        state.loaded = true;
+        const previous = state.entries;
+        if (
+          !previous ||
+          previous.length !== entries.length ||
+          entries.some((entry, index) => {
+            const before = previous[index]!;
+            return (
+              entry.path !== before.path || entry.name !== before.name || entry.kind !== before.kind
+            );
+          })
+        )
+          // IPC entries are immutable snapshots; avoid deep reactive proxies
+          // and publish only when names, kinds, paths or their order change.
+          state.entries = markRaw(entries);
+        state.stale = false;
         // Evict vanished directory generations before reusing a path. A newly
         // created directory must not wait for the old directory's pending read;
         // current() also prevents that late read from touching the new cache.
@@ -221,7 +249,29 @@ export const useFileTreeStore = defineStore("fileTree", () => {
     await loadDir("");
   }
   async function expand(path: string) {
-    if (!visibleRows.value.some((row) => row.path === path && row.kind === "directory")) return;
+    const row = visibleRows.value.find((row) => row.path === path && row.kind === "directory");
+    if (!row) return;
+    // Retry on a compact row must also retry a failed hidden parent. A parent
+    // may publish a different chain, so recheck the target after each read.
+    const epoch = generation;
+    if (row.compactRoot) {
+      for (
+        let end = row.compactRoot.length;
+        end >= 0 && end < path.length;
+        end = path.indexOf("/", end + 1)
+      ) {
+        const parent = path.slice(0, end);
+        const state = directories.get(parent);
+        if (!state?.stale) continue;
+        await loadDir(parent);
+        if (
+          epoch !== generation ||
+          state.error ||
+          !visibleRows.value.some((item) => item.path === path && item.kind === "directory")
+        )
+          return;
+      }
+    }
     expanded.add(path);
     await loadDir(path);
   }
@@ -238,7 +288,7 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   async function refreshExpanded(): Promise<void> {
     if (!initialized.value) return;
     for (const state of directories.values()) {
-      state.loaded = false;
+      state.stale = true;
       ++state.revision;
     }
     if (refreshing) {
