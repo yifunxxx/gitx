@@ -37,3 +37,5 @@ Worktrees行和打开/创建入口响应共享等待；打开按钮增加旋转�
 两个窗口正常关闭后，9个观察进程身份（PID与创建时间）全部退出。main/feature的HEAD、refs、index树、status及4个文件（包括工作树.git链接文件）SHA256全部与baseline一致，原有两项未暂存修改保持。测试settings归档移除，用户settings SHA256仍为`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`；用户安装版未替换。
 
 证据目录：`E:/IDEAproject/gitx/test-results/qa103-worktree-open-20261126`，含旧失败、最终定向/全量、类型/Vite/原生构建、源码补丁/哈希、截图与UIA、门控记录、准备及核对脚本和仓库基线。提交前再次fetch成功，master仍e2e33d9；旧交付504af31已在主分支内，推送时重建同名交付分支。QA103实现及上述验收完成，原11项已知未关闭继续；提交推送结果见统一台账。
+
+功能提交`a404d9712bf0b99857d0f633904c226119446b32`首次推送成功，独立ls-remote完整SHA一致，无凭据提示。补记前再次fetch/两分支检查成功，已包含最新mastere2e33d9及交付a404d97。QA103交付完成，用户安装版未更新。
