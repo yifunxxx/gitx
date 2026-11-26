@@ -247,10 +247,13 @@ function click(row: FileRow, event: MouseEvent) {
   )
     void files.toggle(row.path);
 }
-function openMenu(row: FileRow, event: MouseEvent) {
-  markContextHandled(event);
+function selectContextTarget(row: FileRow) {
   if (!selectedPathSet.value.has(row.path)) select(row);
   else files.selectedPath = row.path;
+}
+function openMenu(row: FileRow, event: MouseEvent) {
+  markContextHandled(event);
+  selectContextTarget(row);
   const source = capture(row);
   if (source) menu.value = { row, x: event.clientX, y: event.clientY, ...source };
 }
@@ -344,13 +347,14 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === "F2" && !event.shiftKey) {
     event.preventDefault();
     event.stopPropagation();
-    if (!event.repeat && selectedRows.value.length === 1) operate("rename", row);
+    if (!event.repeat && selectedRows.value.length === 1) operate("rename", selectedRows.value[0]);
     return;
   }
   if ((event.key === "F10" && event.shiftKey) || (event.key === "ContextMenu" && !event.shiftKey)) {
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat) return;
+    selectContextTarget(row);
     const source = capture(row);
     const bounds =
       document.getElementById(rowId(row))?.getBoundingClientRect() ??

@@ -155,10 +155,15 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   watch(
     rows,
     (visible) => {
-      if (!selectedPaths.value.length) return;
+      if (!selectedPaths.value.length && !selectedPath.value && !selectionAnchor) return;
       const paths = new Set(visible.map((row) => row.path));
       const kept = selectedPaths.value.filter((path) => paths.has(path));
       if (kept.length !== selectedPaths.value.length) selectedPaths.value = kept;
+      // Focus may intentionally be unselected after Ctrl+click, but it and the
+      // range anchor must not outlive their visible row or silently target row 0.
+      if (selectedPath.value && !paths.has(selectedPath.value))
+        selectedPath.value = kept[0] ?? null;
+      if (selectionAnchor && !paths.has(selectionAnchor)) selectionAnchor = selectedPath.value;
     },
     { flush: "sync" },
   );
@@ -276,8 +281,9 @@ export const useFileTreeStore = defineStore("fileTree", () => {
     await loadDir(path);
   }
   function collapse(path: string) {
+    const focusInside = selectedPath.value?.startsWith(`${path}/`);
     expanded.delete(path);
-    if (selectedPath.value?.startsWith(`${path}/`)) select(path);
+    if (focusInside) select(path);
   }
   async function toggle(path: string) {
     if (expanded.has(path)) collapse(path);
