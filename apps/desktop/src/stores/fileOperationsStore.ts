@@ -13,9 +13,16 @@ import { workspacePathKey } from "@/lib/workspacePath";
 import { useJobsStore } from "./jobsStore";
 
 export function topLevelPaths(paths: string[]): string[] {
-  return [...new Set(paths)].filter(
-    (path, _, all) => !all.some((parent) => parent !== path && path.startsWith(`${parent}/`)),
-  );
+  const selected = new Set(paths);
+  // Only path prefixes ending at a separator can be ancestors. Looking them
+  // up avoids comparing every selected file with every other file, while the
+  // Set's insertion order preserves the user's batch order.
+  return [...selected].filter((path) => {
+    for (let end = path.indexOf("/"); end !== -1; end = path.indexOf("/", end + 1)) {
+      if (selected.has(path.slice(0, end))) return false;
+    }
+    return true;
+  });
 }
 
 export const useFileOperationsStore = defineStore("fileOperations", () => {

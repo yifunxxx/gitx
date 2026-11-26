@@ -301,6 +301,146 @@ it("normalizes a parent/child multiselection without scheduling the same subtree
   expect(topLevelPaths(["src/a", "b", "src", "b", "src-other"])).toEqual(["b", "src", "src-other"]);
 });
 
+it("does not compare every selected path with every other path before prompting", () => {
+  const paths = Array.from({ length: 512 }, (_, index) => `src/file-${index}.txt`);
+  const original = String.prototype.startsWith;
+  let comparisons = 0;
+  let result: string[];
+  // Count only synchronous path comparisons; avoid wall-time thresholds and
+  // restore the intrinsic before assertions or any asynchronous work runs.
+  try {
+    String.prototype.startsWith = function (search, position) {
+      comparisons++;
+      return original.call(this, search, position);
+    };
+    result = topLevelPaths(paths);
+  } finally {
+    String.prototype.startsWith = original;
+  }
+  expect(result!).toEqual(paths);
+  expect(comparisons).toBeLessThan(paths.length * 20);
+});
+
+it("preserves selection order, directory boundaries and literal path spelling", () => {
+  const paths = [
+    "src/nested/file",
+    "src-other/file",
+    "中文 空格/😀/file",
+    "src/nested",
+    "SRC/file",
+    "src",
+    "src-other",
+    "中文 空格/😀",
+    "src",
+    "src2/file",
+    "src2",
+    "leaf",
+  ];
+  const snapshot = [...paths];
+  expect(topLevelPaths(paths)).toEqual([
+    "SRC/file",
+    "src",
+    "src-other",
+    "中文 空格/😀",
+    "src2",
+    "leaf",
+  ]);
+  expect(paths).toEqual(snapshot);
+  // This helper does not canonicalize input or replace backend validation.
+  expect(topLevelPaths(["", "/a", "folder/", "folder//a", "folder/a", "a\\b", "a"])).toEqual([
+    "",
+    "folder/",
+    "folder/a",
+    "a\\b",
+    "a",
+  ]);
+  expect(topLevelPaths([])).toEqual([]);
+});
+
+it("matches subtree selection semantics across varied order and duplicates", () => {
+  const pool = [
+    "",
+    "a",
+    "a/b",
+    "a/b/c",
+    "ab",
+    "ab/c",
+    "A",
+    "A/b",
+    "中文/空 格",
+    "中文",
+    "file.txt",
+    "nested/leaf",
+  ];
+  let seed = 107;
+  for (let round = 0; round < 160; round++) {
+    const selection = Array.from({ length: 1 + (round % 40) }, () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return pool[seed % pool.length]!;
+    });
+    const distinct = [...new Set(selection)];
+    const expected = distinct.filter(
+      (path) => !distinct.some((parent) => parent !== path && path.startsWith(`${parent}/`)),
+    );
+    expect(topLevelPaths(selection)).toEqual(expected);
+  }
+});
+
+it.each(["copy", "move", "delete"] as const)(
+  "dispatches only top-level %s entries in their original order",
+  async (operation) => {
+    mocks.prompt.mockResolvedValue("destination");
+    const paths = ["b/child", "first.txt", "a/child", "a", "b", "first.txt"];
+    await useFileOperationsStore().run(operation, paths);
+    expect(mocks.fsMutate).toHaveBeenCalledExactlyOnceWith({
+      folderPath: "C:/project",
+      operation,
+      items: ["first.txt", "a", "b"].map((path) => ({
+        path,
+        destination: operation === "delete" ? null : `destination/${path}`,
+      })),
+    });
+    if (operation === "delete")
+      expect(mocks.confirm.mock.calls[0]![0].message).toContain("first.txt\na\nb");
+    expect(paths).toEqual(["b/child", "first.txt", "a/child", "a", "b", "first.txt"]);
+  },
+);
+
+it.runIf(process.env.GITX_QA_PATH_SELECTION_COST === "1")(
+  "measures path normalization and real-store prompt preparation at scale",
+  async () => {
+    const samples = [];
+    mocks.prompt.mockResolvedValue(null);
+    for (const count of [1000, 5000, 20000]) {
+      const flat = Array.from({ length: count }, (_, index) => `src/file-${index}.txt`);
+      const nested = Array.from(
+        { length: count },
+        (_, index) => `dir-${index % 20}/file-${index}.txt`,
+      );
+      const parents = Array.from({ length: 20 }, (_, index) => `dir-${index}`);
+      for (let round = 0; round < 3; round++) {
+        const startFlat = performance.now();
+        const result = topLevelPaths(flat);
+        const flatMs = performance.now() - startFlat;
+        expect(result).toEqual(flat);
+        const startNested = performance.now();
+        const reduced = topLevelPaths([...nested, ...parents]);
+        const nestedMs = performance.now() - startNested;
+        expect(reduced).toEqual(parents);
+        const startPrompt = performance.now();
+        const pending = useFileOperationsStore().run("copy", flat);
+        const promptMs = performance.now() - startPrompt;
+        expect(mocks.prompt).toHaveBeenCalled();
+        await pending;
+        expect(mocks.fsMutate).not.toHaveBeenCalled();
+        samples.push({ count, round, flatMs, nestedMs, promptMs });
+      }
+    }
+    console.log("QA107_PATH_SELECTION_COST", JSON.stringify(samples));
+  },
+  120000,
+);
+
 it("protects discovered repository roots and unresolved conflict files", async () => {
   mocks.workspace.roots = [{ worktreeRoot: "C:/project/parent/repo" }];
   mocks.prompt.mockResolvedValue("renamed");
