@@ -4,6 +4,8 @@
 
 ## 当前版本与证据复用
 
+- 最新[同版本组合自动验收](qa-combined-validation-2026-11-26.md)基于e55508d（已包含mastere2e33d9）：完整前端195文件2018项通过/4项既有probe跳过，完整Rust工作区91个目标630项通过/9 ignored，均退出0。产品逻辑与QA108最终程序相同，仅增加活动根竞态测试。Shelf 6项和Smart rebase 11项本次通过不代表历史根因已解决；测试进程退出、用户设置保持，安装版未更新。以下各功能原生证据仍保留其各自执行版本和范围。
+
 - QA099产品为`c747b5e331a6ec789b489134394856ea2fa8c7b4`，记录基线`ffa5872f7588f87282b9545587569e24b6541d05`，已包含远端master`5241dd5d64683d03c6e3f5e901ea7293d2c199b3`。后续QA100更新统计修复已完成自动/原生验收，交付状态见台账；开始和提交前fetch及两分支检查成功。
 - QA099完整前端192文件1963项通过，另1项性能probe已显式执行；类型、Vite及Windows独立profile构建、相关lint通过。程序SHA256为`7BDFF147EFD2DD06A65C590F6414D15F07D50A4A39669CAA3AEFAB87CEB3A012`。
 - QA098完整Rust三包539项通过/8 ignored，其中新性能probe另有显式执行证据。`git diff 9813c20 c747b5e -- crates src-tauri Cargo.lock Cargo.toml`为空，原生源码未因QA099改变；这是既有验证可适用的依据，不是声称本轮重跑了Rust或所有原生流程。
