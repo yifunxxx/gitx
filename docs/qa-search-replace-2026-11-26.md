@@ -41,4 +41,4 @@
 
 ## 交付
 
-最终前端2066项、定向18项及后端搜索13项通过，类型/Vite/Pages/Windows构建、相关lint和Clippy通过。提交前fetch与master/交付分支检查均成功，无远端新提交。搜索代码、回归及中英教程将独立提交推送；完整提交SHA随后补记。QA114未提交工作仍保留于命名stash，搜索交付后恢复。
+最终前端2066项、定向18项及后端搜索13项通过，类型/Vite/Pages/Windows构建、相关lint和Clippy通过。提交前fetch与master/交付分支检查均成功，无远端新提交。功能提交`be6dd89d1ffe45182fff6a581e8dd8920f9a6880`已推送到`codex/checkout-target-safety`，独立ls-remote完整SHA一致，无凭据提示。补记前再次同步成功。QA114未提交工作由命名stash恢复并继续保持独立，不混入搜索交付；总体持续QA目标未完成。
