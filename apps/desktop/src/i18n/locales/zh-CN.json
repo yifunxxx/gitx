@@ -31,7 +31,13 @@
     "copy": "复制",
     "paste": "粘贴",
     "selectAll": "全选",
-    "save": "保存"
+    "save": "保存",
+    "find": "文件内查找",
+    "replace": "文件内替换",
+    "findNext": "查找下一个",
+    "findPrevious": "查找上一个",
+    "replaceNext": "替换当前匹配",
+    "replaceAll": "替换文件内全部匹配"
   },
   "pathTree": {
     "collapse": "折叠 {name}",
@@ -1111,7 +1117,7 @@
     "hint": "搜索整个工作区中的文件，包括未展开的文件夹。",
     "results": "匹配文件",
     "limited": "已达到搜索上限。当前结果不完整，请缩小查询范围。",
-    "skipped": "跳过了{count}个无法读取、二进制、过大文件或目录。",
+    "skipped": "已跳过 {count} 个非文本或不可读文件/目录",
     "visibility": "沿用文件工具窗的隐藏和忽略文件设置，不搜索 Git 元数据。",
     "contentTitle": "在文件中查找…",
     "contentPlaceholder": "搜索整个工作区中已保存的文本",
@@ -1147,5 +1153,31 @@
     "deleteConfirm": "将这些项目及其内容移到系统回收站？回收失败时保留原文件。",
     "unsavedDelete": "请先保存或放弃相关编辑器草稿，再删除文件。",
     "deletedDraft": "文件已回收；关闭前请复制保留此草稿。"
+  },
+  "contentSearch": {
+    "replaceTitle": "在文件中替换…",
+    "caseSensitive": "区分大小写",
+    "wholeWord": "全词匹配",
+    "regex": "正则表达式",
+    "showReplace": "显示替换预览",
+    "replacement": "替换为（留空可删除匹配）",
+    "include": "包含文件，例如 src/**, *.vue",
+    "exclude": "排除文件，例如 dist/**, *.lock",
+    "hidden": "包含隐藏文件",
+    "ignored": "包含忽略文件",
+    "summary": "{count} 处匹配 · {files} 个文件 · 已扫描 {scanned} 个文件",
+    "refresh": "重新搜索",
+    "selectFile": "选择文件 {path} 的全部匹配",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "page": "第 {page} / {pages} 页",
+    "scope": "搜索磁盘上的 UTF-8 文本，逐行匹配；不限制文件大小、扫描总量或结果数。二进制和无法读取的文件会列出原因。",
+    "captureHint": "正则替换支持 $1、$name 捕获组；$$ 表示美元符号。",
+    "selectionHint": "将替换 {count} 个已选文件中的全部匹配（包含其他结果页）；取消任意一行会排除整个文件。",
+    "saveDrafts": "请先保存或关闭文件草稿，完成或关闭冲突编辑器，并等待文件操作完成后再批量替换。",
+    "confirm": "确认写入 {count} 个文件？",
+    "confirmReplace": "确认替换",
+    "replaceFiles": "替换 {count} 个文件…",
+    "replaced": "已替换 {count} 个文件；请重新搜索查看最新结果。"
   }
 }

@@ -12,11 +12,18 @@ import {
 } from "@codemirror/view";
 import type { DiffHunk } from "@/lib/backend";
 import { editorChrome } from "@/features/editor/editorChrome";
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 import { computeSideInlineRanges, computeUnifiedInlineRanges, type CharRange } from "./inlineDiff";
 import { countHunkLines } from "./collapsedDiff";
 import { contentFingerprint } from "./diffPaint";
 import type { DiffPaneScroll, DiffPaneSnapshot, DiffPaneViewState } from "./diffViewState";
-import { hunkActionGutter, type HunkAction, type HunkAnchor, type HunkControl } from "./hunkActions";
+import {
+  hunkActionGutter,
+  type HunkAction,
+  type HunkAnchor,
+  type HunkControl,
+} from "./hunkActions";
 
 const props = defineProps<{
   text: string;
@@ -56,8 +63,13 @@ let selectionVisible = false;
 let detachSelection: (() => void) | null = null;
 const hunkConfig = new Compartment();
 function hunkExtensions(state: EditorState) {
-  return hunkActionGutter(state, props.hunkAnchors ?? [], props.hunkControls ?? [], !!props.hunkBusy,
-    (index, action) => emit("hunkAction", index, action));
+  return hunkActionGutter(
+    state,
+    props.hunkAnchors ?? [],
+    props.hunkControls ?? [],
+    !!props.hunkBusy,
+    (index, action) => emit("hunkAction", index, action),
+  );
 }
 
 const insertLine = Decoration.line({ class: "cm-diff-insert" });
@@ -301,8 +313,10 @@ function mountNow() {
     return;
   }
   lastFingerprint = fp;
-  const saved = !view && props.initialViewState?.docLength === content.length
-    ? props.initialViewState : undefined;
+  const saved =
+    !view && props.initialViewState?.docLength === content.length
+      ? props.initialViewState
+      : undefined;
   mountedKey = props.paintKey ?? "";
   selectionVisible = saved?.selectionVisible ?? false;
 
@@ -336,7 +350,7 @@ function mountNow() {
         // A diff is a snapshot. Only refreshed props may replace its content;
         // commands/input transactions must still allow selection and scrolling.
         EditorState.changeFilter.of(() => false),
-        ...editorChrome({ caret: false }),
+        ...editorChrome({ caret: false, translate: t }),
         diffTheme,
         EditorView.decorations.of(deco),
         hunkConfig.of([]),
@@ -358,9 +372,8 @@ function restoreVisibleSelection(editor: EditorView) {
   editor.requestMeasure({
     read: () => {
       const { anchor, head } = editor.state.selection.main;
-      const visible = (pos: number) => editor.visibleRanges.some(
-        ({ from, to }) => pos >= from && pos <= to,
-      );
+      const visible = (pos: number) =>
+        editor.visibleRanges.some(({ from, to }) => pos >= from && pos <= to);
       return visible(anchor) && visible(head)
         ? { anchor: editor.domAtPos(anchor), head: editor.domAtPos(head) }
         : null;
@@ -368,9 +381,9 @@ function restoreVisibleSelection(editor: EditorView) {
     write: (positions) => {
       if (view !== editor || !positions) return;
       const { anchor, head } = positions;
-      editor.dom.ownerDocument.getSelection()?.setBaseAndExtent(
-        anchor.node, anchor.offset, head.node, head.offset,
-      );
+      editor.dom.ownerDocument
+        .getSelection()
+        ?.setBaseAndExtent(anchor.node, anchor.offset, head.node, head.offset);
     },
   });
 }
@@ -399,7 +412,8 @@ function attachSelection(editor: EditorView) {
     if (editor.contentDOM.contains(anchor) && editor.contentDOM.contains(head)) {
       selectionVisible = !selection.isCollapsed;
     } else {
-      const element = anchor.nodeType === Node.ELEMENT_NODE ? anchor as Element : anchor.parentElement;
+      const element =
+        anchor.nodeType === Node.ELEMENT_NODE ? (anchor as Element) : anchor.parentElement;
       // Remember the last selected pane even if navigation selects a file name
       // before unmount. Selecting the other diff pane transfers ownership.
       if (element?.closest("[data-diff-pane]")) selectionVisible = false;
@@ -471,7 +485,9 @@ onBeforeUnmount(() => {
 });
 watch(
   () => [props.hunkAnchors, props.hunkControls, props.hunkBusy],
-  () => { if (view) view.dispatch({ effects: hunkConfig.reconfigure(hunkExtensions(view.state)) }); },
+  () => {
+    if (view) view.dispatch({ effects: hunkConfig.reconfigure(hunkExtensions(view.state)) });
+  },
   { flush: "post" },
 );
 watch(

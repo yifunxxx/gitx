@@ -14,6 +14,7 @@ import { submoduleFeedback } from "@/lib/submoduleFeedback";
 import { useChangesStore } from "@/stores/changesStore";
 import { focusCommitUi } from "@/features/commit/focusCommitUi";
 import { openDialog } from "@/composables/useDialog";
+import { registerEditorSearchActions } from "./editorSearchActions";
 
 const FileSearchDialog = defineAsyncComponent(
   () => import("@/features/file-tree/FileSearchDialog.vue"),
@@ -25,6 +26,18 @@ function hasRepo() {
 }
 
 export function registerM7Actions() {
+  registerEditorSearchActions();
+  registerAction({
+    id: "File.ReplaceInFiles",
+    title: "Replace in Files…",
+    titleKey: "contentSearch.replaceTitle",
+    scope: "global",
+    defaultShortcuts: { mac: ["mod+shift+h"], win: ["mod+shift+h"], linux: ["mod+shift+h"] },
+    enabled: () => !!useWorkspaceStore().folderPath,
+    async run() {
+      await openDialog(FileSearchDialog, { content: true, replace: true });
+    },
+  });
   const syncingForks = ref(new Set<string>());
   const updatingSubmodules = ref(new Set<string>());
   registerAction({

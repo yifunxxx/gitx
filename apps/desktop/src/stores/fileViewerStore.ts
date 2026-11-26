@@ -110,22 +110,23 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       workspace.navigationToken() === navigation;
     try {
       const backend = getBackend();
-      // Tree entries may include binary/oversize files. Read through the bounded
-      // text endpoint before making them editable, even inside a Git repository.
+      // Read actual UTF-8 content before opening search hits, including large
+      // files. Large editors omit the optional HEAD gutter diff computation.
       const fileText =
         source || folderPath
           ? await backend.fsReadFile({ folderPath: sourceRoot, filePath: sourceFilePath })
           : undefined;
       if (!current()) return;
-      const diff = folderPath
-        ? null
-        : await backend.diffFile({
-            repoId: repoId!,
-            path: repoPath!,
-            filePath,
-            left: "head",
-            right: "worktree",
-          });
+      const diff =
+        folderPath || (fileText?.length ?? 0) > 5 * 1024 * 1024
+          ? null
+          : await backend.diffFile({
+              repoId: repoId!,
+              path: repoPath!,
+              filePath,
+              left: "head",
+              right: "worktree",
+            });
       const text = fileText ?? diff?.rightText ?? "";
       if (!current()) return;
       tab.text = text;
@@ -197,7 +198,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       }
       tab.baseline = content;
       tab.dirty = tab.text !== tab.baseline;
-      if (!tab.folderPath)
+      if (!tab.folderPath && content.length <= 5 * 1024 * 1024)
         try {
           const diff = await backend.diffFile({
             repoId: repoId!,

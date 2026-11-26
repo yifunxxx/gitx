@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
+vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 import type { DiffPaneSnapshot } from "./diffViewState";
 
 enableAutoUnmount(afterEach);

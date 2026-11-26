@@ -128,6 +128,15 @@ export const commands = {
   async fsSearchFiles(req: FsSearchReq): Promise<FsSearchResult> {
     return await TAURI_INVOKE("fs_search_files", { req });
   },
+  async fsStartContentSearch(req: ContentSearchReq): Promise<null> {
+    return await TAURI_INVOKE("fs_start_content_search", { req });
+  },
+  async fsContentSearchPage(req: ContentSearchPageReq): Promise<ContentSearchPage> {
+    return await TAURI_INVOKE("fs_content_search_page", { req });
+  },
+  async fsReplaceContent(req: ContentReplaceReq): Promise<ContentReplaceResult> {
+    return await TAURI_INVOKE("fs_replace_content", { req });
+  },
   async fsCancelSearch(req: FsCancelSearchReq): Promise<null> {
     return await TAURI_INVOKE("fs_cancel_search", { req });
   },
@@ -858,6 +867,42 @@ export type ConflictsList = {
   title: string;
 };
 export type ConflictsPathReq = { path: string };
+export type ContentMatch = {
+  path: string;
+  line: number;
+  column: number;
+  preview: string;
+  matchStart: number;
+  matchEnd: number;
+  replacementPreview: string;
+};
+export type ContentReplaceReq = { sessionId: string; generation: number; excludedPaths: string[] };
+export type ContentReplaceResult = { completed: string[]; failed: string[] };
+export type ContentSearchPage = {
+  matches: ContentMatch[];
+  total: number;
+  files: number;
+  scanned: number;
+  skipped: number;
+  issues: string[];
+  done: boolean;
+  error: string | null;
+};
+export type ContentSearchPageReq = { sessionId: string; generation: number; page: number };
+export type ContentSearchReq = {
+  folderPath: string;
+  query: string;
+  replacement: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  regex: boolean;
+  include: string;
+  exclude: string;
+  showHidden: boolean;
+  showIgnored: boolean;
+  sessionId: string;
+  generation: number;
+};
 export type CredentialSessionReq = {
   path: string | null;
   protocol: string | null;

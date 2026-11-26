@@ -7,16 +7,24 @@ const mocks = vi.hoisted(() => ({
   settings: {} as any,
   fsSearchFiles: vi.fn(),
   fsCancelSearch: vi.fn(),
+  fsStartContentSearch: vi.fn(),
+  fsContentSearchPage: vi.fn(),
   open: vi.fn(),
   close: vi.fn(),
   tabs: [] as any[],
   dialog: null as any,
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
+vi.mock("@/stores/jobsStore", () => ({
+  useJobsStore: () => ({ begin: vi.fn(() => "search"), finished: vi.fn(), progress: vi.fn() }),
+}));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.settings }));
 vi.mock("@/stores/fileViewerStore", () => ({
   useFileViewerStore: () => ({ open: mocks.open, tabs: mocks.tabs, activeId: "result" }),
+}));
+vi.mock("@/stores/conflictsStore", () => ({
+  useConflictsStore: () => ({ busy: false, mergeTabs: [] }),
 }));
 vi.mock("@/composables/useDialog", () => ({
   closeDialog: mocks.close,
@@ -63,6 +71,7 @@ beforeEach(() => {
     settings: { showHiddenInFileTree: false, showIgnoredInFileTree: true },
   });
   mocks.fsCancelSearch.mockResolvedValue(null);
+  mocks.fsStartContentSearch.mockResolvedValue(null);
   mocks.fsSearchFiles.mockResolvedValue(response("nested/file.txt"));
   wrapper = mount(FileSearchDialog, { attachTo: document.body });
 });
@@ -140,14 +149,30 @@ it("changing visibility cancels and reruns the search with the new settings", as
 it("searches saved content with case preference and navigates to its line and column", async () => {
   wrapper.unmount();
   wrapper = mount(FileSearchDialog, { props: { content: true }, attachTo: document.body });
-  mocks.fsSearchFiles.mockResolvedValue({
+  mocks.fsContentSearchPage.mockResolvedValue({
     ...response("deep/a.txt"),
-    matches: [{ path: "deep/a.txt", score: 0, line: 22, column: 5, preview: "a matching line" }],
+    done: true,
+    total: 1,
+    files: 1,
+    issues: [],
+    error: null,
+    matches: [
+      {
+        path: "deep/a.txt",
+        line: 22,
+        column: 5,
+        preview: "a matching line",
+        matchStart: 2,
+        matchEnd: 10,
+        replacementPreview: "",
+      },
+    ],
   });
   await wrapper.get('input[type="checkbox"]').setValue(true);
   await query("matching");
-  expect(mocks.fsSearchFiles.mock.lastCall?.[0]).toMatchObject({
-    content: true,
+  await vi.advanceTimersByTimeAsync(40);
+  await flushPromises();
+  expect(mocks.fsStartContentSearch.mock.lastCall?.[0]).toMatchObject({
     caseSensitive: true,
   });
   expect(wrapper.text()).toContain("deep/a.txt:22:5");

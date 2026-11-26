@@ -33,9 +33,16 @@ Use Find Action (`Ctrl+Shift+A`) to search. Availability depends on repository s
 | Commit | `Ctrl+K` | [Steps](./commit) |
 | Create Patch… | — | [Steps](./patches) |
 | Show Diff | `Ctrl+D` | [Steps](./diff) |
+| Find in File | `Ctrl+F` | [Steps](./search) |
+| Find Next | `f3` | [Steps](./search) |
+| Find Previous | `Shift+f3` | [Steps](./search) |
+| Replace in File | `Ctrl+h` | [Steps](./search) |
+| Replace All in File | `Ctrl+Alt+enter` | [Steps](./search) |
+| Replace Current Match | — | [Steps](./search) |
 | Find in Files… | `Ctrl+Shift+F` | [Steps](./search) |
 | Go to File… | `Ctrl+P` | [Steps](./search) |
 | Open… | `Ctrl+O` | [Steps](./getting-started) |
+| Replace in Files… | `Ctrl+Shift+h` | [Steps](./search) |
 | Save | `Ctrl+S` | [Steps](./files) |
 | Add to VCS | `Ctrl+Alt+A` | [Steps](./commit) |
 | Branches… | — | [Steps](./branches) |

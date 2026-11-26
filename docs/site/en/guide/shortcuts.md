@@ -6,9 +6,15 @@ The table is generated from the registered default bindings. Windows/Linux use C
 | --- | --- | --- |
 | [Commit](./commit) | `Ctrl+K` | `Cmd+K` |
 | [Show Diff](./diff) | `Ctrl+D` | `Cmd+D` |
+| [Find in File](./search) | `Ctrl+F` | `Cmd+F` |
+| [Find Next](./search) | `f3` | `f3` |
+| [Find Previous](./search) | `Shift+f3` | `Shift+f3` |
+| [Replace in File](./search) | `Ctrl+h` | `Cmd+Option+F` |
+| [Replace All in File](./search) | `Ctrl+Alt+enter` | `Cmd+Option+enter` |
 | [Find in Files…](./search) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | [Go to File…](./search) | `Ctrl+P` | `Cmd+P` |
 | [Open…](./getting-started) | `Ctrl+O` | `Cmd+O` |
+| [Replace in Files…](./search) | `Ctrl+Shift+h` | `Cmd+Shift+h` |
 | [Save](./files) | `Ctrl+S` | `Cmd+S` |
 | [Add to VCS](./commit) | `Ctrl+Alt+A` | `Cmd+Option+A` |
 | [Commit and Push…](./commit) | `Ctrl+Alt+K` | `Cmd+Option+K` |

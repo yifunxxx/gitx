@@ -915,6 +915,15 @@ export const mockBackend: Backend = {
       truncated: false,
     };
   },
+  async fsStartContentSearch() {
+    throw new Error("Content search requires the desktop application");
+  },
+  async fsContentSearchPage() {
+    throw new Error("Content search requires the desktop application");
+  },
+  async fsReplaceContent() {
+    throw new Error("Content replacement requires the desktop application");
+  },
   async fsCancelSearch() {
     return null;
   },

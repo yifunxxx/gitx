@@ -1,9 +1,10 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { deleteCharBackward } from "@codemirror/commands";
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
+vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 
 enableAutoUnmount(afterEach);
 

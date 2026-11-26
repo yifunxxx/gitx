@@ -33,9 +33,16 @@
 | 提交 | `Ctrl+K` | [使用方式](./commit) |
 | 创建补丁… | — | [使用方式](./patches) |
 | 显示 Diff | `Ctrl+D` | [使用方式](./diff) |
+| 文件内查找 | `Ctrl+F` | [使用方式](./search) |
+| 查找下一个 | `f3` | [使用方式](./search) |
+| 查找上一个 | `Shift+f3` | [使用方式](./search) |
+| 文件内替换 | `Ctrl+h` | [使用方式](./search) |
+| 替换文件内全部匹配 | `Ctrl+Alt+enter` | [使用方式](./search) |
+| 替换当前匹配 | — | [使用方式](./search) |
 | 在文件中查找… | `Ctrl+Shift+F` | [使用方式](./search) |
 | 跳转到文件… | `Ctrl+P` | [使用方式](./search) |
 | 打开… | `Ctrl+O` | [使用方式](./getting-started) |
+| 在文件中替换… | `Ctrl+Shift+h` | [使用方式](./search) |
 | 保存 | `Ctrl+S` | [使用方式](./files) |
 | 添加到版本控制 | `Ctrl+Alt+A` | [使用方式](./commit) |
 | 分支… | — | [使用方式](./branches) |

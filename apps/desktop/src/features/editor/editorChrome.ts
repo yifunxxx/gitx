@@ -1,5 +1,6 @@
 import type { Extension } from "@codemirror/state";
 import { EditorView, drawSelection } from "@codemirror/view";
+import { editorSearch } from "./editorSearch";
 
 function createChrome(caret: boolean): readonly Extension[] {
   return [
@@ -27,6 +28,9 @@ const visibleCaret = createChrome(true);
 const hiddenCaret = createChrome(false);
 
 /** Shared CM selection + caret chrome for dark/light themes. */
-export function editorChrome(opts?: { caret?: boolean }): readonly Extension[] {
-  return opts?.caret === false ? hiddenCaret : visibleCaret;
+export function editorChrome(opts?: {
+  caret?: boolean;
+  translate?: (key: string) => string;
+}): readonly Extension[] {
+  return [opts?.caret === false ? hiddenCaret : visibleCaret, editorSearch(opts?.translate)];
 }

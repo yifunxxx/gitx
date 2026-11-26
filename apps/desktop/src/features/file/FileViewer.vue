@@ -15,6 +15,7 @@ import {
 } from "@codemirror/commands";
 import { fileChangeHighlights } from "./fileChangeHighlights";
 import { editorChrome } from "@/features/editor/editorChrome";
+import { runEditorSearch } from "@/features/editor/editorSearch";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import { useI18n } from "vue-i18n";
@@ -218,7 +219,8 @@ function mount() {
           ...historyKeymap,
         ]),
         EditorView.editable.of(!!current.editable),
-        ...editorChrome({ caret: !!current.editable }),
+        EditorState.readOnly.of(!current.editable),
+        ...editorChrome({ caret: !!current.editable, translate: t }),
         fileTheme,
         highlights.of(fileChangeHighlights(hunks)),
         EditorView.updateListener.of((update) => {
@@ -315,6 +317,21 @@ const menuActions = computed(() => {
       <span v-if="tab.dirty" class="text-muted-foreground">· {{ t("editor.unsaved") }}</span>
       <span v-if="tab.saving" class="text-muted-foreground">· {{ t("editor.saving") }}</span>
       <span v-if="tab.deletedOnDisk" class="text-warning">{{ t("fileOps.deletedDraft") }}</span>
+      <div class="ml-auto flex gap-2">
+        <button
+          class="rounded px-2 py-1 hover:bg-accent"
+          @click="runEditorSearch('Editor.Find', view)"
+        >
+          {{ t("editor.find") }}
+        </button>
+        <button
+          v-if="tab.editable"
+          class="rounded px-2 py-1 hover:bg-accent"
+          @click="runEditorSearch('Editor.Replace', view)"
+        >
+          {{ t("editor.replace") }}
+        </button>
+      </div>
     </div>
     <div v-if="tab.loading" class="p-4 text-xs text-muted-foreground">Loading…</div>
     <div

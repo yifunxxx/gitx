@@ -6,9 +6,15 @@
 | --- | --- | --- |
 | [提交](./commit) | `Ctrl+K` | `Cmd+K` |
 | [显示 Diff](./diff) | `Ctrl+D` | `Cmd+D` |
+| [文件内查找](./search) | `Ctrl+F` | `Cmd+F` |
+| [查找下一个](./search) | `f3` | `f3` |
+| [查找上一个](./search) | `Shift+f3` | `Shift+f3` |
+| [文件内替换](./search) | `Ctrl+h` | `Cmd+Option+F` |
+| [替换文件内全部匹配](./search) | `Ctrl+Alt+enter` | `Cmd+Option+enter` |
 | [在文件中查找…](./search) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | [跳转到文件…](./search) | `Ctrl+P` | `Cmd+P` |
 | [打开…](./getting-started) | `Ctrl+O` | `Cmd+O` |
+| [在文件中替换…](./search) | `Ctrl+Shift+h` | `Cmd+Shift+h` |
 | [保存](./files) | `Ctrl+S` | `Cmd+S` |
 | [添加到版本控制](./commit) | `Ctrl+Alt+A` | `Cmd+Option+A` |
 | [提交并推送…](./commit) | `Ctrl+Alt+K` | `Cmd+Option+K` |

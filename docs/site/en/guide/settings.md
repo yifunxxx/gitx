@@ -62,6 +62,8 @@ File visibility and Commit's ignored-file setting are stored independently.
 
 ## Keymap
 
+Search and replacement actions are included: Find/Replace in Files, Find/Replace in File, Find Next/Previous, Replace Current Match, and Replace All in File. Saved bindings work in editor content and the search panel. Removing a binding disables its original default; toolbar buttons remain available. Replacement stays disabled in read-only diffs. See [search and replace](./search).
+
 1. Open Keymap and search for an action.
 2. Click **Rebind**, press the combination, and inspect it. Conflicts and reserved system keys produce feedback.
 3. **Remove** clears a binding; **Reset** restores that action's default; **Reset All** restores all defaults.

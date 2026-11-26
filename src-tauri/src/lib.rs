@@ -22,6 +22,9 @@ use commands::conflicts::{
     conflict_accept_side, conflict_mark_resolved, conflict_merge3, conflict_resolve_simple,
     conflict_save_result, conflict_versions, conflicts_list,
 };
+use commands::content_search::{
+    fs_content_search_page, fs_replace_content, fs_start_content_search,
+};
 use commands::credential::{credential_session_clear, credential_session_set};
 use commands::diff::diff_file;
 use commands::filesystem::{fs_read_dir, fs_read_file, fs_write_file};
@@ -127,6 +130,9 @@ pub fn run() {
             fs_read_dir,
             fs_mutate,
             fs_search_files,
+            fs_start_content_search,
+            fs_content_search_page,
+            fs_replace_content,
             fs_cancel_search,
             fs_read_file,
             fs_write_file,

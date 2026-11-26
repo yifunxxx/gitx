@@ -31,7 +31,13 @@
     "copy": "Copy",
     "paste": "Paste",
     "selectAll": "Select All",
-    "save": "Save"
+    "save": "Save",
+    "find": "Find in File",
+    "replace": "Replace in File",
+    "findNext": "Find Next",
+    "findPrevious": "Find Previous",
+    "replaceNext": "Replace Current Match",
+    "replaceAll": "Replace All in File"
   },
   "pathTree": {
     "collapse": "Collapse {name}",
@@ -1111,7 +1117,7 @@
     "hint": "Find files in the whole workspace, including unopened folders.",
     "results": "Matching files",
     "limited": "Search limit reached. Refine the query; these results are incomplete.",
-    "skipped": "Skipped {count} unreadable, binary, oversized files or directories.",
+    "skipped": "Skipped {count} non-text or unreadable files/directories",
     "visibility": "Uses the File tool window's hidden and ignored file settings. Git metadata is excluded.",
     "contentTitle": "Find in Files…",
     "contentPlaceholder": "Search saved text across this workspace",
@@ -1147,5 +1153,31 @@
     "deleteConfirm": "Move these entries and their contents to the system Recycle Bin? If recycling fails, the original is kept.",
     "unsavedDelete": "Save or discard affected editor drafts before deleting.",
     "deletedDraft": "File recycled; copy this draft before closing."
+  },
+  "contentSearch": {
+    "replaceTitle": "Replace in Files…",
+    "caseSensitive": "Match case",
+    "wholeWord": "Match whole word",
+    "regex": "Regular expression",
+    "showReplace": "Show replacement preview",
+    "replacement": "Replace with (empty deletes matches)",
+    "include": "Files to include, e.g. src/**, *.vue",
+    "exclude": "Files to exclude, e.g. dist/**, *.lock",
+    "hidden": "Include hidden files",
+    "ignored": "Include ignored files",
+    "summary": "{count} matches · {files} files · {scanned} files scanned",
+    "refresh": "Search again",
+    "selectFile": "Select all matches in {path}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "page": "Page {page} of {pages}",
+    "scope": "Search saved UTF-8 text, line by line. No file-size, scan-volume or result-count limit. Binary and unreadable files are reported.",
+    "captureHint": "Regex replacement supports $1 and $name captures; $$ inserts a dollar sign.",
+    "selectionHint": "Replace every match in {count} selected files, including other pages. Unchecking any row excludes its entire file.",
+    "saveDrafts": "Save or close unsaved files, finish or close merge editors, and wait for file operations before replacing across files.",
+    "confirm": "Write changes to {count} files?",
+    "confirmReplace": "Confirm replacement",
+    "replaceFiles": "Replace in {count} files…",
+    "replaced": "Replaced {count} files. Search again to see updated results."
   }
 }

@@ -10,8 +10,9 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { closeDialog, useDialogState } from "@/composables/useDialog";
 import { formatErrorMessage } from "@/lib/errors";
+import ContentSearchDialog from "./ContentSearchDialog.vue";
 
-const props = defineProps<{ content?: boolean }>();
+const props = defineProps<{ content?: boolean; replace?: boolean }>();
 const { t } = useI18n();
 const title = computed(() => t(props.content ? "fileSearch.contentTitle" : "fileSearch.title"));
 const caseSensitive = ref(false);
@@ -170,7 +171,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <ContentSearchDialog v-if="content" :replace="replace" />
   <div
+    v-else
     class="fixed inset-0 flex items-start justify-center bg-black/40 p-6 pt-[10vh]"
     @keydown="onKeydown"
   >

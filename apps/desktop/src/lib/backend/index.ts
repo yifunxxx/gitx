@@ -12,6 +12,11 @@ import type {
   FsMutateReq,
   FsMutateResult,
   FsSearchReq,
+  ContentSearchReq,
+  ContentSearchPageReq,
+  ContentSearchPage,
+  ContentReplaceReq,
+  ContentReplaceResult,
   FsSearchResult,
   FsCancelSearchReq,
   BlameReq,
@@ -223,6 +228,9 @@ export type Backend = {
   fsWriteFile(req: FsWriteFileReq): Promise<null>;
   fsMutate(req: FsMutateReq): Promise<FsMutateResult>;
   fsSearchFiles(req: FsSearchReq): Promise<FsSearchResult>;
+  fsStartContentSearch(req: ContentSearchReq): Promise<null>;
+  fsContentSearchPage(req: ContentSearchPageReq): Promise<ContentSearchPage>;
+  fsReplaceContent(req: ContentReplaceReq): Promise<ContentReplaceResult>;
   fsCancelSearch(req: FsCancelSearchReq): Promise<null>;
   stagePaths(req: PathsReq): Promise<null>;
   unstagePaths(req: PathsReq): Promise<null>;
@@ -399,6 +407,9 @@ export const tauriBackend: Backend = {
   fsWriteFile: (req) => commands.fsWriteFile(req),
   fsMutate: (req) => commands.fsMutate(req),
   fsSearchFiles: (req) => commands.fsSearchFiles(req),
+  fsStartContentSearch: (req) => commands.fsStartContentSearch(req),
+  fsContentSearchPage: (req) => commands.fsContentSearchPage(req),
+  fsReplaceContent: (req) => commands.fsReplaceContent(req),
   fsCancelSearch: (req) => commands.fsCancelSearch(req),
   stagePaths: (req) => commands.stagePaths(req),
   unstagePaths: (req) => commands.unstagePaths(req),

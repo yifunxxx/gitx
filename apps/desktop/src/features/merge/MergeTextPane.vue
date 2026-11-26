@@ -6,6 +6,8 @@ import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, historyKeymap, redo } from "@codemirror/commands";
 import { editorChrome } from "@/features/editor/editorChrome";
 import { mergeViewConfig } from "./mergeDocument";
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 
 const props = defineProps<{
   state: EditorState;
@@ -33,7 +35,7 @@ function config() {
       ...defaultKeymap,
       ...historyKeymap,
     ]),
-    ...editorChrome({ caret: !!props.editable && !props.disabled }),
+    ...editorChrome({ caret: !!props.editable && !props.disabled, translate: t }),
     props.extensions ?? [],
     EditorView.updateListener.of((update) => {
       if (props.editable) emit("change", props.ownerId, update.state, update.docChanged);

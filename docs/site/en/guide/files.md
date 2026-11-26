@@ -52,4 +52,4 @@ Open **Settings → Project Files** to show hidden files, show ignored files, or
 
 ## Text editing limits
 
-File text opening and saving supports UTF-8 text up to 5 MiB per file. Binary, invalid UTF-8, and oversized files produce a message. Resolve conflicts before saving through the normal editor. Unsaved drafts are not on disk and are not included in content search. If a draft blocks repository navigation, save or handle it first.
+File text opening and saving supports UTF-8 without the former 5 MiB cutoff. Binary and invalid UTF-8 files produce a message. Editing needs memory for the entire document; opening large search hits omits the optional HEAD gutter comparison. Resolve conflicts before saving normally. Find in File searches drafts; global search reads disk. See [search and replace](./search).

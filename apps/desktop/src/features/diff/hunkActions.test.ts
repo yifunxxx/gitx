@@ -7,6 +7,7 @@ import { buildCollapsedSides } from "./collapsedDiff";
 import { expandUnifiedHunks } from "./expandedDiff";
 import { unifiedHunkAnchors, type HunkControl } from "./hunkActions";
 import CodeMirrorDiff from "./CodeMirrorDiff.vue";
+vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 
 enableAutoUnmount(afterEach);
 afterEach(() => vi.restoreAllMocks());

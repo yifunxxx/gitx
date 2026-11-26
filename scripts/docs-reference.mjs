@@ -27,7 +27,7 @@ export const coverage = {
   'getting-started': ['File.OpenFolder', 'Git.Init', 'Start.Use.Vcs', 'Git.Clone'],
   workspace: ['Git.RefreshStatus', 'ToolWindow.ShowFile', 'ToolWindow.ShowCommit', 'Git.Commit.Tw.Docked', 'Git.Commit.Tw.Window', 'Git.Commit.Tw.Float', 'Git.Commit.ToggleControls', 'Vcs.Operations.Popup'],
   files: ['File.Save'],
-  search: ['File.FindInFiles', 'File.GoToFile'],
+  search: ['File.FindInFiles', 'File.ReplaceInFiles', 'File.GoToFile', 'Editor.Find', 'Editor.Replace', 'Editor.FindNext', 'Editor.FindPrevious', 'Editor.ReplaceNext', 'Editor.ReplaceAll'],
   commit: ['Git.Add', 'Git.Stage.Add', 'Git.Stage.Reset', 'CheckinProject', 'Git.Commit.And.Push', 'ChangesView.NewChangeList', 'Git.Ignore.File', 'Git.OpenExcludeFile'],
   diff: ['Diff.ShowDiff'],
   branches: ['Git.Branches'],

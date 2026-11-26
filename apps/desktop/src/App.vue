@@ -24,7 +24,13 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUpdateStore } from "@/stores/updateStore";
 import { useConsoleStore } from "@/stores/consoleStore";
-import { findActionIdByEvent, isShortcutEvent, matchShortcut, runAction, setKeymapOverridesProvider } from "@/actions";
+import {
+  findActionIdByEvent,
+  isShortcutEvent,
+  matchShortcut,
+  runAction,
+  setKeymapOverridesProvider,
+} from "@/actions";
 import { formatErrorMessage, formatGitDetectError } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
@@ -86,7 +92,13 @@ function onKeydown(e: KeyboardEvent) {
   }
   const id = findActionIdByEvent(e);
   // Settings and Save must reach CodeMirror / contentEditable hosts (Ctrl/Cmd+S).
-  const toolWindowAction = id === "ToolWindow.ShowFile" || id === "ToolWindow.ShowCommit" || id === "File.GoToFile" || id === "File.FindInFiles";
+  const toolWindowAction =
+    id === "ToolWindow.ShowFile" ||
+    id === "ToolWindow.ShowCommit" ||
+    id === "File.GoToFile" ||
+    id === "File.FindInFiles" ||
+    id === "File.ReplaceInFiles" ||
+    (id?.startsWith("Editor.") && !!target?.closest(".cm-editor"));
   if (
     editing &&
     id !== "Settings" &&

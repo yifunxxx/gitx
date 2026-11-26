@@ -62,6 +62,16 @@ fn sessions() -> &'static Mutex<HashMap<String, SearchSession>> {
     static SESSIONS: OnceLock<Mutex<HashMap<String, SearchSession>>> = OnceLock::new();
     SESSIONS.get_or_init(Mutex::default)
 }
+pub(super) fn touch(session: &str, generation: u32) {
+    if let Ok(mut sessions) = sessions().lock() {
+        if let Some(active) = sessions
+            .get_mut(session)
+            .filter(|s| s.generation == generation)
+        {
+            active.touched = Instant::now();
+        }
+    }
+}
 fn error(message: impl std::fmt::Display) -> AppError {
     AppError::new(ErrorCode::FsError, message.to_string())
 }
@@ -88,7 +98,7 @@ fn prune(sessions: &mut HashMap<String, SearchSession>) {
         }
     }
 }
-fn begin(session: &str, generation: u32) -> Result<CancellationToken, AppError> {
+pub(super) fn begin(session: &str, generation: u32) -> Result<CancellationToken, AppError> {
     if session.is_empty() || session.len() > 128 {
         return Err(error("invalid search session"));
     }
@@ -131,6 +141,7 @@ pub fn fs_cancel_search(req: FsCancelSearchReq) -> Result<(), AppError> {
         old.cancel.cancel();
     }
     sessions.remove(&req.session_id);
+    super::content_search::cancel_session(&req.session_id, req.generation);
     prune(&mut sessions);
     let cancel = CancellationToken::new();
     cancel.cancel();

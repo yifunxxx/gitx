@@ -9,8 +9,6 @@ use std::path::{Component, Path, PathBuf};
 use tauri::State;
 use tokio_util::sync::CancellationToken;
 
-const MAX_TEXT_BYTES: u64 = 5 * 1024 * 1024;
-
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FsReadDirReq {
@@ -56,7 +54,11 @@ fn fs_error(error: impl std::fmt::Display) -> AppError {
 
 /// Resolve only existing workspace entries. CRUD uses separate commands later.
 /// Canonical containment also rejects links/junctions that escape the workspace.
-fn resolve_entry(folder: &str, relative: &str, allow_root: bool) -> Result<PathBuf, AppError> {
+pub(super) fn resolve_entry(
+    folder: &str,
+    relative: &str,
+    allow_root: bool,
+) -> Result<PathBuf, AppError> {
     if !Path::new(folder).is_absolute()
         || (!allow_root && relative.is_empty())
         || relative.contains(['\0', '\\', ':'])
@@ -216,16 +218,10 @@ pub(super) fn read_file(req: &FsReadFileReq) -> Result<String, AppError> {
     if !metadata.is_file() {
         return Err(fs_error("only regular text files can be opened"));
     }
-    if metadata.len() > MAX_TEXT_BYTES {
-        return Err(fs_error("file exceeds the 5 MiB text editor limit"));
-    }
     let mut bytes = Vec::new();
-    file.take(MAX_TEXT_BYTES + 1)
+    file.take(u64::MAX)
         .read_to_end(&mut bytes)
         .map_err(fs_error)?;
-    if bytes.len() as u64 > MAX_TEXT_BYTES {
-        return Err(fs_error("file exceeds the 5 MiB text editor limit"));
-    }
     if bytes.contains(&0) {
         return Err(fs_error("binary files cannot be edited as text"));
     }
@@ -245,8 +241,8 @@ fn write_file(req: &FsWriteFileReq) -> Result<(), AppError> {
     if !path.is_file() {
         return Err(fs_error("only regular text files can be saved"));
     }
-    if req.content.len() as u64 > MAX_TEXT_BYTES || req.content.contains('\0') {
-        return Err(fs_error("content must be UTF-8 text no larger than 5 MiB"));
+    if req.content.contains('\0') {
+        return Err(fs_error("content must be UTF-8 text"));
     }
     // Opening without create prevents a deleted file from silently being recreated.
     use std::io::Write;
@@ -355,21 +351,27 @@ mod tests {
     }
 
     #[test]
-    fn rejects_binary_invalid_utf8_and_oversized_text() {
+    fn rejects_binary_invalid_utf8_but_opens_large_text() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("file");
         let req = FsReadFileReq {
             folder_path: root.path().to_string_lossy().into_owned(),
             file_path: "file".into(),
         };
-        for bytes in [
-            vec![b'a', 0, b'b'],
-            vec![255],
-            vec![b'a'; MAX_TEXT_BYTES as usize + 1],
-        ] {
+        for bytes in [vec![b'a', 0, b'b'], vec![255]] {
             std::fs::write(&path, bytes).unwrap();
             assert!(read_file(&req).is_err());
         }
+        let text = "x".repeat(6 * 1024 * 1024);
+        std::fs::write(&path, &text).unwrap();
+        assert_eq!(read_file(&req).unwrap(), text);
+        write_file(&FsWriteFileReq {
+            folder_path: req.folder_path,
+            file_path: req.file_path,
+            content: text.clone(),
+        })
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), text);
     }
 
     #[tokio::test]
