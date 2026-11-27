@@ -117,8 +117,22 @@ it("bounds Shelf preview styles across patch replacement and remounts", async ()
 it("bounds file styles across editable/read-only tab switches and reloads", async () => {
   mocks.store = reactive({
     tabs: [
-      { id: "edit", text: "editable", hunks: [], editable: true, loadGeneration: 0 },
-      { id: "read", text: "read-only", hunks: [], editable: false, loadGeneration: 0 },
+      {
+        id: "edit",
+        text: "editable",
+        baseline: "editable",
+        hunks: [],
+        editable: true,
+        loadGeneration: 0,
+      },
+      {
+        id: "read",
+        text: "read-only",
+        baseline: "read-only",
+        hunks: [],
+        editable: false,
+        loadGeneration: 0,
+      },
     ],
   });
   await expectBoundedStyles(async (index) => {
@@ -129,6 +143,7 @@ it("bounds file styles across editable/read-only tab switches and reloads", asyn
       await wrapper.setProps({ tabId: "read" });
       expect(wrapper.get(".cm-content").attributes("contenteditable")).toBe("false");
       mocks.store.tabs[1].text = `reloaded-${index}`;
+      mocks.store.tabs[1].baseline = mocks.store.tabs[1].text;
       mocks.store.tabs[1].loadGeneration++;
       await flushPromises();
       expect(wrapper.text()).toContain(`reloaded-${index}`);

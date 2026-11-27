@@ -197,6 +197,8 @@ function mount() {
   const current = tab.value;
   const text = current.text;
   const hunks = current.hunks;
+  let baselineText = current.baseline;
+  let baselineDocument = baselineText.replace(/\r\n?/g, "\n");
   view = new EditorView({
     parent: host.value,
     state: EditorState.create({
@@ -225,7 +227,14 @@ function mount() {
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           if (tab.value !== current || !store.tabs.includes(current)) return;
-          store.setDocument(current.id, update.state.doc.toString());
+          if (baselineText !== current.baseline) {
+            baselineText = current.baseline;
+            baselineDocument = baselineText.replace(/\r\n?/g, "\n");
+          }
+          const document = update.state.doc.toString();
+          // CodeMirror normalizes line endings. Returning to the saved text
+          // must restore its exact bytes, including mixed CRLF/LF/CR endings.
+          store.setDocument(current.id, document === baselineDocument ? baselineText : document);
         }),
         EditorView.domEventHandlers({
           contextmenu: (event, editorView) => {

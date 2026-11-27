@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { nextTick, reactive } from "vue";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
-import { undo } from "@codemirror/commands";
+import { redo, undo } from "@codemirror/commands";
 import FileViewer from "./FileViewer.vue";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 
@@ -226,6 +226,53 @@ it("marks the tab dirty after edits and clears dirty when restored to baseline",
   });
   await flushPromises();
   expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it.each([
+  ["BOM and CRLF", "\ufefffirst\r\nsecond\r\n"],
+  ["mixed line endings", "\ufefffirst\r\nsecond\nthird\rfourth\r\n"],
+])("restores the exact saved %s bytes after undo", async (_label, baseline) => {
+  mocks.fsReadFile.mockResolvedValueOnce(baseline);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 1, to: 6, insert: "changed" } });
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(baseline);
+  expect(store.tabs[0]!.dirty).toBe(false);
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fileWriteWorktree).not.toHaveBeenCalled();
+  expect(redo(cm)).toBe(true);
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(baseline);
+  expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it("compares undo against the latest successful save instead of the initial baseline", async () => {
+  const baseline = "\ufefffirst\r\nsecond\nthird\r";
+  mocks.fsReadFile.mockResolvedValueOnce(baseline);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 1, to: 6, insert: "saved" }, userEvent: "input.paste" });
+  const saved = store.tabs[0]!.text;
+  expect(await store.saveActive()).toBe(true);
+  cm.dispatch({
+    changes: { from: cm.state.doc.length, insert: "later" },
+    userEvent: "input.paste",
+  });
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(saved);
+  expect(store.tabs[0]!.dirty).toBe(false);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(store.tabs[0]!.baseline).toBe(saved);
 });
 
 it("writes through Ctrl/Cmd+S path, clears dirty, and refreshes Changes", async () => {
