@@ -34,6 +34,6 @@
 
 新增并解决QA130一项，回到原11项持续验收/归因事项，整体七项目标继续；本项不作为持续滚动断档或高CPU的归因。UTF-8/二进制/逐行正则范围及整文档编辑内存边界沿用搜索教程；没有宣称支持跨行正则或完成全部性能验收。
 
-提交前再次fetch及master/交付分支检查成功，无新提交，基线仍包含master `50a4802` 与交付 `2ee8a53`。准备独立提交推送，远端SHA随后核对。
+提交前再次fetch及master/交付分支检查成功，无新提交，基线仍包含master `50a4802` 与交付 `2ee8a53`。功能提交 `ce19fae2c8ea60d373f71d80a5120c307908ac15` 首次推送到 `origin/codex/checkout-target-safety` 成功，ls-remote完整SHA核对一致，无凭据提示；补记前再次同步成功。交付核对见证据目录 `delivery.json`。
 
 证据目录：`E:/IDEAproject/gitx/test-results/qa130-search-endings-20261127`。`before.log`、`empty-before.log`保存旧失败，`targeted.log`保存首次修后旧预期失败，`editor-model.mjs/json`保存编辑器对照，`lib-tests.log`、`clippy.log`、`build.log`、`docs-build.log`保存最终自动验证。`native-build.log`、`target.json`记录最终程序；`native-*.json`记录原生可访问性结果，截图在本次工具记录中；`mixed-verified.json`、`empties-verified.json`、`restore-verified.json`、`final-verified.json`记录写入/恢复字节，`process-exit.json`记录进程退出。
