@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import {
   ChevronDown,
   ChevronRight,
+  Crosshair,
   FilePlus,
   FolderPlus,
   LoaderCircle,
@@ -22,6 +23,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useChangesStore } from "@/stores/changesStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
+import { useDiffStore } from "@/stores/diffStore";
 import { useFileOperationsStore } from "@/stores/fileOperationsStore";
 import {
   currentFileDrag,
@@ -62,8 +64,10 @@ const workspace = useWorkspaceStore();
 const layout = useLayoutStore();
 const changes = useChangesStore();
 const viewer = useFileViewerStore();
+const diffs = useDiffStore();
 const operations = useFileOperationsStore();
 const history = useHistoryStore();
+const locating = ref(false);
 const tree = ref<HTMLElement | null>(null);
 const list = ref<{
   el: HTMLElement | null;
@@ -131,6 +135,49 @@ function canHistory(row: FileRow) {
     !!repoPath(row) &&
     !["untracked", "ignored", "added"].includes(change(row)?.kind ?? "")
   );
+}
+
+/** Map the active editor/diff tab onto a path relative to the File tree root. */
+function activeEditorTreePath(): string | null {
+  const folder = workspace.folderPath;
+  if (!folder) return null;
+  if (layout.activeEditorKind === "file") {
+    const tab = viewer.activeId ? viewer.tabs.find((item) => item.id === viewer.activeId) : null;
+    if (!tab) return null;
+    const root = tab.folderPath ?? workspace.repoPath;
+    if (!root) return null;
+    return relativeToRoot(root, tab.path, folder);
+  }
+  if (layout.activeEditorKind === "diff") {
+    const tab = diffs.activeId ? diffs.tabs.find((item) => item.id === diffs.activeId) : null;
+    if (!tab?.path || !workspace.repoPath) return null;
+    return relativeToRoot(workspace.repoPath, tab.path, folder);
+  }
+  return null;
+}
+const canLocateCurrent = computed(() => !!activeEditorTreePath() && !operations.busy && !locating.value);
+
+async function locateCurrentFile() {
+  const target = activeEditorTreePath();
+  if (!target || locating.value || operations.busy) {
+    toast({ title: t("fileTree.locateUnavailable") });
+    return;
+  }
+  locating.value = true;
+  try {
+    layout.showLeftTab("file");
+    const found = await files.revealPath(target);
+    if (!found) {
+      toast({ title: t("fileTree.locateUnavailable") });
+      return;
+    }
+    await nextTick();
+    const index = files.rows.findIndex((row) => row.path === target);
+    if (index >= 0) list.value?.scrollToIndex(index);
+    tree.value?.focus({ preventScroll: true });
+  } finally {
+    locating.value = false;
+  }
 }
 
 type Menu = { row: FileRow; x: number; y: number; current: () => boolean; folder: string };
@@ -479,6 +526,16 @@ function drop(event: DragEvent, row?: FileRow) {
           @click="operate(operation, files.selectedPath ? current : undefined)"
         >
           <component :is="operation === 'createFile' ? FilePlus : FolderPlus" class="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          class="rounded p-1 hover:bg-accent disabled:opacity-40"
+          :title="t('fileTree.locateCurrent')"
+          :aria-label="t('fileTree.locateCurrent')"
+          :disabled="!workspace.folderPath || !canLocateCurrent"
+          @click="locateCurrentFile()"
+        >
+          <Crosshair class="h-3.5 w-3.5" />
         </button>
         <button
           type="button"

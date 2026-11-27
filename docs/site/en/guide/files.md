@@ -48,7 +48,7 @@ Hover over the Commit stripe entry while dragging to switch panels, then drop on
 
 Open **Settings → Project Files** to show hidden files, show ignored files, or compact directories. These settings are independent of Commit's ignored-file setting. `.git` metadata is not treated as an ordinary editable project tree.
 
-**Filter loaded files** filters only nodes already loaded. Use `Ctrl+P` or `Ctrl+Shift+F` for a workspace-wide search. See [search](./search).
+**Filter loaded files** filters only nodes already loaded. Use `Ctrl+P` or `Ctrl+Shift+R` for a workspace-wide search. The toolbar locate icon scrolls to and selects the active editor/diff file in the tree. See [search](./search).
 
 ## Text editing limits
 

@@ -12,15 +12,19 @@ const mocks = vi.hoisted(() => ({
   ws: {} as any,
   layout: {} as any,
   changes: {} as any,
+  viewer: {} as any,
+  diffs: {} as any,
   open: vi.fn(),
   diff: vi.fn(),
   history: vi.fn(),
   toast: vi.fn(),
   reveal: vi.fn(),
+  revealPath: vi.fn(),
   openDirectory: vi.fn(),
   clipboard: vi.fn(),
   operation: vi.fn(),
   operations: {} as any,
+  showLeftTab: vi.fn(),
 }));
 vi.mock("vue-i18n", async (original) => ({
   ...(await original<typeof import("vue-i18n")>()),
@@ -30,7 +34,8 @@ vi.mock("@/stores/fileTreeStore", () => ({ useFileTreeStore: () => mocks.tree })
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
-vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: mocks.open }) }));
+vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => mocks.viewer }));
+vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => mocks.diffs }));
 vi.mock("@/stores/fileOperationsStore", () => ({
   useFileOperationsStore: () => mocks.operations,
 }));
@@ -119,6 +124,7 @@ beforeEach(() => {
     expand: vi.fn(),
     collapse: vi.fn(),
     refreshExpanded: vi.fn(),
+    revealPath: mocks.revealPath,
   });
   mocks.ws = reactive({
     folderPath: "C:/project",
@@ -139,9 +145,21 @@ beforeEach(() => {
     leftOpen: true,
     bottomOpen: false,
     activeBottomTab: "log",
+    activeEditorKind: "welcome",
+    showLeftTab: mocks.showLeftTab,
+  });
+  mocks.viewer = reactive({
+    open: mocks.open,
+    tabs: [] as { id: string; path: string; folderPath?: string }[],
+    activeId: null as string | null,
+  });
+  mocks.diffs = reactive({
+    tabs: [] as { id: string; path: string }[],
+    activeId: null as string | null,
   });
   mocks.changes = reactive({ snapshot: { repoId: "repo", files: [change("changed.txt")] } });
   mocks.operations = reactive({ busy: false, activityTitle: "", run: mocks.operation });
+  mocks.revealPath.mockResolvedValue(true);
 });
 afterEach(() => {
   endFileDrag();
@@ -159,6 +177,34 @@ it("keeps multiselection in context menus and copies all selected paths", async 
   await flushPromises();
   expect(mocks.clipboard).toHaveBeenCalledWith("changed.txt\nclean.txt");
   expect(mocks.tree.selectedPaths).toHaveLength(2);
+});
+
+it("disables locate until an editor file is active, then reveals and scrolls to it", async () => {
+  create();
+  const locate = wrapper.get('[aria-label="fileTree.locateCurrent"]');
+  expect(locate.attributes("disabled")).toBeDefined();
+  mocks.viewer.tabs = [{ id: "file:changed.txt", path: "changed.txt" }];
+  mocks.viewer.activeId = "file:changed.txt";
+  mocks.layout.activeEditorKind = "file";
+  await nextTick();
+  expect(locate.attributes("disabled")).toBeUndefined();
+  await locate.trigger("click");
+  await flushPromises();
+  expect(mocks.showLeftTab).toHaveBeenCalledWith("file");
+  expect(mocks.revealPath).toHaveBeenCalledWith("changed.txt");
+});
+
+it("locates the active diff path and reports when the tree has no match", async () => {
+  create();
+  mocks.diffs.tabs = [{ id: "diff:src/x", path: "src/nested.txt" }];
+  mocks.diffs.activeId = "diff:src/x";
+  mocks.layout.activeEditorKind = "diff";
+  mocks.revealPath.mockResolvedValueOnce(false);
+  await nextTick();
+  await wrapper.get('[aria-label="fileTree.locateCurrent"]').trigger("click");
+  await flushPromises();
+  expect(mocks.revealPath).toHaveBeenCalledWith("src/nested.txt");
+  expect(mocks.toast).toHaveBeenCalledWith({ title: "fileTree.locateUnavailable" });
 });
 
 it("shows active file work and disables mutation actions until it finishes", async () => {

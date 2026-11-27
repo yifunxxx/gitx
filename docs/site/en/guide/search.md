@@ -3,7 +3,7 @@
 | Task | Windows / Linux default | Scope |
 | --- | --- | --- |
 | Jump by filename | `Ctrl+P` | Fuzzy workspace paths |
-| Find in Files | `Ctrl+Shift+F` | Saved UTF-8 text |
+| Find in Files | `Ctrl+Shift+R` | Saved UTF-8 text |
 | Replace in Files | `Ctrl+Shift+H` | Selected matching files |
 | Find in File | `Ctrl+F` / editor toolbar | Current buffer, including unsaved edits |
 | Replace in File | `Ctrl+H` / editor toolbar | Editable file or conflict result |
@@ -13,7 +13,7 @@ macOS uses Cmd; Replace in File uses `Cmd+Option+F`. These actions, plus Replace
 
 ## Workspace search
 
-1. Open a project or ordinary folder and press `Ctrl+Shift+F`.
+1. Open a project or ordinary folder and press `Ctrl+Shift+R`.
 2. Enter text. Toggle **Aa** for case sensitivity, **ab** for whole words, and **.\*** for regular expressions. With regex disabled, the query is literal.
 3. Narrow the scope with comma-separated include/exclude globs, such as `src/**, *.vue` and `dist/**, *.lock`. `**` spans directories; bare names match at any depth and directory names include descendants.
 4. Toggle hidden and ignored files if needed. Initial values come from File settings; changes here affect this search only.
@@ -35,9 +35,9 @@ Replacement writes to disk without committing. Content hashes for every selected
 
 ## Find and replace in an editor
 
-Focus an editor and press `Ctrl+F`. Selected text seeds the query. The panel provides case, whole-word and regex options, previous/next, and select all matches. Editor regex uses JavaScript syntax, which differs from the global engine.
+Focus an editor and press `Ctrl+F`. Selected text seeds the query. The bar starts as a single find row; use the left chevron to expand replace (`Ctrl+H` expands and focuses replace). The panel provides case, whole-word and regex options, previous/next, and select all matches. Editor regex uses JavaScript syntax, which differs from the global engine. The bar is anchored to the current editor content area and does not cover Settings or other global dialogs.
 
-Editable files and conflict results also provide replacement text, Replace Current Match, and Replace All in File (`Ctrl+Alt+Enter`). Changes remain in the buffer and support undo with `Ctrl+Z`. Save ordinary files with `Ctrl+S`; use the conflict editor's save workflow for merge results. Read-only diffs and conflict source panes support searching only. Escape closes the panel.
+Editable files and conflict results also provide replacement text, Replace Current Match, and Replace All in File (`Ctrl+Alt+Enter`) once replace is expanded. Changes remain in the buffer and support undo with `Ctrl+Z`. Save ordinary files with `Ctrl+S`; use the conflict editor's save workflow for merge results. Read-only diffs and conflict source panes support searching only. Escape closes the panel.
 
 ## Other search tools
 

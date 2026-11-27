@@ -11,7 +11,7 @@
 | [查找上一个](./search) | `Shift+f3` | `Shift+f3` |
 | [文件内替换](./search) | `Ctrl+h` | `Cmd+Option+F` |
 | [替换文件内全部匹配](./search) | `Ctrl+Alt+enter` | `Cmd+Option+enter` |
-| [在文件中查找…](./search) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
+| [在文件中查找…](./search) | `Ctrl+Shift+R` | `Cmd+Shift+R` |
 | [跳转到文件…](./search) | `Ctrl+P` | `Cmd+P` |
 | [打开…](./getting-started) | `Ctrl+O` | `Cmd+O` |
 | [在文件中替换…](./search) | `Ctrl+Shift+h` | `Cmd+Shift+h` |

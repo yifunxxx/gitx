@@ -48,7 +48,7 @@ File 树中 **F4 是 Diff**；想编辑文件用 Enter/双击。更多快捷键�
 
 到 **Settings → Project Files** 分别开启显示隐藏、显示忽略文件或紧凑目录。这些设置与 Commit 面板的“显示忽略文件”独立。`.git` 元数据目录不作为普通可操作工作文件。
 
-树顶部 **Filter loaded files** 只过滤已加载的节点；要搜索整个工作区，使用 `Ctrl+P` 或 `Ctrl+Shift+F`。见[搜索说明](./search)。
+树顶部 **Filter loaded files** 只过滤已加载的节点；要搜索整个工作区，使用 `Ctrl+P` 或 `Ctrl+Shift+R`。工具栏上的定位图标可将当前编辑器/Diff 文件滚动并选中到树中。见[搜索说明](./search)。
 
 ## 编辑范围
 

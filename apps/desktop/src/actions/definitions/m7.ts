@@ -45,7 +45,9 @@ export function registerM7Actions() {
     title: "Find in Files…",
     titleKey: "fileSearch.contentTitle",
     description: "Search text across the workspace 全局内容搜索",
-    defaultShortcuts: { mac: ["mod+shift+f"], win: ["mod+shift+f"], linux: ["mod+shift+f"] },
+    // Ctrl+Shift+F conflicts on the user's Win11 setup; Ctrl+Shift+R is the
+    // default for workspace content search (Keymap still allows rebinding).
+    defaultShortcuts: { mac: ["mod+shift+r"], win: ["mod+shift+r"], linux: ["mod+shift+r"] },
     scope: "global",
     enabled: () => !!useWorkspaceStore().folderPath,
     async run() {
