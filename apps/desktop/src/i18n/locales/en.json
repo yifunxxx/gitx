@@ -1077,8 +1077,8 @@
     "closeRight": "Close Tabs to the Right",
     "closeAll": "Close All Tabs",
     "closeNamed": "Close {title}",
-    "unsavedTitle": "Close Unapplied Merge Results",
-    "unsavedMessage": "{count} merge tab(s) contain changes that have not been applied. Closing will discard these edits. Continue?",
+    "unsavedTitle": "Close Unsaved Edits",
+    "unsavedMessage": "{count} editor tab(s) contain changes that have not been saved or applied. Closing will discard these edits. Continue?",
     "discardAndClose": "Discard Edits and Close"
   },
   "updates": {
