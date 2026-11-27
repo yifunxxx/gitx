@@ -28,6 +28,191 @@ fn reject_commit(git_dir: &Path) {
     }
 }
 
+fn write_hook(git_dir: &Path, name: &str, script: &str) {
+    let path = git_dir.join("hooks").join(name);
+    fs::write(&path, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn selected_file_commit_does_not_silently_finish_an_in_progress_merge() {
+    let repo = FixtureBuilder::new().build("clean").unwrap();
+    let cwd = repo.path();
+    let runner = GitRunner::new("git");
+    git(&runner, cwd, &["checkout", "-b", "incoming"]).await;
+    fs::write(cwd.join("incoming.txt"), "must be part of the merge\n").unwrap();
+    git(&runner, cwd, &["add", "incoming.txt"]).await;
+    git(&runner, cwd, &["commit", "-m", "incoming change"]).await;
+    git(&runner, cwd, &["checkout", "main"]).await;
+    git(
+        &runner,
+        cwd,
+        &["merge", "--no-ff", "--no-commit", "incoming"],
+    )
+    .await;
+    fs::write(cwd.join("README.md"), "selected edit\n").unwrap();
+    let head = git(&runner, cwd, &["rev-parse", "HEAD"]).await;
+    let index = fs::read(cwd.join(".git/index")).unwrap();
+    let incoming = fs::read(cwd.join("incoming.txt")).unwrap();
+    let result = runner
+        .commit_create_ex(
+            cwd,
+            "selected only",
+            false,
+            false,
+            Some(&["README.md".into()]),
+            None,
+            &CancellationToken::new(),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "selected-file commit must not finalize a partial merge tree: {result:?}"
+    );
+    assert_eq!(git(&runner, cwd, &["rev-parse", "HEAD"]).await, head);
+    assert_eq!(fs::read(cwd.join(".git/index")).unwrap(), index);
+    assert!(cwd.join(".git/MERGE_HEAD").exists());
+    assert_eq!(fs::read(cwd.join("incoming.txt")).unwrap(), incoming);
+}
+
+#[tokio::test]
+async fn selected_file_hook_tree_changes_keep_the_original_index_and_recovery() {
+    let repo = FixtureBuilder::new().build("clean").unwrap();
+    let cwd = repo.path();
+    let runner = GitRunner::new("git");
+    fs::write(cwd.join("README.md"), "selected edit\n").unwrap();
+    let index = fs::read(cwd.join(".git/index")).unwrap();
+    write_hook(
+        &cwd.join(".git"),
+        "pre-commit",
+        "#!/bin/sh\nprintf 'hook content\\n' > hook.txt\ngit add hook.txt\n",
+    );
+    let result = runner
+        .commit_create_ex(
+            cwd,
+            "selected with hook",
+            false,
+            false,
+            Some(&["README.md".into()]),
+            None,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert!(
+        result.warning.is_some(),
+        "hook-mutated commit must not silently publish a stale result index"
+    );
+    assert_eq!(fs::read(cwd.join(".git/index")).unwrap(), index);
+    assert_eq!(
+        git(&runner, cwd, &["show", "HEAD:hook.txt"]).await,
+        "hook content\n"
+    );
+    let recovery = fs::read_dir(cwd.join(".git/gitx"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(fs::read(recovery.join("original-index")).unwrap(), index);
+    assert!(recovery.join("commit-index").exists());
+    assert!(!cwd.join(".git/index.lock").exists());
+}
+
+#[tokio::test]
+async fn selected_file_commit_does_not_overwrite_an_index_changed_outside_its_lock() {
+    let repo = FixtureBuilder::new().build("clean").unwrap();
+    let cwd = repo.path();
+    let runner = GitRunner::new("git");
+    fs::write(cwd.join("README.md"), "selected edit\n").unwrap();
+    write_hook(
+        &cwd.join(".git"),
+        "post-commit",
+        "#!/bin/sh\nprintf 'external index replacement' > .git/index\n",
+    );
+    let result = runner
+        .commit_create_ex(
+            cwd,
+            "selected with external write",
+            false,
+            false,
+            Some(&["README.md".into()]),
+            None,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert!(
+        result.warning.is_some(),
+        "external index change must be reported"
+    );
+    assert_eq!(
+        fs::read(cwd.join(".git/index")).unwrap(),
+        b"external index replacement"
+    );
+    assert_eq!(
+        git(&runner, cwd, &["show", "HEAD:README.md"]).await,
+        "selected edit\n"
+    );
+}
+
+#[tokio::test]
+async fn selected_file_cancellation_after_commit_reports_created_commit_and_keeps_recovery() {
+    let repo = FixtureBuilder::new().build("clean").unwrap();
+    let cwd = repo.path();
+    let runner = GitRunner::new("git");
+    fs::write(cwd.join("README.md"), "selected edit\n").unwrap();
+    write_hook(
+        &cwd.join(".git"),
+        "post-commit",
+        "#!/bin/sh\nprintf started > hook-started\nsleep 60\n",
+    );
+    let head = git(&runner, cwd, &["rev-parse", "HEAD"]).await;
+    let index = fs::read(cwd.join(".git/index")).unwrap();
+    let cancel = CancellationToken::new();
+    let paths = ["README.md".into()];
+    let operation = runner.commit_create_ex(
+        cwd,
+        "selected before cancel",
+        false,
+        false,
+        Some(&paths),
+        None,
+        &cancel,
+    );
+    let cancellation = async {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            while !cwd.join("hook-started").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("post-commit hook started");
+        cancel.cancel();
+    };
+    let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(25), async {
+        tokio::join!(operation, cancellation)
+    })
+    .await
+    .expect("cancelled commit exits");
+    let result = result.expect(
+        "HEAD advanced: report the commit with a recovery warning instead of retryable failure",
+    );
+    assert!(result.warning.is_some());
+    assert_ne!(git(&runner, cwd, &["rev-parse", "HEAD"]).await, head);
+    assert_eq!(fs::read(cwd.join(".git/index")).unwrap(), index);
+    assert_eq!(
+        git(&runner, cwd, &["show", "HEAD:README.md"]).await,
+        "selected edit\n"
+    );
+    assert!(!cwd.join(".git/index.lock").exists());
+    assert_eq!(fs::read_dir(cwd.join(".git/gitx")).unwrap().count(), 1);
+}
+
 #[tokio::test]
 async fn rejected_selected_file_commit_must_not_restore_unselected_worktree_edits() {
     // Lock: a failed partial (selected-file) commit must never checkout/reset

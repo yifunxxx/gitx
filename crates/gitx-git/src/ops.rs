@@ -429,7 +429,7 @@ impl GitRunner {
             .await
     }
 
-    /// Commit with optional pathspec (`--only`) or partial line selections via temp index (#66).
+    /// Commit selected files or lines through the same private-index transaction.
     #[allow(clippy::too_many_arguments)]
     pub async fn commit_create_ex(
         &self,
@@ -468,6 +468,22 @@ impl GitRunner {
             };
         }
 
+        if let Some(paths) = paths.filter(|paths| !paths.is_empty()) {
+            let selections = paths
+                .iter()
+                .cloned()
+                .map(|path| crate::partial_commit::CommitSelection::Whole { path })
+                .collect::<Vec<_>>();
+            let result = self
+                .commit_selections(cwd, trimmed, amend, no_verify, &selections, None, cancel)
+                .await?;
+            return if result.warning.is_some() {
+                Ok(result)
+            } else {
+                Ok(self.restore_after_commit(cwd, result).await)
+            };
+        }
+
         // Linked worktrees have a `.git` *file*; always resolve the real git dir.
         let gitx_dir = self.git_dir(cwd, cancel).await?.join("gitx");
         std::fs::create_dir_all(&gitx_dir)
@@ -488,209 +504,9 @@ impl GitRunner {
         if no_verify {
             args.push("--no-verify".into());
         }
-        if let Some(paths) = paths {
-            if !paths.is_empty() {
-                // Selected-file commits use private indexes (never `git commit
-                // --only`). `--only` builds a next-index under .git and has
-                // historically interacted with dirty worktrees; a failure must
-                // not restore/checkout unselected local edits.
-                let result = self
-                    .commit_paths(cwd, &msg_path, paths, amend, no_verify, cancel)
-                    .await;
-                let _ = std::fs::remove_file(&msg_path);
-                let result = result?;
-                if result.warning.is_some() {
-                    return Ok(result);
-                }
-                return Ok(self.restore_after_commit(cwd, result).await);
-            }
-        }
-
         let result = self.run_commit_and_result(cwd, args, amend, cancel).await;
         let _ = std::fs::remove_file(&msg_path);
         Ok(self.restore_after_commit(cwd, result?).await)
-    }
-
-    async fn commit_paths(
-        &self,
-        cwd: &Path,
-        message_path: &Path,
-        paths: &[String],
-        amend: bool,
-        no_verify: bool,
-        cancel: &CancellationToken,
-    ) -> Result<CommitResult, AppError> {
-        let git_dir = self.git_dir(cwd, cancel).await?;
-        let index = git_dir.join("index");
-        let _lock = CommitIndexLock::acquire(&git_dir)?;
-        let temporary = tempfile::Builder::new()
-            .prefix("path-commit-")
-            .tempdir_in(git_dir.join("gitx"))
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("create commit index: {e}")))?;
-        let commit_index = temporary.path().join("commit-index");
-        let result_index = tempfile::Builder::new()
-            .prefix("result-index-")
-            .tempfile_in(temporary.path())
-            .map_err(|e| AppError::new(ErrorCode::FsError, format!("create result index: {e}")))?
-            .into_temp_path();
-        let original_index = match std::fs::read(&index) {
-            Ok(bytes) => Some(bytes),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => {
-                return Err(AppError::new(
-                    ErrorCode::FsError,
-                    format!("read index: {e}"),
-                ))
-            }
-        };
-        if let Some(bytes) = &original_index {
-            std::fs::write(temporary.path().join("original-index"), bytes)
-                .map_err(|e| AppError::new(ErrorCode::FsError, format!("snapshot index: {e}")))?;
-            std::fs::write(&result_index, bytes).map_err(|e| {
-                AppError::new(ErrorCode::FsError, format!("copy result index: {e}"))
-            })?;
-        } else {
-            let _ = std::fs::remove_file(&result_index);
-        }
-
-        // Snapshot unselected (and selected) worktree bytes so a failed commit
-        // can prove we never checkout/restore unrelated local edits.
-        let mut worktree_snapshots = Vec::with_capacity(paths.len());
-        for path in paths {
-            let full = cwd.join(path);
-            let bytes = match std::fs::read(&full) {
-                Ok(bytes) => Some(bytes),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-                Err(e) => {
-                    return Err(AppError::new(
-                        ErrorCode::FsError,
-                        format!("read {path}: {e}"),
-                    ))
-                }
-            };
-            worktree_snapshots.push((path.clone(), bytes));
-        }
-
-        let invocation = |index_file: &Path, args: Vec<String>| {
-            GitInvocation::new(cwd, args)
-                .kind(OpKind::Write)
-                .git_bin(self.git_bin.clone())
-                .env("GIT_INDEX_FILE", index_file.to_string_lossy())
-                .env("GIT_LITERAL_PATHSPECS", "1")
-        };
-        let head = self.partial_commit_head(cwd, cancel).await?;
-        self.run(
-            invocation(
-                &commit_index,
-                vec![
-                    "read-tree".into(),
-                    head.as_deref().unwrap_or("--empty").into(),
-                ],
-            ),
-            cancel,
-        )
-        .await?;
-        if original_index.is_none() {
-            self.run(
-                invocation(&result_index, vec!["read-tree".into(), "--empty".into()]),
-                cancel,
-            )
-            .await?;
-        }
-        // Stage only the selected paths into the commit tree and into the
-        // post-commit index copy. Unselected staged entries stay on result_index.
-        for index_file in [commit_index.as_path(), result_index.as_ref()] {
-            self.run(
-                invocation(
-                    index_file,
-                    vec![
-                        "add".into(),
-                        "-A".into(),
-                        "--pathspec-from-file=-".into(),
-                        "--pathspec-file-nul".into(),
-                    ],
-                )
-                .stdin(pathspec_nul(paths)),
-                cancel,
-            )
-            .await?;
-        }
-        for (path, bytes) in &worktree_snapshots {
-            let full = cwd.join(path);
-            let current = match std::fs::read(&full) {
-                Ok(bytes) => Some(bytes),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-                Err(e) => {
-                    return Err(AppError::new(
-                        ErrorCode::FsError,
-                        format!("verify {path}: {e}"),
-                    ))
-                }
-            };
-            if current != *bytes {
-                return Err(AppError::new(
-                    ErrorCode::InvalidArgument,
-                    "file changed while preparing commit; refresh and review the selection",
-                ));
-            }
-        }
-        if self.partial_commit_head(cwd, cancel).await? != head
-            || match std::fs::read(&index) {
-                Ok(bytes) => Some(bytes),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-                Err(e) => {
-                    return Err(AppError::new(
-                        ErrorCode::FsError,
-                        format!("re-read index: {e}"),
-                    ))
-                }
-            } != original_index
-        {
-            return Err(AppError::new(
-                ErrorCode::InvalidArgument,
-                "HEAD or index changed while preparing commit; refresh and retry",
-            ));
-        }
-        let mut args = vec![
-            "commit".into(),
-            "-F".into(),
-            message_path.to_string_lossy().into_owned(),
-            "--cleanup=strip".into(),
-        ];
-        if amend {
-            args.push("--amend".into());
-        }
-        if no_verify {
-            args.push("--no-verify".into());
-        }
-        self.run(
-            invocation(&commit_index, args).timeout(Some(std::time::Duration::from_secs(120))),
-            cancel,
-        )
-        .await
-        .map_err(classify_commit_error)?;
-
-        // The commit already exists: finish publishing its index even if the
-        // caller cancels now, and report recovery trouble as success + warning.
-        let warning = match result_index.persist(&index) {
-            Ok(()) => None,
-            Err(error) => {
-                let detail = error.error.to_string();
-                let recovery = match error.path.keep() {
-                    Ok(path) => format!("Prepared index retained at {}", path.display()),
-                    Err(error) => format!("Could not retain the prepared index: {error}"),
-                };
-                let _ = temporary.keep();
-                Some(format!(
-                    "Commit succeeded, but the index could not be updated: {detail}. {recovery}"
-                ))
-            }
-        };
-        let mut result = self
-            .commit_result_from_head(cwd, amend, &CancellationToken::new())
-            .await?;
-        result.warning = warning;
-        Ok(result)
     }
 
     async fn run_commit_and_result(
