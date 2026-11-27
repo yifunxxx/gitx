@@ -9,6 +9,7 @@ import {
   FolderPlus,
   LoaderCircle,
   RefreshCw,
+  Trash2,
 } from "@lucide/vue";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
@@ -349,11 +350,18 @@ function operate(operation: FsOperation, row?: FileRow) {
     const parent =
       row?.kind === "directory" ? row.path : (row?.path.split("/").slice(0, -1).join("/") ?? "");
     void operations.run(operation, [parent]);
-  } else if (row)
-    void operations.run(
-      operation,
-      operation === "rename" ? [row.path] : selectedRows.value.map((item) => item.path),
-    );
+  } else if (row) {
+    const selected = selectedRows.value.map((item) => item.path);
+    // Prefer multi-selection; fall back to the focused/context row so Delete
+    // never silently no-ops when focus and selection briefly diverge.
+    const paths =
+      operation === "rename"
+        ? [row.path]
+        : selected.length
+          ? selected
+          : [row.path];
+    void operations.run(operation, paths);
+  }
 }
 async function selectIndex(index: number, event?: KeyboardEvent) {
   const row = files.rows[Math.min(Math.max(index, 0), files.rows.length - 1)];
@@ -526,6 +534,16 @@ function drop(event: DragEvent, row?: FileRow) {
           @click="operate(operation, files.selectedPath ? current : undefined)"
         >
           <component :is="operation === 'createFile' ? FilePlus : FolderPlus" class="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          class="rounded p-1 hover:bg-accent disabled:opacity-40"
+          :title="t('fileOps.delete')"
+          :aria-label="t('fileOps.delete')"
+          :disabled="!workspace.folderPath || operations.busy || !selectedRows.length"
+          @click="current && operate('delete', current)"
+        >
+          <Trash2 class="h-3.5 w-3.5" />
         </button>
         <button
           type="button"

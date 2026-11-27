@@ -315,92 +315,106 @@ onBeforeUnmount(() => {
       :aria-label="t('fileSearch.contentTitle')"
       class="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border bg-popover shadow-lg"
     >
-      <header class="flex shrink-0 items-center gap-2 border-b px-4 py-3">
-        <Search class="h-4 w-4" />
+      <header class="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-4 py-2.5">
+        <Search class="h-4 w-4 text-muted-foreground" />
         <h2 class="flex-1 text-sm font-semibold">
           {{ t(replacingMode ? "contentSearch.replaceTitle" : "fileSearch.contentTitle") }}
         </h2>
         <button
           :disabled="applying"
           :aria-label="t('common.close')"
-          class="rounded p-1 hover:bg-accent"
+          class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           @click="close"
         >
           <X class="h-4 w-4" />
         </button>
       </header>
-      <fieldset :disabled="applying || opening" class="shrink-0 space-y-2 p-3">
-        <div class="flex items-center gap-2">
-          <input
-            v-model="query"
-            autofocus
-            data-search-query
-            type="search"
-            :aria-label="t('fileSearch.contentPlaceholder')"
-            :placeholder="t('fileSearch.contentPlaceholder')"
-            class="min-w-0 flex-1 rounded border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-          />
-          <label
-            v-for="option in ['caseSensitive', 'wholeWord', 'regex'] as const"
-            :key="option"
-            class="cursor-pointer rounded border px-2 py-1.5 text-xs hover:bg-accent"
-            :title="t(`contentSearch.${option}`)"
-          >
+      <fieldset :disabled="applying || opening" class="shrink-0 space-y-3 border-b p-3">
+        <div class="space-y-2 rounded-md border bg-background/60 p-2.5">
+          <div class="flex items-center gap-2">
             <input
-              type="checkbox"
-              :aria-label="t(`contentSearch.${option}`)"
-              :checked="
-                option === 'caseSensitive'
-                  ? caseSensitive
-                  : option === 'wholeWord'
-                    ? wholeWord
-                    : regex
-              "
-              @change="
-                option === 'caseSensitive'
-                  ? (caseSensitive = !caseSensitive)
-                  : option === 'wholeWord'
-                    ? (wholeWord = !wholeWord)
-                    : (regex = !regex)
-              "
+              v-model="query"
+              autofocus
+              data-search-query
+              type="search"
+              :aria-label="t('fileSearch.contentPlaceholder')"
+              :placeholder="t('fileSearch.contentPlaceholder')"
+              class="min-w-0 flex-1 rounded border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
             />
-            {{ option === "caseSensitive" ? "Aa" : option === "wholeWord" ? "ab" : ".*" }}
+            <div class="flex shrink-0 items-center gap-0.5 border-l pl-2">
+              <label
+                v-for="option in ['caseSensitive', 'wholeWord', 'regex'] as const"
+                :key="option"
+                class="inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded border border-transparent px-1.5 text-xs text-muted-foreground hover:bg-accent has-[:checked]:border-border has-[:checked]:bg-accent has-[:checked]:text-foreground"
+                :title="t(`contentSearch.${option}`)"
+              >
+                <input
+                  class="sr-only"
+                  type="checkbox"
+                  :aria-label="t(`contentSearch.${option}`)"
+                  :checked="
+                    option === 'caseSensitive'
+                      ? caseSensitive
+                      : option === 'wholeWord'
+                        ? wholeWord
+                        : regex
+                  "
+                  @change="
+                    option === 'caseSensitive'
+                      ? (caseSensitive = !caseSensitive)
+                      : option === 'wholeWord'
+                        ? (wholeWord = !wholeWord)
+                        : (regex = !regex)
+                  "
+                />
+                {{ option === "caseSensitive" ? "Aa" : option === "wholeWord" ? "ab" : ".*" }}
+              </label>
+            </div>
+          </div>
+          <label class="flex items-center gap-2 text-xs text-muted-foreground">
+            <input v-model="replacingMode" type="checkbox" class="rounded border" />
+            {{ t("contentSearch.showReplace") }}
           </label>
-        </div>
-        <label class="flex items-center gap-2 text-xs"
-          ><input v-model="replacingMode" type="checkbox" />{{
-            t("contentSearch.showReplace")
-          }}</label
-        >
-        <input
-          v-if="replacingMode"
-          v-model="replacement"
-          :aria-label="t('contentSearch.replacement')"
-          :placeholder="t('contentSearch.replacement')"
-          class="w-full rounded border bg-background px-3 py-2 text-sm"
-        />
-        <div class="grid grid-cols-2 gap-2">
           <input
-            v-model="include"
-            :aria-label="t('contentSearch.include')"
-            :placeholder="t('contentSearch.include')"
-            class="rounded border bg-background px-2 py-1 text-xs"
-          />
-          <input
-            v-model="exclude"
-            :aria-label="t('contentSearch.exclude')"
-            :placeholder="t('contentSearch.exclude')"
-            class="rounded border bg-background px-2 py-1 text-xs"
+            v-if="replacingMode"
+            v-model="replacement"
+            :aria-label="t('contentSearch.replacement')"
+            :placeholder="t('contentSearch.replacement')"
+            class="w-full rounded border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
           />
         </div>
-        <div class="flex flex-wrap gap-4 text-xs text-muted-foreground">
-          <label
-            ><input v-model="showHidden" type="checkbox" /> {{ t("contentSearch.hidden") }}</label
-          >
-          <label
-            ><input v-model="showIgnored" type="checkbox" /> {{ t("contentSearch.ignored") }}</label
-          >
-          <span class="min-w-0 truncate" :title="folder ?? ''">{{ folder }}</span>
+        <div class="space-y-2 rounded-md border bg-muted/20 p-2.5">
+          <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {{ t("contentSearch.scopeLabel") }}
+          </p>
+          <div class="grid grid-cols-2 gap-2">
+            <input
+              v-model="include"
+              :aria-label="t('contentSearch.include')"
+              :placeholder="t('contentSearch.include')"
+              class="rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
+            />
+            <input
+              v-model="exclude"
+              :aria-label="t('contentSearch.exclude')"
+              :placeholder="t('contentSearch.exclude')"
+              class="rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
+            />
+          </div>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <label class="inline-flex items-center gap-1.5">
+              <input v-model="showHidden" type="checkbox" class="rounded border" />
+              {{ t("contentSearch.hidden") }}
+            </label>
+            <label class="inline-flex items-center gap-1.5">
+              <input v-model="showIgnored" type="checkbox" class="rounded border" />
+              {{ t("contentSearch.ignored") }}
+            </label>
+          </div>
+          <p class="truncate text-[11px] text-muted-foreground" :title="folder ?? ''">
+            <span class="font-medium text-foreground/70">{{ t("contentSearch.workspace") }}</span>
+            {{ folder }}
+          </p>
         </div>
       </fieldset>
       <div
@@ -513,29 +527,48 @@ onBeforeUnmount(() => {
         <summary>{{ t("fileSearch.skipped", { count: result.skipped }) }}</summary>
         <p v-for="issue in result.issues" :key="issue" class="break-all">{{ issue }}</p>
       </details>
-      <footer class="shrink-0 space-y-2 border-t px-4 py-3 text-xs text-muted-foreground">
+      <footer class="shrink-0 space-y-2 border-t bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
         <p>{{ t("contentSearch.scope") }}</p>
         <p v-if="regex && replacingMode">{{ t("contentSearch.captureHint") }}</p>
         <template v-if="replacingMode">
           <p>{{ t("contentSearch.selectionHint", { count: selectedFiles }) }}</p>
           <p v-if="busyDrafts" class="text-warning">{{ t("contentSearch.saveDrafts") }}</p>
-          <div class="flex items-center justify-end gap-3">
-            <span v-if="confirming" class="text-foreground">{{
-              t("contentSearch.confirm", { count: selectedFiles })
-            }}</span>
-            <button
-              :disabled="!canReplace"
-              class="rounded border bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-40"
-              @click="apply"
-            >
-              {{
-                t(confirming ? "contentSearch.confirmReplace" : "contentSearch.replaceFiles", {
-                  count: selectedFiles,
-                })
-              }}
-            </button>
-          </div>
         </template>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <span v-if="replacingMode && confirming" class="mr-auto text-foreground">{{
+            t("contentSearch.confirm", { count: selectedFiles })
+          }}</span>
+          <button
+            type="button"
+            :disabled="applying"
+            class="rounded border bg-background px-3 py-1.5 text-foreground hover:bg-accent disabled:opacity-40"
+            @click="close"
+          >
+            {{ t("common.cancel") }}
+          </button>
+          <button
+            v-if="replacingMode"
+            type="button"
+            :disabled="!canReplace"
+            class="rounded border border-primary bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-40"
+            @click="apply"
+          >
+            {{
+              t(confirming ? "contentSearch.confirmReplace" : "contentSearch.replaceFiles", {
+                count: selectedFiles,
+              })
+            }}
+          </button>
+          <button
+            v-else
+            type="button"
+            :disabled="!query || applying || loading"
+            class="rounded border border-primary bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-40"
+            @click="schedule"
+          >
+            {{ t(loading ? "fileSearch.searching" : "contentSearch.search") }}
+          </button>
+        </div>
       </footer>
     </section>
   </div>

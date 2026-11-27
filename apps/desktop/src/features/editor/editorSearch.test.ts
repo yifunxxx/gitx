@@ -114,3 +114,17 @@ it("keeps the find panel below dialog stacking by isolating the editor", () => {
   const panels = view.dom.querySelector(".cm-panels") as HTMLElement;
   expect(getComputedStyle(panels).zIndex).toBe("1");
 });
+it("keeps compact IDEA row alignment and soft focus styling", () => {
+  runEditorSearch("Editor.Replace", view);
+  const panel = view.dom.querySelector(".cm-search") as HTMLElement;
+  expect(panel.querySelector(".cm-search-actions")).toBeTruthy();
+  expect(panel.querySelector(".cm-search-options")).toBeTruthy();
+  expect(panel.querySelector(".cm-search-replace .cm-search-expand-spacer")).toBeTruthy();
+  const next = panel.querySelector('button[name="next"]') as HTMLButtonElement;
+  expect(next.textContent).toBe("Next");
+  expect(next.getAttribute("aria-label")).toBe("Find Next");
+  const input = panel.querySelector('input[name="replace"]') as HTMLInputElement;
+  expect(getComputedStyle(input).outlineStyle === "none" || getComputedStyle(input).outlineWidth === "0px").toBe(
+    true,
+  );
+});

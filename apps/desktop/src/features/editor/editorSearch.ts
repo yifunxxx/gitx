@@ -81,8 +81,19 @@ function toggle(
   return { input, wrap };
 }
 
-function button(name: string, onclick: () => void, content: string) {
-  return el("button", { type: "button", class: "cm-button", name, onclick }, [content]);
+function button(name: string, onclick: () => void, content: string, title?: string) {
+  return el(
+    "button",
+    {
+      type: "button",
+      class: "cm-button",
+      name,
+      onclick,
+      title: title || content,
+      "aria-label": title || content,
+    },
+    [content],
+  );
 }
 
 class IdeaSearchPanel implements Panel {
@@ -164,15 +175,26 @@ class IdeaSearchPanel implements Panel {
           ["▸"],
         ) as HTMLButtonElement);
 
-    const findRow = el("div", { class: "cm-search-row" }, [
-      ...(this.expandBtn ? [this.expandBtn] : []),
-      this.searchField,
-      button("next", () => findNext(view), phrase(view, "next")),
-      button("prev", () => findPrevious(view), phrase(view, "previous")),
-      button("select", () => selectMatches(view), phrase(view, "all")),
+    const findActions = el("div", { class: "cm-search-actions" }, [
+      button("next", () => findNext(view), phrase(view, "next"), phrase(view, "Find Next")),
+      button(
+        "prev",
+        () => findPrevious(view),
+        phrase(view, "previous"),
+        phrase(view, "Find Previous"),
+      ),
+      button("select", () => selectMatches(view), phrase(view, "all"), phrase(view, "Select All")),
+    ]);
+    const findOptions = el("div", { class: "cm-search-options" }, [
       caseToggle.wrap,
       reToggle.wrap,
       wordToggle.wrap,
+    ]);
+    const findRow = el("div", { class: "cm-search-row" }, [
+      ...(this.expandBtn ? [this.expandBtn] : []),
+      this.searchField,
+      findActions,
+      findOptions,
       el(
         "button",
         {
@@ -180,6 +202,7 @@ class IdeaSearchPanel implements Panel {
           name: "close",
           class: "cm-search-close",
           "aria-label": phrase(view, "close"),
+          title: phrase(view, "close"),
           onclick: () => closeSearchPanel(view),
         },
         ["×"],
@@ -189,9 +212,25 @@ class IdeaSearchPanel implements Panel {
     this.replaceRow = view.state.readOnly
       ? null
       : el("div", { class: "cm-search-row cm-search-replace" }, [
+          // Match the find-row expand control so inputs/buttons share one column.
+          el("span", { class: "cm-search-expand-spacer", "aria-hidden": "true" }),
           this.replaceField,
-          button("replace", () => replaceNext(view), phrase(view, "replace")),
-          button("replaceAll", () => replaceAll(view), phrase(view, "replace all")),
+          el("div", { class: "cm-search-actions" }, [
+            button(
+              "replace",
+              () => replaceNext(view),
+              phrase(view, "replace"),
+              phrase(view, "Replace Next"),
+            ),
+            button(
+              "replaceAll",
+              () => replaceAll(view),
+              phrase(view, "replace all"),
+              phrase(view, "Replace All"),
+            ),
+          ]),
+          el("div", { class: "cm-search-options cm-search-options-spacer", "aria-hidden": "true" }),
+          el("span", { class: "cm-search-close-spacer", "aria-hidden": "true" }),
         ]);
 
     this.dom = el(
@@ -344,73 +383,128 @@ const searchTheme = EditorView.theme({
     color: "var(--color-foreground)",
     fontSize: "12px",
     zIndex: "1",
+    borderBottom: "1px solid var(--color-border)",
   },
   ".cm-search": {
-    padding: "4px 8px",
+    padding: "3px 6px 4px",
     display: "flex",
     flexDirection: "column",
     alignItems: "stretch",
-    gap: "4px",
+    gap: "3px",
     position: "relative",
   },
   ".cm-search-row": {
     display: "flex",
     alignItems: "center",
     flexWrap: "nowrap",
-    gap: "4px",
+    gap: "3px",
     minWidth: 0,
   },
+  ".cm-search-actions, .cm-search-options": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "2px",
+    flex: "0 0 auto",
+  },
+  ".cm-search-options": {
+    marginLeft: "2px",
+    paddingLeft: "4px",
+    borderLeft: "1px solid color-mix(in srgb, var(--color-border) 80%, transparent)",
+  },
+  ".cm-search-options-spacer": {
+    visibility: "hidden",
+    // Roughly three option toggles so Replace All lines up with Find actions.
+    minWidth: "5.5rem",
+    borderLeftColor: "transparent",
+  },
   ".cm-search input.cm-textfield": {
-    flex: "1 1 10rem",
-    minWidth: "8rem",
+    flex: "1 1 8rem",
+    minWidth: "6rem",
     border: "1px solid var(--color-border)",
-    borderRadius: "4px",
+    borderRadius: "3px",
     background: "var(--color-background)",
     color: "var(--color-foreground)",
-    padding: "2px 6px",
-    height: "24px",
+    padding: "1px 6px",
+    height: "22px",
+    outline: "none",
+    boxShadow: "none",
+  },
+  ".cm-search input.cm-textfield:focus": {
+    borderColor: "color-mix(in srgb, var(--color-ring) 70%, var(--color-border))",
+    boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 35%, transparent)",
   },
   ".cm-search button.cm-button": {
     border: "1px solid var(--color-border)",
-    borderRadius: "4px",
+    borderRadius: "3px",
     background: "var(--color-background)",
     color: "var(--color-foreground)",
-    padding: "2px 7px",
-    height: "24px",
-    lineHeight: "1.2",
+    padding: "0 6px",
+    height: "22px",
+    minWidth: "1.75rem",
+    lineHeight: "1.15",
     cursor: "pointer",
     flex: "0 0 auto",
+    outline: "none",
+    boxShadow: "none",
   },
-  ".cm-search-expand, .cm-search-close": {
-    width: "24px",
-    height: "24px",
+  ".cm-search button.cm-button:hover": {
+    background: "color-mix(in srgb, var(--color-foreground) 6%, var(--color-background))",
+  },
+  ".cm-search button.cm-button:focus-visible": {
+    borderColor: "color-mix(in srgb, var(--color-ring) 70%, var(--color-border))",
+    boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 35%, transparent)",
+  },
+  ".cm-search-expand, .cm-search-close, .cm-search-expand-spacer, .cm-search-close-spacer": {
+    width: "20px",
+    height: "22px",
     padding: "0",
     border: "none",
     background: "transparent",
-    color: "var(--color-foreground)",
+    color: "var(--color-muted-foreground, var(--color-foreground))",
     cursor: "pointer",
     flex: "0 0 auto",
-    fontSize: "12px",
-    lineHeight: "24px",
+    fontSize: "11px",
+    lineHeight: "22px",
+    textAlign: "center",
+    outline: "none",
   },
-  ".cm-search-close": { marginLeft: "auto" },
+  ".cm-search-expand:hover, .cm-search-close:hover": {
+    color: "var(--color-foreground)",
+    background: "color-mix(in srgb, var(--color-foreground) 8%, transparent)",
+    borderRadius: "3px",
+  },
+  ".cm-search-expand:focus-visible, .cm-search-close:focus-visible": {
+    boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 35%, transparent)",
+    borderRadius: "3px",
+  },
+  ".cm-search-expand-spacer, .cm-search-close-spacer": {
+    cursor: "default",
+    pointerEvents: "none",
+  },
+  ".cm-search-close": { marginLeft: "2px" },
   ".cm-search-toggle": {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: "2px",
     fontSize: "11px",
-    padding: "0 5px",
-    height: "24px",
+    padding: "0 4px",
+    height: "22px",
+    minWidth: "22px",
     border: "1px solid transparent",
-    borderRadius: "4px",
+    borderRadius: "3px",
     cursor: "pointer",
     userSelect: "none",
     flex: "0 0 auto",
+    color: "var(--color-muted-foreground, var(--color-foreground))",
+  },
+  ".cm-search-toggle:hover": {
+    background: "color-mix(in srgb, var(--color-foreground) 6%, transparent)",
   },
   ".cm-search-toggle:has(input:checked)": {
     borderColor: "var(--color-border)",
-    background: "color-mix(in srgb, var(--color-foreground) 12%, transparent)",
+    color: "var(--color-foreground)",
+    background: "color-mix(in srgb, var(--color-foreground) 10%, transparent)",
   },
   ".cm-search-toggle input": { position: "absolute", opacity: "0", width: "0", height: "0" },
   ".cm-searchMatch": { backgroundColor: "#eab30830", outline: "1px solid #eab30860" },
@@ -455,17 +549,32 @@ export function editorSearch(translate?: (key: string) => string): Extension {
             Replace: translate("editor.replace"),
             next: translate("editor.findNext"),
             previous: translate("editor.findPrevious"),
-            all: translate("editor.selectAll"),
+            all: translate("editor.selectMatches"),
+            "Find Next": translate("editor.findNextAction"),
+            "Find Previous": translate("editor.findPreviousAction"),
+            "Select All": translate("editor.selectAll"),
             "match case": translate("contentSearch.caseSensitive"),
             "by word": translate("contentSearch.wholeWord"),
             regexp: translate("contentSearch.regex"),
             replace: translate("editor.replaceNext"),
             "replace all": translate("editor.replaceAll"),
+            "Replace Next": translate("editor.replaceNextAction"),
+            "Replace All": translate("editor.replaceAllAction"),
             close: translate("common.close"),
             "Expand replace": translate("editor.expandReplace"),
             "Collapse replace": translate("editor.collapseReplace"),
           }
         : {
+            next: "Next",
+            previous: "Prev",
+            all: "All",
+            "Find Next": "Find Next",
+            "Find Previous": "Find Previous",
+            "Select All": "Select All",
+            replace: "Replace",
+            "replace all": "All",
+            "Replace Next": "Replace Current Match",
+            "Replace All": "Replace All in File",
             "Expand replace": "Show Replace",
             "Collapse replace": "Hide Replace",
           },

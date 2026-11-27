@@ -218,6 +218,7 @@ it("shows active file work and disables mutation actions until it finishes", asy
   await nextTick();
   expect(wrapper.get('[role="status"]').text()).toBe("Copying files");
   expect(wrapper.get('[aria-label="fileOps.createFile"]').attributes("disabled")).toBeDefined();
+  expect(wrapper.get('[aria-label="fileOps.delete"]').attributes("disabled")).toBeDefined();
   await menu("changed.txt");
   const rename = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
     (button) => button.textContent === "fileOps.rename",
@@ -228,6 +229,16 @@ it("shows active file work and disables mutation actions until it finishes", asy
   await nextTick();
   expect(wrapper.find('[role="status"]').exists()).toBe(false);
   expect(wrapper.get('[aria-label="fileOps.createFile"]').attributes("disabled")).toBeUndefined();
+});
+it("exposes toolbar delete for the current selection", async () => {
+  create();
+  const trash = wrapper.get('[aria-label="fileOps.delete"]');
+  expect(trash.attributes("disabled")).toBeDefined();
+  await item("changed.txt").trigger("click");
+  await nextTick();
+  expect(trash.attributes("disabled")).toBeUndefined();
+  await trash.trigger("click");
+  expect(mocks.operation).toHaveBeenCalledWith("delete", ["changed.txt"]);
 });
 it("handles a large selection without repeatedly scanning every selected path", async () => {
   const count = 512;

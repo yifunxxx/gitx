@@ -36,7 +36,7 @@
 | Changes | F4 | 打开工作文件编辑器 |
 | File | Enter / 双击 | 编辑文件或展开目录 |
 | File | F4 | 打开适用 Git Diff |
-| File | F2 / Delete | 重命名 / 移入回收站 |
+| File | F2 / Delete / 顶栏垃圾桶 | 重命名 / 删除（移入回收站） |
 | 树/列表 | 方向键、Home/End、PageUp/PageDown | 导航；左右展开/折叠 |
 | Changes | 空格 | 切换提交复选框 |
 | 支持的列表 | Shift+F10 | 右键菜单 |

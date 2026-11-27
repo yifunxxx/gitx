@@ -36,7 +36,7 @@ The table is generated from the registered default bindings. Windows/Linux use C
 | Changes | F4 | Open working-file editor |
 | File | Enter / double-click | Open file editor; expand a directory |
 | File | F4 | Open an applicable Git diff |
-| File | F2 / Delete | Rename / recycle selected item(s) |
+| File | F2 / Delete / toolbar trash | Rename / delete (recycle bin) |
 | Trees/lists | Arrows, Home/End, PageUp/PageDown | Navigate; Left/Right collapse/expand |
 | Changes | Space | Toggle commit checkbox |
 | Supported lists | Shift+F10 | Open context menu |

@@ -143,8 +143,19 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
         return;
       }
       if (operation === "delete" && affected.some((tab) => tab.dirty)) {
-        toast({ title: t("fileOps.unsavedDelete") });
-        return;
+        if (
+          !(await confirmDialog({
+            title: t("fileOps.delete"),
+            message: t("fileOps.discardAndDelete"),
+            destructive: true,
+          })) ||
+          !current()
+        )
+          return;
+        // Confirmed discard: clear dirty so applyFileMutation closes tabs.
+        for (const tab of affected) {
+          if (tab.dirty) tab.dirty = false;
+        }
       }
       if (operation === "copy" && affected.some((tab) => tab.dirty)) {
         if (

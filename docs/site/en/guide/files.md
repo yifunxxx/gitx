@@ -22,7 +22,7 @@ Git markers show changes. Parent-directory markers summarize changed descendants
 | Rename | Select one item and press F2 or choose Rename; enter its new name. Open editors follow the new path |
 | Copy To | Select items, choose **Copy To**, enter the destination directory, and confirm; originals remain |
 | Move To | Choose **Move To**, enter the destination directory, review the list, and confirm |
-| Delete | Press Delete or choose Delete, review the scope, and confirm; items go to the system recycle bin |
+| Delete | Select items, then press Delete, use the toolbar trash icon, or choose **Delete…** in the context menu; confirm to move them to the system recycle bin. Unsaved editor drafts prompt a second confirmation to discard them |
 
 Existing destinations are not silently overwritten. A batch can partly succeed; inspect each result. Failed recycling preserves the source instead of falling back to permanent deletion. Restore files through Windows Recycle Bin, then refresh gitx.
 

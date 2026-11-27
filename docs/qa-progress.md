@@ -4,6 +4,8 @@
 
 ## 当前进度
 
+2026-11-27 登记并推进 QA-119（用户反馈 v0.1.51）：文件内查找条仍丑（厚 focus、长标签、行未对齐）、Find in Files 层次弱；File 删除可发现性不足（无工具栏、菜单文案偏回收站、脏草稿硬阻断）。正在美化查找 UI、补工具栏删除/草稿确认/路径回退，并同步 Pages；完成后开 PR → merge → bump 0.1.52。原持续 QA 事项与整体目标继续。
+
 2026-11-27 QA-118 已合入 master（PR #34）并准备打 `v0.1.51`：IDEA 风格文件内查找/替换、`.cm-panels` 层级修复、全局搜索 `Ctrl+Shift+R`、File 定位图标；Pages（search/files/settings/troubleshooting 中英）已补齐。CI 绿后 merge；bump/tag/Release 随后。原持续 QA 事项与整体目标继续。
 
 2026-11-27 登记并实现 QA-118（用户 fun yi 优先 UX）：文件内查找/替换改为 IDEA 风格单行+箭头展开替换，修正 `.cm-panels` sticky z-300 盖住 Settings 的层级；全局内容搜索默认快捷键改为 `Ctrl+Shift+R`（原 `Ctrl+Shift+F`）并同步 Keymap/中英教程；File 工具窗顶栏增加定位当前编辑器/Diff 文件图标。定向前端测试与 typecheck、docs check 通过；原生 Win11 界面与安装版未在本轮验证。独立 PR 交付，不 merge/bump/release。原持续 QA 事项与整体目标继续。
