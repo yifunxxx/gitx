@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   backend: {
     logQuery: vi.fn(),
     logIndexStatus: vi.fn(),
+    logIndexRebuild: vi.fn(),
     logCommitDetails: vi.fn(),
     logChangedFiles: vi.fn(),
   },
@@ -65,6 +66,39 @@ const mountView = () =>
       },
     },
   });
+
+it("shows a pending index rebuild and enables retry after failure", async () => {
+  const wrapper = mountView();
+  await flushPromises();
+  let reject!: (error: Error) => void;
+  mocks.backend.logIndexRebuild.mockReturnValueOnce(
+    new Promise((_, fail) => {
+      reject = fail;
+    }),
+  );
+  const button = wrapper.findAll("button").find((item) => item.text() === "log.rebuildIndex")!;
+  await button.trigger("click");
+  expect(button.text()).toBe("log.rebuildingIndex");
+  expect(button.attributes("disabled")).toBeDefined();
+  expect(button.attributes("aria-busy")).toBe("true");
+  reject(new Error("index unavailable"));
+  await flushPromises();
+  expect(button.text()).toBe("log.rebuildIndex");
+  expect(button.attributes("disabled")).toBeUndefined();
+  expect(button.attributes("aria-busy")).toBe("false");
+  mocks.backend.logIndexRebuild.mockResolvedValueOnce({
+    enabled: true,
+    ready: true,
+    progress: 1,
+    commitCount: 9,
+    message: "",
+  });
+  await button.trigger("click");
+  await flushPromises();
+  expect(mocks.backend.logIndexRebuild).toHaveBeenCalledTimes(2);
+  expect(useLogStore().indexStatus?.commitCount).toBe(9);
+  wrapper.unmount();
+});
 
 it("clears applied filters and stale drafts in the query sent by the Clear button", async () => {
   const wrapper = mountView();

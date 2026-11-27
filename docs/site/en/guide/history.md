@@ -19,6 +19,8 @@ Scrolling to a boundary loads additional history; use Load more or newer-record 
 
 **Log list mode** selects a flat list or branch-oriented tree. **Rebuild index** rebuilds a local index used for filtering; it does not create or rewrite commits. If filters return nothing, Clear them and check the revision scope.
 
+While rebuilding, the button shows **Rebuilding…** and the bottom-left task queue identifies the repository's index task. You can keep filtering and browsing. Returning to the same repository does not start a duplicate rebuild. Completion updates the index status; after a failure, read the error and retry with the enabled button.
+
 ## Compare commits or compare with local
 
 - Select two commits and choose Compare, then inspect changed files and their diffs.

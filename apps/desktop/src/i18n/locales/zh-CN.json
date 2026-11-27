@@ -196,6 +196,7 @@
     "graphTip": "显示图选项",
     "goToPlaceholder": "转到哈希 / 分支 / 标签",
     "rebuildIndex": "重建索引",
+    "rebuildingIndex": "重建中…",
     "rebuildIndexTip": "重建 Log 索引以加速筛选",
     "indexEmpty": "索引为空 — 重建以加速筛选",
     "indexed": "已索引 {count} 个提交",

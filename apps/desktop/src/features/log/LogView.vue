@@ -3,7 +3,7 @@ import { formatCommitTime as formatTime } from "@/lib/commitTime";
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
-import { Eye, Filter, List, ListTree, Search } from "@lucide/vue";
+import { Eye, Filter, List, ListTree, LoaderCircle, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -603,8 +603,19 @@ function onCommitContext(sha: string, e: MouseEvent) {
           {{ indexLabel }}
         </span>
         <Tip :text="t('log.rebuildIndexTip')">
-          <Button size="xs" variant="ghost" @click="log.rebuildIndex()">
-            {{ t("log.rebuildIndex") }}
+          <Button
+            size="xs"
+            variant="ghost"
+            :disabled="log.rebuildingIndex"
+            :aria-busy="log.rebuildingIndex"
+            @click="log.rebuildIndex()"
+          >
+            <LoaderCircle
+              v-if="log.rebuildingIndex"
+              class="h-3 w-3 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            {{ log.rebuildingIndex ? t("log.rebuildingIndex") : t("log.rebuildIndex") }}
           </Button>
         </Tip>
       </div>

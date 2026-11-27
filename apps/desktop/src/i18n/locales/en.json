@@ -196,6 +196,7 @@
     "graphTip": "Show graph options",
     "goToPlaceholder": "Go to Hash / Branch / Tag",
     "rebuildIndex": "Rebuild index",
+    "rebuildingIndex": "Rebuilding…",
     "rebuildIndexTip": "Rebuild log index to accelerate filters",
     "indexEmpty": "Index empty — Rebuild to accelerate filters",
     "indexed": "Indexed {count} commits",

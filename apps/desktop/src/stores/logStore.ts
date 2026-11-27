@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, onScopeDispose, ref, shallowRef, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type {
   ChangedFile,
@@ -14,6 +14,7 @@ import { formatErrorMessage } from "@/lib/errors";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 import { timedAsync } from "@/lib/longTaskLog";
+import { sameWorkspacePath, workspacePathKey } from "@/lib/workspacePath";
 
 /**
  * Background-refresh equality without JSON.stringify of the whole page
@@ -89,6 +90,16 @@ export const useLogStore = defineStore("log", () => {
   let selectGen = 0;
   let selectionAnchor: string | null = null;
   const workspace = useWorkspaceStore();
+  const indexRebuilds = shallowRef(new Set<string>());
+  const rebuildingIndex = computed(
+    () => !!workspace.repoPath && indexRebuilds.value.has(workspacePathKey(workspace.repoPath)),
+  );
+  let disposed = false;
+  onScopeDispose(() => {
+    disposed = true;
+    ++indexGen;
+    indexRebuilds.value = new Set();
+  });
 
   function currentRepository() {
     const path = workspace.repoPath;
@@ -252,7 +263,11 @@ export const useLogStore = defineStore("log", () => {
           else page = undefined;
         }
         if (!page) {
-          const anchor = await backend.logLocate({ path, revision: first, filters: requestFilters });
+          const anchor = await backend.logLocate({
+            path,
+            revision: first,
+            filters: requestFilters,
+          });
           if (!current()) return;
           if (anchor.offset !== null) {
             if (startOffset.value === 0 && anchor.offset <= 1000) requestedCount += anchor.offset;
@@ -623,11 +638,14 @@ export const useLogStore = defineStore("log", () => {
 
   async function refreshIndexStatus() {
     const path = workspace.repoPath;
-    if (!path) return;
+    // A read taken while rebuilding may still see the previous index. The
+    // rebuild result owns publication until it finishes for this repository.
+    if (disposed || !path || rebuildingIndex.value) return;
     const gen = ++indexGen;
     const load = loadGen;
     const isCurrentRepository = currentRepository();
-    const current = () => gen === indexGen && load === loadGen && isCurrentRepository();
+    const current = () =>
+      !disposed && gen === indexGen && load === loadGen && isCurrentRepository();
     try {
       const result = await getBackend().logIndexStatus({ path });
       if (current()) indexStatus.value = result;
@@ -638,11 +656,14 @@ export const useLogStore = defineStore("log", () => {
 
   async function rebuildIndex() {
     const path = workspace.repoPath;
-    if (!path) return;
+    if (disposed || !path || !workspace.isRepo) return;
+    const key = workspacePathKey(path);
+    if (indexRebuilds.value.has(key)) return;
+    indexRebuilds.value = new Set([...indexRebuilds.value, key]);
     const gen = ++indexGen;
-    const load = loadGen;
     const isCurrentRepository = currentRepository();
-    const current = () => gen === indexGen && load === loadGen && isCurrentRepository();
+    // The index belongs to the repository, independently of Log filters/pages.
+    const current = () => !disposed && gen === indexGen && isCurrentRepository();
     try {
       const result = await getBackend().logIndexRebuild({ path });
       if (current()) indexStatus.value = result;
@@ -652,6 +673,14 @@ export const useLogStore = defineStore("log", () => {
         title: String(i18n.global.t("log.rebuildIndex")),
         description: formatErrorMessage(e),
       });
+    } finally {
+      const pending = new Set(indexRebuilds.value);
+      pending.delete(key);
+      indexRebuilds.value = pending;
+      // Switching away and back keeps the actual work deduplicated. Do not
+      // publish an old navigation's result; read the current status instead.
+      if (!current() && !disposed && sameWorkspacePath(workspace.repoPath, path))
+        await refreshIndexStatus();
     }
   }
 
@@ -680,6 +709,7 @@ export const useLogStore = defineStore("log", () => {
     compactRefs,
     showTagNames,
     indexStatus,
+    rebuildingIndex,
     goToInput,
     activeFilterChips,
     load,
