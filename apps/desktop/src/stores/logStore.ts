@@ -15,6 +15,7 @@ import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 import { timedAsync } from "@/lib/longTaskLog";
 import { sameWorkspacePath, workspacePathKey } from "@/lib/workspacePath";
+import { useJobsStore } from "./jobsStore";
 
 /**
  * Background-refresh equality without JSON.stringify of the whole page
@@ -77,6 +78,12 @@ export const useLogStore = defineStore("log", () => {
   const selectedShas = ref<string[]>([]);
   const details = ref<CommitDetails | null>(null);
   const changedFiles = ref<ChangedFile[]>([]);
+  const detailsRequest = shallowRef<{ current: () => boolean } | null>(null);
+  const detailsFailure = shallowRef<{ current: () => boolean; message: string } | null>(null);
+  const detailsLoading = computed(() => detailsRequest.value?.current() ?? false);
+  const detailsError = computed(() =>
+    detailsFailure.value?.current() ? detailsFailure.value.message : null,
+  );
   const filters = ref<LogFilters>(emptyFilters());
   const showGraphOptions = ref(false);
   const compactRefs = ref(true);
@@ -98,8 +105,15 @@ export const useLogStore = defineStore("log", () => {
   onScopeDispose(() => {
     disposed = true;
     ++indexGen;
+    invalidateSelection();
     indexRebuilds.value = new Set();
   });
+
+  function invalidateSelection() {
+    ++selectGen;
+    detailsRequest.value = null;
+    detailsFailure.value = null;
+  }
 
   function currentRepository() {
     const path = workspace.repoPath;
@@ -111,7 +125,7 @@ export const useLogStore = defineStore("log", () => {
     () => workspace.repoPath,
     () => {
       ++loadGen;
-      ++selectGen;
+      invalidateSelection();
       ++indexGen;
       commits.value = [];
       details.value = null;
@@ -192,7 +206,7 @@ export const useLogStore = defineStore("log", () => {
     const isCurrentRepository = currentRepository();
     if (!workspace.repoPath || !workspace.repoId || !workspace.isRepo) {
       ++loadGen;
-      ++selectGen;
+      invalidateSelection();
       commits.value = [];
       selectedSha.value = null;
       selectedShas.value = [];
@@ -232,7 +246,7 @@ export const useLogStore = defineStore("log", () => {
     const path = workspace.repoPath;
     const previousSha = selectedSha.value;
     if (reset) {
-      if (!background) ++selectGen;
+      if (!background) invalidateSelection();
       loading.value = !background;
       loadingMore.value = false;
       error.value = null;
@@ -317,7 +331,7 @@ export const useLogStore = defineStore("log", () => {
         truncated.value = page.truncated;
         nextOffset.value = page.nextOffset;
         if (!background || !page.commits.some((c) => c.sha === selectedSha.value)) {
-          ++selectGen;
+          invalidateSelection();
           selectedSha.value = null;
           selectedShas.value = [];
           details.value = null;
@@ -384,7 +398,7 @@ export const useLogStore = defineStore("log", () => {
     range = false,
     selectionOrder?: readonly string[],
   ) {
-    const isCurrentRepository = currentRepository();
+    if (disposed) return;
     const gen = ++selectGen;
     if (range && selectionAnchor) {
       const order = selectionOrder ?? commits.value.map((commit) => commit.sha);
@@ -410,25 +424,55 @@ export const useLogStore = defineStore("log", () => {
       selectedShas.value = [sha];
       selectionAnchor = sha;
     }
+    await readSelectedDetails(gen);
+  }
+
+  async function retryDetails() {
+    if (disposed || detailsLoading.value || !selectedSha.value || !workspace.isRepo) return;
+    // A retry only reads the focused commit; it must not collapse a Ctrl/Shift
+    // selection or move the anchor used by the next range extension.
+    await readSelectedDetails(++selectGen);
+  }
+
+  async function readSelectedDetails(gen: number) {
     const path = workspace.repoPath;
     const target = selectedSha.value;
+    const isCurrentRepository = currentRepository();
     details.value = null;
     changedFiles.value = [];
-    if (!path || !target) return;
+    detailsRequest.value = null;
+    detailsFailure.value = null;
+    if (disposed || !path || !target) return;
+    const current = () =>
+      !disposed && gen === selectGen && selectedSha.value === target && isCurrentRepository();
+    const request = { current };
+    detailsRequest.value = request;
     const backend = getBackend();
+    const jobs = useJobsStore();
+    const job = jobs.begin(
+      String(i18n.global.t("log.loadingDetails", { sha: target.slice(0, 7) })),
+      path,
+    );
+    // Keep the queue entry until both native reads settle, even when one fails
+    // early and the panel can already report an actionable error.
+    const reads = [
+      Promise.resolve().then(() => backend.logCommitDetails({ path, sha: target })),
+      Promise.resolve().then(() => backend.logChangedFiles({ path, sha: target })),
+    ] as const;
+    void Promise.allSettled(reads).then(() => jobs.finished(job));
     try {
-      const [d, files] = await Promise.all([
-        backend.logCommitDetails({ path, sha: target }),
-        backend.logChangedFiles({ path, sha: target }),
-      ]);
-      if (gen !== selectGen || !isCurrentRepository()) return;
+      const [d, files] = await Promise.all(reads);
+      if (!current()) return;
       details.value = d;
       changedFiles.value = files;
     } catch (e) {
-      if (gen !== selectGen || !isCurrentRepository()) return;
+      if (!current()) return;
       details.value = null;
       changedFiles.value = [];
+      detailsFailure.value = { current, message: formatErrorMessage(e) };
       throw e;
+    } finally {
+      if (detailsRequest.value === request) detailsRequest.value = null;
     }
   }
 
@@ -704,6 +748,8 @@ export const useLogStore = defineStore("log", () => {
     selectedShas,
     details,
     changedFiles,
+    detailsLoading,
+    detailsError,
     filters,
     showGraphOptions,
     compactRefs,
@@ -714,6 +760,7 @@ export const useLogStore = defineStore("log", () => {
     activeFilterChips,
     load,
     select,
+    retryDetails,
     loadMore,
     loadPrevious,
     setTextFilter,

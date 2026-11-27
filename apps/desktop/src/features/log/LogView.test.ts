@@ -67,6 +67,80 @@ const mountView = () =>
     },
   });
 
+const mountDetailsView = () =>
+  shallowMount(LogView, {
+    global: {
+      stubs: {
+        Splitpanes: { template: "<div><slot /></div>" },
+        Pane: { template: "<div><slot /></div>" },
+        Tip: { template: "<span><slot /></span>" },
+        Button: { template: "<button><slot /></button>" },
+        PathTreeList: { props: ["emptyText"], template: "<div>{{ emptyText }}</div>" },
+      },
+    },
+  });
+const commitDetails = (sha: string) => ({
+  sha,
+  subject: `Commit ${sha}`,
+  parents: [],
+  refs: [],
+  body: "",
+  author: "QA",
+  authorEmail: "qa@example.invalid",
+  authorTime: 1,
+});
+
+it("distinguishes pending details from a successful commit with no changed files", async () => {
+  const wrapper = mountDetailsView();
+  await flushPromises();
+  useLogStore().commits = [
+    { ...commitDetails("a"), shortSha: "a", graph: { lane: 0, color: 0, edges: [] } },
+  ];
+  let resolve!: (value: unknown) => void;
+  mocks.backend.logCommitDetails.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const request = useLogStore().select("a");
+  await flushPromises();
+  expect(wrapper.get('[role="status"]').text()).toContain("log.loadingDetails");
+  expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true);
+  expect(wrapper.text()).not.toContain("log.noChangedFiles");
+  resolve(commitDetails("a"));
+  await request;
+  await flushPromises();
+  expect(wrapper.find('[role="status"]').exists()).toBe(false);
+  expect(wrapper.text()).toContain("log.noChangedFiles");
+  expect(wrapper.text()).toContain("Commit a");
+  wrapper.unmount();
+});
+
+it("keeps a readable error and retries without changing the selected range", async () => {
+  const wrapper = mountDetailsView();
+  await flushPromises();
+  const log = useLogStore();
+  log.commits = ["a", "b"].map((sha) => ({
+    ...commitDetails(sha),
+    shortSha: sha,
+    graph: { lane: 0, color: 0, edges: [] },
+  }));
+  mocks.backend.logCommitDetails.mockImplementation(async ({ sha }) => commitDetails(sha));
+  await log.select("a");
+  mocks.backend.logChangedFiles.mockRejectedValueOnce(new Error("missing Git object"));
+  await expect(log.select("b", false, true)).rejects.toThrow();
+  await flushPromises();
+  expect(wrapper.get('[role="alert"]').text()).toContain("missing Git object");
+  expect(wrapper.text()).not.toContain("Commit a");
+  expect(wrapper.text()).not.toContain("log.noChangedFiles");
+  await wrapper.get('[role="alert"] button').trigger("click");
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  expect(wrapper.text()).toContain("Commit b");
+  expect(log.selectedShas).toEqual(["a", "b"]);
+  wrapper.unmount();
+});
+
 it("shows a pending index rebuild and enables retry after failure", async () => {
   const wrapper = mountView();
   await flushPromises();

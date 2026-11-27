@@ -378,6 +378,14 @@ async function selectCommit(sha: string, multi = false, range = false) {
   }
 }
 
+async function retryCommitDetails() {
+  try {
+    await log.retryDetails();
+  } catch {
+    // The current selection's persistent error and retry remain in the panel.
+  }
+}
+
 async function onCommitKeydown(sha: string, event: KeyboardEvent) {
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
   const source = captureAction();
@@ -943,7 +951,7 @@ function onCommitContext(sha: string, e: MouseEvent) {
             <Pane :size="28" min-size="20">
               <Splitpanes horizontal class="h-full">
                 <Pane :size="45">
-                  <div class="flex h-full min-h-0 flex-col">
+                  <div class="flex h-full min-h-0 flex-col" :aria-busy="log.detailsLoading">
                     <div
                       class="flex items-center justify-between border-b px-2 py-1 text-[11px] font-medium"
                     >
@@ -962,6 +970,17 @@ function onCommitContext(sha: string, e: MouseEvent) {
                         </Button>
                       </Tip>
                     </div>
+                    <div
+                      v-if="log.detailsLoading"
+                      role="status"
+                      class="flex items-center gap-2 p-2 text-xs text-muted-foreground"
+                    >
+                      <LoaderCircle
+                        class="h-3.5 w-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                      {{ t("log.loadingDetails", { sha: log.selectedSha?.slice(0, 7) ?? "" }) }}
+                    </div>
                     <PathTreeList
                       v-for="source in fileList ? [fileList] : []"
                       :key="source.id"
@@ -970,14 +989,27 @@ function onCommitContext(sha: string, e: MouseEvent) {
                       :selected-path="selectedFile?.path"
                       @select="selectFile"
                       :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
-                      empty-text=""
+                      :empty-text="t('log.noChangedFiles')"
                       @open="(file) => openChangedFile(source, file)"
                       @context="(payload) => onFileContext(source, payload)"
                     />
                   </div>
                 </Pane>
                 <Pane :size="55">
-                  <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
+                  <div
+                    v-if="log.detailsError"
+                    role="alert"
+                    class="h-full overflow-auto p-2 text-xs"
+                  >
+                    <p class="font-medium text-destructive">{{ t("log.detailsFailed") }}</p>
+                    <p class="mt-1 break-words whitespace-pre-wrap text-muted-foreground">
+                      {{ log.detailsError }}
+                    </p>
+                    <Button size="xs" variant="outline" class="mt-2" @click="retryCommitDetails">
+                      {{ t("log.retryLoadMore") }}
+                    </Button>
+                  </div>
+                  <div v-else-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
                     <div class="font-mono text-[11px] text-muted-foreground">
                       {{ log.details.sha }}
                     </div>
@@ -998,6 +1030,9 @@ function onCommitContext(sha: string, e: MouseEvent) {
                         {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
                       </dd>
                     </dl>
+                  </div>
+                  <div v-else-if="!log.selectedSha" class="p-2 text-xs text-muted-foreground">
+                    {{ t("log.selectCommitHint") }}
                   </div>
                 </Pane>
               </Splitpanes>
