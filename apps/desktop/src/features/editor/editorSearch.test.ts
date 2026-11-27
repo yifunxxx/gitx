@@ -120,11 +120,22 @@ it("keeps compact IDEA row alignment and soft focus styling", () => {
   expect(panel.querySelector(".cm-search-actions")).toBeTruthy();
   expect(panel.querySelector(".cm-search-options")).toBeTruthy();
   expect(panel.querySelector(".cm-search-replace .cm-search-expand-spacer")).toBeTruthy();
+  expect(panel.querySelector(".cm-search-replace .cm-search-action-spacer")).toBeTruthy();
   const next = panel.querySelector('button[name="next"]') as HTMLButtonElement;
+  const select = panel.querySelector('button[name="select"]') as HTMLButtonElement;
+  const replaceAll = panel.querySelector('button[name="replaceAll"]') as HTMLButtonElement;
   expect(next.textContent).toBe("Next");
   expect(next.getAttribute("aria-label")).toBe("Find Next");
+  expect(select.textContent).toBe("Find All");
+  expect(replaceAll.textContent).toBe("Replace All");
+  const findActions = panel.querySelector(".cm-search-row:not(.cm-search-replace) .cm-search-actions") as HTMLElement;
+  const replaceActions = panel.querySelector(".cm-search-replace .cm-search-actions") as HTMLElement;
+  expect(getComputedStyle(findActions).display).toBe("grid");
+  expect(getComputedStyle(findActions).gridTemplateColumns.split(" ").length).toBe(3);
+  expect(getComputedStyle(replaceActions).width).toBe(getComputedStyle(findActions).width);
   const input = panel.querySelector('input[name="replace"]') as HTMLInputElement;
   expect(getComputedStyle(input).outlineStyle === "none" || getComputedStyle(input).outlineWidth === "0px").toBe(
     true,
   );
+  expect(getComputedStyle(view.dom.querySelector(".cm-panels") as HTMLElement).backgroundColor).not.toBe("");
 });
