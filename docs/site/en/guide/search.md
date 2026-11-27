@@ -14,7 +14,7 @@ macOS uses Cmd; Replace in File uses `Cmd+Option+F`. These actions, plus Replace
 ## Workspace search
 
 1. Open a project or ordinary folder and press `Ctrl+Shift+R`.
-2. Enter text. Toggle **Aa** for case sensitivity, **ab** for whole words, and **.\*** for regular expressions. With regex disabled, the query is literal.
+2. Enter text. Inside the find field, toggle **Aa** for case sensitivity, **.\*** for regular expressions, and **W** for whole words. With regex disabled, the query is literal.
 3. Narrow the scope with comma-separated include/exclude globs, such as `src/**, *.vue` and `dist/**, *.lock`. `**` spans directories; bare names match at any depth and directory names include descendants.
 4. Toggle hidden and ignored files if needed. Initial values come from File settings; changes here affect this search only.
 5. Results arrive while scanning, with paths, line/column positions, highlighted snippets, and every occurrence on a line. Pages contain 200 matches; paging does not restart the scan. Click a match or use Up/Down and Enter from the query field to open it.
@@ -25,9 +25,9 @@ Search reads saved UTF-8 text, not unsaved editor buffers. Binary, invalid-encod
 
 ## Replace in Files
 
-1. Press `Ctrl+Shift+H`, or enable **Show replacement preview** in search.
+1. Press `Ctrl+Shift+H`, or select **Replace** above the search fields. Find and replacement fields align, and the title follows the selected mode.
 2. Enter replacement text; empty text removes matches. Each result previews that individual replacement. Regex mode supports `$1` and `${name}` captures; `$$` inserts a dollar sign. Literal mode inserts the exact text.
-3. All matching files are selected, including other pages. Unchecking any row excludes every match in that file and updates its other rows.
+3. All matching files are selected, including other pages. The footer shows the selected file count. Unchecking any row excludes every match in that file and dims its other rows.
 4. Wait for the scan, save/close unsaved file drafts, and finish or close merge editors. Click **Replace in N files**, review the count, then **Confirm replacement**.
 5. Search again and review the changes in Commit.
 
@@ -35,11 +35,11 @@ Replacement writes to disk without committing. Content hashes for every selected
 
 ## Find and replace in an editor
 
-Focus an editor and press `Ctrl+F`. Selected text seeds the query. The bar starts as a single find row; use the left chevron to expand replace (`Ctrl+H` expands and focuses replace). Placeholders carry Find/Replace — the file chrome no longer duplicates those labels. Both rows share a fixed-width action column (Next / Prev / Find All vs Replace / Replace All) aligned with Aa / .* / W; focus uses a thin ring. Editor regex uses JavaScript syntax, which differs from the global engine. The bar sits in the editor content area, matches editor chrome, and does not cover Settings or other global dialogs.
+Focus an editor and press `Ctrl+F`. Selected text seeds the query. The bar starts as a single find row; use the left chevron to expand replace (`Ctrl+H` expands and focuses replace). Aa / .* / W inside the find field control case, regex, and whole-word matching. The up/down arrows navigate matches; **Find All** selects every match. Find and replace share the same field width, with actions moving below the fields in narrow panes. Focus and enabled options have distinct highlights. Editor regex uses JavaScript syntax, which differs from the global engine. The bar sits in the editor content area and does not cover Settings or other global dialogs.
 
 Editable files and conflict results also provide replacement text with **Replace** / **Replace All** (`Ctrl+Alt+Enter` for replace-all) once replace is expanded. Changes remain in the buffer and support undo with `Ctrl+Z`. Save ordinary files with `Ctrl+S`; use the conflict editor's save workflow for merge results. Read-only diffs and conflict source panes support searching only. Escape closes the panel.
 
-The **Find in Files** dialog groups the query and options above the include/exclude and hidden/ignored scope. The footer keeps Cancel secondary and Search (or Replace in replace mode) as the primary action.
+The **Find in Files** dialog shows the workspace and Find/Replace mode above the fields. Include/exclude have fixed labels; each result separates its path, line/column, matching text, and replacement preview. Scope fields stack in narrow windows, while the middle area scrolls and the footer keeps Cancel and Search/Replace available. The second replacement step highlights the file count and explains that confirmation writes to disk.
 
 ## Other search tools
 
