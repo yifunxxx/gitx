@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-2026-11-27 QA-120 已合入 master（PR #36）并 bump `0.1.53`：去掉 File 顶栏悬空 Find/Replace；固定三槽动作列与 Find All / Replace All；panel 贴近 dbx-chrome；Pages/settings 同步。准备 tag/Release Windows。原持续 QA 事项与整体目标继续。
+2026-11-27 QA-120 已合入 master（PR #36），tag `v0.1.53` 与 Windows 安装包已发布；双语 Release notes 已写入 GitHub Release 与 store。去掉 File 顶栏悬空 Find/Replace；固定三槽动作列与 Find All / Replace All；panel 贴近 dbx-chrome；Pages/settings 同步。非 master 分支已清理。原持续 QA 事项与整体目标继续。
 
 2026-11-27 登记并实现 QA-120（用户 fun yi 反馈 v0.1.52）：文件内查找仍丑——File 顶栏 Find/Replace 悬空、两行 All 易混、动作列未对齐、Diff/vs HEAD 场景条带杂乱。去掉顶栏标签；占位提示承担 Find/Replace；固定三槽动作列（Find All / Replace All）；chrome 色与更矮控件；中英 Pages/settings 同步。定向 editorSearch+FileViewer 28 项与 docs check 通过；原生 Win11/安装版待发版后验证。独立 PR → merge → bump `0.1.53`。原持续 QA 事项与整体目标继续。
 
