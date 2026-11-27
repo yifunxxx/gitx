@@ -29,6 +29,64 @@ fn reject_commit(git_dir: &Path) {
 }
 
 #[tokio::test]
+async fn rejected_selected_file_commit_must_not_restore_unselected_worktree_edits() {
+    // Lock: a failed partial (selected-file) commit must never checkout/reset
+    // unrelated dirty files — the user-visible "other edits got restored" bug.
+    let repo = FixtureBuilder::new().build("clean").unwrap();
+    let runner = GitRunner::new("git");
+    let cancel = CancellationToken::new();
+    let cwd = repo.path();
+    fs::write(cwd.join("keep-a.txt"), "keep-a-base\n").unwrap();
+    fs::write(cwd.join("keep-b.txt"), "keep-b-base\n").unwrap();
+    fs::write(cwd.join("selected.txt"), "selected-base\n").unwrap();
+    git(
+        &runner,
+        cwd,
+        &["add", "keep-a.txt", "keep-b.txt", "selected.txt"],
+    )
+    .await;
+    git(&runner, cwd, &["commit", "-m", "baseline"]).await;
+    fs::write(cwd.join("keep-a.txt"), "KEEP-A-WORK\n").unwrap();
+    fs::write(cwd.join("keep-b.txt"), "keep-b-staged\n").unwrap();
+    git(&runner, cwd, &["add", "keep-b.txt"]).await;
+    fs::write(cwd.join("keep-b.txt"), "KEEP-B-WORK\n").unwrap();
+    fs::write(cwd.join("keep-new.txt"), "KEEP-NEW\n").unwrap();
+    fs::write(cwd.join("selected.txt"), "SELECTED-WORK\n").unwrap();
+    let git_dir = runner.git_dir(cwd, &cancel).await.unwrap();
+    reject_commit(&git_dir);
+    let head = git(&runner, cwd, &["rev-parse", "HEAD"]).await;
+    let index = fs::read(git_dir.join("index")).unwrap();
+    let keep_a = fs::read(cwd.join("keep-a.txt")).unwrap();
+    let keep_b = fs::read(cwd.join("keep-b.txt")).unwrap();
+    let keep_new = fs::read(cwd.join("keep-new.txt")).unwrap();
+    let selected = fs::read(cwd.join("selected.txt")).unwrap();
+    let result = runner
+        .commit_create_ex(
+            cwd,
+            "only selected",
+            false,
+            false,
+            Some(&["selected.txt".into()]),
+            None,
+            &cancel,
+        )
+        .await;
+    assert!(result.is_err(), "hook must reject the selected-file commit");
+    assert_eq!(git(&runner, cwd, &["rev-parse", "HEAD"]).await, head);
+    assert_eq!(fs::read(git_dir.join("index")).unwrap(), index);
+    assert_eq!(fs::read(cwd.join("keep-a.txt")).unwrap(), keep_a);
+    assert_eq!(fs::read(cwd.join("keep-b.txt")).unwrap(), keep_b);
+    assert_eq!(fs::read(cwd.join("keep-new.txt")).unwrap(), keep_new);
+    assert_eq!(fs::read(cwd.join("selected.txt")).unwrap(), selected);
+    assert_eq!(
+        git(&runner, cwd, &["show", ":keep-b.txt"]).await,
+        "keep-b-staged\n"
+    );
+    assert!(!git_dir.join("index.lock").exists());
+    assert_eq!(fs::read_dir(git_dir.join("gitx")).unwrap().count(), 0);
+}
+
+#[tokio::test]
 async fn rejected_path_commit_preserves_index_bytes_and_worktree() {
     let repo = FixtureBuilder::new().build("clean").unwrap();
     let runner = GitRunner::new("git");

@@ -43,5 +43,3 @@ features:
 | Get team changes or fix a rejected push | [Remotes & synchronization](./guide/sync) |
 | Put work aside and switch tasks | [Stash & Shelf](./guide/stash-shelf) |
 | Undo or organize commits | [Rewriting & undoing history](./guide/rewrite) |
-
-This guide covers the **0.1.47** feature baseline. Screenshots show native Windows desktop windows using a dedicated example repository. Appearance varies with theme, language, and app version. Use the language menu to switch between **English and 简体中文**; search covers the current language.

@@ -404,6 +404,7 @@ const searchTheme = EditorView.theme({
   ".cm-search-row": {
     display: "grid",
     // expand | field | fixed action column | options | close
+    // Fixed 18px gutter keeps Find/Replace inputs on one left edge.
     gridTemplateColumns: "18px minmax(0, 1fr) 12.75rem auto 18px",
     alignItems: "center",
     columnGap: "3px",
@@ -419,6 +420,7 @@ const searchTheme = EditorView.theme({
     alignItems: "center",
     gap: "2px",
     minWidth: 0,
+    width: "100%",
   },
   ".cm-search-options": {
     display: "inline-flex",
@@ -438,8 +440,9 @@ const searchTheme = EditorView.theme({
   ".cm-search input.cm-textfield": {
     width: "100%",
     minWidth: 0,
+    boxSizing: "border-box",
     border: "1px solid color-mix(in srgb, var(--color-border) 85%, transparent)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
     background: "var(--color-background)",
     color: "var(--color-foreground)",
     padding: "0 5px",
@@ -454,8 +457,9 @@ const searchTheme = EditorView.theme({
     boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 28%, transparent)",
   },
   ".cm-search button.cm-button": {
+    boxSizing: "border-box",
     border: "1px solid color-mix(in srgb, var(--color-border) 85%, transparent)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
     background: "color-mix(in srgb, var(--color-background) 88%, transparent)",
     color: "var(--color-foreground)",
     padding: "0 3px",
@@ -480,8 +484,12 @@ const searchTheme = EditorView.theme({
   },
   ".cm-search-expand, .cm-search-close, .cm-search-expand-spacer, .cm-search-close-spacer, .cm-search-action-spacer":
     {
-      width: "18px",
+      boxSizing: "border-box",
+      width: "100%",
+      minWidth: "0",
+      maxWidth: "18px",
       height: "20px",
+      margin: "0",
       padding: "0",
       border: "none",
       background: "transparent",
@@ -491,8 +499,10 @@ const searchTheme = EditorView.theme({
       lineHeight: "20px",
       textAlign: "center",
       outline: "none",
+      justifySelf: "stretch",
     },
   ".cm-search-action-spacer": {
+    maxWidth: "none",
     width: "auto",
     cursor: "default",
     pointerEvents: "none",
@@ -500,11 +510,11 @@ const searchTheme = EditorView.theme({
   ".cm-search-expand:hover, .cm-search-close:hover": {
     color: "var(--color-foreground)",
     background: "color-mix(in srgb, var(--color-foreground) 6%, transparent)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
   },
   ".cm-search-expand:focus-visible, .cm-search-close:focus-visible": {
     boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 28%, transparent)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
   },
   ".cm-search-expand-spacer, .cm-search-close-spacer": {
     cursor: "default",
@@ -519,8 +529,9 @@ const searchTheme = EditorView.theme({
     padding: "0 3px",
     height: "20px",
     minWidth: "20px",
+    boxSizing: "border-box",
     border: "1px solid transparent",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
     cursor: "pointer",
     userSelect: "none",
     flex: "0 0 auto",
