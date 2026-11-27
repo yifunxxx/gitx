@@ -13,6 +13,36 @@ async fn git_text(runner: &GitRunner, cwd: &std::path::Path, args: &[&str]) -> S
     String::from_utf8(output.stdout).unwrap()
 }
 
+// Capture each stage immediately: resolving common-dir only after a failure
+// cannot tell us where the entry was published. Read metadata, never contents,
+// and retain IO errors so a missing path is distinct from a failed inspection.
+fn shelf_snapshot(common: &std::path::Path, id: &str) -> String {
+    let root = gitx_meta::shelf_root(common);
+    let entry = gitx_meta::shelf_dir(common, id);
+    let paths = [
+        common.to_path_buf(),
+        common.join("gitx"),
+        root.clone(),
+        entry.clone(),
+        entry.join("meta.json"),
+        entry.join("changes.patch"),
+    ]
+    .map(|path| {
+        let state = std::fs::symlink_metadata(&path)
+            .map(|meta| (meta.file_type(), meta.len()))
+            .map_err(|error| (error.kind(), error.raw_os_error()));
+        (path, state)
+    });
+    let entries = std::fs::read_dir(&root).map(|items| {
+        items
+            .take(33)
+            .map(|item| item.map(|entry| entry.file_name()))
+            .collect::<Vec<_>>()
+    });
+    let canonical = std::fs::canonicalize(common);
+    format!("canonical_common={canonical:?}; paths={paths:?}; root_entries_first_33={entries:?}")
+}
+
 #[tokio::test]
 async fn unshelve_failure_preserves_local_edits_index_and_saved_shelf() {
     let repo = FixtureBuilder::new().build("clean").unwrap();
@@ -237,6 +267,9 @@ async fn binary_unshelve_roundtrip_retains_unrelated_staged_changes() {
     git_text(&runner, cwd, &["commit", "-m", "binary base"]).await;
     let saved = [0, 9, 8, 7, 6, 5];
     std::fs::write(cwd.join("asset.bin"), saved).unwrap();
+    let diagnostic_started = std::time::Instant::now();
+    let expected_common = cwd.join(".git");
+    let original_common = runner.git_common_dir(cwd, &cancel).await.unwrap();
     let entry = runner
         .shelve_changes(
             cwd,
@@ -249,19 +282,35 @@ async fn binary_unshelve_roundtrip_retains_unrelated_staged_changes() {
         )
         .await
         .unwrap();
+    let published = (
+        diagnostic_started.elapsed(),
+        shelf_snapshot(&original_common, &entry.id),
+    );
     std::fs::write(cwd.join("README.md"), "unrelated staged\n").unwrap();
     git_text(&runner, cwd, &["add", "README.md"]).await;
     let staged = git_text(&runner, cwd, &["show", ":README.md"]).await;
+    let before_unshelve = (
+        diagnostic_started.elapsed(),
+        shelf_snapshot(&original_common, &entry.id),
+    );
     if let Err(error) = runner.unshelve(cwd, &entry.id, false, &cancel).await {
-        let common = runner.git_common_dir(cwd, &cancel).await;
-        let entries = common.as_ref().ok().map(|dir| {
-            std::fs::read_dir(gitx_meta::shelf_root(dir)).map(|items| {
-                items
-                    .map(|item| item.map(|entry| entry.path()))
-                    .collect::<Vec<_>>()
-            })
-        });
-        panic!("binary Shelf {} failed: {error:?}; cwd={cwd:?}; common={common:?}; entries={entries:?}", entry.id);
+        // Inspect the original location before running another Git process.
+        let failed_original = (
+            diagnostic_started.elapsed(),
+            shelf_snapshot(&original_common, &entry.id),
+        );
+        let expected_state = shelf_snapshot(&expected_common, &entry.id);
+        let resolved_after = runner.git_common_dir(cwd, &cancel).await;
+        let resolved_state = resolved_after
+            .as_ref()
+            .map(|common| shelf_snapshot(common, &entry.id));
+        panic!(
+            "binary Shelf {} failed: {error:?}; cwd={cwd:?}; expected_common={expected_common:?}; \
+             original_common={original_common:?}; published={published:?}; before_unshelve={before_unshelve:?}; \
+             failed_original={failed_original:?}; expected_state={expected_state}; \
+             resolved_after={resolved_after:?}; resolved_state={resolved_state:?}",
+            entry.id
+        );
     }
     assert_eq!(std::fs::read(cwd.join("asset.bin")).unwrap(), saved);
     assert_eq!(
