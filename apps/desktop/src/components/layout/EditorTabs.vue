@@ -47,37 +47,40 @@ const activeFile = computed(() =>
 );
 
 type EditorKind = "diff" | "history" | "compare" | "repoAtRev" | "merge" | "file";
-type EditorTab = { kind: EditorKind; id: string; title: string; dirty: boolean };
+type EditorTab = {
+  kind: EditorKind;
+  id: string;
+  title: string;
+  dirty: boolean;
+  source: object;
+};
 type CloseScope = "current" | "others" | "right" | "all";
 const tabBar = ref<HTMLElement | null>(null);
 const closing = ref(false);
 const menuEpoch = ref(0);
 const tabKey = (tab: EditorTab) => JSON.stringify([tab.kind, tab.id]);
+const sameTab = (a: EditorTab, b: EditorTab) =>
+  a.kind === b.kind && a.id === b.id && a.source === b.source;
 const tabEntries = (
   kind: EditorKind,
   items: { id: string; title: string; dirty?: boolean }[] = [],
-): EditorTab[] => items.map(({ id, title, dirty }) => ({ kind, id, title, dirty: !!dirty }));
+  isDirty?: (id: string) => boolean,
+): EditorTab[] =>
+  items.map((source) => ({
+    kind,
+    id: source.id,
+    title: source.title,
+    dirty: isDirty ? isDirty(source.id) : !!source.dirty,
+    source,
+  }));
 // This order is also the visible order used by Close Tabs to the Right.
 const editorTabs = computed(() => [
   ...tabEntries("diff", diffs.tabs),
   ...tabEntries("history", history.tabs),
   ...tabEntries("compare", compare.tabs),
   ...tabEntries("repoAtRev", repoAtRev.tabs),
-  ...tabEntries(
-    "merge",
-    (conflicts.mergeTabs ?? []).map((tab) => ({
-      ...tab,
-      dirty: !!conflicts.hasUnsavedMergeResult?.(tab.id),
-    })),
-  ),
-  ...tabEntries(
-    "file",
-    (fileViewer.tabs ?? []).map((tab) => ({
-      id: tab.id,
-      title: tab.title,
-      dirty: !!tab.dirty,
-    })),
-  ),
+  ...tabEntries("merge", conflicts.mergeTabs, (id) => conflicts.hasUnsavedMergeResult(id)),
+  ...tabEntries("file", fileViewer.tabs),
 ]);
 
 function storeFor(kind: Exclude<EditorKind, "merge">) {
@@ -94,7 +97,12 @@ function activateTab(tab: EditorTab) {
 }
 
 watch(
-  () => [workspace.repoPath, workspace.folderPath],
+  () => [
+    workspace.repoPath,
+    workspace.folderPath,
+    workspace.navigationToken(),
+    workspace.appliedOpenToken(),
+  ],
   () => {
     ++menuEpoch.value;
   },
@@ -108,7 +116,7 @@ async function closeTabs(target: EditorTab | null, scope: CloseScope) {
   if (closing.value) return;
   const before = editorTabs.value;
   const targetKey = target ? tabKey(target) : null;
-  const index = target ? before.findIndex((tab) => tabKey(tab) === targetKey) : -1;
+  const index = target ? before.findIndex((tab) => sameTab(tab, target)) : -1;
   if (target && index < 0) return;
   const targets = before.filter((tab, i) => {
     if (scope === "all") return true;
@@ -136,22 +144,29 @@ async function closeTabs(target: EditorTab | null, scope: CloseScope) {
     )
       return;
     if (epoch !== menuEpoch.value) return;
-    const keys = new Set(targets.map(tabKey));
-    const active = editorTabs.value.find(isActive);
-    const activeIndex = active ? before.findIndex((tab) => tabKey(tab) === tabKey(active)) : -1;
-    const remaining = editorTabs.value.filter((tab) => !keys.has(tabKey(tab)));
+    const current = editorTabs.value;
+    const live = new Map(current.map((tab) => [tabKey(tab), tab]));
+    const isLive = (tab: EditorTab) => live.get(tabKey(tab))?.source === tab.source;
+    // IDs can be reused after close/reopen. Confirmation belongs to the original instances.
+    if (scope !== "all" && target && !isLive(target)) return;
+    const confirmed = targets.filter(isLive);
+    if (!confirmed.length) return;
+    const keys = new Set(confirmed.map(tabKey));
+    const active = current.find(isActive);
+    const activeIndex = active ? current.indexOf(active) : -1;
+    const remaining = current.filter((tab) => !keys.has(tabKey(tab)));
     let next = active && !keys.has(tabKey(active)) ? active : undefined;
     if (scope === "others") next = target ?? undefined;
     else if (active && !next) {
       next =
-        before.slice(activeIndex + 1).find((tab) => !keys.has(tabKey(tab))) ??
-        before
+        current.slice(activeIndex + 1).find((tab) => !keys.has(tabKey(tab))) ??
+        current
           .slice(0, activeIndex)
           .reverse()
           .find((tab) => !keys.has(tabKey(tab))) ??
         remaining[0];
     }
-    for (const tab of targets) {
+    for (const tab of confirmed) {
       if (tab.kind === "merge") conflicts.closeMergeTab(tab.id);
       else storeFor(tab.kind).closeTab(tab.id);
     }
@@ -160,8 +175,8 @@ async function closeTabs(target: EditorTab | null, scope: CloseScope) {
     await nextTick();
     if (epoch !== menuEpoch.value) return;
     const focusKey = next ? tabKey(next) : "workspace";
-    const activeKey = editorTabs.value.find(isActive);
-    if ((activeKey ? tabKey(activeKey) : "workspace") !== focusKey) return;
+    const activeNow = editorTabs.value.find(isActive);
+    if (next ? !activeNow || !sameTab(next, activeNow) : activeNow) return;
     Array.from(tabBar.value?.querySelectorAll<HTMLButtonElement>("[data-editor-key]") ?? [])
       .find((button) => button.dataset.editorKey === focusKey)
       ?.focus({ preventScroll: true });

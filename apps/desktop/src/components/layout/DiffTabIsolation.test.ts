@@ -20,7 +20,7 @@ vi.mock("vue-i18n", async (original) => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
 vi.mock("@/stores/workspaceStore", () => ({
-  useWorkspaceStore: () => ({ repoId: "repo", repoPath: "repo", folderPath: "repo", navigationToken: () => 1 }),
+  useWorkspaceStore: () => ({ repoId: "repo", repoPath: "repo", folderPath: "repo", navigationToken: () => 1, appliedOpenToken: () => 1 }),
 }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({}) }));
