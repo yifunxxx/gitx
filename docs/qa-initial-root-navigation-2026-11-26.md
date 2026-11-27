@@ -41,3 +41,13 @@
 两次`explicit=false`，均没有release文件；不属于首次读取竞态成功证据。未继续重复同一25秒方法，未开始失败响应组。最后Down普通切根后再次观察确认qa-child/CHILD及Idle，不重复计为新的验收覆盖。
 
 证据目录`E:/IDEAproject/gitx/test-results/qa-root-read-final-20261126`包含Setup/Launch/Observe/Verify脚本、代理源码、baseline、两个阶段的waiting/released及UI记录。`verification.json`确认累计14个观察PID/创建时间身份退出，代理0；两个仓库HEAD/index/status、三个文件和用户settings哈希保持。测试settings已归档移除；用户安装版未更新。本轮新增缺陷0、产品修改0，保留精确原生时序缺口。
+
+## 11月27日当前版本续验：方法仍不满足时序
+
+基线964cf08包含master50a4802/0.1.56，开始前fetch及两分支检查通过。使用QA128升级后构建的0.1.56程序、新父子仓库、独立profile及测试设置，证据目录`E:/IDEAproject/gitx/test-results/qa-root-initial-20261127`，程序/代理哈希见`binary.json`。未改产品源码或超时。
+
+先完成普通导航和File布局，再从nested项目重新打开parent。两次代理均成功拦截首次parent status，界面显示Opening project；只读诊断每200ms记录标题、活动根、分支和任务状态。第一组`success-timeout`在25006ms自动返回，第二组`success-live`在25000ms自动返回，均为`explicit=false`，切换没有在窗口内完成。第二组增加仅在观察到nested活动根、旧代理仍存活且未满24秒时写测试release文件的收尾逻辑，但条件从未达到；没有release证据。不能把这些记录算作竞态验收通过。
+
+普通路径下UIA set_value显示名未改变select，聚焦后Down可切换；直接设置不构成可靠替代。停止重复相同25秒尝试，未执行失败响应组。7个记录的进程身份全部退出，两个仓库HEAD/index/status及三个文件哈希保持，个人settings保持，测试设置已归档移除。详见`process-exit.json`、`baseline.json`、`verification.json`和各组`observations.json`。用户安装版未更新。
+
+本组新增产品缺陷0、修复0；补充当前版本的方法边界，QA036首次读取竞态仍缺有效原生证据。后续应采用能在30秒产品超时内完成输入的验证途径，当前相同多步工具流程不再反复重试。
