@@ -51,3 +51,18 @@
 普通路径下UIA set_value显示名未改变select，聚焦后Down可切换；直接设置不构成可靠替代。停止重复相同25秒尝试，未执行失败响应组。7个记录的进程身份全部退出，两个仓库HEAD/index/status及三个文件哈希保持，个人settings保持，测试设置已归档移除。详见`process-exit.json`、`baseline.json`、`verification.json`和各组`observations.json`。用户安装版未更新。
 
 本组新增产品缺陷0、修复0；补充当前版本的方法边界，QA036首次读取竞态仍缺有效原生证据。后续应采用能在30秒产品超时内完成输入的验证途径，当前相同多步工具流程不再反复重试。
+
+## 11月27日两阶段门控：识别阶段可提前放行，首次status仍未验收
+
+QA129交付后的干净基线 `0c6f8ceefb189b50b223c057c256fdeca8b6b154`，开始前及提交前fetch、master/交付快进检查成功。重新构建0.1.56独立程序，SHA256 `779c7bfa9dd44d6db7d4841d1098d5455d6e66e956061a72b872d0c7865e87c9`；证据目录 `E:/IDEAproject/gitx/test-results/qa-root-two-stage-20261127`。构建日志位于QA129目录的 `native-build.log`，没有安装或替换用户程序。
+
+为减少首次status门控内的操作，改为同项目通过系统目录选择器重新打开：先延迟workspace_open的rev-parse，焦点到Active repository后放行，再延迟父仓库首次status。代理真实执行Git后缓存输出，每阶段仍最多25秒；产品代码/30秒超时保持。只读CDP诊断每100ms读取活动根、焦点、任务和可见文本，仅在对应代理存活、未满24秒且满足焦点/子根条件时写测试release文件，不向DOM或应用store注入操作。
+
+| 组别 | 仓库识别阶段 | 首次status阶段 | 结论 |
+| --- | --- | --- | --- |
+| success-tab-timeout | 25002ms自动返回 | 25018ms自动返回；子根首次观察晚于返回5850ms | 经筛选框和Shift+Tab安排焦点仍太慢，没有精确验收证据 |
+| success（直接展开选择器） | 12770ms显式放行，已观察选择器焦点 | 25007ms自动返回；子根首次观察晚于返回10845ms | 下拉项鼠标输入因其属于WebView独立Chrome Legacy Window被工具拦截；重新激活及Enter后切换正常，但不满足旧请求存活时序 |
+
+两组status均为explicit=false，因此没有补齐旧成功隔离证据，失败响应组未运行。第二组证明第一阶段安排焦点的方法可行，仍不能以此替代首次status竞态验收；不再重复这两种25秒输入流程。原生截图中的普通qa-child/CHILD及Idle只代表普通切换。首次准备还有工具几何缺失、文件夹对话框索引不可用，改用新截图完成路径输入；这些均未计为产品缺陷。未进行高CPU归因或连续滚轮测量。
+
+测试程序正常关闭，7个观察PID/创建时间身份均已退出，代理0；两仓库HEAD/index/status及三个文件SHA256保持，个人settings保持原哈希，专用settings核对归档后移除。见 `verification.json`、`process-exit.json`、两组waiting/released及observations。恢复脚本第一次按系统GBK读取UTF-8诊断文件失败，显式UTF-8后完整校验通过；该脚本问题未影响产品或仓库内容。新增产品缺陷/修复0，原11项及整体目标继续。
