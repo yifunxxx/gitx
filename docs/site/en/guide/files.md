@@ -8,6 +8,7 @@ File shows the workspace's files, including unchanged ones. It also works with o
 2. Expand directories using their arrows. Loading is on demand; unopened subdirectories are not all scanned in advance.
 3. Single-click to select. Double-click or press Enter to open a text editor. Edit and press `Ctrl+S`; the unsaved marker clears when saving completes.
 4. The editor context menu provides Undo, Redo, Cut, Copy, Paste, Select All, and Save.
+5. Besides New/Refresh, use **Locate current file** (crosshair) in the toolbar to scroll to and select the active editor or Diff path.
 
 ![The File tree and text editor](/screenshots/files-en.jpg)
 

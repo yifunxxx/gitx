@@ -12,7 +12,7 @@ F4 opens an editor in Changes but an applicable diff in File. Backend capabiliti
 
 ## A list is empty or a file/search result is missing
 
-Clear filters, inspect the active repository, and refresh. File's inline filter covers only loaded nodes; use `Ctrl+P` globally. Check hidden/ignored settings, truncation messages, and text-reading limits. Verify the disk path before concluding a file was deleted.
+Clear filters, inspect the active repository, and refresh. File's inline filter covers only loaded nodes; use `Ctrl+P` for filenames and `Ctrl+Shift+R` for content. To select the active editor file in the tree, use File's locate toolbar icon. Check hidden/ignored settings, truncation messages, and text-reading limits. Verify the disk path before concluding a file was deleted.
 
 For empty Log results, Clear filters, inspect branch/path scope, and check loading or Git errors. A repository with no first commit legitimately has no history.
 

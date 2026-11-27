@@ -41,6 +41,6 @@ Editable files and conflict results also provide replacement text, Replace Curre
 
 ## Other search tools
 
-`Ctrl+P` finds fuzzy filenames without expanding directories. This filename search still displays at most 500 results and reports scan limits; those limits do not apply to workspace **content** search.
+`Ctrl+P` finds fuzzy filenames without expanding directories. This filename search still displays at most 500 results and reports scan limits; those limits do not apply to workspace **content** search (`Ctrl+Shift+R`).
 
-File's **Filter loaded files** filters loaded tree nodes. Log filters search history; `Ctrl+Shift+A` finds app commands. See [history](./history) and [workspace](./workspace).
+File's toolbar **Locate current file** (crosshair) expands parents, scrolls to, and selects the active editor or Diff file. When nothing is open or the path is not in the tree, the control is disabled or shows a tip. **Filter loaded files** only filters loaded nodes. Log filters search history; `Ctrl+Shift+A` finds app commands. See [history](./history), [files](./files), and [workspace](./workspace).
