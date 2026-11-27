@@ -32,6 +32,6 @@
 
 原生覆盖真实回收失败、关闭取消、重试确认及解除占用后的保存；成功删除、部分成功与确认期间精确竞态由真实store联合回归覆盖，不宣称原生全部重跑。用户安装版未更新，不据此关闭滚动、拖放或资源归因事项。
 
-提交前再次fetch及master/交付分支快进检查成功，无新提交，基线仍包含master`50a4802`和交付`9cb449a`。本项代码及验证完成，独立提交推送结果随后补记。新增并解决QA131一项，回到原11项持续事项，整体七项目标继续。
+提交前再次fetch及master/交付分支快进检查成功，无新提交，基线仍包含master`50a4802`和交付`9cb449a`。功能提交`00a9dcc8eed925eb68615c9f90ce6ed2ddb25662`首次推送成功，独立ls-remote完整SHA一致，无凭据提示。记录前再次fetch及两分支检查成功，没有新提交。新增并解决QA131一项，回到原11项持续事项，整体七项目标继续。
 
 证据目录：`E:/IDEAproject/gitx/test-results/qa131-delete-drafts-20261127`。`before.log`保存旧失败，`targeted.log`保存首轮相关验证，`full.log`保存最终完整前端，`build.log`、`docs-build.log`、`native-build-final.log`保留最终构建状态。`native-*.json`记录界面状态，`failed-verified.json`、`saved-verified.json`、`final-verified.json`记录磁盘核对，`processes-final.json`及`lock-ended.json`记录退出结果。
