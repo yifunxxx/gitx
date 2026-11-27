@@ -4,6 +4,8 @@
 
 ## 当前进度
 
+2026-11-27 QA-119 已合入 master（PR #35）并 bump `0.1.52`：查找条紧凑标签/软 focus/列对齐；Find in Files 分组与主次按钮；File 顶栏删除、菜单「删除…」、脏草稿二次确认与选择回退（仍走回收站）；Pages 已同步。准备 tag/Release Windows。原持续 QA 事项与整体目标继续。
+
 2026-11-27 登记并推进 QA-119（用户反馈 v0.1.51）：文件内查找条仍丑（厚 focus、长标签、行未对齐）、Find in Files 层次弱；File 删除可发现性不足（无工具栏、菜单文案偏回收站、脏草稿硬阻断）。正在美化查找 UI、补工具栏删除/草稿确认/路径回退，并同步 Pages；完成后开 PR → merge → bump 0.1.52。原持续 QA 事项与整体目标继续。
 
 2026-11-27 QA-118 已合入 master（PR #34）并准备打 `v0.1.51`：IDEA 风格文件内查找/替换、`.cm-panels` 层级修复、全局搜索 `Ctrl+Shift+R`、File 定位图标；Pages（search/files/settings/troubleshooting 中英）已补齐。CI 绿后 merge；bump/tag/Release 随后。原持续 QA 事项与整体目标继续。
