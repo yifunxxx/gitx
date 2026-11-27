@@ -313,6 +313,8 @@ class IdeaSearchPanel implements Panel {
   }
 
   keydown(event: KeyboardEvent) {
+    // Candidate confirmation/cancellation belongs to the IME, not the search command.
+    if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
     if (runScopeHandlers(this.view, event, "search-panel")) {
       event.preventDefault();
     } else if (event.key === "Enter" && event.target === this.searchField) {
