@@ -214,23 +214,17 @@ fn preview(line: &str, start: usize, end: usize, replacement: &str) -> (String, 
     (text, from as u32, to as u32, after)
 }
 fn scan_file(job: &Search, path: &Path, relative: &str, regex: &Regex) -> Result<(), AppError> {
-    let mut reader = BufReader::new(File::open(path).map_err(err)?);
-    let mut bytes = Vec::new();
+    let mut lines = TextLines::new(BufReader::new(File::open(path).map_err(err)?));
     let mut hasher = Sha256::new();
     let mut line_number = 0;
     let mut found = false;
-    loop {
-        check(&job.cancel)?;
-        bytes.clear();
-        if read_line(&mut reader, &mut bytes, &job.cancel)? == 0 {
-            break;
-        }
-        hasher.update(&bytes);
+    while let Some(bytes) = lines.next(&job.cancel)? {
+        hasher.update(bytes);
         line_number += 1;
         if bytes.contains(&0) {
             return Err(err("Binary file"));
         }
-        let line = std::str::from_utf8(&bytes)
+        let line = std::str::from_utf8(bytes)
             .map_err(|_| err("Not UTF-8 text"))?
             .trim_end_matches(['\r', '\n']);
         let bom = line_number == 1 && line.starts_with('\u{feff}');
@@ -279,6 +273,34 @@ fn scan_file(job: &Search, path: &Path, relative: &str, regex: &Regex) -> Result
     }
     Ok(())
 }
+
+/// Stream editor lines while retaining their original separators for hashing
+/// and replacement. Empty documents and a final separator each have an empty
+/// last line, just as the editor does; no extra line follows unterminated text.
+struct TextLines<R> {
+    reader: R,
+    bytes: Vec<u8>,
+    finished: bool,
+}
+impl<R: BufRead> TextLines<R> {
+    fn new(reader: R) -> Self {
+        Self {
+            reader,
+            bytes: Vec::new(),
+            finished: false,
+        }
+    }
+    fn next(&mut self, cancel: &CancellationToken) -> Result<Option<&[u8]>, AppError> {
+        check(cancel)?;
+        if self.finished {
+            return Ok(None);
+        }
+        self.bytes.clear();
+        read_line(&mut self.reader, &mut self.bytes, cancel)?;
+        self.finished = !matches!(self.bytes.last(), Some(b'\r' | b'\n'));
+        Ok(Some(&self.bytes))
+    }
+}
 fn read_line(
     reader: &mut impl BufRead,
     out: &mut Vec<u8>,
@@ -290,11 +312,19 @@ fn read_line(
         if chunk.is_empty() {
             return Ok(out.len());
         }
-        let end = chunk.iter().position(|b| *b == b'\n');
+        let end = chunk.iter().position(|b| matches!(b, b'\r' | b'\n'));
         let n = end.map_or(chunk.len(), |i| i + 1);
         out.extend_from_slice(&chunk[..n]);
         reader.consume(n);
         if end.is_some() {
+            // CRLF is one editor separator even if it straddles two buffers.
+            if out.last() == Some(&b'\r') {
+                check(cancel)?;
+                if reader.fill_buf().map_err(err)?.first() == Some(&b'\n') {
+                    out.push(b'\n');
+                    reader.consume(1);
+                }
+            }
             return Ok(out.len());
         }
     }
@@ -504,23 +534,17 @@ fn replace_file(
     if permissions.readonly() {
         return Err(err("File is read-only"));
     }
-    let mut reader = BufReader::new(source);
+    let mut lines = TextLines::new(BufReader::new(source));
     let mut temp = tempfile::Builder::new()
         .prefix(".gitx-replace-")
         .tempfile_in(path.parent().unwrap())
         .map_err(err)?;
-    let mut bytes = Vec::new();
     let mut h = Sha256::new();
     let mut first_line = true;
     let mut writer = BufWriter::new(temp.as_file_mut());
-    loop {
-        check(&job.cancel)?;
-        bytes.clear();
-        if read_line(&mut reader, &mut bytes, &job.cancel)? == 0 {
-            break;
-        }
-        h.update(&bytes);
-        let line = std::str::from_utf8(&bytes).map_err(err)?;
+    while let Some(bytes) = lines.next(&job.cancel)? {
+        h.update(bytes);
+        let line = std::str::from_utf8(bytes).map_err(err)?;
         let line = if first_line && line.starts_with('\u{feff}') {
             writer.write_all("\u{feff}".as_bytes()).map_err(err)?;
             &line['\u{feff}'.len_utf8()..]
@@ -550,7 +574,7 @@ fn replace_file(
     check(&job.cancel)?;
     temp.as_file().set_permissions(permissions).map_err(err)?;
     temp.as_file().sync_all().map_err(err)?;
-    drop(reader);
+    drop(lines);
     temp.persist(&path).map_err(err)?;
     Ok(())
 }
@@ -699,6 +723,100 @@ mod tests {
         assert_eq!(matches(&run(req)).len(), 1);
     }
     #[test]
+    fn cr_and_mixed_newlines_report_editor_line_and_utf16_column() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("a"),
+            "\u{feff}hit\r😀 hit\r\nprefix\rhit\nhit",
+        )
+        .unwrap();
+        let found = matches(&run(request(root.path(), "hit")));
+        assert_eq!(
+            found.iter().map(|m| (m.line, m.column)).collect::<Vec<_>>(),
+            [(1, 2), (2, 4), (4, 1), (5, 1)]
+        );
+        assert!(found.iter().all(|m| !m.preview.contains(['\r', '\n'])));
+    }
+    #[test]
+    fn anchored_replacement_preserves_every_mixed_line_ending() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("a"),
+            "\u{feff}foo1\rfoo2\r\n\rfoo3\nfoo4\r\rfoo5",
+        )
+        .unwrap();
+        let mut req = request(root.path(), r"^foo(\d)$");
+        req.regex = true;
+        req.replacement = "bar$1".into();
+        let job = run(req);
+        assert_eq!(
+            matches(&job).iter().map(|m| m.line).collect::<Vec<_>>(),
+            [1, 2, 4, 5, 7]
+        );
+        assert_eq!(replace(&job, &[]).unwrap().completed, ["a"]);
+        assert_eq!(
+            std::fs::read(root.path().join("a")).unwrap(),
+            "\u{feff}bar1\rbar2\r\n\rbar3\nbar4\r\rbar5".as_bytes()
+        );
+    }
+    #[test]
+    fn reader_keeps_crlf_together_at_each_buffer_boundary() {
+        let input = b"abc\r\n\r\rdef\nz\rlast";
+        for capacity in [1, 2, 3, 4, 8, 8192] {
+            let mut reader = BufReader::with_capacity(capacity, input.as_slice());
+            let mut lines = Vec::new();
+            loop {
+                let mut line = Vec::new();
+                if read_line(&mut reader, &mut line, &CancellationToken::new()).unwrap() == 0 {
+                    break;
+                }
+                lines.push(line);
+            }
+            assert_eq!(
+                lines,
+                [
+                    b"abc\r\n".as_slice(),
+                    b"\r",
+                    b"\r",
+                    b"def\n",
+                    b"z\r",
+                    b"last"
+                ],
+                "buffer capacity {capacity}"
+            );
+            assert_eq!(lines.concat(), input);
+        }
+    }
+    #[test]
+    fn empty_file_and_terminal_empty_lines_match_and_replace_like_the_editor() {
+        for (text, line, column, expected) in [
+            ("", 1, 1, "new"),
+            ("\u{feff}", 1, 2, "\u{feff}new"),
+            ("first\n", 2, 1, "first\nnew"),
+            ("first\r", 2, 1, "first\rnew"),
+            ("first\r\n", 2, 1, "first\r\nnew"),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::write(root.path().join("a"), text).unwrap();
+            let mut req = request(root.path(), "^$");
+            req.regex = true;
+            let job = run(req);
+            assert_eq!(
+                matches(&job)
+                    .iter()
+                    .map(|m| (m.line, m.column))
+                    .collect::<Vec<_>>(),
+                [(line, column)],
+                "{text:?}"
+            );
+            assert_eq!(replace(&job, &[]).unwrap().completed, ["a"]);
+            assert_eq!(
+                std::fs::read(root.path().join("a")).unwrap(),
+                expected.as_bytes()
+            );
+        }
+    }
+    #[test]
     fn searches_past_former_file_and_total_size_limits() {
         let root = tempfile::tempdir().unwrap();
         let mut file = File::create(root.path().join("large.txt")).unwrap();
@@ -796,8 +914,8 @@ mod tests {
     #[test]
     fn late_binary_and_invalid_utf8_remove_provisional_results() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("binary"), b"hit\nhit\0").unwrap();
-        std::fs::write(root.path().join("invalid"), b"hit\n\xff").unwrap();
+        std::fs::write(root.path().join("binary"), b"hit\rhit\r\nhit\0").unwrap();
+        std::fs::write(root.path().join("invalid"), b"hit\r\nhit\r\xff").unwrap();
         std::fs::write(root.path().join("text"), "hit").unwrap();
         let job = run(request(root.path(), "hit"));
         let found = matches(&job);
@@ -834,10 +952,12 @@ mod tests {
         assert_eq!(found[0].column, 2);
         req.query = "^.*$".into();
         let job = run(req);
+        // The terminal separator creates an empty second editor line.
+        assert_eq!(matches(&job).len(), 2);
         assert_eq!(replace(&job, &[]).unwrap().completed, ["a"]);
         assert_eq!(
             std::fs::read_to_string(root.path().join("a")).unwrap(),
-            "\u{feff}new\r\n"
+            "\u{feff}new\r\nnew"
         );
     }
     #[test]

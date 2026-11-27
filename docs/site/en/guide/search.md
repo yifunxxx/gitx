@@ -23,6 +23,8 @@ Content search has no file-size, total-volume, elapsed-time or match-count cutof
 
 Search reads saved UTF-8 text, not unsaved editor buffers. Binary, invalid-encoding and unreadable paths are reported with reasons (the first 20 reasons are displayed). Symlinks are not followed, and Git metadata is excluded. Global regex searches are line-based and support Unicode, character classes, groups, repetitions and captures. **Multiline matching, backreferences and lookaround are unsupported** and invalid expressions show an error.
 
+LF, CRLF, CR and mixed line endings use the same line/column positions as the editor. Replacement preserves each original separator. Empty files and the final empty line after a separator also participate in regex searches; for example, `^$` matches these empty lines.
+
 ## Replace in Files
 
 1. Press `Ctrl+Shift+H`, or select **Replace** above the search fields. Find and replacement fields align, and the title follows the selected mode.
