@@ -1077,8 +1077,8 @@
     "closeRight": "关闭右侧",
     "closeAll": "关闭全部",
     "closeNamed": "关闭 {title}",
-    "unsavedTitle": "关闭未应用的合并结果",
-    "unsavedMessage": "有 {count} 个合并标签包含尚未应用的修改。关闭会丢弃这些编辑，是否继续？",
+    "unsavedTitle": "关闭未保存的编辑",
+    "unsavedMessage": "有 {count} 个编辑标签包含尚未保存或应用的修改。关闭会丢弃这些编辑，是否继续？",
     "discardAndClose": "丢弃编辑并关闭"
   },
   "updates": {

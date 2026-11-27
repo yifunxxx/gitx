@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
+import { createPinia, setActivePinia } from "pinia";
 import EditorTabs from "./EditorTabs.vue";
 import EditorTabButton from "./EditorTabButton.vue";
 
@@ -14,7 +15,11 @@ const mocks = vi.hoisted(() => ({
   merge: {} as any,
   file: {} as any,
   confirm: vi.fn(),
+  fsReadFile: vi.fn(),
+  workspaceOpen: vi.fn(),
+  workspaceRecent: vi.fn(),
 }));
+vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
 vi.mock("vue-i18n", async (original) => ({
   ...(await original<typeof import("vue-i18n")>()),
   useI18n: () => ({ t: (key: string) => key }),
@@ -46,7 +51,24 @@ function store(kind: string, ids: string[]) {
 enableAutoUnmount(afterEach);
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.workspace = reactive({ repoPath: "fixture", folderPath: "fixture" });
+  setActivePinia(createPinia());
+  mocks.fsReadFile.mockResolvedValue("disk text\n");
+  mocks.workspaceOpen.mockImplementation(({ path }) =>
+    Promise.resolve({ path, isRepo: false, roots: [] }),
+  );
+  mocks.workspaceRecent.mockResolvedValue({ paths: [] });
+  mocks.workspace = reactive({
+    repoPath: "fixture",
+    folderPath: "fixture",
+    navigation: 1,
+    applied: 1,
+    navigationToken() {
+      return this.navigation;
+    },
+    appliedOpenToken() {
+      return this.applied;
+    },
+  });
   mocks.layout = reactive({ activeEditorKind: "diff" });
   mocks.diff = store("diff", ["shared", "d2"]);
   mocks.history = store("history", ["shared"]);
@@ -219,6 +241,224 @@ describe("Editor tab closing", () => {
     await flushPromises();
     expect(mocks.confirm).toHaveBeenCalledOnce();
     expect(mocks.file.tabs.map((tab: any) => tab.id)).toEqual(["new"]);
+  });
+
+  it.each(["navigation", "applied"])(
+    "invalidates an outstanding close when the same-path %s identity changes",
+    async (identity) => {
+      const { tab } = setup();
+      mocks.file.tabs[0].dirty = true;
+      let resolve!: (ok: boolean) => void;
+      mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+      tab("diff", "shared").vm.$emit("close", "all");
+      await flushPromises();
+      mocks.workspace[identity]++;
+      mocks.file.tabs = [{ id: "f", title: "new file", dirty: true }];
+      mocks.layout.activeEditorKind = "file";
+      resolve(true);
+      await flushPromises();
+      expect(mocks.diff.closeTab).not.toHaveBeenCalled();
+      expect(mocks.file.closeTab).not.toHaveBeenCalled();
+      expect(mocks.file.tabs[0]).toMatchObject({ title: "new file", dirty: true });
+      expect(mocks.layout.activeEditorKind).toBe("file");
+    },
+  );
+
+  it.each(["file", "merge", "diff", "history", "compare", "repoAtRev"])(
+    "keeps a replacement %s instance with the same ID outside the confirmed batch",
+    async (kind) => {
+      const { tab } = setup();
+      mocks.merge.hasUnsavedMergeResult.mockReturnValue(true);
+      let resolve!: (ok: boolean) => void;
+      mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+      tab("diff", "shared").vm.$emit("close", "all");
+      await flushPromises();
+      const state = mocks[kind as keyof typeof mocks] as any;
+      const field = kind === "merge" ? "mergeTabs" : "tabs";
+      const id = state[field][0].id;
+      state[field] = [{ id, title: "replacement", dirty: true }];
+      mocks.layout.activeEditorKind = kind;
+      resolve(true);
+      await flushPromises();
+      expect(state[field]).toHaveLength(1);
+      expect(state[field][0]).toMatchObject({ id, title: "replacement", dirty: true });
+      expect(kind === "merge" ? state.closeMergeTab : state.closeTab).not.toHaveBeenCalled();
+      expect(mocks.layout.activeEditorKind).toBe(kind);
+    },
+  );
+
+  it("selects a live neighbor when the original adjacent tab disappears during confirmation", async () => {
+    const { tab } = setup();
+    mocks.merge.hasUnsavedMergeResult.mockReturnValue(true);
+    mocks.layout.activeEditorKind = "merge";
+    let resolve!: (ok: boolean) => void;
+    mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+    tab("merge", "m").vm.$emit("close", "current");
+    await flushPromises();
+    mocks.file.tabs = [];
+    mocks.file.activeId = null;
+    resolve(true);
+    await flushPromises();
+    expect(mocks.merge.closeMergeTab).toHaveBeenCalledWith("m");
+    expect(mocks.layout.activeEditorKind).toBe("repoAtRev");
+    expect(mocks.repoAtRev.activeId).toBe("r");
+    expect(mocks.file.activeId).toBeNull();
+    expect((document.activeElement as HTMLElement).dataset.editorKey).toBe(
+      JSON.stringify(["repoAtRev", "r"]),
+    );
+  });
+
+  it("abandons Close Others if the retained target was replaced during confirmation", async () => {
+    const { tab } = setup();
+    mocks.merge.hasUnsavedMergeResult.mockReturnValue(true);
+    let resolve!: (ok: boolean) => void;
+    mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+    tab("history", "shared").vm.$emit("close", "others");
+    await flushPromises();
+    mocks.history.tabs = [{ id: "shared", title: "replacement history" }];
+    resolve(true);
+    await flushPromises();
+    expect(mocks.diff.closeTab).not.toHaveBeenCalled();
+    expect(mocks.merge.closeMergeTab).not.toHaveBeenCalled();
+    expect(mocks.layout.activeEditorKind).toBe("diff");
+  });
+
+  it.each(["current", "others", "right"])(
+    "abandons %s when its anchor disappears during confirmation",
+    async (scope) => {
+      const { tab } = setup();
+      mocks.file.tabs[0].dirty = true;
+      mocks.merge.hasUnsavedMergeResult.mockReturnValue(true);
+      let resolve!: (ok: boolean) => void;
+      mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+      tab("merge", "m").vm.$emit("close", scope);
+      await flushPromises();
+      mocks.merge.mergeTabs = [];
+      resolve(true);
+      await flushPromises();
+      expect(mocks.file.closeTab).not.toHaveBeenCalled();
+      expect(mocks.diff.closeTab).not.toHaveBeenCalled();
+      expect(mocks.merge.closeMergeTab).not.toHaveBeenCalled();
+      expect(mocks.layout.activeEditorKind).toBe("diff");
+    },
+  );
+
+  it("ignores a late confirmation after the component unmounts", async () => {
+    const { wrapper, tab } = setup();
+    mocks.file.tabs[0].dirty = true;
+    let resolve!: (ok: boolean) => void;
+    mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+    tab("file", "f").vm.$emit("close", "all");
+    await flushPromises();
+    wrapper.unmount();
+    resolve(true);
+    await flushPromises();
+    expect(mocks.file.closeTab).not.toHaveBeenCalled();
+    expect(mocks.diff.closeTab).not.toHaveBeenCalled();
+    expect(mocks.layout.activeEditorKind).toBe("diff");
+  });
+
+  it("keeps a newly activated tab and restores its focus after closing the old batch", async () => {
+    const { tab } = setup();
+    mocks.file.tabs[0].dirty = true;
+    let resolve!: (ok: boolean) => void;
+    mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+    tab("file", "f").vm.$emit("close", "all");
+    await flushPromises();
+    mocks.file.tabs.push({ id: "new", title: "new draft", dirty: true });
+    mocks.file.activeId = "new";
+    mocks.layout.activeEditorKind = "file";
+    resolve(true);
+    await flushPromises();
+    expect(mocks.file.tabs.map((item: any) => item.id)).toEqual(["new"]);
+    expect(mocks.file.activeId).toBe("new");
+    expect(mocks.layout.activeEditorKind).toBe("file");
+    expect((document.activeElement as HTMLElement).dataset.editorKey).toBe(
+      JSON.stringify(["file", "new"]),
+    );
+  });
+
+  it("preserves a reopened file and its new draft using the real file store", async () => {
+    const { useFileViewerStore } = await vi.importActual<typeof import("@/stores/fileViewerStore")>(
+      "@/stores/fileViewerStore",
+    );
+    mocks.file = useFileViewerStore();
+    await mocks.file.open("note.txt", { folderPath: "fixture" });
+    const original = mocks.file.tabs[0];
+    mocks.file.setDocument(original.id, "old draft");
+    const { tab } = setup();
+    let resolve!: (ok: boolean) => void;
+    mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+    tab("file", original.id).vm.$emit("close", "all");
+    await flushPromises();
+    mocks.file.closeTab(original.id);
+    await mocks.file.open("note.txt", { folderPath: "fixture" });
+    mocks.file.setDocument(original.id, "replacement draft");
+    resolve(true);
+    await flushPromises();
+    expect(mocks.file.tabs).toHaveLength(1);
+    expect(mocks.file.tabs[0]).not.toBe(original);
+    expect(mocks.file.tabs[0]).toMatchObject({
+      id: original.id,
+      text: "replacement draft",
+      dirty: true,
+    });
+    expect(mocks.layout.activeEditorKind).toBe("file");
+    expect(mocks.file.activeId).toBe(original.id);
+  });
+
+  it("keeps confirmation valid when a real file instance is renamed", async () => {
+    const { useFileViewerStore } = await vi.importActual<typeof import("@/stores/fileViewerStore")>(
+      "@/stores/fileViewerStore",
+    );
+    mocks.file = useFileViewerStore();
+    await mocks.file.open("note.txt", { folderPath: "fixture" });
+    const original = mocks.file.tabs[0];
+    mocks.file.setDocument(original.id, "draft");
+    const { tab } = setup();
+    let resolve!: (ok: boolean) => void;
+    mocks.confirm.mockImplementation(() => new Promise((done) => (resolve = done)));
+    tab("file", original.id).vm.$emit("close", "current");
+    await flushPromises();
+    mocks.file.applyFileMutation("fixture", "move", [
+      { path: "note.txt", destination: "renamed.txt" },
+    ]);
+    expect(mocks.file.tabs[0]).toBe(original);
+    expect(original.path).toBe("renamed.txt");
+    resolve(true);
+    await flushPromises();
+    expect(mocks.file.tabs).toHaveLength(0);
+    expect(mocks.layout.activeEditorKind).toBe("merge");
+  });
+
+  it("invalidates the close as soon as a real same-path navigation starts", async () => {
+    const { useWorkspaceStore } =
+      await vi.importActual<typeof import("@/stores/workspaceStore")>("@/stores/workspaceStore");
+    const { useFileViewerStore } = await vi.importActual<typeof import("@/stores/fileViewerStore")>(
+      "@/stores/fileViewerStore",
+    );
+    mocks.workspace = useWorkspaceStore();
+    await mocks.workspace.openFolder("fixture");
+    mocks.file = useFileViewerStore();
+    await mocks.file.open("note.txt", { folderPath: "fixture" });
+    mocks.file.setDocument(mocks.file.activeId, "draft");
+    const { tab } = setup();
+    let resolveClose!: (ok: boolean) => void;
+    mocks.confirm.mockImplementation(() => new Promise((done) => (resolveClose = done)));
+    tab("file", mocks.file.activeId).vm.$emit("close", "all");
+    await flushPromises();
+    let resolveOpen!: (value: any) => void;
+    mocks.workspaceOpen.mockReturnValueOnce(new Promise((done) => (resolveOpen = done)));
+    const opening = mocks.workspace.openFolder("fixture");
+    resolveClose(true);
+    await flushPromises();
+    expect(mocks.file.tabs[0]).toMatchObject({ text: "draft", dirty: true });
+    expect(mocks.diff.closeTab).not.toHaveBeenCalled();
+    resolveOpen({ path: "fixture", isRepo: false, roots: [] });
+    await opening;
+    await mocks.file.open("note.txt", { folderPath: "fixture" });
+    expect(mocks.file.tabs).toHaveLength(1);
+    expect(mocks.file.tabs[0].text).toBe("disk text\n");
   });
 
   it("opens the real context menu without activating its background tab", async () => {
