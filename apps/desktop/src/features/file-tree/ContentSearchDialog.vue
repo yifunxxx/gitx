@@ -19,6 +19,7 @@ import { useChangesStore } from "@/stores/changesStore";
 import { useConflictsStore } from "@/stores/conflictsStore";
 import { useJobsStore } from "@/stores/jobsStore";
 import { closeDialog, useDialogState } from "@/composables/useDialog";
+import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
 import { useSearchFocus } from "./useSearchFocus";
 
@@ -342,16 +343,30 @@ async function apply() {
       if (!tab.dirty && !tab.saving) viewer.closeTab(tab.id);
     }
     if (workspace.isRepo && current(token)) void useChangesStore().refresh();
+    const summary = t("contentSearch.replaced", { count: response.completed.length });
+    const failure = response.failed.join("\n");
     if (current(token)) {
-      notice.value = t("contentSearch.replaced", { count: response.completed.length });
-      error.value = response.failed.join("\n");
+      notice.value = summary;
+      error.value = failure;
       stopped.value = true;
       confirming.value = false;
+    } else {
+      toast({
+        title: summary,
+        description: [folder, failure].filter(Boolean).join("\n"),
+        persistent: !!failure,
+      });
     }
   } catch (failure) {
     if (current(token)) {
       error.value = formatErrorMessage(failure);
       confirming.value = false;
+    } else {
+      toast({
+        title: t("contentSearch.replaceTitle"),
+        description: `${folder}\n${formatErrorMessage(failure)}`,
+        persistent: true,
+      });
     }
   } finally {
     viewer.fileMutationPending = false;

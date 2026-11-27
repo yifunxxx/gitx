@@ -45,6 +45,10 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
   async function run(operation: FsOperation, paths: string[], destination?: string) {
     const folder = workspace.folderPath;
     if (disposed || busy.value || !folder) return;
+    if (viewer.fileMutationPending) {
+      toast({ title: t("fileOps.editorBusy") });
+      return;
+    }
     const navigation = workspace.navigationToken();
     const applied = workspace.appliedOpenToken();
     const current = () =>
@@ -189,6 +193,11 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
       }
       // Prompts and validation are not running disk work. Keep one task from
       // dispatch through refresh, including partial failures and navigation.
+      // Another surface can start a write while a confirmation is pending.
+      if (viewer.fileMutationPending) {
+        toast({ title: t("fileOps.editorBusy") });
+        return;
+      }
       job = jobs.begin(t(`fileOps.running.${operation}`), folder);
       activity.value = { operation, current };
       for (const tab of affected) tab.fileOperationPending = true;
