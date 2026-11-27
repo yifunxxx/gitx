@@ -927,6 +927,9 @@ export const mockBackend: Backend = {
   async fsCancelSearch() {
     return null;
   },
+  async fsStopContentSearch() {
+    return false;
+  },
   async stagePaths(req) {
     emitConsole("cmd", `git add -A -- ${req.paths.join(" ")}`);
     for (const p of req.paths) {

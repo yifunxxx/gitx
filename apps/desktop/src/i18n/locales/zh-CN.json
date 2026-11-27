@@ -473,6 +473,7 @@
     "refreshFailed": "操作已完成，但界面刷新失败。请刷新仓库查看结果。"
   },
   "common": {
+    "retry": "重试",
     "cancel": "取消",
     "ok": "确定",
     "apply": "应用",
@@ -1172,6 +1173,8 @@
     "deletedDraft": "文件已回收；关闭前请复制保留此草稿。"
   },
   "contentSearch": {
+    "stopped": "搜索已停止，仍可浏览已完成扫描文件的结果。替换前请重新搜索。",
+    "stopping": "正在停止搜索…",
     "mode": "搜索模式",
     "includeLabel": "包含",
     "excludeLabel": "排除",

@@ -1,6 +1,9 @@
 //! Saved-text search. Scans run off the IPC thread; results live in a temporary
 //! spool, so neither a large workspace nor many matches require one huge IPC.
-use super::{filesystem::resolve_entry, filesystem_search::begin};
+use super::{
+    filesystem::resolve_entry,
+    filesystem_search::{begin, FsCancelSearchReq},
+};
 use gitx_core::{AppError, ErrorCode};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::{Regex, RegexBuilder};
@@ -97,6 +100,7 @@ struct Progress {
     skipped: u32,
     issues: Vec<String>,
     done: bool,
+    stopped: bool,
     error: Option<String>,
     hashes: BTreeMap<String, Vec<u8>>,
     replacing: bool,
@@ -124,6 +128,24 @@ pub(super) fn cancel_session(id: &str, generation: u32) {
         }
     }
 }
+pub(super) fn stop_session(id: &str, generation: u32) -> Result<bool, AppError> {
+    let jobs = sessions().lock().map_err(err)?;
+    let Some(job) = jobs.get(id).filter(|job| job.req.generation == generation) else {
+        return Ok(false);
+    };
+    job.progress.lock().map_err(err)?.stopped = true;
+    job.cancel.cancel();
+    Ok(true)
+}
+
+/// Stop scanning while retaining completed files' results for paging. Closing
+/// the dialog or starting a new query still uses fs_cancel_search to release them.
+#[tauri::command]
+#[specta::specta]
+pub fn fs_stop_content_search(req: FsCancelSearchReq) -> Result<bool, AppError> {
+    super::filesystem_search::cancel_search(req, true)
+}
+
 fn get(id: &str, generation: u32) -> Result<Arc<Search>, AppError> {
     super::filesystem_search::touch(id, generation);
     let jobs = sessions().lock().map_err(err)?;
@@ -434,6 +456,7 @@ pub fn fs_start_content_search(req: ContentSearchReq) -> Result<(), AppError> {
             skipped: 0,
             issues: vec![],
             done: false,
+            stopped: false,
             error: None,
             hashes: BTreeMap::new(),
             replacing: false,
@@ -469,7 +492,9 @@ pub fn fs_start_content_search(req: ContentSearchReq) -> Result<(), AppError> {
         if let Ok(mut p) = job.progress.lock() {
             p.done = true;
             if let Err(e) = result {
-                p.error = Some(e.message);
+                if !(p.stopped && e.code == ErrorCode::Cancelled) {
+                    p.error = Some(e.message);
+                }
             }
         }
     });
@@ -683,6 +708,7 @@ mod tests {
                 skipped: 0,
                 issues: vec![],
                 done: false,
+                stopped: false,
                 error: None,
                 hashes: BTreeMap::new(),
                 replacing: false,
@@ -703,6 +729,123 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
             .collect()
+    }
+    fn cancel_request(req: &ContentSearchReq) -> FsCancelSearchReq {
+        FsCancelSearchReq {
+            session_id: req.session_id.clone(),
+            generation: req.generation,
+        }
+    }
+    async fn wait_done(job: &Search) {
+        let started = Instant::now();
+        while !job.progress.lock().unwrap().done {
+            assert!(started.elapsed() < Duration::from_secs(10));
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    #[tokio::test]
+    async fn stopped_results_remain_pageable_but_cannot_replace_and_close_releases_spool() {
+        let root = tempfile::tempdir().unwrap();
+        let contents = "hit\n".repeat(1001);
+        std::fs::write(root.path().join("a"), &contents).unwrap();
+        let req = request(root.path(), "hit");
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        wait_done(&job).await;
+        let spool = job
+            .progress
+            .lock()
+            .unwrap()
+            .spool
+            .get_ref()
+            .path()
+            .to_owned();
+        assert!(fs_stop_content_search(cancel_request(&req)).unwrap());
+        let mut all = vec![];
+        for page in 0..6 {
+            let found = fs_content_search_page(ContentSearchPageReq {
+                session_id: req.session_id.clone(),
+                generation: req.generation,
+                page,
+            })
+            .await
+            .unwrap();
+            assert!(found.done && found.error.is_none());
+            assert_eq!(found.total, 1001);
+            assert_eq!(found.files, 1);
+            all.extend(found.matches);
+        }
+        assert_eq!(all.len(), 1001);
+        assert_eq!(
+            all.iter().map(|m| m.line).collect::<Vec<_>>(),
+            (1..=1001).collect::<Vec<_>>()
+        );
+        assert_eq!(replace(&job, &[]).unwrap_err().code, ErrorCode::Cancelled);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("a")).unwrap(),
+            contents
+        );
+        super::super::filesystem_search::fs_cancel_search(cancel_request(&req)).unwrap();
+        assert!(get(&req.session_id, req.generation).is_err());
+        drop(job);
+        assert!(!spool.exists());
+    }
+    #[tokio::test]
+    async fn stopping_an_active_file_rolls_back_its_provisional_results_without_error() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a"), "hit\n".repeat(200_000)).unwrap();
+        let req = request(root.path(), "hit");
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        let started = Instant::now();
+        loop {
+            let total = job.progress.lock().unwrap().total;
+            if total >= 200 {
+                assert!(total < 200_000, "scan must still be inside the file");
+                break;
+            }
+            assert!(started.elapsed() < Duration::from_secs(10));
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        assert!(fs_stop_content_search(cancel_request(&req)).unwrap());
+        wait_done(&job).await;
+        let found = fs_content_search_page(ContentSearchPageReq {
+            session_id: req.session_id.clone(),
+            generation: req.generation,
+            page: 0,
+        })
+        .await
+        .unwrap();
+        assert!(found.done && found.error.is_none());
+        assert_eq!(found.total, 0);
+        assert_eq!(found.files, 0);
+        assert!(found.matches.is_empty());
+        let p = job.progress.lock().unwrap();
+        assert!(p.pages.is_empty());
+        assert_eq!(p.bytes, 0);
+        drop(p);
+        super::super::filesystem_search::fs_cancel_search(cancel_request(&req)).unwrap();
+    }
+    #[tokio::test]
+    async fn stop_before_start_rejects_late_start_and_old_stop_cannot_cancel_a_new_scan() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a"), "hit").unwrap();
+        let mut req = request(root.path(), "hit");
+        let old = cancel_request(&req);
+        assert!(!fs_stop_content_search(cancel_request(&req)).unwrap());
+        assert_eq!(
+            fs_start_content_search(req.clone()).unwrap_err().code,
+            ErrorCode::Cancelled
+        );
+        req.generation += 1;
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        assert!(!fs_stop_content_search(old).unwrap());
+        assert!(!job.cancel.is_cancelled());
+        wait_done(&job).await;
+        assert_eq!(matches(&job).len(), 1);
+        assert_eq!(replace(&job, &[]).unwrap().completed, ["a"]);
+        super::super::filesystem_search::fs_cancel_search(cancel_request(&req)).unwrap();
     }
     #[test]
     fn every_occurrence_case_word_unicode_and_original_columns() {

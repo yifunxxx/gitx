@@ -21,6 +21,10 @@ macOS uses Cmd; Replace in File uses `Cmd+Option+F`. These actions, plus Replace
 
 Content search has no file-size, total-volume, elapsed-time or match-count cutoff. A background worker reads lines and spools results to temporary disk storage; the UI reads only the current page. Memory depends mainly on the longest line, and result storage needs free disk space. Cancel, change the query, close the dialog, or switch projects to stop scanning. The task queue shows scan progress.
 
+Click **Cancel** beside the scan progress to stop scanning. Once it settles, results from fully scanned files remain available for paging. Provisional matches from an unfinished file are removed, so the total may decrease. Stopped results cannot be replaced: choose **Search again** and wait for completion first. Changing conditions, closing the dialog, or switching projects releases the old results.
+
+While a page loads, the current page number and rows remain visible with a loading indicator; opening rows and paging are temporarily disabled. A successful read switches to the requested page. A failed read keeps the current page and offers **Retry**, which reads the failed target page without rescanning.
+
 Search reads saved UTF-8 text, not unsaved editor buffers. Binary, invalid-encoding and unreadable paths are reported with reasons (the first 20 reasons are displayed). Symlinks are not followed, and Git metadata is excluded. Global regex searches are line-based and support Unicode, character classes, groups, repetitions and captures. **Multiline matching, backreferences and lookaround are unsupported** and invalid expressions show an error.
 
 LF, CRLF, CR and mixed line endings use the same line/column positions as the editor. Replacement preserves each original separator. Empty files and the final empty line after a separator also participate in regex searches; for example, `^$` matches these empty lines.

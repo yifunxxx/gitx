@@ -131,6 +131,13 @@ export const commands = {
   async fsStartContentSearch(req: ContentSearchReq): Promise<null> {
     return await TAURI_INVOKE("fs_start_content_search", { req });
   },
+  /**
+   * Stop scanning while retaining completed files' results for paging. Closing
+   * the dialog or starting a new query still uses fs_cancel_search to release them.
+   */
+  async fsStopContentSearch(req: FsCancelSearchReq): Promise<boolean> {
+    return await TAURI_INVOKE("fs_stop_content_search", { req });
+  },
   async fsContentSearchPage(req: ContentSearchPageReq): Promise<ContentSearchPage> {
     return await TAURI_INVOKE("fs_content_search_page", { req });
   },

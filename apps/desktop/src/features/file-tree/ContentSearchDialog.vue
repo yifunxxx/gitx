@@ -47,6 +47,9 @@ const exclude = ref("");
 const showHidden = ref(!!settings.settings?.showHiddenInFileTree);
 const showIgnored = ref(!!settings.settings?.showIgnoredInFileTree);
 const loading = ref(false);
+const pageLoading = ref(false);
+const stopping = ref(false);
+const retryPage = ref<number | null>(null);
 const applying = ref(false);
 const opening = ref(false);
 const stopped = ref(false);
@@ -85,7 +88,10 @@ const canReplace = computed(
     !error.value &&
     selectedFiles.value > 0 &&
     !busyDrafts.value &&
-    !applying.value,
+    !applying.value &&
+    !opening.value &&
+    !pageLoading.value &&
+    !stopping.value,
 );
 const current = (token: number) =>
   !disposed &&
@@ -107,32 +113,73 @@ function cancel() {
     .catch(() => {});
   ++generation;
   loading.value = false;
+  pageLoading.value = false;
+  stopping.value = false;
+  retryPage.value = null;
 }
 function close() {
   if (!applying.value) closeDialog(null, dialogId);
 }
-function stop() {
-  cancel();
+async function stop() {
+  if (!loading.value || stopping.value || opening.value || applying.value) return;
+  if (!searchJob) {
+    cancel();
+    stopped.value = true;
+    return;
+  }
+  clearTimeout(debounce);
+  clearTimeout(poll);
+  ++pageRequest;
+  pageLoading.value = false;
+  retryPage.value = null;
+  error.value = "";
   stopped.value = true;
   confirming.value = false;
+  stopping.value = true;
+  const token = generation;
+  try {
+    const retained = await getBackend().fsStopContentSearch({ sessionId, generation: token });
+    if (!current(token)) return;
+    if (retained) await readPage(token);
+    else {
+      result.value = null;
+      loading.value = false;
+      finishJob();
+    }
+  } catch (failure) {
+    if (current(token)) {
+      error.value = formatErrorMessage(failure);
+      stopped.value = false;
+      poll = setTimeout(() => void readPage(token), 150);
+    }
+  } finally {
+    if (current(token)) stopping.value = false;
+  }
 }
-async function readPage(token: number) {
+async function readPage(token: number, target = page.value, resetSelection = false): Promise<void> {
+  if (!current(token)) return;
+  clearTimeout(poll);
   const request = ++pageRequest;
   try {
     const response = await getBackend().fsContentSearchPage({
       sessionId,
       generation: token,
-      page: page.value,
+      page: target,
     });
     if (!current(token) || request !== pageRequest) return;
-    result.value = response;
-    loading.value = !response.done;
-    error.value = response.error ?? "";
-    if (page.value >= Math.max(1, Math.ceil(response.total / 200))) {
-      page.value = Math.max(0, Math.ceil(response.total / 200) - 1);
-      await readPage(token);
+    const lastPage = Math.max(0, Math.ceil(response.total / 200) - 1);
+    if (target > lastPage) {
+      await readPage(token, lastPage, true);
       return;
     }
+    result.value = response;
+    page.value = target;
+    loading.value = !response.done;
+    pageLoading.value = false;
+    error.value = response.error ?? "";
+    retryPage.value = null;
+    if (resetSelection) selected.value = 0;
+    else selected.value = Math.max(0, Math.min(selected.value, response.matches.length - 1));
     if (searchJob)
       jobs.progress(searchJob, {
         message: t("contentSearch.summary", {
@@ -141,13 +188,22 @@ async function readPage(token: number) {
           scanned: response.scanned,
         }),
       });
-    if (response.done) finishJob();
+    if (response.done) {
+      finishJob();
+      if (stopped.value) notice.value = t("contentSearch.stopped");
+    }
     if (!response.done) poll = setTimeout(() => void readPage(token), 150);
+    if (resetSelection) {
+      const owner = list.value;
+      await nextTick();
+      if (current(token) && request === pageRequest && list.value === owner)
+        owner?.scrollToIndex(0);
+    }
   } catch (failure) {
     if (current(token) && request === pageRequest) {
       error.value = formatErrorMessage(failure);
-      loading.value = false;
-      finishJob();
+      pageLoading.value = false;
+      retryPage.value = target;
     }
   }
 }
@@ -169,9 +225,9 @@ async function start(token: number) {
       sessionId,
       generation: token,
     });
-    if (current(token)) await readPage(token);
+    if (current(token) && !stopped.value) await readPage(token);
   } catch (failure) {
-    if (current(token)) {
+    if (current(token) && !stopped.value) {
       error.value = formatErrorMessage(failure);
       loading.value = false;
       finishJob();
@@ -206,12 +262,23 @@ watch(
     }
   },
 );
-async function changePage(delta: number) {
-  page.value = Math.max(0, Math.min(pageCount.value - 1, page.value + delta));
-  selected.value = 0;
+async function loadPage(target: number) {
+  if (
+    pageLoading.value ||
+    applying.value ||
+    opening.value ||
+    stopping.value ||
+    !current(generation)
+  )
+    return;
   clearTimeout(poll);
-  await readPage(generation);
-  list.value?.scrollToIndex(0);
+  pageLoading.value = true;
+  error.value = "";
+  await readPage(generation, target, true);
+}
+async function changePage(delta: number) {
+  const target = Math.max(0, Math.min(pageCount.value - 1, page.value + delta));
+  if (target !== page.value) await loadPage(target);
 }
 function toggleFile(path: string) {
   const next = new Set(excluded.value);
@@ -221,7 +288,8 @@ function toggleFile(path: string) {
   confirming.value = false;
 }
 async function open(match: ContentMatch) {
-  if (opening.value || applying.value || !folder || !current(generation)) return;
+  if (opening.value || applying.value || pageLoading.value || !folder || !current(generation))
+    return;
   opening.value = true;
   const token = generation;
   try {
@@ -450,7 +518,7 @@ onBeforeUnmount(() => {
         <div class="search-results-heading">
           <div role="status" class="search-result-summary">
             <LoaderCircle
-              v-if="loading || applying"
+              v-if="loading || applying || pageLoading || stopping"
               class="h-3.5 w-3.5 shrink-0 animate-spin"
               aria-hidden="true"
             />
@@ -464,20 +532,35 @@ onBeforeUnmount(() => {
                 : t(loading ? "fileSearch.searching" : "fileSearch.results")
             }}</span>
           </div>
-          <button v-if="loading" type="button" class="search-text-button" @click="stop">
-            {{ t("common.cancel") }}
+          <button
+            v-if="loading"
+            type="button"
+            class="search-text-button"
+            :disabled="stopping || stopped || opening"
+            @click="stop"
+          >
+            {{ t(stopping || stopped ? "contentSearch.stopping" : "common.cancel") }}
           </button>
           <button
             v-else-if="query"
             type="button"
             class="search-text-button"
-            :disabled="applying"
+            :disabled="applying || opening || stopping"
             @click="schedule"
           >
             {{ t("contentSearch.refresh") }}
           </button>
         </div>
         <div v-if="error" role="alert" class="search-message search-error">{{ error }}</div>
+        <button
+          v-if="retryPage !== null"
+          type="button"
+          class="search-text-button"
+          :disabled="pageLoading || applying || opening || stopping"
+          @click="loadPage(retryPage)"
+        >
+          {{ t("common.retry") }}
+        </button>
         <p v-if="notice" role="status" class="search-message search-notice">{{ notice }}</p>
         <div v-if="!matches.length && !loading && !error" class="search-empty">
           <Search class="h-6 w-6" aria-hidden="true" />
@@ -493,6 +576,7 @@ onBeforeUnmount(() => {
           v-if="matches.length"
           class="search-results"
           role="listbox"
+          :aria-busy="pageLoading"
           :aria-label="t('fileSearch.results')"
         >
           <VirtualList
@@ -516,14 +600,14 @@ onBeforeUnmount(() => {
                   type="checkbox"
                   :aria-label="t('contentSearch.selectFile', { path: match.path })"
                   :checked="!excluded.has(match.path)"
-                  :disabled="applying || loading"
+                  :disabled="applying || loading || pageLoading || opening || stopped"
                   @change="toggleFile(match.path)"
                 />
                 <button
                   role="option"
                   :aria-selected="selected === index"
                   :aria-label="`${match.path}:${match.line}:${match.column}`"
-                  :disabled="opening || applying"
+                  :disabled="opening || applying || pageLoading"
                   class="search-result-content"
                   @click="open(match)"
                 >
@@ -556,7 +640,7 @@ onBeforeUnmount(() => {
         <div v-if="result && pageCount > 1" class="search-pagination">
           <button
             type="button"
-            :disabled="page === 0 || applying"
+            :disabled="page === 0 || applying || opening || pageLoading || stopping"
             :aria-label="t('contentSearch.previousPage')"
             class="search-icon-button"
             @click="changePage(-1)"
@@ -564,9 +648,10 @@ onBeforeUnmount(() => {
             <ChevronLeft class="h-4 w-4" aria-hidden="true" />
           </button>
           <span>{{ t("contentSearch.page", { page: page + 1, pages: pageCount }) }}</span>
+          <span v-if="pageLoading" role="status">{{ t("common.loading") }}</span>
           <button
             type="button"
-            :disabled="page + 1 >= pageCount || applying"
+            :disabled="page + 1 >= pageCount || applying || opening || pageLoading || stopping"
             :aria-label="t('contentSearch.nextPage')"
             class="search-icon-button"
             @click="changePage(1)"

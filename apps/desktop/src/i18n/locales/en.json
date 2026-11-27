@@ -473,6 +473,7 @@
     "refreshFailed": "Operation completed, but the view could not refresh. Refresh the repository to see the result."
   },
   "common": {
+    "retry": "Retry",
     "cancel": "Cancel",
     "ok": "OK",
     "apply": "Apply",
@@ -1172,6 +1173,8 @@
     "deletedDraft": "File recycled; copy this draft before closing."
   },
   "contentSearch": {
+    "stopped": "Search stopped. Results from completed files are still available. Refresh before replacing.",
+    "stopping": "Stopping search…",
     "mode": "Search mode",
     "includeLabel": "Include",
     "excludeLabel": "Exclude",

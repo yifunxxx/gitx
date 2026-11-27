@@ -10,10 +10,12 @@ const m = vi.hoisted(() => ({
     fsStartContentSearch: vi.fn(),
     fsContentSearchPage: vi.fn(),
     fsCancelSearch: vi.fn(),
+    fsStopContentSearch: vi.fn(),
     fsReplaceContent: vi.fn(),
   },
   close: vi.fn(),
   refresh: vi.fn(),
+  jobs: { begin: vi.fn(), finished: vi.fn(), progress: vi.fn() },
 }));
 vi.mock("@/lib/backend", () => ({ getBackend: () => m.backend }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => m.workspace }));
@@ -22,13 +24,18 @@ vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => m.viewer 
 vi.mock("@/stores/conflictsStore", () => ({ useConflictsStore: () => m.conflicts }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ refresh: m.refresh }) }));
 vi.mock("@/stores/jobsStore", () => ({
-  useJobsStore: () => ({ begin: vi.fn(() => "search"), finished: vi.fn(), progress: vi.fn() }),
+  useJobsStore: () => m.jobs,
 }));
 vi.mock("@/composables/useDialog", () => ({
   closeDialog: m.close,
   useDialogState: () => ({ value: { id: 1 } }),
 }));
-vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock("vue-i18n", () => ({
+  useI18n: () => ({
+    t: (key: string, args?: any) =>
+      key === "contentSearch.page" ? `${args.page}/${args.pages}` : key,
+  }),
+}));
 let wrapper: VueWrapper;
 const match = (path = "a.txt", column = 1) => ({
   path,
@@ -82,6 +89,8 @@ beforeEach(() => {
   });
   m.conflicts = reactive({ busy: false, mergeTabs: [] });
   m.backend.fsCancelSearch.mockResolvedValue(null);
+  m.backend.fsStopContentSearch.mockResolvedValue(true);
+  m.jobs.begin.mockReturnValue("search");
   m.backend.fsStartContentSearch.mockResolvedValue(null);
   m.backend.fsContentSearchPage.mockResolvedValue(response());
   m.backend.fsReplaceContent.mockResolvedValue({ completed: ["a.txt", "b.txt"], failed: [] });
@@ -231,4 +240,272 @@ it("cancels and rejects further result navigation on workspace changes", async (
   expect(m.close).toHaveBeenCalledWith(null, 1);
   await wrapper.find('[role="option"]').trigger("click");
   expect(m.viewer.open).not.toHaveBeenCalled();
+});
+
+it("stops scanning without losing found pages or permitting replacement", async () => {
+  let discarded = false;
+  m.backend.fsContentSearchPage.mockImplementation(async ({ page }) => {
+    if (discarded) throw new Error("Search expired; search again");
+    return response({ total: 601, done: false, matches: [match(`page-${page}.txt`)] });
+  });
+  await search();
+  const source = m.backend.fsStartContentSearch.mock.lastCall![0];
+  m.backend.fsCancelSearch.mockImplementation(async () => {
+    discarded = true;
+  });
+  m.backend.fsStopContentSearch.mockImplementation(async () => {
+    m.backend.fsContentSearchPage.mockImplementation(async ({ page }) =>
+      response({ total: 601, matches: [match(`page-${page}.txt`)] }),
+    );
+    return true;
+  });
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  await wrapper.get('button[aria-label="contentSearch.nextPage"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.text()).not.toContain("Search expired");
+  expect(wrapper.text()).toContain("page-1.txt");
+  expect(m.backend.fsContentSearchPage).toHaveBeenLastCalledWith(
+    expect.objectContaining({ generation: source.generation, page: 1 }),
+  );
+  expect(m.backend.fsStopContentSearch).toHaveBeenCalledOnce();
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+  expect(wrapper.text()).toContain("contentSearch.stopped");
+});
+
+it("keeps the displayed page stable, marks it busy and blocks stale row actions while loading", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601 }));
+  await search();
+  const pending = deferred();
+  m.backend.fsContentSearchPage.mockReturnValueOnce(pending.promise);
+  await wrapper.get('button[aria-label="contentSearch.nextPage"]').trigger("click");
+  expect(wrapper.get(".search-pagination").text()).toContain("1/4");
+  expect(wrapper.get('[role="listbox"]').attributes("aria-busy")).toBe("true");
+  expect(wrapper.get('[role="option"]').attributes("disabled")).toBeDefined();
+  await wrapper.get("[data-search-query]").trigger("keydown", { key: "Enter" });
+  expect(m.viewer.open).not.toHaveBeenCalled();
+  pending.resolve(response({ total: 601, matches: [match("page-two.txt")] }));
+  await flushPromises();
+  expect(wrapper.get(".search-pagination").text()).toContain("2/4");
+  expect(wrapper.text()).toContain("page-two.txt");
+  expect(wrapper.get('[role="option"]').attributes("disabled")).toBeUndefined();
+});
+
+it("retains the current page after a failed page read and retries that page without rescanning", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601 }));
+  await search();
+  m.backend.fsContentSearchPage.mockRejectedValueOnce(new Error("page unavailable"));
+  await wrapper.get('button[aria-label="contentSearch.nextPage"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.get(".search-pagination").text()).toContain("1/4");
+  expect(wrapper.get('[role="alert"]').text()).toContain("page unavailable");
+  expect(wrapper.get('[role="option"]').attributes("disabled")).toBeUndefined();
+  m.backend.fsContentSearchPage.mockResolvedValueOnce(
+    response({ total: 601, matches: [match("retried.txt")] }),
+  );
+  await button("common.retry").trigger("click");
+  await flushPromises();
+  expect(wrapper.get(".search-pagination").text()).toContain("2/4");
+  expect(wrapper.text()).toContain("retried.txt");
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+});
+
+it("keeps one page request in flight when the next-page button is clicked repeatedly", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601 }));
+  await search();
+  const pending = deferred();
+  m.backend.fsContentSearchPage.mockReturnValue(pending.promise);
+  const next = wrapper.get('button[aria-label="contentSearch.nextPage"]');
+  await next.trigger("click");
+  await next.trigger("click");
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledTimes(2);
+  pending.resolve(response({ total: 601 }));
+  await flushPromises();
+});
+
+it("cancels a debounced search without creating a retained session", async () => {
+  await wrapper.get("[data-search-query]").setValue("hit");
+  await button("common.cancel").trigger("click");
+  await vi.advanceTimersByTimeAsync(300);
+  expect(m.backend.fsStartContentSearch).not.toHaveBeenCalled();
+  expect(m.backend.fsStopContentSearch).not.toHaveBeenCalled();
+  expect(wrapper.text()).toContain("fileSearch.stopped");
+});
+
+it("ignores an old page after a new query and restores navigation for the new results", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601 }));
+  await search();
+  const pending = deferred();
+  m.backend.fsContentSearchPage.mockReturnValueOnce(pending.promise);
+  await wrapper.get('button[aria-label="contentSearch.nextPage"]').trigger("click");
+  await search("new");
+  pending.resolve(response({ total: 601, matches: [match("old-page.txt")] }));
+  await flushPromises();
+  expect(wrapper.text()).not.toContain("old-page.txt");
+  expect(wrapper.get(".search-pagination").text()).toContain("1/4");
+  expect(wrapper.get('[role="option"]').attributes("disabled")).toBeUndefined();
+});
+
+it("waits for a stopped scan to finish before ending its job and retains the final partial page", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601, done: false }));
+  await search();
+  m.jobs.finished.mockClear();
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  expect(m.jobs.finished).not.toHaveBeenCalled();
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 201, done: true }));
+  await vi.advanceTimersByTimeAsync(150);
+  await flushPromises();
+  expect(m.jobs.finished).toHaveBeenCalledWith("search");
+  expect(wrapper.get(".search-pagination").text()).toContain("1/2");
+  expect(wrapper.text()).toContain("contentSearch.stopped");
+});
+
+it("drops a late stop completion after a new query starts", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601, done: false }));
+  await search();
+  const pending = deferred();
+  m.backend.fsStopContentSearch.mockReturnValueOnce(pending.promise);
+  await button("common.cancel").trigger("click");
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ matches: [match("new-query.txt")] }));
+  await search("new");
+  pending.resolve(true);
+  await flushPromises();
+  expect(wrapper.text()).toContain("new-query.txt");
+  expect(wrapper.text()).not.toContain("contentSearch.stopped");
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeUndefined();
+});
+
+it.each([true, false])(
+  "settles a stop that overtakes the start response (retained=%s)",
+  async (retained) => {
+    const pending = deferred();
+    m.backend.fsStartContentSearch.mockReturnValueOnce(pending.promise);
+    await search();
+    m.backend.fsStopContentSearch.mockResolvedValueOnce(retained);
+    await button("common.cancel").trigger("click");
+    await flushPromises();
+    expect(m.jobs.finished).toHaveBeenCalledOnce();
+    pending.resolve(null);
+    await flushPromises();
+    expect(m.backend.fsContentSearchPage).toHaveBeenCalledTimes(retained ? 1 : 0);
+    expect(m.jobs.finished).toHaveBeenCalledOnce();
+    expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+  },
+);
+
+it("allows retrying a failed stop without ending the running job", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601, done: false }));
+  await search();
+  m.backend.fsStopContentSearch.mockRejectedValueOnce(new Error("stop unavailable"));
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  expect(wrapper.get('[role="alert"]').text()).toContain("stop unavailable");
+  expect(m.jobs.finished).not.toHaveBeenCalled();
+  expect(button("common.cancel").attributes("disabled")).toBeUndefined();
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601 }));
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  expect(m.backend.fsStopContentSearch).toHaveBeenCalledTimes(2);
+  expect(m.jobs.finished).toHaveBeenCalledOnce();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+});
+
+it("moves to the last surviving page when stopping removes unfinished file matches", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601, done: false }));
+  await search();
+  for (let i = 0; i < 3; i++) {
+    await wrapper.get('button[aria-label="contentSearch.nextPage"]').trigger("click");
+    await flushPromises();
+  }
+  expect(wrapper.get(".search-pagination").text()).toContain("4/4");
+  m.backend.fsContentSearchPage.mockImplementation(async ({ page }) =>
+    response({ total: 201, matches: page === 1 ? [match("last-complete.txt")] : [] }),
+  );
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  expect(wrapper.get(".search-pagination").text()).toContain("2/2");
+  expect(wrapper.text()).toContain("last-complete.txt");
+  expect(m.backend.fsContentSearchPage.mock.lastCall![0].page).toBe(1);
+  expect(m.jobs.finished).toHaveBeenCalledOnce();
+});
+
+it("resumes progress polling after a failed stop even if the start response arrived during it", async () => {
+  const start = deferred();
+  let failStop!: (error: Error) => void;
+  m.backend.fsStartContentSearch.mockReturnValueOnce(start.promise);
+  m.backend.fsStopContentSearch.mockReturnValueOnce(
+    new Promise((_, reject) => {
+      failStop = reject;
+    }),
+  );
+  await search();
+  await button("common.cancel").trigger("click");
+  start.resolve(null);
+  await flushPromises();
+  expect(m.backend.fsContentSearchPage).not.toHaveBeenCalled();
+  failStop(new Error("stop failed"));
+  await flushPromises();
+  expect(wrapper.get('[role="alert"]').text()).toContain("stop failed");
+  await vi.advanceTimersByTimeAsync(150);
+  await flushPromises();
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledOnce();
+  expect(m.jobs.finished).toHaveBeenCalledOnce();
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeUndefined();
+});
+
+it("can retry a failed final stopped-page read and finish the job", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601, done: false }));
+  await search();
+  m.backend.fsContentSearchPage.mockRejectedValueOnce(new Error("read failed"));
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  expect(m.jobs.finished).not.toHaveBeenCalled();
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 201 }));
+  await button("common.retry").trigger("click");
+  await flushPromises();
+  expect(wrapper.get(".search-pagination").text()).toContain("1/2");
+  expect(m.jobs.finished).toHaveBeenCalledOnce();
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+});
+
+it("keeps one poll loop when start completes after a failed stop", async () => {
+  const start = deferred();
+  m.backend.fsStartContentSearch.mockReturnValueOnce(start.promise);
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ done: false }));
+  m.backend.fsStopContentSearch.mockRejectedValueOnce(new Error("stop failed"));
+  await search();
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  await vi.advanceTimersByTimeAsync(50);
+  start.resolve(null);
+  await flushPromises();
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(149);
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(150);
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledTimes(3);
+});
+
+it("releases retained results on unmount and never resumes polling after a late stop", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601, done: false }));
+  await search();
+  const source = m.backend.fsStartContentSearch.mock.lastCall![0];
+  const pending = deferred();
+  m.backend.fsStopContentSearch.mockReturnValueOnce(pending.promise);
+  await button("common.cancel").trigger("click");
+  wrapper.unmount();
+  expect(m.backend.fsCancelSearch).toHaveBeenLastCalledWith({
+    sessionId: source.sessionId,
+    generation: source.generation,
+  });
+  pending.resolve(true);
+  await vi.advanceTimersByTimeAsync(1000);
+  await flushPromises();
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledOnce();
+  expect(m.jobs.finished).toHaveBeenCalledOnce();
 });
