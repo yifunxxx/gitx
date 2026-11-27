@@ -145,14 +145,26 @@ function flushScroll() {
   applyScrollTop(top, ev);
 }
 
-function stripTitles(target: HTMLElement) {
+function stripTitles(target: HTMLElement, updates: MutationRecord[] = []) {
+  // Vue may clear or replace a recycled row's title while it is suppressed.
+  // Consume those writes before scanning newly mounted descendants.
+  for (const update of updates) {
+    if (update.type !== "attributes" || !(update.target instanceof HTMLElement)) continue;
+    const el = update.target;
+    if (!target.contains(el)) continue;
+    const text = el.getAttribute("title");
+    if (text === null) el.removeAttribute(TITLE_HOLD);
+    else el.setAttribute(TITLE_HOLD, text);
+  }
   for (const el of target.querySelectorAll<HTMLElement>("[title]")) {
     const text = el.getAttribute("title");
     if (text === null) continue;
-    el.setAttribute(TITLE_HOLD, text);
-    el.removeAttribute("title");
+    if (text !== "" || !el.hasAttribute(TITLE_HOLD)) el.setAttribute(TITLE_HOLD, text);
+    // An empty attribute suppresses native tooltips but still lets a later
+    // removeAttribute produce a mutation, unlike an already absent title.
+    if (text !== "") el.setAttribute("title", "");
   }
-  // Discard records produced by our own removeAttribute("title") calls.
+  // Discard records produced by our own empty-title writes.
   titleObserver?.takeRecords?.();
 }
 
@@ -169,8 +181,8 @@ function startTitleSuppress() {
   if (!target) return;
   stripTitles(target);
   if (titleObserver) return;
-  titleObserver = new MutationObserver(() => {
-    if (windowEl.value) stripTitles(windowEl.value);
+  titleObserver = new MutationObserver((updates) => {
+    if (windowEl.value) stripTitles(windowEl.value, updates);
   });
   titleObserver.observe(target, {
     subtree: true,
@@ -181,6 +193,8 @@ function startTitleSuppress() {
 }
 
 function stopTitleSuppress() {
+  const updates = titleObserver?.takeRecords() ?? [];
+  if (windowEl.value && updates.length) stripTitles(windowEl.value, updates);
   titleObserver?.disconnect();
   titleObserver = null;
   if (windowEl.value) restoreTitles(windowEl.value);
