@@ -1167,6 +1167,16 @@
     "deletedDraft": "文件已回收；关闭前请复制保留此草稿。"
   },
   "contentSearch": {
+    "mode": "搜索模式",
+    "includeLabel": "包含",
+    "excludeLabel": "排除",
+    "includePlaceholder": "例如 src/**, *.vue",
+    "excludePlaceholder": "例如 dist/**, *.lock",
+    "selectedFiles": "已选择 {count} 个文件",
+    "selectionScope": "包含所有结果页的匹配",
+    "selectionHelp": "取消勾选任意结果，将排除整个文件。",
+    "savedTextHint": "搜索已保存的文件；点击结果打开对应位置。",
+    "writeHint": "修改将直接写入磁盘，请先核对替换预览。",
     "replaceTitle": "在文件中替换…",
     "caseSensitive": "区分大小写",
     "wholeWord": "全词匹配",

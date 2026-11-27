@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Search, X, LoaderCircle, ChevronLeft, ChevronRight } from "@lucide/vue";
+import {
+  Search,
+  X,
+  LoaderCircle,
+  ChevronLeft,
+  ChevronRight,
+  ArrowRight,
+  FileText,
+} from "@lucide/vue";
 import VirtualList from "@/components/common/VirtualList.vue";
 import { getBackend, type ContentSearchPage, type ContentMatch } from "@/lib/backend";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -84,6 +92,11 @@ const current = (token: number) =>
   token === generation &&
   workspace.folderPath === folder &&
   workspace.navigationToken() === navigation;
+function setMode(replace: boolean) {
+  if (applying.value || opening.value) return;
+  replacingMode.value = replace;
+  confirming.value = false;
+}
 function cancel() {
   finishJob();
   clearTimeout(debounce);
@@ -305,271 +318,881 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 flex items-start justify-center bg-black/40 p-6 pt-[6vh]"
-    @keydown="keydown"
-  >
+  <div class="content-search-overlay" @keydown="keydown">
     <section
       role="dialog"
       aria-modal="true"
-      :aria-label="t('fileSearch.contentTitle')"
-      class="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border bg-popover shadow-lg"
+      :aria-label="t(replacingMode ? 'contentSearch.replaceTitle' : 'fileSearch.contentTitle')"
+      class="content-search-dialog"
     >
-      <header class="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-4 py-2.5">
-        <Search class="h-4 w-4 text-muted-foreground" />
-        <h2 class="flex-1 text-sm font-semibold">
-          {{ t(replacingMode ? "contentSearch.replaceTitle" : "fileSearch.contentTitle") }}
-        </h2>
+      <header class="search-header">
+        <div class="search-heading">
+          <Search class="search-title-icon" aria-hidden="true" />
+          <div class="search-heading-text">
+            <h2>
+              {{ t(replacingMode ? "contentSearch.replaceTitle" : "fileSearch.contentTitle") }}
+            </h2>
+            <p class="search-workspace" :title="folder ?? ''">{{ folder }}</p>
+          </div>
+        </div>
         <button
+          type="button"
           :disabled="applying"
           :aria-label="t('common.close')"
-          class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          class="search-icon-button"
           @click="close"
         >
-          <X class="h-4 w-4" />
+          <X class="h-4 w-4" aria-hidden="true" />
         </button>
       </header>
-      <fieldset :disabled="applying || opening" class="shrink-0 space-y-3 border-b p-3">
-        <div class="space-y-2 rounded-md border bg-background/60 p-2.5">
-          <div class="flex items-center gap-2">
-            <input
-              v-model="query"
-              autofocus
-              data-search-query
-              type="search"
-              :aria-label="t('fileSearch.contentPlaceholder')"
-              :placeholder="t('fileSearch.contentPlaceholder')"
-              class="min-w-0 flex-1 rounded border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
-            />
-            <div class="flex shrink-0 items-center gap-0.5 border-l pl-2">
-              <label
-                v-for="option in ['caseSensitive', 'wholeWord', 'regex'] as const"
-                :key="option"
-                class="inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded border border-transparent px-1.5 text-xs text-muted-foreground hover:bg-accent has-[:checked]:border-border has-[:checked]:bg-accent has-[:checked]:text-foreground"
-                :title="t(`contentSearch.${option}`)"
-              >
-                <input
-                  class="sr-only"
-                  type="checkbox"
-                  :aria-label="t(`contentSearch.${option}`)"
-                  :checked="
-                    option === 'caseSensitive'
-                      ? caseSensitive
-                      : option === 'wholeWord'
-                        ? wholeWord
-                        : regex
-                  "
-                  @change="
-                    option === 'caseSensitive'
-                      ? (caseSensitive = !caseSensitive)
-                      : option === 'wholeWord'
-                        ? (wholeWord = !wholeWord)
-                        : (regex = !regex)
-                  "
-                />
-                {{ option === "caseSensitive" ? "Aa" : option === "wholeWord" ? "ab" : ".*" }}
-              </label>
-            </div>
+      <div class="content-search-body">
+        <fieldset :disabled="applying || opening" class="search-form">
+          <div class="search-modes" role="group" :aria-label="t('contentSearch.mode')">
+            <button type="button" :aria-pressed="!replacingMode" @click="setMode(false)">
+              {{ t("editor.find") }}
+            </button>
+            <button type="button" :aria-pressed="replacingMode" @click="setMode(true)">
+              {{ t("editor.replace") }}
+            </button>
           </div>
-          <label class="flex items-center gap-2 text-xs text-muted-foreground">
-            <input v-model="replacingMode" type="checkbox" class="rounded border" />
-            {{ t("contentSearch.showReplace") }}
-          </label>
-          <input
-            v-if="replacingMode"
-            v-model="replacement"
-            :aria-label="t('contentSearch.replacement')"
-            :placeholder="t('contentSearch.replacement')"
-            class="w-full rounded border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
-          />
-        </div>
-        <div class="space-y-2 rounded-md border bg-muted/20 p-2.5">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {{ t("contentSearch.scopeLabel") }}
-          </p>
-          <div class="grid grid-cols-2 gap-2">
-            <input
-              v-model="include"
-              :aria-label="t('contentSearch.include')"
-              :placeholder="t('contentSearch.include')"
-              class="rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
-            />
-            <input
-              v-model="exclude"
-              :aria-label="t('contentSearch.exclude')"
-              :placeholder="t('contentSearch.exclude')"
-              class="rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/40"
-            />
-          </div>
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <label class="inline-flex items-center gap-1.5">
-              <input v-model="showHidden" type="checkbox" class="rounded border" />
-              {{ t("contentSearch.hidden") }}
-            </label>
-            <label class="inline-flex items-center gap-1.5">
-              <input v-model="showIgnored" type="checkbox" class="rounded border" />
-              {{ t("contentSearch.ignored") }}
-            </label>
-          </div>
-          <p class="truncate text-[11px] text-muted-foreground" :title="folder ?? ''">
-            <span class="font-medium text-foreground/70">{{ t("contentSearch.workspace") }}</span>
-            {{ folder }}
-          </p>
-        </div>
-      </fieldset>
-      <div
-        v-if="query || result"
-        class="flex shrink-0 items-center gap-2 border-y px-4 py-2 text-xs"
-        role="status"
-      >
-        <LoaderCircle v-if="loading || applying" class="h-3 w-3 animate-spin" />
-        <span>{{
-          result
-            ? t("contentSearch.summary", {
-                count: result.total,
-                files: result.files,
-                scanned: result.scanned,
-              })
-            : t(loading ? "fileSearch.searching" : "fileSearch.hint")
-        }}</span>
-        <button v-if="loading" class="ml-auto underline" @click="stop">
-          {{ t("common.cancel") }}
-        </button>
-        <button v-else-if="query" class="ml-auto underline" :disabled="applying" @click="schedule">
-          {{ t("contentSearch.refresh") }}
-        </button>
-      </div>
-      <div v-if="error" role="alert" class="whitespace-pre-wrap px-4 py-2 text-xs text-destructive">
-        {{ error }}
-      </div>
-      <p v-if="notice" role="status" class="px-4 py-2 text-xs">{{ notice }}</p>
-      <p v-if="!matches.length && !loading && !error" class="p-5 text-xs text-muted-foreground">
-        {{ t(stopped ? "fileSearch.stopped" : query ? "fileSearch.empty" : "fileSearch.hint") }}
-      </p>
-      <div
-        v-if="matches.length"
-        class="flex h-[min(42vh,420px)] min-h-0 shrink flex-col overflow-hidden"
-        role="listbox"
-        :aria-label="t('fileSearch.results')"
-      >
-        <VirtualList
-          ref="list"
-          :items="matches"
-          :item-height="replacingMode ? 74 : 52"
-          :get-key="(m) => `${m.path}:${m.line}:${m.column}`"
-          :overscan="6"
-        >
-          <template #default="{ item: match, index }">
-            <div
-              class="flex items-center gap-2 px-3 hover:bg-accent"
-              :class="selected === index ? 'bg-accent/60' : ''"
-              :style="{ height: replacingMode ? '74px' : '52px' }"
-            >
+          <div class="search-form-row">
+            <span class="search-field-label">{{ t("editor.find") }}</span>
+            <span class="search-query-field">
               <input
-                v-if="replacingMode"
-                type="checkbox"
-                :aria-label="t('contentSearch.selectFile', { path: match.path })"
-                :checked="!excluded.has(match.path)"
-                :disabled="applying || loading"
-                @change="toggleFile(match.path)"
+                v-model="query"
+                autofocus
+                data-search-query
+                type="search"
+                :aria-label="t('fileSearch.contentPlaceholder')"
+                :placeholder="t('fileSearch.contentPlaceholder')"
+                spellcheck="false"
+                autocomplete="off"
               />
-              <button
-                role="option"
-                :aria-selected="selected === index"
-                :disabled="opening || applying"
-                class="min-w-0 flex-1 text-left text-xs"
-                @click="open(match)"
-              >
-                <span class="block truncate" :title="match.path"
-                  >{{ match.path
-                  }}<span class="text-muted-foreground"
-                    >:{{ match.line }}:{{ match.column }}</span
-                  ></span
+              <span class="search-options">
+                <label
+                  v-for="option in ['caseSensitive', 'regex', 'wholeWord'] as const"
+                  :key="option"
+                  class="search-option"
+                  :title="t(`contentSearch.${option}`)"
                 >
-                <span class="block truncate font-mono text-muted-foreground"
-                  >{{ match.preview.slice(0, match.matchStart)
-                  }}<mark class="rounded bg-yellow-400/25 text-foreground">{{
-                    match.preview.slice(match.matchStart, match.matchEnd) || "│"
-                  }}</mark
-                  >{{ match.preview.slice(match.matchEnd) }}</span
-                >
-                <span
-                  v-if="replacingMode"
-                  class="block truncate font-mono text-green-600 dark:text-green-400"
-                  >→ {{ match.replacementPreview }}</span
-                >
-              </button>
-            </div>
-          </template>
-        </VirtualList>
-      </div>
-      <div
-        v-if="result && pageCount > 1"
-        class="flex shrink-0 items-center justify-center gap-3 border-t p-2 text-xs"
-      >
-        <button
-          :disabled="page === 0 || applying"
-          :aria-label="t('contentSearch.previousPage')"
-          @click="changePage(-1)"
-        >
-          <ChevronLeft class="h-4 w-4" />
-        </button>
-        {{ t("contentSearch.page", { page: page + 1, pages: pageCount }) }}
-        <button
-          :disabled="page + 1 >= pageCount || applying"
-          :aria-label="t('contentSearch.nextPage')"
-          @click="changePage(1)"
-        >
-          <ChevronRight class="h-4 w-4" />
-        </button>
-      </div>
-      <details v-if="result?.skipped" class="px-4 py-2 text-xs text-muted-foreground">
-        <summary>{{ t("fileSearch.skipped", { count: result.skipped }) }}</summary>
-        <p v-for="issue in result.issues" :key="issue" class="break-all">{{ issue }}</p>
-      </details>
-      <footer class="shrink-0 space-y-2 border-t bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-        <p>{{ t("contentSearch.scope") }}</p>
-        <p v-if="regex && replacingMode">{{ t("contentSearch.captureHint") }}</p>
-        <template v-if="replacingMode">
-          <p>{{ t("contentSearch.selectionHint", { count: selectedFiles }) }}</p>
-          <p v-if="busyDrafts" class="text-warning">{{ t("contentSearch.saveDrafts") }}</p>
-        </template>
-        <div class="flex items-center justify-end gap-2 pt-1">
-          <span v-if="replacingMode && confirming" class="mr-auto text-foreground">{{
-            t("contentSearch.confirm", { count: selectedFiles })
-          }}</span>
-          <button
-            type="button"
-            :disabled="applying"
-            class="rounded border bg-background px-3 py-1.5 text-foreground hover:bg-accent disabled:opacity-40"
-            @click="close"
-          >
+                  <input
+                    type="checkbox"
+                    :aria-label="t(`contentSearch.${option}`)"
+                    :checked="
+                      option === 'caseSensitive'
+                        ? caseSensitive
+                        : option === 'wholeWord'
+                          ? wholeWord
+                          : regex
+                    "
+                    @change="
+                      option === 'caseSensitive'
+                        ? (caseSensitive = !caseSensitive)
+                        : option === 'wholeWord'
+                          ? (wholeWord = !wholeWord)
+                          : (regex = !regex)
+                    "
+                  />
+                  <span :class="{ 'search-option-word': option === 'wholeWord' }">{{
+                    option === "caseSensitive" ? "Aa" : option === "wholeWord" ? "W" : ".*"
+                  }}</span>
+                </label>
+              </span>
+            </span>
+          </div>
+          <label v-if="replacingMode" class="search-form-row">
+            <span class="search-field-label">{{ t("editor.replace") }}</span>
+            <input
+              v-model="replacement"
+              :aria-label="t('contentSearch.replacement')"
+              :placeholder="t('contentSearch.replacement')"
+              spellcheck="false"
+              autocomplete="off"
+              class="search-text-input"
+            />
+          </label>
+          <p v-if="regex && replacingMode" class="search-input-hint">
+            {{ t("contentSearch.captureHint") }}
+          </p>
+          <div class="search-scope">
+            <label class="search-form-row">
+              <span class="search-field-label">{{ t("contentSearch.includeLabel") }}</span>
+              <input
+                v-model="include"
+                :aria-label="t('contentSearch.include')"
+                :placeholder="t('contentSearch.includePlaceholder')"
+                spellcheck="false"
+                class="search-text-input"
+              />
+            </label>
+            <label class="search-form-row">
+              <span class="search-field-label">{{ t("contentSearch.excludeLabel") }}</span>
+              <input
+                v-model="exclude"
+                :aria-label="t('contentSearch.exclude')"
+                :placeholder="t('contentSearch.excludePlaceholder')"
+                spellcheck="false"
+                class="search-text-input"
+              />
+            </label>
+          </div>
+          <div class="search-scope-options">
+            <label
+              ><input v-model="showHidden" type="checkbox" />{{ t("contentSearch.hidden") }}</label
+            >
+            <label
+              ><input v-model="showIgnored" type="checkbox" />{{
+                t("contentSearch.ignored")
+              }}</label
+            >
+          </div>
+        </fieldset>
+        <div class="search-results-heading">
+          <div role="status" class="search-result-summary">
+            <LoaderCircle
+              v-if="loading || applying"
+              class="h-3.5 w-3.5 shrink-0 animate-spin"
+              aria-hidden="true"
+            />
+            <span>{{
+              result
+                ? t("contentSearch.summary", {
+                    count: result.total,
+                    files: result.files,
+                    scanned: result.scanned,
+                  })
+                : t(loading ? "fileSearch.searching" : "fileSearch.results")
+            }}</span>
+          </div>
+          <button v-if="loading" type="button" class="search-text-button" @click="stop">
             {{ t("common.cancel") }}
           </button>
           <button
-            v-if="replacingMode"
+            v-else-if="query"
             type="button"
-            :disabled="!canReplace"
-            class="rounded border border-primary bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-40"
-            @click="apply"
-          >
-            {{
-              t(confirming ? "contentSearch.confirmReplace" : "contentSearch.replaceFiles", {
-                count: selectedFiles,
-              })
-            }}
-          </button>
-          <button
-            v-else
-            type="button"
-            :disabled="!query || applying || loading"
-            class="rounded border border-primary bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-40"
+            class="search-text-button"
+            :disabled="applying"
             @click="schedule"
           >
-            {{ t(loading ? "fileSearch.searching" : "contentSearch.search") }}
+            {{ t("contentSearch.refresh") }}
           </button>
+        </div>
+        <div v-if="error" role="alert" class="search-message search-error">{{ error }}</div>
+        <p v-if="notice" role="status" class="search-message search-notice">{{ notice }}</p>
+        <div v-if="!matches.length && !loading && !error" class="search-empty">
+          <Search class="h-6 w-6" aria-hidden="true" />
+          <p>
+            {{ t(stopped ? "fileSearch.stopped" : query ? "fileSearch.empty" : "fileSearch.hint") }}
+          </p>
+        </div>
+        <div v-else-if="loading && !matches.length" class="search-empty">
+          <LoaderCircle class="h-6 w-6 animate-spin" aria-hidden="true" />
+          <p>{{ t("fileSearch.searching") }}</p>
+        </div>
+        <div
+          v-if="matches.length"
+          class="search-results"
+          role="listbox"
+          :aria-label="t('fileSearch.results')"
+        >
+          <VirtualList
+            ref="list"
+            :items="matches"
+            :item-height="replacingMode ? 84 : 62"
+            :get-key="(m) => `${m.path}:${m.line}:${m.column}`"
+            :overscan="6"
+          >
+            <template #default="{ item: match, index }">
+              <div
+                class="search-result-row"
+                :class="{
+                  'is-selected': selected === index,
+                  'is-excluded': replacingMode && excluded.has(match.path),
+                }"
+                :style="{ height: replacingMode ? '84px' : '62px' }"
+              >
+                <input
+                  v-if="replacingMode"
+                  type="checkbox"
+                  :aria-label="t('contentSearch.selectFile', { path: match.path })"
+                  :checked="!excluded.has(match.path)"
+                  :disabled="applying || loading"
+                  @change="toggleFile(match.path)"
+                />
+                <button
+                  role="option"
+                  :aria-selected="selected === index"
+                  :aria-label="`${match.path}:${match.line}:${match.column}`"
+                  :disabled="opening || applying"
+                  class="search-result-content"
+                  @click="open(match)"
+                >
+                  <span class="search-result-location">
+                    <FileText
+                      class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span class="search-result-path" :title="match.path">{{ match.path }}</span>
+                    <span class="search-result-position">{{ match.line }}:{{ match.column }}</span>
+                  </span>
+                  <span class="search-result-preview" :title="match.preview"
+                    >{{ match.preview.slice(0, match.matchStart)
+                    }}<mark>{{ match.preview.slice(match.matchStart, match.matchEnd) || "│" }}</mark
+                    >{{ match.preview.slice(match.matchEnd) }}</span
+                  >
+                  <span
+                    v-if="replacingMode"
+                    class="search-replacement-preview"
+                    :title="match.replacementPreview"
+                    ><ArrowRight class="h-3 w-3 shrink-0" aria-hidden="true" /><span>{{
+                      match.replacementPreview
+                    }}</span></span
+                  >
+                </button>
+              </div>
+            </template>
+          </VirtualList>
+        </div>
+        <div v-if="result && pageCount > 1" class="search-pagination">
+          <button
+            type="button"
+            :disabled="page === 0 || applying"
+            :aria-label="t('contentSearch.previousPage')"
+            class="search-icon-button"
+            @click="changePage(-1)"
+          >
+            <ChevronLeft class="h-4 w-4" aria-hidden="true" />
+          </button>
+          <span>{{ t("contentSearch.page", { page: page + 1, pages: pageCount }) }}</span>
+          <button
+            type="button"
+            :disabled="page + 1 >= pageCount || applying"
+            :aria-label="t('contentSearch.nextPage')"
+            class="search-icon-button"
+            @click="changePage(1)"
+          >
+            <ChevronRight class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <details v-if="result?.skipped" class="search-skipped">
+          <summary>{{ t("fileSearch.skipped", { count: result.skipped }) }}</summary>
+          <p v-for="issue in result.issues" :key="issue">{{ issue }}</p>
+        </details>
+      </div>
+      <footer class="search-footer">
+        <div v-if="replacingMode" class="search-selection">
+          <strong>{{ t("contentSearch.selectedFiles", { count: selectedFiles }) }}</strong>
+          <span>{{ t("contentSearch.selectionScope") }}</span>
+        </div>
+        <p v-if="replacingMode && busyDrafts" class="search-draft-warning">
+          {{ t("contentSearch.saveDrafts") }}
+        </p>
+        <div v-if="replacingMode && confirming" class="search-confirmation" role="status">
+          <strong>{{ t("contentSearch.confirm", { count: selectedFiles }) }}</strong>
+          <span>{{ t("contentSearch.writeHint") }}</span>
+        </div>
+        <div class="search-footer-bottom">
+          <p class="search-footer-hint" :title="t('contentSearch.scope')">
+            {{ t(replacingMode ? "contentSearch.selectionHelp" : "contentSearch.savedTextHint") }}
+          </p>
+          <div class="search-footer-actions">
+            <button type="button" :disabled="applying" class="search-button" @click="close">
+              {{ t("common.cancel") }}
+            </button>
+            <button
+              v-if="replacingMode"
+              type="button"
+              :disabled="!canReplace"
+              class="search-button search-button-primary"
+              @click="apply"
+            >
+              {{
+                t(confirming ? "contentSearch.confirmReplace" : "contentSearch.replaceFiles", {
+                  count: selectedFiles,
+                })
+              }}
+            </button>
+            <button
+              v-else
+              type="button"
+              :disabled="!query || applying || loading"
+              class="search-button search-button-primary"
+              @click="schedule"
+            >
+              {{ t(loading ? "fileSearch.searching" : "contentSearch.search") }}
+            </button>
+          </div>
         </div>
       </footer>
     </section>
   </div>
 </template>
+
+<style scoped>
+.content-search-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 24px 24px;
+  background: #0006;
+}
+.content-search-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 880px;
+  max-height: 88vh;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-popover);
+  color: var(--color-foreground);
+  box-shadow: 0 18px 56px #0003;
+  font-size: 12px;
+}
+.search-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.search-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.search-title-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--color-muted-foreground);
+}
+.search-heading-text {
+  min-width: 0;
+}
+.search-heading h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.search-workspace {
+  margin: 3px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+.content-search-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.search-form {
+  flex: none;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 20px 16px;
+  border: 0;
+}
+.search-modes {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0 0 12px;
+  padding: 3px;
+  border-radius: 7px;
+  background: var(--color-muted);
+}
+.search-modes button {
+  min-width: 72px;
+  height: 27px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--color-muted-foreground);
+}
+.search-modes button[aria-pressed="true"] {
+  border-color: var(--color-border);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  box-shadow: 0 1px 2px #00000008;
+}
+.search-form-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.search-form-row + .search-form-row {
+  margin-top: 8px;
+}
+.search-field-label {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.search-query-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--color-input);
+  border-radius: 6px;
+  background: var(--color-background);
+}
+.search-query-field:focus-within,
+.search-text-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--color-ring) 65%, var(--color-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ring) 12%, transparent);
+}
+.search-query-field > input {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground);
+  outline: none;
+  font-size: 12px;
+}
+.search-query-field > input::-webkit-search-cancel-button {
+  display: none;
+}
+.search-text-input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--color-input);
+  border-radius: 6px;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  outline: none;
+  font-size: 12px;
+}
+.search-text-input::placeholder,
+.search-query-field input::placeholder {
+  color: var(--color-muted-foreground);
+  opacity: 0.8;
+}
+.search-options {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+.search-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.search-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.search-option:has(:checked) {
+  background: var(--color-selection);
+  color: var(--color-selection-foreground);
+  border-color: color-mix(in srgb, var(--color-ring) 35%, transparent);
+}
+.search-option:hover {
+  background: var(--color-accent);
+}
+.search-option-word {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.search-input-hint {
+  margin: 6px 0 0 74px;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+.search-scope {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+.search-scope .search-form-row + .search-form-row {
+  margin-top: 0;
+}
+.search-scope .search-text-input {
+  height: 30px;
+}
+.search-scope-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 10px 0 0 74px;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+.search-scope-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.search-results-heading {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  border-block: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-muted) 35%, transparent);
+}
+.search-result-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+.search-text-button {
+  flex: none;
+  font-size: 11px;
+  color: var(--color-foreground);
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+.search-text-button:hover {
+  background: var(--color-accent);
+}
+.search-empty {
+  display: flex;
+  flex: 1 0 160px;
+  min-height: 160px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--color-muted-foreground);
+}
+.search-results {
+  display: flex;
+  flex: 1 1 360px;
+  flex-direction: column;
+  height: min(38vh, 360px);
+  min-height: 160px;
+  overflow: hidden;
+  background: var(--color-background);
+}
+.search-result-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+}
+.search-result-row.is-selected {
+  background: color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+.search-result-row:hover {
+  background: var(--color-accent);
+}
+.search-result-row > input {
+  flex: none;
+}
+.search-result-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+.search-result-row.is-excluded .search-result-content {
+  opacity: 0.55;
+}
+.search-result-location {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  line-height: 16px;
+}
+.search-result-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+.search-result-position {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.search-result-preview {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  line-height: 16px;
+}
+.search-result-preview mark {
+  border-radius: 2px;
+  background: #eab30830;
+  color: var(--color-foreground);
+}
+.search-replacement-preview {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  color: var(--color-success);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+}
+.search-replacement-preview > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-pagination {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 7px 20px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.search-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  color: var(--color-muted-foreground);
+}
+.search-icon-button:hover:not(:disabled) {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+.search-message {
+  flex: none;
+  padding: 10px 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.search-error {
+  color: var(--color-destructive);
+}
+.search-notice {
+  color: var(--color-success);
+}
+.search-skipped {
+  flex: none;
+  padding: 8px 20px;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+.search-skipped summary {
+  cursor: pointer;
+}
+.search-skipped p {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.search-footer {
+  flex: none;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-muted) 25%, var(--color-popover));
+}
+.search-selection {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+  margin-bottom: 8px;
+}
+.search-selection strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.search-selection > span {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+.search-draft-warning {
+  margin-bottom: 10px;
+  color: var(--color-warning);
+  font-size: 11px;
+}
+.search-confirmation {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 7%, transparent);
+  border-radius: 3px;
+  font-size: 12px;
+}
+.search-confirmation span {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+.search-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.search-footer-hint {
+  min-width: 0;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  line-height: 17px;
+}
+.search-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.search-button {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-size: 12px;
+}
+.search-button:hover:not(:disabled) {
+  background: var(--color-accent);
+}
+.search-button-primary {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  border-color: var(--color-primary);
+}
+.search-button-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 88%, var(--color-background));
+}
+.content-search-dialog button:disabled,
+.content-search-dialog fieldset:disabled {
+  opacity: 0.5;
+}
+.content-search-dialog button:focus-visible,
+.search-option:has(input:focus-visible),
+.content-search-dialog input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+.content-search-dialog input[type="checkbox"] {
+  accent-color: var(--color-primary);
+}
+@media (max-width: 640px) {
+  .content-search-overlay {
+    padding: 12px;
+  }
+  .content-search-dialog {
+    max-height: calc(100dvh - 24px);
+    border-radius: 8px;
+  }
+  .search-header {
+    padding: 14px;
+  }
+  .search-form {
+    padding: 12px 14px;
+  }
+  .search-form-row {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .search-scope {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .search-input-hint,
+  .search-scope-options {
+    margin-left: 56px;
+  }
+  .search-results-heading,
+  .search-result-row,
+  .search-message {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .search-footer {
+    padding: 12px 14px;
+  }
+  .search-footer-bottom {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .search-footer-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .search-results {
+    height: 32vh;
+  }
+  .search-result-summary {
+    overflow-wrap: anywhere;
+  }
+}
+@media (max-height: 620px) {
+  .content-search-overlay {
+    padding-top: 12px;
+  }
+  .content-search-dialog {
+    max-height: calc(100dvh - 24px);
+  }
+}
+</style>

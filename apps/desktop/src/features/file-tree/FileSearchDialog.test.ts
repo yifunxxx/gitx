@@ -175,7 +175,9 @@ it("searches saved content with case preference and navigates to its line and co
   expect(mocks.fsStartContentSearch.mock.lastCall?.[0]).toMatchObject({
     caseSensitive: true,
   });
-  expect(wrapper.text()).toContain("deep/a.txt:22:5");
+  expect(wrapper.get('[role="option"]').attributes("aria-label")).toBe("deep/a.txt:22:5");
+  expect(wrapper.get(".search-result-path").text()).toBe("deep/a.txt");
+  expect(wrapper.get(".search-result-position").text()).toBe("22:5");
   expect(wrapper.text()).toContain("a matching line");
   const openedTab = { id: "result", reveal: undefined as any };
   mocks.tabs.push(openedTab);

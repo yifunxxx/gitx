@@ -1167,6 +1167,16 @@
     "deletedDraft": "File recycled; copy this draft before closing."
   },
   "contentSearch": {
+    "mode": "Search mode",
+    "includeLabel": "Include",
+    "excludeLabel": "Exclude",
+    "includePlaceholder": "e.g. src/**, *.vue",
+    "excludePlaceholder": "e.g. dist/**, *.lock",
+    "selectedFiles": "{count} files selected",
+    "selectionScope": "All matching pages included",
+    "selectionHelp": "Uncheck a result to exclude its entire file.",
+    "savedTextHint": "Searches saved files. Select a result to open it.",
+    "writeHint": "Changes will be saved to disk. Review the previews before confirming.",
     "replaceTitle": "Replace in Files…",
     "caseSensitive": "Match case",
     "wholeWord": "Match whole word",

@@ -153,6 +153,37 @@ it("excludes the whole file across occurrences and requires a concrete replaceme
   expect(wrapper.text()).toContain("contentSearch.replaced");
   expect(m.viewer.fileMutationPending).toBe(false);
 });
+it("switches find/replace modes without losing the query and requires fresh confirmation after switching", async () => {
+  await search();
+  await button("contentSearch.replaceFiles").trigger("click");
+  expect(wrapper.text()).toContain("contentSearch.confirmReplace");
+  await wrapper.get('.search-modes button[aria-pressed="false"]').trigger("click");
+  expect(wrapper.get('[role="dialog"]').attributes("aria-label")).toBe("fileSearch.contentTitle");
+  expect(wrapper.find('input[aria-label="contentSearch.replacement"]').exists()).toBe(false);
+  expect((wrapper.get("[data-search-query]").element as HTMLInputElement).value).toBe("hit");
+  await wrapper.get('.search-modes button[aria-pressed="false"]').trigger("click");
+  expect(wrapper.get('[role="dialog"]').attributes("aria-label")).toBe(
+    "contentSearch.replaceTitle",
+  );
+  expect(wrapper.text()).not.toContain("contentSearch.confirmReplace");
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledTimes(1);
+  expect(m.backend.fsReplaceContent).not.toHaveBeenCalled();
+  await button("contentSearch.replaceFiles").trigger("click");
+  expect(m.backend.fsReplaceContent).not.toHaveBeenCalled();
+});
+it("keeps mode changes disabled while a replacement is writing", async () => {
+  await search();
+  const pending = deferred();
+  m.backend.fsReplaceContent.mockReturnValueOnce(pending.promise);
+  await button("contentSearch.replaceFiles").trigger("click");
+  await button("contentSearch.confirmReplace").trigger("click");
+  await wrapper.get('.search-modes button[aria-pressed="false"]').trigger("click");
+  expect(wrapper.get('[role="dialog"]').attributes("aria-label")).toBe(
+    "contentSearch.replaceTitle",
+  );
+  pending.resolve({ completed: [], failed: [] });
+  await flushPromises();
+});
 it("never replaces with unsaved drafts, pending scans, cancelled scans or changed search options", async () => {
   await search();
   m.viewer.tabs.push({ dirty: true });
