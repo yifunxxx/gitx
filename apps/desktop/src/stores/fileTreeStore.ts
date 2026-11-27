@@ -281,6 +281,32 @@ export const useFileTreeStore = defineStore("fileTree", () => {
     initialized.value = true;
     await loadDir("");
   }
+  /** Expand ancestors, select, and return whether `path` is visible in the tree. */
+  async function revealPath(path: string): Promise<boolean> {
+    if (!workspace.folderPath || !path || path.includes("\0")) return false;
+    const normalized = path.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!normalized || normalized.split("/").some((part) => part === "." || part === ".."))
+      return false;
+    const leaf = normalized.split("/").pop() ?? normalized;
+    const query = filter.value.trim().toLocaleLowerCase();
+    if (
+      query &&
+      !leaf.toLocaleLowerCase().includes(query) &&
+      !normalized.toLocaleLowerCase().includes(query)
+    ) {
+      filter.value = "";
+    }
+    if (!initialized.value) await loadRoot();
+    const parts = normalized.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const parent = parts.slice(0, i).join("/");
+      if (!expanded.has(parent)) await expand(parent);
+      if (!directories.has(parent) || directories.get(parent)?.error) return false;
+    }
+    if (!visibleRows.value.some((row) => row.path === normalized)) return false;
+    select(normalized);
+    return selectedPath.value === normalized;
+  }
   async function expand(path: string) {
     const row = visibleRows.value.find((row) => row.path === path && row.kind === "directory");
     if (!row) return;
@@ -390,5 +416,6 @@ export const useFileTreeStore = defineStore("fileTree", () => {
     collapse,
     toggle,
     refreshExpanded,
+    revealPath,
   };
 });

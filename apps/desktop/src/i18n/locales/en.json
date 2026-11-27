@@ -37,7 +37,9 @@
     "findNext": "Find Next",
     "findPrevious": "Find Previous",
     "replaceNext": "Replace Current Match",
-    "replaceAll": "Replace All in File"
+    "replaceAll": "Replace All in File",
+    "expandReplace": "Show Replace",
+    "collapseReplace": "Hide Replace"
   },
   "pathTree": {
     "collapse": "Collapse {name}",
@@ -394,6 +396,8 @@
     "loadFailed": "Unable to list folder",
     "actionFailed": "File action failed",
     "refresh": "Refresh files",
+    "locateCurrent": "Locate current file",
+    "locateUnavailable": "No open editor file in this tree",
     "tree": "Project files",
     "retryDirectory": "Retry loading {name}",
     "changedCount": "{count} changed files",

@@ -209,3 +209,21 @@ it("repeats root invalidation arriving while expanded children are refreshing", 
   await Promise.all([first, second]);
   expect(store.rows.map((row) => row.path)).toEqual(["src", "src/new", "new-root.txt"]);
 });
+
+it("reveals a nested file by expanding parents, clearing a blocking filter, and selecting it", async () => {
+  mocks.fsReadDir.mockImplementation(
+    async ({ dir: path }) =>
+      ({ "": [dir("src")], src: [dir("src/nested")], "src/nested": [file("src/nested/a.ts")] })[
+        path as string
+      ] ?? [],
+  );
+  const store = useFileTreeStore();
+  await store.loadRoot();
+  store.filter = "zzz";
+  expect(await store.revealPath("src/nested/a.ts")).toBe(true);
+  expect(store.filter).toBe("");
+  expect(store.selectedPath).toBe("src/nested/a.ts");
+  expect(store.rows.some((row) => row.path === "src/nested/a.ts")).toBe(true);
+  expect(await store.revealPath("missing/file.ts")).toBe(false);
+  expect(await store.revealPath("../escape")).toBe(false);
+});

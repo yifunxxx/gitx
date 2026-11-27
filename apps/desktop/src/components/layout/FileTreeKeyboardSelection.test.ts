@@ -21,10 +21,18 @@ vi.mock("vue-i18n", async (original) => ({
 }));
 vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => m.settings }));
 vi.mock("@/stores/layoutStore", () => ({
-  useLayoutStore: () => ({ activeLeftTab: "file", leftOpen: true }),
+  useLayoutStore: () => ({
+    activeLeftTab: "file",
+    leftOpen: true,
+    activeEditorKind: "welcome",
+    showLeftTab: vi.fn(),
+  }),
 }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => ({ snapshot: null }) }));
-vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: m.open }) }));
+vi.mock("@/stores/fileViewerStore", () => ({
+  useFileViewerStore: () => ({ open: m.open, tabs: [], activeId: null }),
+}));
+vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({ tabs: [], activeId: null }) }));
 vi.mock("@/stores/fileOperationsStore", () => ({
   useFileOperationsStore: () => ({ busy: false, run: m.run }),
 }));

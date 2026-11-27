@@ -28,17 +28,35 @@ function key(key: string, options = {}) {
     new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...options }),
   );
 }
+function replaceRow() {
+  return view.dom.querySelector<HTMLElement>(".cm-search-replace");
+}
 it("opens find, seeds a selection, navigates matches and closes with Escape", () => {
   view.dispatch({ selection: { anchor: 4, head: 7 } });
   key("f", { ctrlKey: true });
   expect(searchPanelOpen(view.state)).toBe(true);
   expect(getSearchQuery(view.state).search).toBe("hit");
+  expect(replaceRow()?.hidden).toBe(true);
+  expect(view.dom.querySelector(".cm-search-expand")?.getAttribute("aria-expanded")).toBe("false");
   key("F3");
   expect(view.state.selection.main.from).toBe(8);
   key("F3", { shiftKey: true });
   expect(view.state.selection.main.from).toBe(4);
   key("Escape");
   expect(searchPanelOpen(view.state)).toBe(false);
+});
+it("keeps find-only by default and expands replace from the chevron or Replace action", () => {
+  runEditorSearch("Editor.Find", view);
+  expect(replaceRow()?.hidden).toBe(true);
+  view.dom.querySelector<HTMLButtonElement>(".cm-search-expand")!.click();
+  expect(replaceRow()?.hidden).toBe(false);
+  expect(view.dom.querySelector(".cm-search-expand")?.getAttribute("aria-expanded")).toBe("true");
+  view.dom.querySelector<HTMLButtonElement>(".cm-search-expand")!.click();
+  expect(replaceRow()?.hidden).toBe(true);
+  runEditorSearch("Editor.Replace", view);
+  expect(searchPanelOpen(view.state)).toBe(true);
+  expect(replaceRow()?.hidden).toBe(false);
+  expect(document.activeElement).toBe(view.dom.querySelector('input[name="replace"]'));
 });
 it("supports whole-word/case/regex replacement with undo and no implicit save", () => {
   view.dispatch({
@@ -81,10 +99,18 @@ it("read-only diff/source panes find text but cannot replace even via commands",
   runEditorSearch("Editor.Find", view);
   expect(view.dom.querySelector('input[name="search"]')).toBeTruthy();
   expect(view.dom.querySelector('input[name="replace"]')).toBeNull();
+  expect(view.dom.querySelector(".cm-search-expand")).toBeNull();
   view.dispatch({
     effects: setSearchQuery.of(new SearchQuery({ search: "hit", replace: "changed" })),
   });
   expect(runEditorSearch("Editor.Replace", view)).toBe(false);
   runEditorSearch("Editor.ReplaceAll", view);
   expect(view.state.doc.toString()).toBe("hit");
+});
+it("keeps the find panel below dialog stacking by isolating the editor", () => {
+  const style = getComputedStyle(view.dom);
+  expect(style.isolation).toBe("isolate");
+  runEditorSearch("Editor.Find", view);
+  const panels = view.dom.querySelector(".cm-panels") as HTMLElement;
+  expect(getComputedStyle(panels).zIndex).toBe("1");
 });

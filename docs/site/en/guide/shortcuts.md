@@ -11,7 +11,7 @@ The table is generated from the registered default bindings. Windows/Linux use C
 | [Find Previous](./search) | `Shift+f3` | `Shift+f3` |
 | [Replace in File](./search) | `Ctrl+h` | `Cmd+Option+F` |
 | [Replace All in File](./search) | `Ctrl+Alt+enter` | `Cmd+Option+enter` |
-| [Find in Files…](./search) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
+| [Find in Files…](./search) | `Ctrl+Shift+R` | `Cmd+Shift+R` |
 | [Go to File…](./search) | `Ctrl+P` | `Cmd+P` |
 | [Open…](./getting-started) | `Ctrl+O` | `Cmd+O` |
 | [Replace in Files…](./search) | `Ctrl+Shift+h` | `Cmd+Shift+h` |

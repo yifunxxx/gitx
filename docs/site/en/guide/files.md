@@ -8,6 +8,7 @@ File shows the workspace's files, including unchanged ones. It also works with o
 2. Expand directories using their arrows. Loading is on demand; unopened subdirectories are not all scanned in advance.
 3. Single-click to select. Double-click or press Enter to open a text editor. Edit and press `Ctrl+S`; the unsaved marker clears when saving completes.
 4. The editor context menu provides Undo, Redo, Cut, Copy, Paste, Select All, and Save.
+5. Besides New/Refresh, use **Locate current file** (crosshair) in the toolbar to scroll to and select the active editor or Diff path.
 
 ![The File tree and text editor](/screenshots/files-en.jpg)
 
@@ -48,7 +49,7 @@ Hover over the Commit stripe entry while dragging to switch panels, then drop on
 
 Open **Settings → Project Files** to show hidden files, show ignored files, or compact directories. These settings are independent of Commit's ignored-file setting. `.git` metadata is not treated as an ordinary editable project tree.
 
-**Filter loaded files** filters only nodes already loaded. Use `Ctrl+P` or `Ctrl+Shift+F` for a workspace-wide search. See [search](./search).
+**Filter loaded files** filters only nodes already loaded. Use `Ctrl+P` or `Ctrl+Shift+R` for a workspace-wide search. The toolbar locate icon scrolls to and selects the active editor/diff file in the tree. See [search](./search).
 
 ## Text editing limits
 

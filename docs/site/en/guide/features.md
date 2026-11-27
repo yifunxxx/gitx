@@ -39,7 +39,7 @@ Use Find Action (`Ctrl+Shift+A`) to search. Availability depends on repository s
 | Replace in File | `Ctrl+h` | [Steps](./search) |
 | Replace All in File | `Ctrl+Alt+enter` | [Steps](./search) |
 | Replace Current Match | — | [Steps](./search) |
-| Find in Files… | `Ctrl+Shift+F` | [Steps](./search) |
+| Find in Files… | `Ctrl+Shift+R` | [Steps](./search) |
 | Go to File… | `Ctrl+P` | [Steps](./search) |
 | Open… | `Ctrl+O` | [Steps](./getting-started) |
 | Replace in Files… | `Ctrl+Shift+h` | [Steps](./search) |

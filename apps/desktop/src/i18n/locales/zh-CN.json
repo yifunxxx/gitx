@@ -37,7 +37,9 @@
     "findNext": "查找下一个",
     "findPrevious": "查找上一个",
     "replaceNext": "替换当前匹配",
-    "replaceAll": "替换文件内全部匹配"
+    "replaceAll": "替换文件内全部匹配",
+    "expandReplace": "显示替换",
+    "collapseReplace": "隐藏替换"
   },
   "pathTree": {
     "collapse": "折叠 {name}",
@@ -394,6 +396,8 @@
     "loadFailed": "无法列举文件夹",
     "actionFailed": "文件操作失败",
     "refresh": "刷新文件",
+    "locateCurrent": "定位当前文件",
+    "locateUnavailable": "当前没有可在此树中定位的编辑器文件",
     "tree": "项目文件",
     "retryDirectory": "重试加载 {name}",
     "changedCount": "{count}个更改的文件",
