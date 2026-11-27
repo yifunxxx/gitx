@@ -464,14 +464,28 @@ it("rechecks saving after the copy confirmation resolves", async () => {
   await task;
   expect(mocks.fsMutate).not.toHaveBeenCalled();
 });
-it("confirms recycle operations and blocks unsaved drafts", async () => {
+it("confirms recycle operations and asks before discarding unsaved drafts", async () => {
   mocks.confirm.mockResolvedValueOnce(false);
   await useFileOperationsStore().run("delete", ["a"]);
   expect(mocks.fsMutate).not.toHaveBeenCalled();
   mocks.tabs = [{ dirty: true }];
+  mocks.confirm
+    .mockResolvedValueOnce(true) // recycle confirm
+    .mockResolvedValueOnce(false); // discard drafts declined
   await useFileOperationsStore().run("delete", ["a"]);
   expect(mocks.fsMutate).not.toHaveBeenCalled();
+  mocks.tabs = [{ dirty: true }];
+  mocks.confirm.mockResolvedValue(true);
+  await useFileOperationsStore().run("delete", ["a"]);
+  expect(mocks.tabs[0].dirty).toBe(false);
+  expect(mocks.fsMutate).toHaveBeenCalledWith({
+    folderPath: "C:/project",
+    operation: "delete",
+    items: [{ path: "a", destination: null }],
+  });
+  mocks.fsMutate.mockClear();
   mocks.tabs = [];
+  mocks.confirm.mockResolvedValueOnce(true);
   await useFileOperationsStore().run("delete", ["a"]);
   expect(mocks.fsMutate).toHaveBeenCalledWith({
     folderPath: "C:/project",
