@@ -80,7 +80,7 @@ const {
   ctxDrop,
   ctxExtract,
 } = useLogContextMenus();
-const captureAction = useRepositoryAction();
+const captureAction = useRepositoryAction(cancelLoadMore);
 
 const ROW_H = 22;
 const textDraft = ref("");
@@ -278,13 +278,33 @@ async function toggleChangedFilesListMode() {
 }
 
 let loadMoreTimer = 0;
+function cancelLoadMore() {
+  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
+  loadMoreTimer = 0;
+}
+// Invalidate synchronously, including A → B → A changes within one Vue tick.
+// Do not deeply traverse commits on every update: only their window identity
+// matters here. Filters are small and can also change in place.
+watch([listMode, () => log.commits], cancelLoadMore, { flush: "sync" });
+watch(() => log.filters, cancelLoadMore, { flush: "sync", deep: true });
+
+function nearListBottom(el: HTMLElement) {
+  return el.clientHeight > 0 && el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+}
 /** Trailing debounce: only fetch after scroll settles so loadMore IPC + layout
  * do not collide with an in-flight wheel/thumb gesture. */
-function scheduleLoadMore() {
-  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
+function scheduleLoadMore(el: HTMLElement) {
+  cancelLoadMore();
+  const source = captureAction();
   loadMoreTimer = window.setTimeout(() => {
     loadMoreTimer = 0;
-    if (commitListRef.value?.pointerDown) return;
+    if (
+      !source.current() ||
+      commitListRef.value?.el !== el ||
+      commitListRef.value.pointerDown ||
+      !nearListBottom(el)
+    )
+      return;
     void log.loadMore();
   }, 180);
 }
@@ -294,7 +314,7 @@ onUnmounted(() => {
   finishLayout();
   if (graphRaf) cancelAnimationFrame(graphRaf);
   graphRaf = 0;
-  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
+  cancelLoadMore();
 });
 
 const scrollLeft = ref(0);
@@ -504,9 +524,11 @@ function onListScroll(e: Event) {
   scrollLeft.value = el.scrollLeft;
   // Defer load-more while the scrollbar thumb is being dragged — appending
   // rows mid-drag changes scrollHeight and makes the thumb jam (GIT-40).
-  if (commitListRef.value?.pointerDown) return;
-  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
-  if (remaining < 80) scheduleLoadMore();
+  if (commitListRef.value?.pointerDown || !nearListBottom(el)) {
+    cancelLoadMore();
+    return;
+  }
+  scheduleLoadMore(el);
 }
 
 function onCommitClick(sha: string, e: MouseEvent) {
