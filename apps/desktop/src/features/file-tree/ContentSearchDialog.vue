@@ -20,6 +20,7 @@ import { useConflictsStore } from "@/stores/conflictsStore";
 import { useJobsStore } from "@/stores/jobsStore";
 import { closeDialog, useDialogState } from "@/composables/useDialog";
 import { formatErrorMessage } from "@/lib/errors";
+import { useSearchFocus } from "./useSearchFocus";
 
 const props = defineProps<{ replace?: boolean }>();
 const { t } = useI18n();
@@ -37,6 +38,8 @@ const folder = workspace.folderPath;
 const navigation = workspace.navigationToken();
 const dialogId = useDialogState().value?.id;
 const query = ref("");
+const searchPanel = ref<HTMLElement | null>(null);
+const queryInput = ref<HTMLInputElement | null>(null);
 const replacement = ref("");
 const replacingMode = ref(!!props.replace);
 const caseSensitive = ref(false);
@@ -98,6 +101,11 @@ const current = (token: number) =>
   token === generation &&
   workspace.folderPath === folder &&
   workspace.navigationToken() === navigation;
+useSearchFocus(
+  searchPanel,
+  queryInput,
+  () => current(generation) && useDialogState().value?.id === dialogId,
+);
 function setMode(replace: boolean) {
   if (applying.value || opening.value) return;
   replacingMode.value = replace;
@@ -388,6 +396,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="content-search-overlay" @keydown="keydown">
     <section
+      ref="searchPanel"
+      tabindex="-1"
       role="dialog"
       aria-modal="true"
       :aria-label="t(replacingMode ? 'contentSearch.replaceTitle' : 'fileSearch.contentTitle')"
@@ -427,6 +437,7 @@ onBeforeUnmount(() => {
             <span class="search-field-label">{{ t("editor.find") }}</span>
             <span class="search-query-field">
               <input
+                ref="queryInput"
                 v-model="query"
                 autofocus
                 data-search-query

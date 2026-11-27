@@ -11,6 +11,7 @@ import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { closeDialog, useDialogState } from "@/composables/useDialog";
 import { formatErrorMessage } from "@/lib/errors";
 import ContentSearchDialog from "./ContentSearchDialog.vue";
+import { useSearchFocus } from "./useSearchFocus";
 
 const props = defineProps<{ content?: boolean; replace?: boolean }>();
 const { t } = useI18n();
@@ -21,6 +22,8 @@ const settings = useSettingsStore();
 const viewer = useFileViewerStore();
 const dialogId = useDialogState().value?.id;
 const query = ref("");
+const searchPanel = ref<HTMLElement | null>(null);
+const queryInput = ref<HTMLInputElement | null>(null);
 const loading = ref(false);
 const opening = ref(false);
 const error = ref("");
@@ -44,6 +47,11 @@ const current = (token: number) =>
   generation === token &&
   workspace.folderPath === folder &&
   workspace.navigationToken() === navigation;
+useSearchFocus(
+  searchPanel,
+  queryInput,
+  () => current(generation) && useDialogState().value?.id === dialogId,
+);
 function cancelScan() {
   clearTimeout(timer);
   void getBackend()
@@ -178,6 +186,8 @@ onBeforeUnmount(() => {
     @keydown="onKeydown"
   >
     <section
+      ref="searchPanel"
+      tabindex="-1"
       role="dialog"
       aria-modal="true"
       :aria-label="title"
@@ -197,6 +207,7 @@ onBeforeUnmount(() => {
       </header>
       <div class="p-3">
         <input
+          ref="queryInput"
           v-model="query"
           type="search"
           autofocus

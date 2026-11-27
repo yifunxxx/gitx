@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { reactive } from "vue";
 import ContentSearchDialog from "./ContentSearchDialog.vue";
 const m = vi.hoisted(() => ({
+  dialog: { value: { id: 1 } },
   workspace: {} as any,
   viewer: {} as any,
   conflicts: {} as any,
@@ -28,7 +29,7 @@ vi.mock("@/stores/jobsStore", () => ({
 }));
 vi.mock("@/composables/useDialog", () => ({
   closeDialog: m.close,
-  useDialogState: () => ({ value: { id: 1 } }),
+  useDialogState: () => m.dialog,
 }));
 vi.mock("vue-i18n", () => ({
   useI18n: () => ({
@@ -65,6 +66,7 @@ function deferred() {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.resetAllMocks();
+  m.dialog.value = { id: 1 };
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -508,4 +510,111 @@ it("releases retained results on unmount and never resumes polling after a late 
   await flushPromises();
   expect(m.backend.fsContentSearchPage).toHaveBeenCalledOnce();
   expect(m.jobs.finished).toHaveBeenCalledOnce();
+});
+
+function focusButton(text: string) {
+  const target = button(text);
+  (target.element as HTMLButtonElement).focus();
+  expect(document.activeElement).toBe(target.element);
+  return target;
+}
+function pressFocusedEscape() {
+  document.activeElement!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
+}
+it("keeps keyboard focus inside the dialog when Search again removes its focused button", async () => {
+  await search();
+  await focusButton("contentSearch.refresh").trigger("click");
+  expect(document.activeElement).toBe(wrapper.get("[data-search-query]").element);
+  pressFocusedEscape();
+  expect(m.close).toHaveBeenCalledWith(null, 1);
+});
+it("keeps keyboard focus when the footer search button becomes disabled", async () => {
+  await wrapper.setProps({ replace: false });
+  // The mode is initialized by the prop; use its normal mode switch for this mounted dialog.
+  await wrapper.get('.search-modes button[aria-pressed="false"]').trigger("click");
+  await search();
+  await focusButton("contentSearch.search").trigger("click");
+  expect(document.activeElement).toBe(wrapper.get("[data-search-query]").element);
+  pressFocusedEscape();
+  expect(m.close).toHaveBeenCalledWith(null, 1);
+});
+it("recovers focus when a scan finishes while its stop button has keyboard focus", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ done: false }));
+  await search();
+  focusButton("common.cancel");
+  m.backend.fsContentSearchPage.mockResolvedValue(response());
+  await vi.advanceTimersByTimeAsync(150);
+  expect(document.activeElement).toBe(wrapper.get("[data-search-query]").element);
+  pressFocusedEscape();
+  expect(m.close).toHaveBeenCalledWith(null, 1);
+});
+it("recovers focus when stop disables its button and keeps it after the scan settles", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ done: false }));
+  await search();
+  const stop = deferred();
+  m.backend.fsStopContentSearch.mockReturnValueOnce(stop.promise);
+  await focusButton("common.cancel").trigger("click");
+  expect(document.activeElement).toBe(wrapper.get("[data-search-query]").element);
+  m.backend.fsContentSearchPage.mockResolvedValue(response());
+  stop.resolve(true);
+  await flushPromises();
+  expect(document.activeElement).toBe(wrapper.get("[data-search-query]").element);
+});
+it("recovers page-button focus without stealing subsequent include-field focus", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601 }));
+  await search();
+  const page = deferred();
+  m.backend.fsContentSearchPage.mockReturnValueOnce(page.promise);
+  const next = wrapper.get('button[aria-label="contentSearch.nextPage"]');
+  (next.element as HTMLButtonElement).focus();
+  await next.trigger("click");
+  expect(document.activeElement).toBe(wrapper.get("[data-search-query]").element);
+  const include = wrapper.get('input[aria-label="contentSearch.include"]')
+    .element as HTMLInputElement;
+  include.focus();
+  page.resolve(response({ total: 601 }));
+  await flushPromises();
+  expect(document.activeElement).toBe(include);
+});
+it("recovers retry focus when the failed page starts loading", async () => {
+  m.backend.fsContentSearchPage.mockRejectedValueOnce(new Error("unavailable"));
+  await search();
+  const page = deferred();
+  m.backend.fsContentSearchPage.mockReturnValueOnce(page.promise);
+  await focusButton("common.retry").trigger("click");
+  expect(document.activeElement).toBe(wrapper.get("[data-search-query]").element);
+  page.resolve(response());
+  await flushPromises();
+  pressFocusedEscape();
+  expect(m.close).toHaveBeenCalledWith(null, 1);
+});
+it("keeps focus on a stable dialog while replacement disables all query controls", async () => {
+  await search();
+  await button("contentSearch.replaceFiles").trigger("click");
+  const replace = deferred();
+  m.backend.fsReplaceContent.mockReturnValueOnce(replace.promise);
+  await focusButton("contentSearch.confirmReplace").trigger("click");
+  expect(wrapper.get('[role="dialog"]').element.contains(document.activeElement)).toBe(true);
+  expect(document.activeElement?.matches(":disabled")).toBe(false);
+  pressFocusedEscape();
+  expect(m.close).not.toHaveBeenCalled();
+  replace.resolve({ completed: [], failed: [] });
+  await flushPromises();
+  pressFocusedEscape();
+  expect(m.close).toHaveBeenCalledWith(null, 1);
+});
+it("does not take focus from a newer dialog when a hidden search completes", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ done: false }));
+  await search();
+  focusButton("common.cancel");
+  const child = document.createElement("input");
+  document.body.append(child);
+  child.focus();
+  m.dialog.value = { id: 2 };
+  m.backend.fsContentSearchPage.mockResolvedValue(response());
+  await vi.advanceTimersByTimeAsync(150);
+  expect(document.activeElement).toBe(child);
+  child.remove();
 });

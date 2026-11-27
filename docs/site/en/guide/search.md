@@ -25,6 +25,8 @@ Click **Cancel** beside the scan progress to stop scanning. Once it settles, res
 
 While a page loads, the current page number and rows remain visible with a loading indicator; opening rows and paging are temporarily disabled. A successful read switches to the requested page. A failed read keeps the current page and offers **Retry**, which reads the failed target page without rescanning.
 
+When refresh, stop, paging or retry makes the focused button unavailable, focus returns to the query field. Continue typing, select results with Up/Down, or press Esc to close. Esc does not interrupt an active replacement write; the dialog can be closed once writing finishes. Filename search also keeps keyboard focus inside the dialog after stopping or retrying.
+
 Search reads saved UTF-8 text, not unsaved editor buffers. Binary, invalid-encoding and unreadable paths are reported with reasons (the first 20 reasons are displayed). Symlinks are not followed, and Git metadata is excluded. Global regex searches are line-based and support Unicode, character classes, groups, repetitions and captures. **Multiline matching, backreferences and lookaround are unsupported** and invalid expressions show an error.
 
 LF, CRLF, CR and mixed line endings use the same line/column positions as the editor. Replacement preserves each original separator. Empty files and the final empty line after a separator also participate in regex searches; for example, `^$` matches these empty lines.
