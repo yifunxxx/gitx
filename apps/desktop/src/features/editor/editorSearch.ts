@@ -71,6 +71,7 @@ function toggle(
     name,
     form: "",
     checked: checked || undefined,
+    "aria-label": label,
     onchange,
   }) as HTMLInputElement;
   input.checked = checked;
@@ -94,6 +95,44 @@ function button(name: string, onclick: () => void, content: string, title?: stri
     },
     [content],
   );
+}
+
+function icon(name: "next" | "prev" | "expand" | "close" | "search") {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.7");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(svg.namespaceURI, "path");
+  path.setAttribute(
+    "d",
+    {
+      next: "M12 5v14m-6-6 6 6 6-6",
+      prev: "M12 19V5m-6 6 6-6 6 6",
+      expand: "m9 5 7 7-7 7",
+      close: "m6 6 12 12M6 18 18 6",
+      search: "M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
+    }[name],
+  );
+  svg.append(path);
+  return svg;
+}
+
+function navigationButton(name: "next" | "prev", view: EditorView) {
+  const node = button(
+    name,
+    () => (name === "next" ? findNext : findPrevious)(view),
+    "",
+    phrase(view, name === "next" ? "Find Next" : "Find Previous"),
+  );
+  node.classList.add("cm-search-navigation");
+  node.append(icon(name));
+  return node;
 }
 
 class IdeaSearchPanel implements Panel {
@@ -122,6 +161,8 @@ class IdeaSearchPanel implements Panel {
       class: "cm-textfield",
       name: "search",
       form: "",
+      spellcheck: "false",
+      autocomplete: "off",
       "main-field": "true",
       oninput: this.commit,
       onchange: this.commit,
@@ -135,6 +176,8 @@ class IdeaSearchPanel implements Panel {
       class: "cm-textfield",
       name: "replace",
       form: "",
+      spellcheck: "false",
+      autocomplete: "off",
       oninput: this.commit,
       onchange: this.commit,
     }) as HTMLInputElement;
@@ -172,24 +215,15 @@ class IdeaSearchPanel implements Panel {
             title: phrase(view, "Expand replace"),
             onclick: () => this.setExpanded(!this.expanded),
           },
-          ["▸"],
+          [icon("expand")],
         ) as HTMLButtonElement);
 
-    // Fixed 3-slot action grid keeps Find/Replace rows vertically aligned.
+    // Both rows share the panel's grid tracks. Options live inside the field,
+    // keeping navigation distinct from the two replacement actions.
     const findActions = el("div", { class: "cm-search-actions" }, [
-      button("next", () => findNext(view), phrase(view, "next"), phrase(view, "Find Next")),
-      button(
-        "prev",
-        () => findPrevious(view),
-        phrase(view, "previous"),
-        phrase(view, "Find Previous"),
-      ),
-      button(
-        "select",
-        () => selectMatches(view),
-        phrase(view, "all"),
-        phrase(view, "Select All"),
-      ),
+      navigationButton("prev", view),
+      navigationButton("next", view),
+      button("select", () => selectMatches(view), phrase(view, "all"), phrase(view, "Select All")),
     ]);
     const findOptions = el("div", { class: "cm-search-options" }, [
       caseToggle.wrap,
@@ -197,10 +231,10 @@ class IdeaSearchPanel implements Panel {
       wordToggle.wrap,
     ]);
     const findRow = el("div", { class: "cm-search-row" }, [
-      ...(this.expandBtn ? [this.expandBtn] : []),
-      this.searchField,
+      this.expandBtn ||
+        el("span", { class: "cm-search-symbol", "aria-hidden": "true" }, [icon("search")]),
+      el("div", { class: "cm-search-field" }, [this.searchField, findOptions]),
       findActions,
-      findOptions,
       el(
         "button",
         {
@@ -211,16 +245,14 @@ class IdeaSearchPanel implements Panel {
           title: phrase(view, "close"),
           onclick: () => closeSearchPanel(view),
         },
-        ["×"],
+        [icon("close")],
       ),
     ]);
 
     this.replaceRow = view.state.readOnly
       ? null
       : el("div", { class: "cm-search-row cm-search-replace" }, [
-          // Match the find-row expand control so inputs/buttons share one column.
-          el("span", { class: "cm-search-expand-spacer", "aria-hidden": "true" }),
-          this.replaceField,
+          el("div", { class: "cm-search-field" }, [this.replaceField]),
           el("div", { class: "cm-search-actions" }, [
             button(
               "replace",
@@ -234,10 +266,7 @@ class IdeaSearchPanel implements Panel {
               phrase(view, "replace all"),
               phrase(view, "Replace All"),
             ),
-            el("span", { class: "cm-search-action-spacer", "aria-hidden": "true" }),
           ]),
-          el("div", { class: "cm-search-options cm-search-options-spacer", "aria-hidden": "true" }),
-          el("span", { class: "cm-search-close-spacer", "aria-hidden": "true" }),
         ]);
 
     this.dom = el(
@@ -267,7 +296,6 @@ class IdeaSearchPanel implements Panel {
     const label = phrase(this.view, this.expanded ? "Collapse replace" : "Expand replace");
     this.expandBtn.setAttribute("aria-label", label);
     this.expandBtn.title = label;
-    this.expandBtn.textContent = this.expanded ? "▾" : "▸";
   }
 
   commit() {
@@ -382,174 +410,188 @@ export function canSearchEditor(replace = false) {
 
 // CodeMirror style modules outlive individual editors. Reuse one search theme.
 const searchTheme = EditorView.theme({
-  // Keep the find bar inside the editor stacking context so global dialogs
-  // (Settings etc., DialogHost z-80) paint above it. CM defaults sticky z-300.
-  "&": { isolation: "isolate" },
+  // Keep editor panels below application dialogs and size against the editor,
+  // including split diff panes, rather than the application window.
+  "&": { isolation: "isolate", containerType: "inline-size", containerName: "editor-search" },
   ".cm-panels": {
-    // Match editor chrome so Diff / File vs HEAD headers stay quiet.
     backgroundColor: "var(--color-dbx-chrome, var(--color-popover))",
     color: "var(--color-foreground)",
-    fontSize: "11px",
+    fontFamily: "var(--font-sans)",
+    fontSize: "12px",
     zIndex: "1",
-    borderBottom: "1px solid color-mix(in srgb, var(--color-border) 70%, transparent)",
   },
-  ".cm-search": {
-    padding: "2px 4px 3px",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "stretch",
-    gap: "2px",
+  ".cm-panels-top": { borderBottom: "1px solid var(--color-border)" },
+  // Match the specificity of CM's default search panel. Its margins and
+  // absolutely positioned close button otherwise escape the custom grid.
+  ".cm-panel.cm-search": {
+    padding: "7px 8px",
+    display: "grid",
+    gridTemplateColumns: "24px minmax(0, 1fr) max-content 24px",
+    alignItems: "center",
+    gap: "6px",
     position: "relative",
   },
-  ".cm-search-row": {
-    display: "grid",
-    // expand | field | fixed action column | options | close
-    // Fixed 18px gutter keeps Find/Replace inputs on one left edge.
-    gridTemplateColumns: "18px minmax(0, 1fr) 12.75rem auto 18px",
+  ".cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label": {
+    margin: "0",
+    fontFamily: "inherit",
+  },
+  ".cm-search-row": { display: "contents" },
+  ".cm-search-row[hidden]": { display: "none" },
+  ".cm-search-field": {
+    gridColumn: "2",
+    gridRow: "1",
+    display: "flex",
     alignItems: "center",
-    columnGap: "3px",
-    minWidth: 0,
+    minWidth: "0",
+    height: "28px",
+    boxSizing: "border-box",
+    background: "var(--color-background)",
+    border: "1px solid var(--color-input, var(--color-border))",
+    borderRadius: "6px",
+    overflow: "hidden",
   },
-  // Read-only find-only bars omit the expand control.
-  ".cm-search-row:not(:has(.cm-search-expand, .cm-search-expand-spacer))": {
-    gridTemplateColumns: "minmax(0, 1fr) 12.75rem auto 18px",
-  },
-  ".cm-search-actions": {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    alignItems: "center",
-    gap: "2px",
-    minWidth: 0,
-    width: "100%",
-  },
-  ".cm-search-options": {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "1px",
-    flex: "0 0 auto",
-    marginLeft: "1px",
-    paddingLeft: "3px",
-    borderLeft: "1px solid color-mix(in srgb, var(--color-border) 65%, transparent)",
-  },
-  ".cm-search-options-spacer": {
-    visibility: "hidden",
-    // Match three option toggles so the close column stays aligned.
-    minWidth: "4.75rem",
-    borderLeftColor: "transparent",
+  ".cm-search-field:focus-within": {
+    borderColor: "color-mix(in srgb, var(--color-ring) 65%, var(--color-border))",
+    boxShadow: "0 0 0 2px color-mix(in srgb, var(--color-ring) 12%, transparent)",
   },
   ".cm-search input.cm-textfield": {
-    width: "100%",
-    minWidth: 0,
+    flex: "1 1 0",
+    width: "0",
+    minWidth: "0",
+    height: "26px",
+    padding: "0 8px",
     boxSizing: "border-box",
-    border: "1px solid color-mix(in srgb, var(--color-border) 85%, transparent)",
-    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
-    background: "var(--color-background)",
+    border: "none",
+    borderRadius: "0",
+    background: "transparent",
     color: "var(--color-foreground)",
-    padding: "0 5px",
-    height: "20px",
-    fontSize: "11px",
-    lineHeight: "18px",
+    fontSize: "12px",
+    lineHeight: "26px",
     outline: "none",
     boxShadow: "none",
   },
-  ".cm-search input.cm-textfield:focus": {
-    borderColor: "color-mix(in srgb, var(--color-ring) 55%, var(--color-border))",
-    boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 28%, transparent)",
+  ".cm-search input.cm-textfield::placeholder": {
+    color: "var(--color-muted-foreground)",
+    opacity: "0.8",
+  },
+  ".cm-search-actions": {
+    gridColumn: "3",
+    gridRow: "1",
+    display: "grid",
+    gridTemplateColumns: "28px 28px minmax(70px, 1fr)",
+    gap: "4px",
+    alignItems: "center",
+    minWidth: "0",
   },
   ".cm-search button.cm-button": {
-    boxSizing: "border-box",
-    border: "1px solid color-mix(in srgb, var(--color-border) 85%, transparent)",
-    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
-    background: "color-mix(in srgb, var(--color-background) 88%, transparent)",
-    color: "var(--color-foreground)",
-    padding: "0 3px",
-    height: "20px",
-    minWidth: 0,
-    width: "100%",
-    fontSize: "11px",
-    lineHeight: "1.1",
-    cursor: "pointer",
-    outline: "none",
-    boxShadow: "none",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  ".cm-search button.cm-button:hover": {
-    background: "color-mix(in srgb, var(--color-foreground) 5%, var(--color-background))",
-  },
-  ".cm-search button.cm-button:focus-visible": {
-    borderColor: "color-mix(in srgb, var(--color-ring) 55%, var(--color-border))",
-    boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 28%, transparent)",
-  },
-  ".cm-search-expand, .cm-search-close, .cm-search-expand-spacer, .cm-search-close-spacer, .cm-search-action-spacer":
-    {
-      boxSizing: "border-box",
-      width: "100%",
-      minWidth: "0",
-      maxWidth: "18px",
-      height: "20px",
-      margin: "0",
-      padding: "0",
-      border: "none",
-      background: "transparent",
-      color: "var(--color-muted-foreground, var(--color-foreground))",
-      cursor: "pointer",
-      fontSize: "10px",
-      lineHeight: "20px",
-      textAlign: "center",
-      outline: "none",
-      justifySelf: "stretch",
-    },
-  ".cm-search-action-spacer": {
-    maxWidth: "none",
-    width: "auto",
-    cursor: "default",
-    pointerEvents: "none",
-  },
-  ".cm-search-expand:hover, .cm-search-close:hover": {
-    color: "var(--color-foreground)",
-    background: "color-mix(in srgb, var(--color-foreground) 6%, transparent)",
-    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
-  },
-  ".cm-search-expand:focus-visible, .cm-search-close:focus-visible": {
-    boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-ring) 28%, transparent)",
-    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
-  },
-  ".cm-search-expand-spacer, .cm-search-close-spacer": {
-    cursor: "default",
-    pointerEvents: "none",
-  },
-  ".cm-search-toggle": {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: "1px",
-    fontSize: "10px",
-    padding: "0 3px",
-    height: "20px",
-    minWidth: "20px",
     boxSizing: "border-box",
+    height: "28px",
+    minWidth: "0",
+    padding: "0 9px",
+    border: "1px solid var(--color-border)",
+    borderRadius: "6px",
+    background: "var(--color-background)",
+    color: "var(--color-foreground)",
+    fontSize: "12px",
+    lineHeight: "1",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+    boxShadow: "none",
+  },
+  ".cm-search button.cm-search-navigation": {
+    padding: "0",
+    borderColor: "transparent",
+    background: "transparent",
+    color: "var(--color-muted-foreground)",
+  },
+  ".cm-search button:hover": {
+    background: "var(--color-accent)",
+    color: "var(--color-foreground)",
+  },
+  ".cm-search button:focus-visible, .cm-search-toggle:has(input:focus-visible)": {
+    outline: "2px solid var(--color-ring)",
+    outlineOffset: "1px",
+  },
+  ".cm-search-expand, .cm-search-symbol, .cm-panel.cm-search button[name=close]": {
+    position: "static",
+    gridColumn: "1",
+    gridRow: "1",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "24px",
+    height: "28px",
+    padding: "0",
+    border: "none",
+    borderRadius: "5px",
+    background: "transparent",
+    color: "var(--color-muted-foreground)",
+    cursor: "pointer",
+    boxSizing: "border-box",
+  },
+  ".cm-panel.cm-search button[name=close]": { gridColumn: "4" },
+  ".cm-search-expand[aria-expanded=true] svg": { transform: "rotate(90deg)" },
+  ".cm-search-options": {
+    display: "flex",
+    alignItems: "center",
+    flex: "0 0 auto",
+    gap: "2px",
+    padding: "0 3px",
+  },
+  ".cm-panel.cm-search .cm-search-toggle": {
+    position: "relative",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "23px",
+    height: "22px",
     border: "1px solid transparent",
-    borderRadius: "var(--radius-sm, var(--dbx-radius-sm, 4px))",
+    borderRadius: "4px",
+    boxSizing: "border-box",
+    fontSize: "11px",
+    lineHeight: "1",
+    fontWeight: "500",
+    color: "var(--color-muted-foreground)",
     cursor: "pointer",
     userSelect: "none",
-    flex: "0 0 auto",
-    color: "var(--color-muted-foreground, var(--color-foreground))",
   },
-  ".cm-search-toggle:hover": {
-    background: "color-mix(in srgb, var(--color-foreground) 5%, transparent)",
-  },
+  ".cm-search-toggle:hover": { background: "var(--color-accent)" },
   ".cm-search-toggle:has(input:checked)": {
-    borderColor: "color-mix(in srgb, var(--color-border) 85%, transparent)",
-    color: "var(--color-foreground)",
-    background: "color-mix(in srgb, var(--color-foreground) 8%, transparent)",
+    background: "var(--color-selection)",
+    color: "var(--color-selection-foreground)",
+    borderColor: "color-mix(in srgb, var(--color-ring) 35%, transparent)",
   },
-  ".cm-search-toggle input": { position: "absolute", opacity: "0", width: "0", height: "0" },
+  ".cm-search-toggle input": {
+    position: "absolute",
+    opacity: "0",
+    inset: "0",
+    width: "100%",
+    height: "100%",
+    cursor: "pointer",
+  },
+  '.cm-search-toggle:has(input[name="word"]) span': {
+    textDecoration: "underline",
+    textUnderlineOffset: "3px",
+  },
+  ".cm-search-replace .cm-search-field": { gridRow: "2" },
+  ".cm-search-replace .cm-search-actions": {
+    gridRow: "2",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  },
+  "@container editor-search (max-width: 520px)": {
+    ".cm-panel.cm-search": { gridTemplateColumns: "24px minmax(0, 1fr) 24px", gap: "6px" },
+    ".cm-search-field": { gridColumn: "2", gridRow: "1" },
+    ".cm-panel.cm-search button[name=close]": { gridColumn: "3" },
+    ".cm-search-actions": { gridColumn: "2", gridRow: "2", justifySelf: "start" },
+    ".cm-search-replace .cm-search-field": { gridRow: "3" },
+    ".cm-search-replace .cm-search-actions": { gridColumn: "2", gridRow: "4" },
+  },
   ".cm-searchMatch": { backgroundColor: "#eab30830", outline: "1px solid #eab30860" },
   ".cm-searchMatch-selected": { backgroundColor: "#eab30860" },
 });
-
 export function editorSearch(translate?: (key: string) => string): Extension {
   return [
     EditorView.contentAttributes.of({ tabindex: "0" }),
