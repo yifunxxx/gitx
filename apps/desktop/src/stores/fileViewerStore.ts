@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { owningRepository } from "@/features/file-tree/fileRepository";
-import { reactive, ref, watch } from "vue";
+import { onScopeDispose, reactive, ref, watch } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { DiffHunk, FsMutation, FsOperation } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -33,19 +33,89 @@ export type FileViewerTab = {
   loadGeneration: number;
 };
 
+type SavedGutterRequest = {
+  repoPath: string;
+  repoId: string;
+  path: string;
+  content: string;
+  navigation: number;
+};
+type SavedGutterQueue = {
+  running: boolean;
+  latest: SavedGutterRequest | null;
+  pending: SavedGutterRequest | null;
+};
+
 export const useFileViewerStore = defineStore("fileViewer", () => {
   const tabs = ref<FileViewerTab[]>([]);
   const activeId = ref<string | null>(null);
   const fileMutationPending = ref(false);
   const workspace = useWorkspaceStore();
+  const gutterQueues = new WeakMap<FileViewerTab, SavedGutterQueue>();
+  let disposed = false;
+  function invalidateGutters(tab: FileViewerTab) {
+    const queue = gutterQueues.get(tab);
+    if (queue) queue.latest = queue.pending = null;
+  }
+  onScopeDispose(() => {
+    disposed = true;
+    tabs.value.forEach(invalidateGutters);
+  });
   watch(
     () => [workspace.repoPath, workspace.folderPath, workspace.appliedOpenToken?.()],
     () => {
+      tabs.value.forEach(invalidateGutters);
       tabs.value = [];
       activeId.value = null;
     },
     { flush: "sync" },
   );
+
+  async function refreshSavedGutters(tab: FileViewerTab, request: SavedGutterRequest) {
+    let queue = gutterQueues.get(tab);
+    if (!queue) {
+      queue = { running: false, latest: null, pending: null };
+      gutterQueues.set(tab, queue);
+    }
+    queue.latest = queue.pending = request;
+    if (queue.running) return;
+    queue.running = true;
+    try {
+      // At most one auxiliary read per tab, with only the latest save queued.
+      while (queue.pending) {
+        const snapshot = queue.pending;
+        queue.pending = null;
+        const current = () =>
+          !disposed &&
+          queue.latest === snapshot &&
+          tabs.value.includes(tab) &&
+          workspace.repoPath === snapshot.repoPath &&
+          workspace.navigationToken() === snapshot.navigation &&
+          tab.path === snapshot.path &&
+          !tab.folderPath &&
+          !tab.saving &&
+          tab.text === snapshot.content &&
+          tab.baseline === snapshot.content;
+        if (!current()) continue;
+        try {
+          const diff = await getBackend().diffFile({
+            repoId: snapshot.repoId,
+            path: snapshot.repoPath,
+            filePath: snapshot.path,
+            left: "head",
+            right: "worktree",
+          });
+          if (current()) tab.hunks = diff.rightText === snapshot.content ? diff.hunks : [];
+        } catch {
+          // Optional line marks cannot turn a successful disk write into failure.
+          if (current()) tab.hunks = [];
+        }
+      }
+    } finally {
+      queue.running = false;
+      queue.latest = null;
+    }
+  }
 
   async function open(
     filePath: string,
@@ -180,6 +250,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     const path = tab.path;
     const content = tab.text;
     const navigation = workspace.navigationToken();
+    invalidateGutters(tab);
     tab.saving = true;
     try {
       const backend = getBackend();
@@ -201,27 +272,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       }
       tab.baseline = content;
       tab.dirty = tab.text !== tab.baseline;
-      if (!tab.folderPath && content.length <= 5 * 1024 * 1024)
-        try {
-          const diff = await backend.diffFile({
-            repoId: repoId!,
-            path: repoPath!,
-            filePath: path,
-            left: "head",
-            right: "worktree",
-          });
-          if (
-            tabs.value.includes(tab) &&
-            workspace.repoPath === repoPath &&
-            workspace.navigationToken() === navigation &&
-            tab.text === content
-          ) {
-            // These line numbers describe the saved snapshot, not later draft edits.
-            tab.hunks = diff.hunks;
-          }
-        } catch {
-          // Disk write already succeeded; stale gutter is recoverable on reopen.
-        }
+      if (!tab.dirty) tab.hunks = [];
       if (
         workspace.isRepo &&
         workspace.repoPath === repoPath &&
@@ -229,7 +280,6 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       ) {
         void useChangesStore().refresh();
       }
-      return true;
     } catch (e) {
       toast({
         title: i18n.global.t("editor.saveFailed"),
@@ -239,6 +289,15 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     } finally {
       if (tabs.value.includes(tab)) tab.saving = false;
     }
+    if (!tab.folderPath && content.length <= 5 * 1024 * 1024)
+      void refreshSavedGutters(tab, {
+        repoPath: repoPath!,
+        repoId: repoId!,
+        path,
+        content,
+        navigation,
+      });
+    return true;
   }
 
   async function saveActive() {
@@ -284,6 +343,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
       if (relative === null) continue;
       const item = completed.find((item) => withinFilePath(folder, relative, item.path));
       if (!item?.destination) continue;
+      invalidateGutters(tab);
       const nextPath = item.destination + relative.slice(item.path.length);
       const owner = owningRepository(folder, nextPath, workspace.roots ?? []);
       const repoRelative =
@@ -302,6 +362,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
   function closeTab(id: string) {
     const idx = tabs.value.findIndex((t) => t.id === id);
     if (idx < 0) return;
+    invalidateGutters(tabs.value[idx]!);
     tabs.value.splice(idx, 1);
     if (activeId.value === id) {
       activeId.value = tabs.value[idx]?.id ?? tabs.value[idx - 1]?.id ?? null;

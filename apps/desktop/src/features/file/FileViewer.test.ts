@@ -538,6 +538,37 @@ it("retains edits made during a save and gutter refresh, and saves them on the n
   expect(store.tabs[0]!.dirty).toBe(false);
 });
 
+it("allows a second save and keeps selection and undo while Git line marks are pending", async () => {
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  const read = deferred();
+  mocks.diffFile.mockReturnValueOnce(read.promise);
+  cm.dispatch({ changes: { from: 0, insert: "first " }, userEvent: "input.paste" });
+  const first = store.saveActive();
+  await flushPromises();
+  expect(wrapper.text()).not.toContain("editor.saving");
+  cm.dispatch({
+    changes: { from: 0, insert: "second " },
+    selection: { anchor: 2, head: 4 },
+    userEvent: "input.paste",
+  });
+  mocks.diffFile.mockResolvedValueOnce(result("second first base\n"));
+  const second = store.saveActive();
+  await flushPromises();
+  expect(mocks.fileWriteWorktree.mock.calls[1]![0].content).toBe("second first base\n");
+  read.resolve(result("first base\n"));
+  expect(await Promise.all([first, second])).toEqual([true, true]);
+  await flushPromises();
+  expect(editor(wrapper)).toBe(cm);
+  expect(cm.state.selection.main.anchor).toBe(2);
+  expect(cm.state.selection.main.head).toBe(4);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]).toMatchObject({ text: "first base\n", dirty: true });
+});
+
 it("retains the editor, selection and undo history when saved highlights refresh", async () => {
   mocks.diffFile.mockResolvedValueOnce(result("base\n")).mockResolvedValueOnce({
     rightText: "saved\n",
