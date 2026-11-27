@@ -4,6 +4,8 @@
 
 ## 当前进度
 
+2026-11-27 登记并实现 QA-120（用户 fun yi 反馈 v0.1.52）：文件内查找仍丑——File 顶栏 Find/Replace 悬空、两行 All 易混、动作列未对齐、Diff/vs HEAD 场景条带杂乱。去掉顶栏标签；占位提示承担 Find/Replace；固定三槽动作列（Find All / Replace All）；chrome 色与更矮控件；中英 Pages/settings 同步。定向 editorSearch+FileViewer 28 项与 docs check 通过；原生 Win11/安装版待发版后验证。独立 PR → merge → bump `0.1.53`。原持续 QA 事项与整体目标继续。
+
 2026-11-27 QA-119 已合入 master（PR #35）并 bump `0.1.52`：查找条紧凑标签/软 focus/列对齐；Find in Files 分组与主次按钮；File 顶栏删除、菜单「删除…」、脏草稿二次确认与选择回退（仍走回收站）；Pages 已同步。准备 tag/Release Windows。原持续 QA 事项与整体目标继续。
 
 2026-11-27 登记并推进 QA-119（用户反馈 v0.1.51）：文件内查找条仍丑（厚 focus、长标签、行未对齐）、Find in Files 层次弱；File 删除可发现性不足（无工具栏、菜单文案偏回收站、脏草稿硬阻断）。正在美化查找 UI、补工具栏删除/草稿确认/路径回退，并同步 Pages；完成后开 PR → merge → bump 0.1.52。原持续 QA 事项与整体目标继续。

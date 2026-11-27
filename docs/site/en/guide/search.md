@@ -35,9 +35,9 @@ Replacement writes to disk without committing. Content hashes for every selected
 
 ## Find and replace in an editor
 
-Focus an editor and press `Ctrl+F`. Selected text seeds the query. The bar starts as a single find row; use the left chevron to expand replace (`Ctrl+H` expands and focuses replace). Find/replace fields, Next/Prev/All (or Replace) actions, and Aa / .* / W options share one aligned row; focus uses a thin ring instead of a thick black outline. Editor regex uses JavaScript syntax, which differs from the global engine. The bar is anchored to the current editor content area and does not cover Settings or other global dialogs.
+Focus an editor and press `Ctrl+F`. Selected text seeds the query. The bar starts as a single find row; use the left chevron to expand replace (`Ctrl+H` expands and focuses replace). Placeholders carry Find/Replace — the file chrome no longer duplicates those labels. Both rows share a fixed-width action column (Next / Prev / Find All vs Replace / Replace All) aligned with Aa / .* / W; focus uses a thin ring. Editor regex uses JavaScript syntax, which differs from the global engine. The bar sits in the editor content area, matches editor chrome, and does not cover Settings or other global dialogs.
 
-Editable files and conflict results also provide replacement text, compact **Replace** / **All** actions (`Ctrl+Alt+Enter` for replace-all) once replace is expanded. Changes remain in the buffer and support undo with `Ctrl+Z`. Save ordinary files with `Ctrl+S`; use the conflict editor's save workflow for merge results. Read-only diffs and conflict source panes support searching only. Escape closes the panel.
+Editable files and conflict results also provide replacement text with **Replace** / **Replace All** (`Ctrl+Alt+Enter` for replace-all) once replace is expanded. Changes remain in the buffer and support undo with `Ctrl+Z`. Save ordinary files with `Ctrl+S`; use the conflict editor's save workflow for merge results. Read-only diffs and conflict source panes support searching only. Escape closes the panel.
 
 The **Find in Files** dialog groups the query and options above the include/exclude and hidden/ignored scope. The footer keeps Cancel secondary and Search (or Replace in replace mode) as the primary action.
 
