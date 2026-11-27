@@ -88,7 +88,7 @@ impl GitRunner {
     }
 
     /// None means a genuinely unborn symbolic branch, never an unreadable HEAD.
-    async fn partial_commit_head(
+    pub(crate) async fn partial_commit_head(
         &self,
         cwd: &Path,
         cancel: &CancellationToken,

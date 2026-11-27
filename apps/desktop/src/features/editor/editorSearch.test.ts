@@ -115,6 +115,8 @@ it("keeps the find panel below dialog stacking by isolating the editor", () => {
   expect(getComputedStyle(panels).zIndex).toBe("1");
 });
 it("keeps compact IDEA row alignment and soft focus styling", () => {
+  document.documentElement.style.setProperty("--radius-sm", "4px");
+  document.documentElement.style.setProperty("--dbx-radius-sm", "4px");
   runEditorSearch("Editor.Replace", view);
   const panel = view.dom.querySelector(".cm-search") as HTMLElement;
   expect(panel.querySelector(".cm-search-actions")).toBeTruthy();
@@ -128,13 +130,19 @@ it("keeps compact IDEA row alignment and soft focus styling", () => {
   expect(next.getAttribute("aria-label")).toBe("Find Next");
   expect(select.textContent).toBe("Find All");
   expect(replaceAll.textContent).toBe("Replace All");
-  const findActions = panel.querySelector(".cm-search-row:not(.cm-search-replace) .cm-search-actions") as HTMLElement;
-  const replaceActions = panel.querySelector(".cm-search-replace .cm-search-actions") as HTMLElement;
+  expect(getComputedStyle(next).borderRadius).toBe("4px");
+  const findRow = panel.querySelector(".cm-search-row:not(.cm-search-replace)") as HTMLElement;
+  const replaceRow = panel.querySelector(".cm-search-replace") as HTMLElement;
+  const findInput = findRow.querySelector('input[name="search"]') as HTMLInputElement;
+  const replaceInput = replaceRow.querySelector('input[name="replace"]') as HTMLInputElement;
+  expect(findInput.getBoundingClientRect().left).toBe(replaceInput.getBoundingClientRect().left);
+  const findActions = findRow.querySelector(".cm-search-actions") as HTMLElement;
+  const replaceActions = replaceRow.querySelector(".cm-search-actions") as HTMLElement;
   expect(getComputedStyle(findActions).display).toBe("grid");
   expect(getComputedStyle(findActions).gridTemplateColumns.split(" ").length).toBe(3);
   expect(getComputedStyle(replaceActions).width).toBe(getComputedStyle(findActions).width);
-  const input = panel.querySelector('input[name="replace"]') as HTMLInputElement;
-  expect(getComputedStyle(input).outlineStyle === "none" || getComputedStyle(input).outlineWidth === "0px").toBe(
+  expect(findActions.getBoundingClientRect().left).toBe(replaceActions.getBoundingClientRect().left);
+  expect(getComputedStyle(replaceInput).outlineStyle === "none" || getComputedStyle(replaceInput).outlineWidth === "0px").toBe(
     true,
   );
   expect(getComputedStyle(view.dom.querySelector(".cm-panels") as HTMLElement).backgroundColor).not.toBe("");
