@@ -53,4 +53,6 @@ Open **Settings → Project Files** to show hidden files, show ignored files, or
 
 ## Text editing limits
 
+Text edits, in-file replacements, and saves preserve existing LF, CRLF, or CR separators at untouched positions, including mixed endings and a UTF-8 BOM. New lines use the first separator found in the file, or LF if the file has none. Undo restores deleted original separators, and the same rules apply when editing after a save.
+
 The File tree, search results, and Commit's **Open File** read the complete UTF-8 text from disk using the same rules, without the former 5 MiB cutoff. Binary, invalid UTF-8, and unreadable files show a read-only message and cannot be saved as text. Editing needs memory for the entire document; large files omit the optional HEAD gutter comparison. A failed HEAD comparison does not prevent opening valid disk text. Resolve conflicts before saving normally. Find in File searches drafts; global search reads disk. See [search and replace](./search).

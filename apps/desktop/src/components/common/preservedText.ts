@@ -63,20 +63,42 @@ const lineEndings = StateField.define<RangeSet<LineEnding>>({
   },
 });
 
+// Uniform files can serialize directly from CodeMirror's text tree without
+// allocating a fragment for every newline. Explicit mixed inserts disable it.
+const uniformEnding = StateField.define<string | null>({
+  create: () => null,
+  update(value, transaction) {
+    if (value === null) return null;
+    transaction.changes.iterChanges((_from, _to, _start, _end, inserted) => {
+      if (inserted.lines > 1 && transaction.state.facet(preferredEnding) !== value) value = null;
+    });
+    for (const effect of transaction.effects) {
+      if (!effect.is(restoreEndings)) continue;
+      for (const cursor = effect.value.iter(); cursor.value; cursor.next()) {
+        if (cursor.value.text !== value) return null;
+      }
+    }
+    return value;
+  },
+});
+
 export function parseSource(text: string) {
   const marks = new RangeSetBuilder<LineEnding>();
   let removed = 0;
   let preferred = "";
+  let uniform = true;
   for (const match of text.matchAll(/\r\n|\r|\n/g)) {
     const from = match.index! - removed;
     marks.add(from, from + 1, endings.get(match[0])!);
     removed += match[0].length - 1;
     preferred ||= match[0];
+    if (match[0] !== preferred) uniform = false;
   }
   return {
     doc: text.replace(/\r\n|\r/g, "\n"),
     endings: marks.finish(),
     preferred: preferred || "\n",
+    uniform,
   };
 }
 
@@ -84,6 +106,7 @@ export function sourceExtensions(source: ReturnType<typeof parseSource>) {
   return [
     preferredEnding.of(source.preferred),
     lineEndings.init(() => source.endings),
+    uniformEnding.init(() => (source.uniform ? source.preferred : null)),
     invertedEffects.of((transaction) => {
       const removed: Range<LineEnding>[] = [];
       const old = transaction.startState.field(lineEndings);
@@ -99,14 +122,18 @@ export function sourceExtensions(source: ReturnType<typeof parseSource>) {
 }
 
 export function sourceText(state: EditorState) {
-  const doc = state.doc.toString();
+  const separator = state.field(uniformEnding);
+  if (separator !== null) return state.doc.sliceString(0, state.doc.length, separator);
   const pieces: string[] = [];
   let offset = 0;
+  let ending: string | undefined;
   for (const cursor = state.field(lineEndings).iter(); cursor.value; cursor.next()) {
-    if (cursor.value.text === "\n") continue;
-    pieces.push(doc.slice(offset, cursor.from), cursor.value.text);
-    offset = cursor.to;
+    if (ending !== undefined && cursor.value.text !== ending) {
+      pieces.push(state.doc.sliceString(offset, cursor.from, ending));
+      offset = cursor.from;
+    }
+    ending = cursor.value.text;
   }
-  pieces.push(doc.slice(offset));
+  pieces.push(state.doc.sliceString(offset, state.doc.length, ending));
   return pieces.join("");
 }

@@ -5,6 +5,7 @@ import { nextTick, reactive } from "vue";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { redo, undo } from "@codemirror/commands";
+import { SearchQuery, replaceAll, setSearchQuery } from "@codemirror/search";
 import FileViewer from "./FileViewer.vue";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 
@@ -273,6 +274,162 @@ it("compares undo against the latest successful save instead of the initial base
   expect(undo(cm)).toBe(true);
   expect(store.tabs[0]!.dirty).toBe(true);
   expect(store.tabs[0]!.baseline).toBe(saved);
+});
+
+it.each([
+  ["CRLF", "first\r\nsecond\r\n"],
+  ["BOM and mixed endings", "\ufefffirst\r\nsecond\nthird\rfourth"],
+  ["CR", "first\rsecond\r"],
+  ["LF", "first\nsecond\n"],
+])("preserves untouched %s bytes when editing and saving one word", async (_label, baseline) => {
+  mocks.fsReadFile.mockResolvedValueOnce(baseline);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  const from = cm.state.doc.toString().indexOf("second");
+  cm.dispatch({ changes: { from, to: from + 6, insert: "changed" } });
+  const expected = baseline.replace("second", "changed");
+  expect(store.tabs[0]!.text).toBe(expected);
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fileWriteWorktree.mock.calls[0]![0].content).toBe(expected);
+  expect(store.tabs[0]!.dirty).toBe(false);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(baseline);
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(redo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(expected);
+  expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it("uses the existing newline style for inserted lines in a non-Git file", async () => {
+  const baseline = "\ufeffone\r\ntwo\nthree\rfour";
+  mocks.workspace.isRepo = false;
+  mocks.fsReadFile.mockResolvedValueOnce(baseline);
+  const store = useFileViewerStore();
+  await store.open("note.txt", { folderPath: "C:/plain" });
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 4, insert: "\nnew" } });
+  const expected = "\ufeffone\r\nnew\r\ntwo\nthree\rfour";
+  expect(store.tabs[0]!.text).toBe(expected);
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fsWriteFile.mock.calls[0]![0].content).toBe(expected);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(baseline);
+  expect(redo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(expected);
+});
+
+it("restores mixed endings across a multi-line deletion after saving and remounting", async () => {
+  const baseline = "one\r\ntwo\nthree\rfour";
+  mocks.fsReadFile.mockResolvedValueOnce(baseline);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 2, to: 10, insert: "X\nY" } });
+  const expected = "onX\r\nYree\rfour";
+  expect(store.tabs[0]!.text).toBe(expected);
+  expect(await store.saveActive()).toBe(true);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(baseline);
+  expect(redo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(expected);
+  wrapper.unmount();
+  const remounted = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const reopened = editor(remounted);
+  reopened.dispatch({ changes: { from: 0, insert: "edited " } });
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fileWriteWorktree.mock.calls[1]![0].content).toBe("edited " + expected);
+});
+
+it("keeps each original separator through Replace All, save and undo", async () => {
+  const baseline = "\ufeffmatch\r\nmatch\nmatch\rlast";
+  mocks.fsReadFile.mockResolvedValueOnce(baseline);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({
+    effects: setSearchQuery.of(new SearchQuery({ search: "match", replace: "done" })),
+  });
+  expect(replaceAll(cm)).toBe(true);
+  const expected = "\ufeffdone\r\ndone\ndone\rlast";
+  expect(store.tabs[0]!.text).toBe(expected);
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fileWriteWorktree.mock.calls[0]![0].content).toBe(expected);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(baseline);
+  expect(redo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe(expected);
+  expect(store.tabs[0]!.dirty).toBe(false);
+});
+
+it.each(["middle", "end"])(
+  "preserves line endings and caret position when pasting CRLF text at the %s",
+  async (position) => {
+    const baseline = "\ufeffone\r\nlast tail";
+    mocks.fsReadFile.mockResolvedValueOnce(baseline);
+    const clipboard = deferred();
+    vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(clipboard.promise);
+    const store = useFileViewerStore();
+    await store.open("a.txt");
+    const wrapper = mount(FileViewer, {
+      props: { tabId: store.activeId! },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    const cm = editor(wrapper);
+    const from = position === "middle" ? 1 : cm.state.doc.length;
+    cm.dispatch({ selection: { anchor: from } });
+    await clickEditorMenu(wrapper, "paste");
+    // Avoid happy-dom's synchronous selectionchange during a focused CM update.
+    cm.contentDOM.blur();
+    clipboard.resolve("A\r\nB");
+    await flushPromises();
+    const expected = position === "middle" ? "\ufeffA\r\nBone\r\nlast tail" : baseline + "A\r\nB";
+    expect(store.tabs[0]!.text).toBe(expected);
+    expect(cm.state.selection.main.head).toBe(from + 3);
+    expect(await store.saveActive()).toBe(true);
+    expect(mocks.fileWriteWorktree.mock.calls[0]![0].content).toBe(expected);
+    expect(undo(cm)).toBe(true);
+    expect(store.tabs[0]!.text).toBe(baseline);
+  },
+);
+
+it("keeps newline metadata with edits made during a pending save", async () => {
+  const baseline = "one\r\ntwo\nthree\r";
+  mocks.fsReadFile.mockResolvedValueOnce(baseline);
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, { props: { tabId: store.activeId! } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 0, insert: "saved " }, userEvent: "input.paste" });
+  const write = deferred();
+  mocks.fileWriteWorktree.mockReturnValueOnce(write.promise);
+  const saving = store.saveActive();
+  cm.dispatch({
+    changes: { from: cm.state.doc.length, insert: "later\n" },
+    userEvent: "input.paste",
+  });
+  write.resolve(null);
+  expect(await saving).toBe(true);
+  expect(store.tabs[0]!.baseline).toBe("saved " + baseline);
+  expect(store.tabs[0]!.text).toBe("saved " + baseline + "later\r\n");
+  expect(store.tabs[0]!.dirty).toBe(true);
+  expect(undo(cm)).toBe(true);
+  expect(store.tabs[0]!.text).toBe("saved " + baseline);
+  expect(store.tabs[0]!.dirty).toBe(false);
+  expect(redo(cm)).toBe(true);
+  expect(await store.saveActive()).toBe(true);
+  expect(mocks.fileWriteWorktree.mock.calls[1]![0].content).toBe("saved " + baseline + "later\r\n");
 });
 
 it("writes through Ctrl/Cmd+S path, clears dirty, and refreshes Changes", async () => {

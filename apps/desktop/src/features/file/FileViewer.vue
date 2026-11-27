@@ -17,6 +17,7 @@ import { fileChangeHighlights } from "./fileChangeHighlights";
 import { editorChrome } from "@/features/editor/editorChrome";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
+import { parseSource, sourceExtensions, sourceText } from "@/components/common/preservedText";
 import { useI18n } from "vue-i18n";
 
 const props = defineProps<{ tabId: string }>();
@@ -168,9 +169,10 @@ async function pasteClipboard(target: EditorView) {
   }
   if (!canApplyClipboard(target, current, state)) return;
   const { from, to } = state.selection.main;
+  const insert = state.toText(text);
   target.dispatch({
-    changes: { from, to, insert: text },
-    selection: { anchor: from + text.length },
+    changes: { from, to, insert },
+    selection: { anchor: from + insert.length },
     userEvent: "input.paste",
   });
 }
@@ -195,15 +197,14 @@ function mount() {
   release();
   if (!host.value || !tab.value || tab.value.loading) return;
   const current = tab.value;
-  const text = current.text;
+  const source = parseSource(current.text);
   const hunks = current.hunks;
-  let baselineText = current.baseline;
-  let baselineDocument = baselineText.replace(/\r\n?/g, "\n");
   view = new EditorView({
     parent: host.value,
     state: EditorState.create({
-      doc: text,
+      doc: source.doc,
       extensions: [
+        sourceExtensions(source),
         lineNumbers(),
         history(),
         keymap.of([
@@ -227,14 +228,7 @@ function mount() {
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           if (tab.value !== current || !store.tabs.includes(current)) return;
-          if (baselineText !== current.baseline) {
-            baselineText = current.baseline;
-            baselineDocument = baselineText.replace(/\r\n?/g, "\n");
-          }
-          const document = update.state.doc.toString();
-          // CodeMirror normalizes line endings. Returning to the saved text
-          // must restore its exact bytes, including mixed CRLF/LF/CR endings.
-          store.setDocument(current.id, document === baselineDocument ? baselineText : document);
+          store.setDocument(current.id, sourceText(update.state));
         }),
         EditorView.domEventHandlers({
           contextmenu: (event, editorView) => {
