@@ -4,6 +4,8 @@
 
 ## 当前进度
 
+2026-11-27 QA-118 已合入 master（PR #34）并准备打 `v0.1.51`：IDEA 风格文件内查找/替换、`.cm-panels` 层级修复、全局搜索 `Ctrl+Shift+R`、File 定位图标；Pages（search/files/settings/troubleshooting 中英）已补齐。CI 绿后 merge；bump/tag/Release 随后。原持续 QA 事项与整体目标继续。
+
 2026-11-27 登记并实现 QA-118（用户 fun yi 优先 UX）：文件内查找/替换改为 IDEA 风格单行+箭头展开替换，修正 `.cm-panels` sticky z-300 盖住 Settings 的层级；全局内容搜索默认快捷键改为 `Ctrl+Shift+R`（原 `Ctrl+Shift+F`）并同步 Keymap/中英教程；File 工具窗顶栏增加定位当前编辑器/Diff 文件图标。定向前端测试与 typecheck、docs check 通过；原生 Win11 界面与安装版未在本轮验证。独立 PR 交付，不 merge/bump/release。原持续 QA 事项与整体目标继续。
 
 2026-11-26宿主热点栈证据已交付：`cbf790246ae7e9c1cd44431c5596d0b9bac999ff`首次推送成功并重建交付分支，ls-remote完整SHA一致；补记前fetch及master/交付检查成功，无新提交。文档检查通过（中英各22页、79动作）；本轮新增缺陷/产品修复0，取得有CPU增量的调用栈并保留客户端/断档归因缺口。8个测试身份退出、2000文件及个人settings保持、安装版未更新。原11项及整体目标继续；下一轮避免重复相同短采样，继续可执行的逻辑/资源和未验UI组合，全程主线程。
