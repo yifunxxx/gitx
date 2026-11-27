@@ -132,7 +132,7 @@ it.each([
   expect(retained.deletedOnDisk).not.toBe(true);
   expect(m.toast).toHaveBeenCalledWith(
     expect.objectContaining({
-      description: `${paths[1]}: locked`,
+      description: expect.stringContaining(`${paths[1]}: locked`),
     }),
   );
 });

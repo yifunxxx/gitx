@@ -32,9 +32,19 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
   const viewer = useFileViewerStore();
   const jobs = useJobsStore();
   const t = i18n.global.t;
-  const activity = shallowRef<{ operation: FsOperation; current: () => boolean } | null>(null);
+  const activity = shallowRef<{
+    operation: FsOperation;
+    current: () => boolean;
+    phase?: "refreshing" | "opening";
+  } | null>(null);
   const activityTitle = computed(() =>
-    activity.value?.current() ? t(`fileOps.running.${activity.value.operation}`) : "",
+    activity.value?.current()
+      ? t(
+          activity.value.phase
+            ? `fileOps.${activity.value.phase}`
+            : `fileOps.running.${activity.value.operation}`,
+        )
+      : "",
   );
   let disposed = false;
   onScopeDispose(() => {
@@ -58,6 +68,7 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
       workspace.appliedOpenToken() === applied;
     busy.value = true;
     let job: string | undefined;
+    let diskResultReceived = false;
     try {
       paths = topLevelPaths(paths);
       const create = operation === "createFile" || operation === "createDirectory";
@@ -205,29 +216,49 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
       let result;
       try {
         result = await getBackend().fsMutate({ folderPath: folder, operation, items });
-        if (!current()) return;
+        diskResultReceived = true;
+        // Navigation does not cancel dispatched disk work. Report its source
+        // and outcome before any optional view refresh can delay or hide it.
+        if (!disposed)
+          toast({
+            title: t(result.failures.length ? "fileOps.failed" : "fileOps.completed"),
+            description: [
+              t(`fileOps.${operation}`),
+              folder,
+              t("fileOps.resultSummary", {
+                completed: result.completed.length,
+                failed: result.failures.length,
+              }),
+              ...result.failures.map((failure) => `${failure.path}: ${failure.message}`),
+            ].join("\n"),
+            persistent: result.failures.length > 0,
+          });
         // Remap before releasing the save lock, including synchronous watchers.
-        viewer.applyFileMutation(folder, operation, result.completed, confirmedDeletes);
+        if (current())
+          viewer.applyFileMutation(folder, operation, result.completed, confirmedDeletes);
       } finally {
         viewer.fileMutationPending = false;
         for (const tab of affected) tab.fileOperationPending = false;
       }
       // A refresh failure must not turn a successful disk operation into a retry.
+      if (!current()) return;
+      activity.value = { operation, current, phase: "refreshing" };
+      jobs.progress(job, { title: t("fileOps.refreshing") });
       await tree.refreshExpanded();
       if (!current()) return;
       if (workspace.isRepo) void useChangesStore().refresh(true);
-      if (result.failures.length)
-        toast({
-          title: t("fileOps.failed"),
-          description: result.failures
-            .map((failure) => `${failure.path}: ${failure.message}`)
-            .join("\n"),
-        });
-      else toast({ title: t("fileOps.completed") });
-      if (create && operation === "createFile" && result.completed[0])
+      if (create && operation === "createFile" && result.completed[0]) {
+        activity.value = { operation, current, phase: "opening" };
+        jobs.progress(job, { title: t("fileOps.opening") });
         await viewer.open(result.completed[0].path, { folderPath: folder });
+      }
     } catch (error) {
-      if (current()) toast({ title: t("fileOps.failed"), description: formatErrorMessage(error) });
+      if (!disposed && (job !== undefined || current()))
+        toast({
+          title: t(diskResultReceived ? "fileOps.followUpFailed" : "fileOps.failed"),
+          description: `${t(`fileOps.${operation}`)}\n${folder}\n${formatErrorMessage(error)}`,
+          persistent: true,
+        });
     } finally {
       if (job !== undefined) jobs.finished(job);
       activity.value = null;

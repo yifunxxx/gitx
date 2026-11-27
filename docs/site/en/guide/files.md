@@ -28,7 +28,9 @@ Existing destinations are not silently overwritten. A batch can partly succeed; 
 
 Files that fail to recycle keep their editor drafts and unsaved markers, so you can save or retry deleting them. A tab closes only after its file is recycled successfully and its draft still matches the confirmed content. Edits made during confirmation or recycling remain open with a notice that the file was deleted on disk.
 
-Once confirmed work starts, File shows the current operation and the bottom-left task queue shows its name and workspace path until the tree refresh finishes. Waiting for confirmation does not start a running task. Saving a file in an ordinary non-Git folder also appears in the queue.
+Once confirmed work starts, File and the bottom-left task queue show its name and workspace path, then follow the refresh and opening stages until the work finishes. Waiting for confirmation does not start a running task. Saving a file in an ordinary non-Git folder also appears in the queue.
+
+Disk results are reported immediately with the source folder, operation and completed/failed counts, without waiting for the directory refresh. Counts refer to selected file or folder entries, not every file inside a folder. Failure notices remain until dismissed. Switching projects does not cancel an operation already dispatched; its result still identifies the source folder and does not update the new project's tree or editors. If a later view update fails, refresh the view instead of repeating the file operation.
 
 A directory cannot move into itself or a descendant. Repository roots, conflicted files, destinations outside the workspace, and some link or cross-volume operations have restrictions. Read the failing path and reason before retrying a partly completed operation.
 
