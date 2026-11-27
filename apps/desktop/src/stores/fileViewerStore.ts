@@ -259,14 +259,20 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     return key === parentKey || key.startsWith(`${parentKey}/`);
   }
 
-  function applyFileMutation(folder: string, operation: FsOperation, completed: FsMutation[]) {
+  function applyFileMutation(
+    folder: string,
+    operation: FsOperation,
+    completed: FsMutation[],
+    confirmedDeletes?: ReadonlyMap<FileViewerTab, string>,
+  ) {
     if (operation === "delete") {
       for (const tab of affectedByFiles(
         folder,
         completed.map((item) => item.path),
       )) {
-        // Edits entered while the OS was recycling must never be discarded.
-        if (tab.dirty) tab.deletedOnDisk = true;
+        // Only successful deletions can consume confirmed drafts. Edits made
+        // during confirmation/recycling and replacement tab instances survive.
+        if (tab.dirty && confirmedDeletes?.get(tab) !== tab.text) tab.deletedOnDisk = true;
         else closeTab(tab.id);
       }
       return;

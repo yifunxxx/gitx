@@ -3,7 +3,7 @@ import { computed, onScopeDispose, ref, shallowRef } from "vue";
 import { getBackend, type FsMutation, type FsOperation } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useFileTreeStore } from "./fileTreeStore";
-import { useFileViewerStore } from "./fileViewerStore";
+import { useFileViewerStore, type FileViewerTab } from "./fileViewerStore";
 import { useChangesStore } from "./changesStore";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { toast } from "@/composables/useToast";
@@ -138,11 +138,17 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
         }
       }
       let affected = viewer.affectedByFiles(folder, paths);
+      let confirmedDeletes: Map<FileViewerTab, string> | undefined;
       if (affected.some((tab) => tab.loading || tab.saving)) {
         toast({ title: t("fileOps.editorBusy") });
         return;
       }
       if (operation === "delete" && affected.some((tab) => tab.dirty)) {
+        // Authorize only these tab instances and the text shown before the
+        // confirmation. Failed recycling must leave every draft dirty.
+        confirmedDeletes = new Map(
+          affected.filter((tab) => tab.dirty).map((tab) => [tab, tab.text]),
+        );
         if (
           !(await confirmDialog({
             title: t("fileOps.delete"),
@@ -152,10 +158,6 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
           !current()
         )
           return;
-        // Confirmed discard: clear dirty so applyFileMutation closes tabs.
-        for (const tab of affected) {
-          if (tab.dirty) tab.dirty = false;
-        }
       }
       if (operation === "copy" && affected.some((tab) => tab.dirty)) {
         if (
@@ -196,7 +198,7 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
         result = await getBackend().fsMutate({ folderPath: folder, operation, items });
         if (!current()) return;
         // Remap before releasing the save lock, including synchronous watchers.
-        viewer.applyFileMutation(folder, operation, result.completed);
+        viewer.applyFileMutation(folder, operation, result.completed, confirmedDeletes);
       } finally {
         viewer.fileMutationPending = false;
         for (const tab of affected) tab.fileOperationPending = false;
