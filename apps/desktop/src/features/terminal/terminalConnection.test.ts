@@ -59,14 +59,14 @@ it("waits for terminal parsing before reading more and preserves raw UTF-8 chunk
   expect(f.api.terminalClose).toHaveBeenCalledExactlyOnceWith("pty");
 });
 
-it("closes a late opening session after its tab has been removed", async () => {
+it("closes a late opening session after a close request", async () => {
   const f = fixture();
   const opening = deferred<typeof info>();
   f.api.terminalOpen.mockReturnValueOnce(opening.promise);
   const running = f.connection.start(req);
-  await f.connection.close();
+  const closing = f.connection.close();
   opening.resolve(info);
-  await running;
+  await Promise.all([running, closing]);
   expect(f.api.terminalClose).toHaveBeenCalledExactlyOnceWith("pty");
   expect(f.sink.opened).not.toHaveBeenCalled();
   expect(f.api.terminalRead).not.toHaveBeenCalled();
@@ -298,6 +298,91 @@ it("releases the PTY after a read failure", async () => {
   await f.connection.start(req);
   expect(f.sink.error).toHaveBeenCalledOnce();
   expect(f.api.terminalClose).toHaveBeenCalledExactlyOnceWith("pty");
+});
+
+it("retains the terminal id after failed close so an explicit retry can release it", async () => {
+  const f = fixture();
+  const running = f.connection.start(req);
+  await flushPromises();
+  const error = new Error("close IPC failed");
+  f.api.terminalClose.mockRejectedValueOnce(error);
+  const first = await f.connection.close();
+  f.connection.write("must not send");
+  const retry = await f.connection.close();
+  f.read.resolve({ data: [], exited: true, exitCode: 0, error: null });
+  await running;
+  expect(first).toBe(false);
+  expect(retry).toBe(true);
+  expect(f.api.terminalClose.mock.calls).toEqual([["pty"], ["pty"]]);
+  expect(f.api.terminalWrite).not.toHaveBeenCalled();
+  expect(f.sink.error).toHaveBeenCalledExactlyOnceWith(error, "close");
+});
+
+it("waits for a pending open and shares its close result with the caller", async () => {
+  const f = fixture();
+  const opening = deferred<typeof info>();
+  const releasing = deferred<null>();
+  f.api.terminalOpen.mockReturnValueOnce(opening.promise);
+  f.api.terminalClose.mockReturnValueOnce(releasing.promise);
+  const running = f.connection.start(req);
+  const settled = vi.fn();
+  const closing = f.connection.close().then(settled);
+  await flushPromises();
+  const beforeOpen = settled.mock.calls.length;
+  opening.resolve(info);
+  await flushPromises();
+  const beforeRelease = settled.mock.calls.length;
+  releasing.resolve(null);
+  await Promise.all([running, closing]);
+  expect(beforeOpen).toBe(0);
+  expect(beforeRelease).toBe(0);
+  expect(settled).toHaveBeenCalledExactlyOnceWith(true);
+  expect(f.api.terminalClose).toHaveBeenCalledExactlyOnceWith("pty");
+  expect(f.sink.opened).not.toHaveBeenCalled();
+});
+
+it("allows retry after automatic exit cleanup fails", async () => {
+  const f = fixture();
+  f.api.terminalClose.mockRejectedValueOnce(new Error("close IPC failed"));
+  f.api.terminalRead.mockResolvedValueOnce({ data: [], exited: true, exitCode: 7, error: null });
+  await f.connection.start(req);
+  const result = await f.connection.close();
+  expect(result).toBe(true);
+  expect(f.api.terminalClose.mock.calls).toEqual([["pty"], ["pty"]]);
+  expect(f.sink.exited).toHaveBeenCalledExactlyOnceWith(7);
+});
+
+it("settles close successfully when the pending open fails", async () => {
+  const f = fixture();
+  const opening = deferred<typeof info>();
+  f.api.terminalOpen.mockReturnValueOnce(opening.promise);
+  const running = f.connection.start(req);
+  const closing = f.connection.close();
+  opening.reject(new Error("opening failed"));
+  expect(await closing).toBe(true);
+  await running;
+  expect(f.api.terminalClose).not.toHaveBeenCalled();
+  expect(f.sink.opened).not.toHaveBeenCalled();
+  expect(f.sink.error).not.toHaveBeenCalled();
+});
+
+it("shares a failed close without automatic retries and allows a later explicit retry", async () => {
+  const f = fixture();
+  const running = f.connection.start(req);
+  await flushPromises();
+  const releasing = deferred<null>();
+  f.api.terminalClose.mockReturnValueOnce(releasing.promise);
+  const first = f.connection.close();
+  const duplicate = f.connection.close();
+  releasing.reject(new Error("not confirmed"));
+  expect(await Promise.all([first, duplicate])).toEqual([false, false]);
+  await flushPromises();
+  expect(f.api.terminalClose).toHaveBeenCalledOnce();
+  expect(await f.connection.close()).toBe(true);
+  f.read.resolve({ data: [], exited: true, exitCode: null, error: null });
+  await running;
+  expect(f.api.terminalClose).toHaveBeenCalledTimes(2);
+  expect(f.sink.error).toHaveBeenCalledOnce();
 });
 
 it("applies the latest queued size after an older resize fails", async () => {

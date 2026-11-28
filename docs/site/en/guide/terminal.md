@@ -23,6 +23,8 @@ Press `Shift+F10` or the menu key in terminal input to open the context menu. Wh
 
 If sending input fails partway through, GitX disables that session's input, discards queued text, and requests session closure so a queued Enter cannot execute incomplete input. Output and the error remain available. Check the original operation's actual outcome, then open a new terminal to continue. Input is never retried automatically.
 
+After clicking Close, the tab shows “closing…” and retains its output with input disabled until closure is confirmed. If it shows “close failed”, click Close again to retry that session. Switching to another terminal preserves the original session's error and retry control.
+
 The web demonstration backend does not provide an interactive terminal. Use the desktop app.
 
 ## Console

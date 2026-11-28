@@ -77,7 +77,8 @@ type Session = {
   key: number;
   cwd: string;
   label: string;
-  status: "starting" | "running" | "exited" | "failed";
+  status: "starting" | "running" | "exited" | "failed" | "closing" | "close-failed";
+  closeError: string;
   code: number | null;
   terminal: Terminal;
   fit: FitAddon;
@@ -91,6 +92,7 @@ let observer: ResizeObserver | undefined;
 let themeObserver: MutationObserver | undefined;
 let frame = 0;
 const active = computed(() => sessions.find((session) => session.key === activeId.value));
+const displayedError = computed(() => active.value?.closeError || error.value);
 function update(session: Session, fields: Partial<Session>) {
   Object.assign(session, fields);
 }
@@ -157,6 +159,7 @@ async function create(cwd = directory.value, current: () => boolean = () => true
     cwd,
     label: windows ? (profile.value === "cmd" ? "cmd" : "PowerShell") : "Shell",
     status: "starting",
+    closeError: "",
     code: null,
     terminal,
     fit,
@@ -172,10 +175,20 @@ async function create(cwd = directory.value, current: () => boolean = () => true
     },
     exited: (code) => {
       if (active.value === session) invalidatePaste();
-      update(session, { status: "exited", code });
+      update(session, { code });
+      if (session.status !== "closing" && session.status !== "close-failed")
+        update(session, { status: "exited" });
       terminal.options.disableStdin = true;
     },
     error: (reason, source) => {
+      if (disposed) return;
+      if (source === "close") {
+        update(session, {
+          status: session.status === "closing" ? "closing" : "close-failed",
+          closeError: t("terminal.closeFailedDetail", { error: formatErrorMessage(reason) }),
+        });
+        return;
+      }
       showError(
         source === "input"
           ? t("terminal.inputFailed", { error: formatErrorMessage(reason) })
@@ -244,16 +257,30 @@ async function create(cwd = directory.value, current: () => boolean = () => true
   }
 }
 async function close(session: Session) {
+  if (!sessions.includes(session) || session.status === "closing") return;
+  update(session, { status: "closing", closeError: "" });
+  session.terminal.options.disableStdin = true;
+  if (active.value === session) {
+    invalidatePaste();
+    menu.value = null;
+  }
+  const closed = await session.connection.close();
+  if (disposed) return;
+  if (!closed) {
+    update(session, { status: "close-failed" });
+    return;
+  }
+  await removeSession(session);
+}
+async function removeSession(session: Session) {
   const index = sessions.indexOf(session);
   if (index < 0) return;
   sessions.splice(index, 1);
   session.cancel.forEach((cancel) => cancel());
-  const closing = session.connection.close();
   session.terminal.dispose();
   session.element.remove();
-  if (activeId.value === session.key)
+  if (!disposed && activeId.value === session.key)
     await activate(sessions[Math.min(index, sessions.length - 1)]?.key ?? 0);
-  await closing;
 }
 async function copy(session = active.value) {
   if (!session?.terminal.hasSelection()) return;
@@ -394,7 +421,10 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   themeObserver?.disconnect();
   if (frame) cancelAnimationFrame(frame);
-  for (const session of sessions.slice()) void close(session);
+  for (const session of sessions.slice()) {
+    void session.connection.close();
+    void removeSession(session);
+  }
 });
 </script>
 
@@ -430,6 +460,10 @@ onBeforeUnmount(() => {
           >
           <span v-else-if="session.status === 'starting'">…</span>
           <span v-else-if="session.status === 'failed'">({{ t("terminal.failed") }})</span>
+          <span v-else-if="session.status === 'closing'">({{ t("terminal.closing") }})</span>
+          <span v-else-if="session.status === 'close-failed'"
+            >({{ t("terminal.closeFailed") }})</span
+          >
         </button>
       </div>
       <select
@@ -487,19 +521,24 @@ onBeforeUnmount(() => {
         type="button"
         :title="t('terminal.close')"
         :aria-label="t('terminal.close')"
+        :aria-busy="active?.status === 'closing'"
         class="rounded p-1 hover:bg-accent disabled:opacity-40"
-        :disabled="!active"
+        :disabled="!active || active.status === 'closing'"
         @click="active && close(active)"
       >
-        <Trash2 class="size-3.5" />
+        <LoaderCircle
+          v-if="active?.status === 'closing'"
+          class="size-3.5 animate-spin motion-reduce:animate-none"
+        />
+        <Trash2 v-else class="size-3.5" />
       </button>
     </div>
     <p
-      v-if="error"
+      v-if="displayedError"
       role="alert"
       class="max-h-16 overflow-auto break-words px-2 py-1 text-destructive"
     >
-      {{ error }}
+      {{ displayedError }}
     </p>
     <p
       v-if="active"

@@ -9,7 +9,7 @@ export type TerminalSink = {
   output: (bytes: Uint8Array, done: () => void) => void;
   opened: (info: TerminalInfo) => void;
   exited: (code: number | null) => void;
-  error: (error: unknown, source?: "input") => void;
+  error: (error: unknown, source?: "input" | "close") => void;
 };
 
 /** One outstanding read per PTY; only request more once xterm has parsed it. */
@@ -22,7 +22,8 @@ export class TerminalConnection {
   private resizeRunning = false;
   private dimensions: { cols: number; rows: number } | null = null;
   private releaseOutput: (() => void) | null = null;
-  private releasing: Promise<void> | null = null;
+  private releasing: Promise<boolean> | null = null;
+  private opening: Promise<TerminalInfo> | null = null;
 
   constructor(
     private sink: TerminalSink,
@@ -30,9 +31,12 @@ export class TerminalConnection {
   ) {}
 
   async start(req: TerminalOpenReq) {
+    if (this.closed || this.ended || this.opening || this.id) return;
     try {
-      const info = await this.api.terminalOpen(req);
+      this.opening = this.api.terminalOpen(req);
+      const info = await this.opening;
       this.id = info.id;
+      this.opening = null;
       if (this.closed) {
         await this.release();
         return;
@@ -41,6 +45,7 @@ export class TerminalConnection {
       void this.flushResize();
       await this.pump();
     } catch (error) {
+      this.opening = null;
       await this.fail(error);
     }
   }
@@ -139,16 +144,23 @@ export class TerminalConnection {
   private async release() {
     if (this.releasing) return this.releasing;
     const id = this.id;
-    this.id = null;
-    if (id) {
-      this.releasing = (async () => {
-        try {
-          await this.api.terminalClose(id);
-        } catch (error) {
-          this.sink.error(error);
-        }
-      })();
-      await this.releasing;
+    if (!id) return true;
+    this.releasing = (async () => {
+      try {
+        await this.api.terminalClose(id);
+        this.id = null;
+        return true;
+      } catch (error) {
+        // Keep the identity for an explicit retry. A lost response does not
+        // prove that the backend released the shell; close is idempotent.
+        this.sink.error(error, "close");
+        return false;
+      }
+    })();
+    try {
+      return await this.releasing;
+    } finally {
+      this.releasing = null;
     }
   }
 
@@ -157,6 +169,13 @@ export class TerminalConnection {
     this.dimensions = null;
     this.releaseOutput?.();
     this.releaseOutput = null;
-    await this.release();
+    if (this.opening) {
+      try {
+        await this.opening;
+      } catch {
+        // A failed open has no PTY identity to release.
+      }
+    }
+    return this.release();
   }
 }

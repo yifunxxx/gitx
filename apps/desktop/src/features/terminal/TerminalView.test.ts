@@ -59,7 +59,7 @@ vi.mock("./terminalConnection", () => ({
     start = vi.fn();
     write = vi.fn();
     resize = vi.fn();
-    close = vi.fn(async () => {});
+    close = vi.fn(async () => true);
     constructor(sink: any) {
       this.sink = sink;
       mocks.connections.push(this);
@@ -231,6 +231,109 @@ async function runningTerminal() {
   await flushPromises();
   return wrapper;
 }
+
+it("keeps a terminal visible and input disabled until close is confirmed", async () => {
+  const wrapper = await runningTerminal();
+  let finish!: (value: boolean) => void;
+  mocks.connections[0].close.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  const tabStillPresent = wrapper.findAll('[role="tab"]').length;
+  const disposedBeforeClose = mocks.terminals[0].dispose.mock.calls.length;
+  const inputDisabled = mocks.terminals[0].options.disableStdin;
+  const closeDisabled = wrapper.get('[aria-label="terminal.close"]').attributes("disabled");
+  finish(true);
+  await flushPromises();
+  expect(tabStillPresent).toBe(1);
+  expect(disposedBeforeClose).toBe(0);
+  expect(inputDisabled).toBe(true);
+  expect(closeDisabled).toBeDefined();
+  expect(wrapper.findAll('[role="tab"]')).toHaveLength(0);
+  expect(mocks.terminals[0].dispose).toHaveBeenCalledOnce();
+});
+
+it("keeps a failed close attached to its original session and lets the user retry", async () => {
+  const wrapper = await runningTerminal();
+  mocks.connections[0].close.mockImplementationOnce(async () => {
+    mocks.connections[0].sink.error(new Error("cannot close first"), "close");
+    return false;
+  });
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.findAll('[role="tab"]')).toHaveLength(1);
+  expect(wrapper.get('[role="tab"]').text()).toContain("terminal.closeFailed");
+  expect(mocks.terminals[0].dispose).not.toHaveBeenCalled();
+  expect(wrapper.get('[aria-label="terminal.close"]').attributes("disabled")).toBeUndefined();
+  await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  await wrapper.findAll('[role="tab"]')[0]!.trigger("click");
+  expect(wrapper.get('[role="alert"]').text()).toBe("terminal.closeFailedDetail");
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  await flushPromises();
+  expect(mocks.connections[0].close).toHaveBeenCalledTimes(2);
+  expect(wrapper.findAll('[role="tab"]')).toHaveLength(1);
+  expect(mocks.terminals[0].dispose).toHaveBeenCalledOnce();
+});
+
+it("does not select another tab when a background terminal finishes closing", async () => {
+  const wrapper = await runningTerminal();
+  let finish!: (value: boolean) => void;
+  mocks.connections[0].close.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+  await flushPromises();
+  mocks.terminals[1].focus.mockClear();
+  finish(true);
+  await flushPromises();
+  expect(wrapper.findAll('[role="tab"]')).toHaveLength(1);
+  expect(wrapper.get('[role="tab"]').text()).toContain("2:");
+  expect(mocks.terminals[1].focus).not.toHaveBeenCalled();
+});
+
+it("releases the renderer on unmount even if a close is still waiting", async () => {
+  const wrapper = await runningTerminal();
+  let finish!: (value: boolean) => void;
+  const closing = new Promise<boolean>((resolve) => {
+    finish = resolve;
+  });
+  mocks.connections[0].close.mockReturnValue(closing);
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  wrapper.unmount();
+  expect(mocks.terminals[0].dispose).toHaveBeenCalledOnce();
+  mocks.connections[0].sink.error(new Error("late close failure"), "close");
+  finish(false);
+  await flushPromises();
+  expect(mocks.terminals[0].dispose).toHaveBeenCalledOnce();
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("invalidates a clipboard request as soon as close begins", async () => {
+  const wrapper = await runningTerminal();
+  const clipboard = delayedClipboard();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  let finish!: (value: boolean) => void;
+  mocks.connections[0].close.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  clipboard.resolve("must not paste");
+  await flushPromises();
+  expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+  expect(wrapper.get('[aria-label="terminal.paste"]').attributes("aria-busy")).toBe("false");
+  expect(wrapper.get('[aria-label="terminal.paste"]').attributes("disabled")).toBeDefined();
+  finish(true);
+  await flushPromises();
+});
 
 it.each([
   { key: "c", ctrlKey: true },
