@@ -17,6 +17,7 @@ import { useChangesStore } from "@/stores/changesStore";
 import { useCommitStore } from "@/stores/commitStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
 import { openChangeDiff } from "@/features/commit/openChangeDiff";
+import { addToVcsPaths } from "@/features/commit/addToVcsPaths";
 import { focusCommitUi } from "@/features/commit/focusCommitUi";
 import { useLogStore } from "@/stores/logStore";
 import { useHistoryStore } from "@/stores/historyStore";
@@ -133,13 +134,23 @@ export function registerVcsActions() {
       linux: ["ctrl+alt+a"],
     },
     scope: "changes",
-    enabled: () => useChangesStore().selectedPaths.length > 0,
+    enabled: () => addToVcsPaths(useChangesStore()).length > 0,
     async run() {
       const changes = useChangesStore();
-      const paths = changes.selectedPaths;
+      const paths = addToVcsPaths(changes);
       if (!paths.length) return;
+      const workspace = useWorkspaceStore();
+      const repoPath = workspace.repoPath;
+      const repoId = workspace.repoId;
+      const navigation = workspace.navigationToken();
       await changes.add(paths);
-      toast({ title: "Added to VCS" });
+      if (
+        workspace.isRepo &&
+        workspace.repoPath === repoPath &&
+        workspace.repoId === repoId &&
+        workspace.navigationToken() === navigation
+      )
+        toast({ title: i18n.global.t("actions.addToVcs"), description: `${paths.length}` });
     },
   });
 

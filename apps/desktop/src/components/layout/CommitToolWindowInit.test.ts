@@ -87,6 +87,8 @@ beforeEach(() => {
   useLayoutStore().commitControlsHidden = true;
   m.changes = reactive({
     selectedPaths: [],
+    checkedPaths: [],
+    unversioned: [],
     stagingMode: false,
     loading: false,
     error: null,
@@ -139,20 +141,23 @@ it("uses the shared first reads and keeps progress until they finish", async () 
   });
 });
 
-it.each(["new folder", "folder"])("drops obsolete completion after navigation to %s", async (path) => {
-  const enabling = deferred<ReturnType<typeof result>>();
-  m.vcsEnable.mockReturnValue(enabling.promise);
-  const host = panel();
-  await enableButton(host).trigger("click");
-  await useWorkspaceStore().openFolder(path);
-  enabling.resolve(result("folder"));
-  await flushPromises();
-  expect(useWorkspaceStore().folderPath).toBe(path);
-  expect(useWorkspaceStore().isRepo).toBe(false);
-  expect(m.toast).not.toHaveBeenCalled();
-  expect(m.refresh).not.toHaveBeenCalled();
-  expect(m.load).not.toHaveBeenCalled();
-});
+it.each(["new folder", "folder"])(
+  "drops obsolete completion after navigation to %s",
+  async (path) => {
+    const enabling = deferred<ReturnType<typeof result>>();
+    m.vcsEnable.mockReturnValue(enabling.promise);
+    const host = panel();
+    await enableButton(host).trigger("click");
+    await useWorkspaceStore().openFolder(path);
+    enabling.resolve(result("folder"));
+    await flushPromises();
+    expect(useWorkspaceStore().folderPath).toBe(path);
+    expect(useWorkspaceStore().isRepo).toBe(false);
+    expect(m.toast).not.toHaveBeenCalled();
+    expect(m.refresh).not.toHaveBeenCalled();
+    expect(m.load).not.toHaveBeenCalled();
+  },
+);
 
 it("reports initialization failure and lets the button retry", async () => {
   m.vcsEnable.mockRejectedValueOnce({ message: "Permission denied" });

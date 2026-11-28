@@ -41,6 +41,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { isTauri } from "@/lib/utils";
 import { changeLocation } from "@/features/commit/changeLocation";
 import { requestTerminalDirectory } from "@/features/terminal/terminalDirectoryRequest";
+import { addToVcsPaths } from "@/features/commit/addToVcsPaths";
 
 const { t } = useI18n();
 const workspace = useWorkspaceStore();
@@ -80,12 +81,20 @@ const ctxMenu = ref<{
   header: boolean;
   directory: boolean;
   target: ChangesTarget;
+  addPaths: string[];
 } | null>(null);
 
 const captureRepository = useRepositoryAction(closeCtx);
 watch(() => [changes.selectedSection, changes.stagingMode, ...changes.selectedPaths], closeCtx, {
   flush: "sync",
 });
+watch(
+  () => [...changes.checkedPaths],
+  () => {
+    if (ctxMenu.value?.section === "unversioned") closeCtx();
+  },
+  { flush: "sync" },
+);
 watch(
   () => changes.snapshot,
   () => {
@@ -98,7 +107,8 @@ watch(
     if (menu.directory) {
       if (!available.some((path) => path === menu.path || path.startsWith(`${menu.path}/`)))
         closeCtx();
-    } else if (menu.target.paths.some((path) => !available.includes(path))) closeCtx();
+    } else if ([...menu.target.paths, ...menu.addPaths].some((path) => !available.includes(path)))
+      closeCtx();
   },
 );
 
@@ -170,6 +180,17 @@ function captureSelection(paths = changes.selectedPaths, section = changes.selec
   };
 }
 type ChangesTarget = ReturnType<typeof captureSelection>;
+
+async function addSelected(target: ChangesTarget) {
+  if (!target.current() || !target.paths.length) return;
+  // Changelist metadata can remove an unversioned target without replacing status.
+  // Reject the frozen range instead of silently changing the menu's file count.
+  const available = new Set(changes.unversioned.map((file) => file.path));
+  if (target.paths.some((path) => !available.has(path))) return;
+  await changes.add(target.paths);
+  if (target.current())
+    toast({ title: t("actions.addToVcs"), description: `${target.paths.length}` });
+}
 
 async function stageSelected(target = captureSelection()) {
   if (!target.current() || !target.paths.length) return;
@@ -414,6 +435,10 @@ function onContext(payload: {
     header,
     directory: !!payload.directory,
     target,
+    addPaths:
+      payload.section === "unversioned" && !header && !payload.directory && payload.path
+        ? addToVcsPaths(changes, payload.path)
+        : [],
   };
 }
 
@@ -469,8 +494,10 @@ async function runCtx(action: string) {
         await rollbackSelected(target);
         break;
       case "stage":
-      case "add":
         await stageSelected(target);
+        break;
+      case "add":
+        await addSelected({ ...target, paths: [...menu.addPaths] });
         break;
       case "unstage":
         await unstageSelected(target);
@@ -727,10 +754,14 @@ async function runCtx(action: string) {
           role="menuitem"
           v-if="ctxIsUnversioned"
           type="button"
+          :disabled="!ctxMenu.addPaths.length"
           class="flex w-full rounded px-2 py-1.5 text-left text-[13px] hover:bg-hover-surface"
           @click="runCtx('add')"
         >
           {{ t("actions.addToVcs") }}
+          <span v-if="ctxMenu.addPaths.length > 1" class="ml-auto pl-3 text-muted-foreground">
+            ({{ ctxMenu.addPaths.length }})
+          </span>
         </button>
       </template>
       <template
