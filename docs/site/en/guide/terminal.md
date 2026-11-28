@@ -25,6 +25,8 @@ If sending input fails partway through, GitX disables that session's input, disc
 
 After clicking Close, the tab shows “closing…” and retains its output with input disabled until closure is confirmed. If it shows “close failed”, click Close again to retry that session. Switching to another terminal preserves the original session's error and retry control.
 
+Startup, transport, or clipboard failures mark the affected terminal tab. Select that tab to see the reason; other terminals keep their own status. Creating a terminal preserves the original session's errors, and retrying copy or paste clears only its clipboard error.
+
 The web demonstration backend does not provide an interactive terminal. Use the desktop app.
 
 ## Console

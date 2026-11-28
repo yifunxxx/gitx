@@ -10,6 +10,7 @@ import {
   ClipboardPaste,
   Eraser,
   LoaderCircle,
+  CircleAlert,
   Terminal as TerminalIcon,
 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
@@ -32,7 +33,7 @@ const workspace = useWorkspaceStore();
 const host = ref<HTMLElement | null>(null);
 const activeId = ref(0);
 const profile = ref<TerminalShell>("default");
-const error = ref("");
+const panelError = ref("");
 const pasting = ref(false);
 let pasteGeneration = 0;
 function invalidatePaste() {
@@ -79,6 +80,9 @@ type Session = {
   label: string;
   status: "starting" | "running" | "exited" | "failed" | "closing" | "close-failed";
   closeError: string;
+  error: string;
+  clipboardError: string;
+  clipboardRequest: number;
   code: number | null;
   terminal: Terminal;
   fit: FitAddon;
@@ -92,12 +96,17 @@ let observer: ResizeObserver | undefined;
 let themeObserver: MutationObserver | undefined;
 let frame = 0;
 const active = computed(() => sessions.find((session) => session.key === activeId.value));
-const displayedError = computed(() => active.value?.closeError || error.value);
+function sessionError(session: Session) {
+  return [session.closeError, session.error, session.clipboardError].filter(Boolean).join("\n");
+}
+const displayedError = computed(() =>
+  [active.value && sessionError(active.value), panelError.value].filter(Boolean).join("\n"),
+);
 function update(session: Session, fields: Partial<Session>) {
   Object.assign(session, fields);
 }
-function showError(reason: unknown) {
-  if (!disposed) error.value = formatErrorMessage(reason);
+function isLive(session: Session) {
+  return !disposed && sessions.includes(session);
 }
 function colors() {
   const css = getComputedStyle(document.documentElement);
@@ -130,10 +139,10 @@ async function activate(key: number, focus = true) {
 async function create(cwd = directory.value, current: () => boolean = () => true) {
   if (!desktop || !cwd || !host.value || disposed || !current()) return;
   if (sessions.length >= 16) {
-    error.value = t("terminal.sessionLimit");
+    panelError.value = t("terminal.sessionLimit");
     return;
   }
-  error.value = "";
+  panelError.value = "";
   const element = document.createElement("div");
   const shell = profile.value;
   element.className = "h-full min-h-0 overflow-hidden";
@@ -160,6 +169,9 @@ async function create(cwd = directory.value, current: () => boolean = () => true
     label: windows ? (profile.value === "cmd" ? "cmd" : "PowerShell") : "Shell",
     status: "starting",
     closeError: "",
+    error: "",
+    clipboardError: "",
+    clipboardRequest: 0,
     code: null,
     terminal,
     fit,
@@ -181,7 +193,7 @@ async function create(cwd = directory.value, current: () => boolean = () => true
       terminal.options.disableStdin = true;
     },
     error: (reason, source) => {
-      if (disposed) return;
+      if (!isLive(session)) return;
       if (source === "close") {
         update(session, {
           status: session.status === "closing" ? "closing" : "close-failed",
@@ -189,7 +201,7 @@ async function create(cwd = directory.value, current: () => boolean = () => true
         });
         return;
       }
-      showError(
+      session.error = formatErrorMessage(
         source === "input"
           ? t("terminal.inputFailed", { error: formatErrorMessage(reason) })
           : reason,
@@ -276,6 +288,7 @@ async function removeSession(session: Session) {
   const index = sessions.indexOf(session);
   if (index < 0) return;
   sessions.splice(index, 1);
+  panelError.value = "";
   session.cancel.forEach((cancel) => cancel());
   session.terminal.dispose();
   session.element.remove();
@@ -283,11 +296,15 @@ async function removeSession(session: Session) {
     await activate(sessions[Math.min(index, sessions.length - 1)]?.key ?? 0);
 }
 async function copy(session = active.value) {
-  if (!session?.terminal.hasSelection()) return;
+  if (!session || !isLive(session) || !session.terminal.hasSelection()) return;
+  invalidatePaste();
+  const request = ++session.clipboardRequest;
+  session.clipboardError = "";
   try {
     await navigator.clipboard.writeText(session.terminal.getSelection());
   } catch (reason) {
-    showError(reason);
+    if (isLive(session) && request === session.clipboardRequest)
+      session.clipboardError = formatErrorMessage(reason);
   }
 }
 async function paste(session = active.value) {
@@ -301,12 +318,14 @@ async function paste(session = active.value) {
   )
     return;
   const request = ++pasteGeneration;
+  const clipboardRequest = ++session.clipboardRequest;
   const opener = document.activeElement;
   const current = () => {
     const focused = document.activeElement;
     return (
       !disposed &&
       request === pasteGeneration &&
+      clipboardRequest === session.clipboardRequest &&
       props.visible &&
       active.value === session &&
       sessions.includes(session) &&
@@ -317,14 +336,14 @@ async function paste(session = active.value) {
     );
   };
   pasting.value = true;
-  error.value = "";
+  session.clipboardError = "";
   try {
     const text = await navigator.clipboard.readText();
     if (!current()) return;
     session.terminal.paste(text);
     session.terminal.focus();
   } catch (reason) {
-    if (current()) showError(reason);
+    if (current()) session.clipboardError = formatErrorMessage(reason);
   } finally {
     // A canceled read may settle after another session starts a new request.
     if (request === pasteGeneration) pasting.value = false;
@@ -455,6 +474,16 @@ onBeforeUnmount(() => {
           @keydown="sessionKey($event, index)"
         >
           <TerminalIcon class="size-3.5" /> {{ session.key }}: {{ session.label }}
+          <span
+            v-if="sessionError(session)"
+            data-terminal-error
+            role="img"
+            :aria-label="t('terminal.hasError')"
+            :title="sessionError(session)"
+            class="text-destructive"
+          >
+            <CircleAlert class="size-3.5" aria-hidden="true" />
+          </span>
           <span v-if="session.status === 'exited'"
             >({{ t("terminal.exited", { code: session.code ?? "?" }) }})</span
           >
@@ -536,7 +565,7 @@ onBeforeUnmount(() => {
     <p
       v-if="displayedError"
       role="alert"
-      class="max-h-16 overflow-auto break-words px-2 py-1 text-destructive"
+      class="max-h-16 overflow-auto whitespace-pre-line break-words px-2 py-1 text-destructive"
     >
       {{ displayedError }}
     </p>

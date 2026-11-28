@@ -13,6 +13,7 @@
     "closeFailedDetail": "未能确认终端已关闭，请再次点击关闭终端重试。{error}",
     "exited": "已退出 {code}",
     "failed": "启动失败",
+    "hasError": "此终端有错误",
     "sessionLimit": "请先关闭一个终端，再打开新的终端（最多 16 个会话）。",
     "inputFailed": "终端输入发送失败，已停止输入并丢弃后续排队内容。请新建终端。{error}",
     "startedIn": "启动目录：",

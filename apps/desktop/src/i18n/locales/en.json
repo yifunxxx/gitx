@@ -13,6 +13,7 @@
     "closeFailedDetail": "Terminal closure could not be confirmed. Click Close terminal again to retry. {error}",
     "exited": "exit {code}",
     "failed": "failed",
+    "hasError": "This terminal has an error",
     "sessionLimit": "Close a terminal before opening another (maximum 16 sessions).",
     "inputFailed": "Terminal input failed. Further input is disabled and queued input was discarded. Open a new terminal. {error}",
     "startedIn": "Started in:",

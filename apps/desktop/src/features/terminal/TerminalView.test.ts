@@ -232,6 +232,166 @@ async function runningTerminal() {
   return wrapper;
 }
 
+it.each([undefined, "input"] as const)(
+  "keeps background transport errors on their source terminal: %s",
+  async (source) => {
+    const wrapper = await runningTerminal();
+    await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+    await flushPromises();
+    mocks.terminals[1].focus.mockClear();
+    mocks.connections[0].sink.error(new Error("first transport failed"), source);
+    await flushPromises();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(mocks.terminals[1].focus).not.toHaveBeenCalled();
+    expect(wrapper.findAll('[role="tab"]')[0]!.find("[data-terminal-error]").exists()).toBe(true);
+    expect(wrapper.findAll('[role="tab"]')[1]!.find("[data-terminal-error]").exists()).toBe(false);
+    await wrapper.findAll('[role="tab"]')[0]!.trigger("click");
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      source === "input" ? "terminal.inputFailed" : "first transport failed",
+    );
+  },
+);
+
+it("retains a failed start's reason after another session is created", async () => {
+  const wrapper = mount(TerminalView, { props: { visible: true } });
+  await flushPromises();
+  mocks.connections[0].sink.error(new Error("shell executable missing"));
+  await flushPromises();
+  expect(wrapper.get('[role="tab"]').text()).toContain("terminal.failed");
+  await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  await wrapper.findAll('[role="tab"]')[0]!.trigger("click");
+  expect(wrapper.get('[role="alert"]').text()).toContain("shell executable missing");
+});
+
+it("does not carry a removed session's error into the remaining terminal", async () => {
+  const wrapper = await runningTerminal();
+  await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+  await flushPromises();
+  await wrapper.findAll('[role="tab"]')[0]!.trigger("click");
+  mocks.connections[0].sink.error(new Error("first read failed"));
+  await flushPromises();
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.findAll('[role="tab"]')).toHaveLength(1);
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+});
+
+it("keeps transport feedback when clipboard access is retried successfully", async () => {
+  const wrapper = await runningTerminal();
+  mocks.connections[0].sink.error(new Error("resize unavailable"));
+  vi.mocked(navigator.clipboard.readText).mockRejectedValueOnce(new Error("clipboard unavailable"));
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  await flushPromises();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  await flushPromises();
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("paste me");
+  expect(wrapper.get('[role="alert"]').text()).toContain("resize unavailable");
+  expect(wrapper.text()).not.toContain("clipboard unavailable");
+});
+
+it.each(["switch", "close", "unmount"])(
+  "keeps a delayed copy failure scoped after %s",
+  async (change) => {
+    const wrapper = await runningTerminal();
+    let reject!: (error: Error) => void;
+    vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(
+      new Promise<void>((_resolve, no) => {
+        reject = no;
+      }),
+    );
+    await wrapper.get('[aria-label="terminal.copy"]').trigger("click");
+    if (change === "close") {
+      await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+      await flushPromises();
+    }
+    if (change === "unmount") wrapper.unmount();
+    else {
+      await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+      await flushPromises();
+    }
+    reject(new Error("first copy denied"));
+    await flushPromises();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    if (change === "switch") {
+      await wrapper.findAll('[role="tab"]')[0]!.trigger("click");
+      expect(wrapper.get('[role="alert"]').text()).toContain("first copy denied");
+    }
+  },
+);
+
+it("ignores an older copy failure after a newer copy succeeds", async () => {
+  const wrapper = await runningTerminal();
+  let reject!: (error: Error) => void;
+  vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(
+    new Promise<void>((_resolve, no) => {
+      reject = no;
+    }),
+  );
+  await wrapper.get('[aria-label="terminal.copy"]').trigger("click");
+  await wrapper.get('[aria-label="terminal.copy"]').trigger("click");
+  await flushPromises();
+  reject(new Error("obsolete copy failure"));
+  await flushPromises();
+  expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(2);
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+});
+
+it("clears a copy error on retry without clearing the transport error", async () => {
+  const wrapper = await runningTerminal();
+  mocks.connections[0].sink.error(new Error("resize unavailable"));
+  vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error("copy denied"));
+  await wrapper.get('[aria-label="terminal.copy"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.get('[role="alert"]').text()).toContain("copy denied");
+  await wrapper.get('[aria-label="terminal.copy"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.get('[role="alert"]').text()).toContain("resize unavailable");
+  expect(wrapper.text()).not.toContain("copy denied");
+});
+
+it("ignores obsolete copy feedback after a paste succeeds", async () => {
+  const wrapper = await runningTerminal();
+  let reject!: (error: Error) => void;
+  vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(
+    new Promise<void>((_resolve, no) => {
+      reject = no;
+    }),
+  );
+  await wrapper.get('[aria-label="terminal.copy"]').trigger("click");
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  await flushPromises();
+  reject(new Error("old copy denied"));
+  await flushPromises();
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("paste me");
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+});
+
+it("cancels a pending paste when a new copy action replaces it", async () => {
+  const wrapper = await runningTerminal();
+  const pending = delayedClipboard();
+  await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+  await wrapper.get('[aria-label="terminal.copy"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.get('[aria-label="terminal.paste"]').attributes("aria-busy")).toBe("false");
+  pending.resolve("old clipboard text");
+  await flushPromises();
+  expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+});
+
+it("ignores transport feedback from a removed terminal", async () => {
+  const wrapper = await runningTerminal();
+  await wrapper.get('[aria-label="terminal.close"]').trigger("click");
+  await flushPromises();
+  await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+  await flushPromises();
+  mocks.connections[0].sink.error(new Error("obsolete read failure"));
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  expect(wrapper.find("[data-terminal-error]").exists()).toBe(false);
+});
+
 it("keeps a terminal visible and input disabled until close is confirmed", async () => {
   const wrapper = await runningTerminal();
   let finish!: (value: boolean) => void;

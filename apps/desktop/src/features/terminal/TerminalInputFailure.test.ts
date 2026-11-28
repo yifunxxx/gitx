@@ -125,6 +125,15 @@ it.each(["en", "zh-CN"])(
     expect(mocks.terminals[1].options.disableStdin).toBe(false);
     expect(wrapper.get(`[aria-label="${strings.paste}"]`).attributes("disabled")).toBeUndefined();
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(2);
+    expect(wrapper.findAll('[role="tab"]')[0]!.get('[role="img"]').attributes("aria-label")).toBe(
+      strings.hasError,
+    );
+    await wrapper.findAll('[role="tab"]')[0]!.trigger("click");
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      strings.inputFailed.replace("{error}", "write unavailable"),
+    );
+    await wrapper.findAll('[role="tab"]')[1]!.trigger("click");
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     wrapper.unmount();
     reads.get("second")!.resolve({ data: [], exited: true, exitCode: 0, error: null });
     await flushPromises();
