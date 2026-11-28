@@ -49,15 +49,46 @@ const items = computed(() =>
 
 const estimatedHeight = computed(() => items.value.length * 28 + 16);
 
+const nonTextInputTypes = new Set([
+  "button",
+  "checkbox",
+  "color",
+  "file",
+  "hidden",
+  "image",
+  "radio",
+  "range",
+  "reset",
+  "submit",
+]);
+function isTextEditingTarget(target: Element) {
+  const control = target.closest("input, textarea");
+  if (control instanceof HTMLTextAreaElement) return true;
+  if (control instanceof HTMLInputElement) return !nonTextInputTypes.has(control.type);
+  // contenteditable is inherited; an explicit false stops that inheritance.
+  for (let node: Element | null = target; node; node = node.parentElement) {
+    const value = node.getAttribute("contenteditable")?.toLowerCase();
+    if (value === "false") return false;
+    if (value === "" || value === "true" || value === "plaintext-only") return true;
+  }
+  return false;
+}
+
 function onContext(e: MouseEvent) {
-  // Always suppress native browser menu in the product chrome.
-  e.preventDefault();
-  if (wasContextHandled(e)) {
+  if (e.defaultPrevented || wasContextHandled(e)) {
     open.value = false;
     return;
   }
-  // Only surface the Changes group inside the Commit TW / changes surfaces.
   const target = e.target;
+  // Text controls retain native copy/paste/undo, even inside the Commit pane.
+  // Editors with their own menus have already consumed the event above.
+  if (target instanceof Element && isTextEditingTarget(target)) {
+    open.value = false;
+    return;
+  }
+  // Suppress the browser page menu in product chrome; only Changes surfaces
+  // without a local handler use this fallback Git menu.
+  e.preventDefault();
   if (!(target instanceof Element)) {
     open.value = false;
     return;
