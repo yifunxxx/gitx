@@ -727,10 +727,14 @@ onBeforeUnmount(() => {
           <strong>{{ t("contentSearch.selectedFiles", { count: selectedFiles }) }}</strong>
           <span>{{ t("contentSearch.selectionScope") }}</span>
         </div>
-        <p v-if="replacingMode && busyDrafts" class="search-draft-warning">
+        <p v-if="replacingMode && busyDrafts && !applying" class="search-draft-warning">
           {{ t("contentSearch.saveDrafts") }}
         </p>
-        <div v-if="replacingMode && confirming" class="search-confirmation" role="status">
+        <div v-if="replacingMode && applying" class="search-applying" role="status">
+          <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
+          <span>{{ t("contentSearch.replacing") }}</span>
+        </div>
+        <div v-else-if="replacingMode && confirming" class="search-confirmation" role="status">
           <strong>{{ t("contentSearch.confirm", { count: selectedFiles }) }}</strong>
           <span>{{ t("contentSearch.writeHint") }}</span>
         </div>
@@ -746,13 +750,19 @@ onBeforeUnmount(() => {
               v-if="replacingMode"
               type="button"
               :disabled="!canReplace"
+              :aria-busy="applying"
               class="search-button search-button-primary"
               @click="apply"
             >
               {{
-                t(confirming ? "contentSearch.confirmReplace" : "contentSearch.replaceFiles", {
-                  count: selectedFiles,
-                })
+                t(
+                  applying
+                    ? "contentSearch.replacing"
+                    : confirming
+                      ? "contentSearch.confirmReplace"
+                      : "contentSearch.replaceFiles",
+                  { count: selectedFiles },
+                )
               }}
             </button>
             <button
@@ -1211,6 +1221,18 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
   color: var(--color-warning);
   font-size: 11px;
+}
+.search-applying {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.search-applying svg {
+  flex: none;
 }
 .search-confirmation {
   display: flex;

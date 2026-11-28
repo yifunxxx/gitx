@@ -1239,6 +1239,7 @@
     "saveDrafts": "请先保存或关闭文件草稿，完成或关闭冲突编辑器，并等待文件操作完成后再批量替换。",
     "confirm": "确认写入 {count} 个文件？",
     "confirmReplace": "确认替换",
+    "replacing": "正在替换…",
     "replaceFiles": "替换 {count} 个文件…",
     "replaced": "已替换 {count} 个文件；请重新搜索查看最新结果。"
   }

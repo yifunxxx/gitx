@@ -43,6 +43,8 @@ LF, CRLF, CR and mixed line endings use the same line/column positions as the ed
 4. Wait for the scan, save/close unsaved file drafts, and finish or close merge editors. Click **Replace in N files**, review the count, then **Confirm replacement**.
 5. Search again and review the changes in Commit.
 
+After confirmation, the dialog and action button show **Replacing…**, and the task queue retains the operation until it finishes. Inputs and repeat submissions are temporarily disabled. Success or failure clears the busy state and displays the result.
+
 Replacement writes to disk without committing. Content hashes for every selected file are checked before writing; files changed since search require a new scan. Each file is published through a sibling temporary file, preserving line endings, UTF-8 BOM and permissions. A failure stops further writes and reports the completed count and error. This is not a transaction across all files: completed files are not automatically rolled back. Use Git diffs and rollback to undo, or keep backups for non-Git files. Clean open tabs for changed files are invalidated and closed to prevent saving stale content; unsaved drafts are preserved.
 
 If the project changes during a write, the old search dialog closes and requests cancellation of further replacements. The task queue retains the source project's task until it settles. A notification identifies the source folder, completed count and any error; completed writes are not rolled back. Other file operations and saves are temporarily unavailable while the write finishes; retry them afterward.

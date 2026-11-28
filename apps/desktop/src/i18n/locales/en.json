@@ -1239,6 +1239,7 @@
     "saveDrafts": "Save or close unsaved files, finish or close merge editors, and wait for file operations before replacing across files.",
     "confirm": "Write changes to {count} files?",
     "confirmReplace": "Confirm replacement",
+    "replacing": "Replacing…",
     "replaceFiles": "Replace in {count} files…",
     "replaced": "Replaced {count} files. Search again to see updated results."
   }

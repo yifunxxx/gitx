@@ -60,8 +60,12 @@ const response = (extra = {}) => ({
 });
 function deferred() {
   let resolve!: (v: any) => void;
-  const promise = new Promise((r) => (resolve = r));
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise((r, fail) => {
+    resolve = r;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
 }
 beforeEach(() => {
   vi.useFakeTimers();
@@ -352,11 +356,54 @@ it("keeps mode changes disabled while a replacement is writing", async () => {
   pending.resolve({ completed: [], failed: [] });
   await flushPromises();
 });
+it.each(["success", "partial", "error"])(
+  "shows replacement progress without asking for another confirmation, then clears it on %s",
+  async (outcome) => {
+    await search();
+    const pending = deferred();
+    m.backend.fsReplaceContent.mockReturnValueOnce(pending.promise);
+    await button("contentSearch.replaceFiles").trigger("click");
+    expect(wrapper.get(".search-confirmation").text()).toContain("contentSearch.confirm");
+    await button("contentSearch.confirmReplace").trigger("click");
+
+    expect(wrapper.text()).not.toContain("contentSearch.saveDrafts");
+    expect(wrapper.find(".search-confirmation").exists()).toBe(false);
+    expect(wrapper.findAll('[role="status"]').map((status) => status.text())).toContain(
+      "contentSearch.replacing",
+    );
+    const applyingButton = button("contentSearch.replacing");
+    expect(applyingButton.attributes("aria-busy")).toBe("true");
+    expect(applyingButton.attributes("disabled")).toBeDefined();
+    expect(m.viewer.fileMutationPending).toBe(true);
+    await applyingButton.trigger("click");
+    await wrapper.trigger("keydown", { key: "Escape" });
+    expect(m.backend.fsReplaceContent).toHaveBeenCalledOnce();
+    expect(m.close).not.toHaveBeenCalled();
+
+    if (outcome === "error") pending.reject(new Error("write failed"));
+    else
+      pending.resolve({
+        completed: outcome === "partial" ? ["a.txt"] : ["a.txt", "b.txt"],
+        failed: outcome === "partial" ? ["b.txt: write failed"] : [],
+      });
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("contentSearch.replacing");
+    expect(wrapper.text()).not.toContain("contentSearch.saveDrafts");
+    expect(m.viewer.fileMutationPending).toBe(false);
+    expect(button("common.cancel").attributes("disabled")).toBeUndefined();
+    expect(button("contentSearch.replaceFiles").attributes("aria-busy")).toBe("false");
+    expect(m.jobs.finished).toHaveBeenCalled();
+    if (outcome === "success") expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    else expect(wrapper.get('[role="alert"]').text()).toContain("write failed");
+    if (outcome !== "error") expect(wrapper.text()).toContain("contentSearch.replaced");
+  },
+);
 it("never replaces with unsaved drafts, pending scans, cancelled scans or changed search options", async () => {
   await search();
   m.viewer.tabs.push({ dirty: true });
   await flushPromises();
   expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+  expect(wrapper.text()).toContain("contentSearch.saveDrafts");
   m.viewer.tabs.splice(0);
   await flushPromises();
   await button("contentSearch.replaceFiles").trigger("click");
@@ -369,6 +416,7 @@ it("blocks disk replacement while merge buffers or conflict writes are active", 
   m.conflicts.mergeTabs.push({ id: "merge:a", path: "a.txt", saving: false });
   await flushPromises();
   expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+  expect(wrapper.text()).toContain("contentSearch.saveDrafts");
   m.conflicts.mergeTabs.splice(0);
   m.conflicts.busy = true;
   await flushPromises();
