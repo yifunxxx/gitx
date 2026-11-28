@@ -4,7 +4,13 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import {
-  Plus, Trash2, Copy, ClipboardPaste, Eraser, LoaderCircle, Terminal as TerminalIcon,
+  Plus,
+  Trash2,
+  Copy,
+  ClipboardPaste,
+  Eraser,
+  LoaderCircle,
+  Terminal as TerminalIcon,
 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -178,32 +184,42 @@ async function create(cwd = directory.value, current: () => boolean = () => true
   session.cancel.push(() => inputSubscription.dispose());
   terminal.attachCustomKeyEventHandler((event) => {
     if (event.type !== "keydown") return true;
-    const pasteShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey &&
-      !event.altKey && event.code === "KeyV";
+    if (event.defaultPrevented) return false;
+    if (event.isComposing || event.keyCode === 229) {
+      invalidatePaste();
+      return true;
+    }
+    const matchesKey = (code: string, key: string) =>
+      event.code === code || (!event.code && event.key.toLowerCase() === key);
+    const mod = event.ctrlKey !== event.metaKey && !event.altKey;
+    const pasteShortcut = mod && event.shiftKey && matchesKey("KeyV", "v");
     // New keyboard input changes the shell's insertion point. Parser replies
     // arrive through onData too, so they must not invalidate clipboard reads.
     if (!pasteShortcut && !["Control", "Shift", "Alt", "Meta", "CapsLock"].includes(event.key))
       invalidatePaste();
-    if (event.isComposing) return true;
     if (isTerminalToggle(event)) return false;
-    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-      void openMenu(event);
+    const menuShortcut =
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      ((!event.shiftKey && event.key === "ContextMenu") || (event.shiftKey && event.key === "F10"));
+    if (menuShortcut) {
+      event.preventDefault();
+      if (!event.repeat) void openMenu(event);
       return false;
     }
-    const mod = event.ctrlKey || event.metaKey;
-    if (mod && event.shiftKey && event.code === "KeyC") {
+    if (
+      mod &&
+      matchesKey("KeyC", "c") &&
+      (event.shiftKey || (event.ctrlKey && terminal.hasSelection()))
+    ) {
       event.preventDefault();
-      void copy(session);
+      if (!event.repeat) void copy(session);
       return false;
     }
-    if (mod && event.shiftKey && event.code === "KeyV") {
+    if (pasteShortcut) {
       event.preventDefault();
-      void paste(session);
-      return false;
-    }
-    if (event.ctrlKey && event.code === "KeyC" && terminal.hasSelection()) {
-      event.preventDefault();
-      void copy(session);
+      if (!event.repeat) void paste(session);
       return false;
     }
     return true;
@@ -244,16 +260,30 @@ async function copy(session = active.value) {
   }
 }
 async function paste(session = active.value) {
-  if (!session || session.status !== "running" || disposed || !props.visible ||
-    active.value !== session || pasting.value) return;
+  if (
+    !session ||
+    session.status !== "running" ||
+    disposed ||
+    !props.visible ||
+    active.value !== session ||
+    pasting.value
+  )
+    return;
   const request = ++pasteGeneration;
   const opener = document.activeElement;
   const current = () => {
     const focused = document.activeElement;
-    return !disposed && request === pasteGeneration && props.visible &&
-      active.value === session && sessions.includes(session) && session.status === "running" &&
-      (focused === opener || focused === document.body ||
-        (focused !== null && session.element.contains(focused)));
+    return (
+      !disposed &&
+      request === pasteGeneration &&
+      props.visible &&
+      active.value === session &&
+      sessions.includes(session) &&
+      session.status === "running" &&
+      (focused === opener ||
+        focused === document.body ||
+        (focused !== null && session.element.contains(focused)))
+    );
   };
   pasting.value = true;
   error.value = "";
@@ -274,7 +304,16 @@ function clear() {
   active.value?.terminal.focus();
 }
 function sessionKey(event: KeyboardEvent, index: number) {
-  if (event.isComposing) return;
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.metaKey ||
+    event.shiftKey
+  )
+    return;
   const next =
     event.key === "ArrowRight"
       ? (index + 1) % sessions.length

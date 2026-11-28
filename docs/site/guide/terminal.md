@@ -15,9 +15,11 @@
 | --- | --- |
 | 复制选择 | `Ctrl+Shift+C` 或终端右键 Copy |
 | 粘贴 | `Ctrl+Shift+V` 或 Paste；先检查将执行的命令 |
-| 中断命令 | 终端中的 `Ctrl+C` 通常发送中断 |
+| 中断命令 | 没有选中文字时，`Ctrl+C` 传给 Shell；有选择时先复制选择 |
 | 全选、清屏 | 右键 Select All / Clear |
 | 关闭 | Close terminal and stop its process |
+
+终端输入区按 `Shift+F10` 或菜单键打开右键菜单。会话标签获得焦点后，可用左右方向键切换，Home / End 跳到首尾标签。复制、粘贴和菜单操作不会因长按而重复触发；附加 Alt 等修饰键不会被误当作这些快捷键。
 
 Web 演示后端不提供真实交互终端；使用安装的桌面软件。
 

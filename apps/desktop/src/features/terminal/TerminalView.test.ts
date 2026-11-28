@@ -83,7 +83,9 @@ beforeEach(() => {
   terminalDirectoryRequests.value = [];
   mocks.terminals.length = mocks.connections.length = 0;
   mocks.workspace = reactive({
-    repoPath: "C:/first", folderPath: "C:/first", openGeneration: 0,
+    repoPath: "C:/first",
+    folderPath: "C:/first",
+    openGeneration: 0,
     navigationToken: () => mocks.workspace.openGeneration,
   });
   vi.stubGlobal(
@@ -213,10 +215,12 @@ it("updates ready and exit controls without needing another UI interaction", asy
 function delayedClipboard() {
   let resolve!: (text: string) => void;
   let reject!: (reason: unknown) => void;
-  vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(new Promise<string>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  }));
+  vi.mocked(navigator.clipboard.readText).mockReturnValueOnce(
+    new Promise<string>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    }),
+  );
   return { resolve, reject };
 }
 
@@ -227,6 +231,195 @@ async function runningTerminal() {
   await flushPromises();
   return wrapper;
 }
+
+it.each([
+  { key: "c", ctrlKey: true },
+  { key: "C", ctrlKey: true, shiftKey: true },
+  { key: "C", metaKey: true, shiftKey: true },
+])("copies selected terminal text when native input omits code: %j", async (init) => {
+  await runningTerminal();
+  const event = new KeyboardEvent("keydown", { ...init, cancelable: true });
+  expect(mocks.terminals[0].handler(event)).toBe(false);
+  await flushPromises();
+  expect(event.defaultPrevented).toBe(true);
+  expect(navigator.clipboard.writeText).toHaveBeenCalledExactlyOnceWith("selected text");
+});
+
+it.each(["ctrlKey", "metaKey"])("pastes once without code using %s", async (modifier) => {
+  await runningTerminal();
+  const event = new KeyboardEvent("keydown", {
+    key: "V",
+    shiftKey: true,
+    [modifier]: true,
+    cancelable: true,
+  });
+  expect(mocks.terminals[0].handler(event)).toBe(false);
+  await flushPromises();
+  expect(event.defaultPrevented).toBe(true);
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("paste me");
+});
+
+it.each(["alt", "composition229", "consumed", "repeat"])(
+  "does not copy or paste for %s keyboard events",
+  async (boundary) => {
+    await runningTerminal();
+    for (const code of ["KeyC", "KeyV"]) {
+      const event = new KeyboardEvent("keydown", {
+        key: code.slice(-1),
+        code,
+        ctrlKey: true,
+        shiftKey: true,
+        cancelable: true,
+        altKey: boundary === "alt",
+        repeat: boundary === "repeat",
+      });
+      if (boundary === "composition229") Object.defineProperty(event, "keyCode", { value: 229 });
+      if (boundary === "consumed") event.preventDefault();
+      mocks.terminals[0].handler(event);
+      await flushPromises();
+    }
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+    expect(navigator.clipboard.readText).not.toHaveBeenCalled();
+    expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  { key: "F10", shiftKey: true, ctrlKey: true },
+  { key: "F10", shiftKey: true, altKey: true },
+  { key: "ContextMenu", shiftKey: true },
+  { key: "ContextMenu", metaKey: true },
+  { key: "ContextMenu", repeat: true },
+  { key: "F10", shiftKey: true, keyCode: 229 },
+])("does not open a terminal menu for unrelated input: %j", async (init) => {
+  await runningTerminal();
+  const event = new KeyboardEvent("keydown", { ...init, cancelable: true });
+  if (init.keyCode) Object.defineProperty(event, "keyCode", { value: init.keyCode });
+  mocks.terminals[0].handler(event);
+  await flushPromises();
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+it.each(["ctrlKey", "altKey", "metaKey", "shiftKey", "composition229", "consumed"])(
+  "does not switch terminal tabs for %s navigation",
+  async (boundary) => {
+    const wrapper = await runningTerminal();
+    await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+    await flushPromises();
+    const second = wrapper.findAll('[role="tab"]')[1]!;
+    const event = new KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      bubbles: true,
+      cancelable: true,
+      [boundary]: true,
+    });
+    if (boundary === "composition229") Object.defineProperty(event, "keyCode", { value: 229 });
+    if (boundary === "consumed") event.preventDefault();
+    second.element.dispatchEvent(event);
+    await flushPromises();
+    expect(second.attributes("aria-selected")).toBe("true");
+  },
+);
+
+it("keeps physical key identity and passes unselected Ctrl+C to the terminal", async () => {
+  await runningTerminal();
+  const terminal = mocks.terminals[0];
+  const mismatch = new KeyboardEvent("keydown", {
+    key: "V",
+    code: "KeyX",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  expect(terminal.handler(mismatch)).toBe(true);
+  terminal.hasSelection = () => false;
+  expect(terminal.handler(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(true);
+  expect(navigator.clipboard.readText).not.toHaveBeenCalled();
+  expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+});
+
+it.each([{ key: "ContextMenu" }, { key: "F10", shiftKey: true }])(
+  "opens the terminal context menu for its exact shortcut: %j",
+  async (init) => {
+    await runningTerminal();
+    const event = new KeyboardEvent("keydown", { ...init, cancelable: true });
+    expect(mocks.terminals[0].handler(event)).toBe(false);
+    await flushPromises();
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  },
+);
+
+it("keeps plain and repeated terminal tab navigation working", async () => {
+  const wrapper = await runningTerminal();
+  await wrapper.get('[aria-label="terminal.new"]').trigger("click");
+  await flushPromises();
+  const tabs = wrapper.findAll('[role="tab"]');
+  for (const [from, key, to] of [
+    [1, "ArrowLeft", 0],
+    [0, "ArrowRight", 1],
+    [1, "Home", 0],
+    [0, "End", 1],
+  ] as const) {
+    await tabs[from]!.trigger("keydown", { key, repeat: true });
+    expect(tabs[to]!.attributes("aria-selected")).toBe("true");
+  }
+});
+
+it("keeps one code-less paste pending across repeats without sending a second copy", async () => {
+  await runningTerminal();
+  const pending = delayedClipboard();
+  const handler = mocks.terminals[0].handler;
+  for (const repeat of [false, true, true]) {
+    expect(
+      handler(
+        new KeyboardEvent("keydown", {
+          key: "V",
+          ctrlKey: true,
+          shiftKey: true,
+          repeat,
+          cancelable: true,
+        }),
+      ),
+    ).toBe(false);
+    await flushPromises();
+  }
+  expect(navigator.clipboard.readText).toHaveBeenCalledOnce();
+  pending.resolve("one paste");
+  await flushPromises();
+  expect(mocks.terminals[0].paste).toHaveBeenCalledExactlyOnceWith("one paste");
+  handler(
+    new KeyboardEvent("keydown", {
+      key: "V",
+      ctrlKey: true,
+      shiftKey: true,
+      repeat: true,
+      cancelable: true,
+    }),
+  );
+  await flushPromises();
+  expect(navigator.clipboard.readText).toHaveBeenCalledOnce();
+});
+
+it.each(["isComposing", "keyCode"])(
+  "invalidates a pending paste when %s marks a matching shortcut as IME input",
+  async (flag) => {
+    const wrapper = await runningTerminal();
+    const pending = delayedClipboard();
+    await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
+    const event = new KeyboardEvent("keydown", {
+      key: "V",
+      code: "KeyV",
+      ctrlKey: true,
+      shiftKey: true,
+      isComposing: flag === "isComposing",
+    });
+    if (flag === "keyCode") Object.defineProperty(event, "keyCode", { value: 229 });
+    expect(mocks.terminals[0].handler(event)).toBe(true);
+    pending.resolve("obsolete before composition");
+    await flushPromises();
+    expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
+  },
+);
 
 it.each(["switch", "switch-back", "hide", "hide-show", "navigate", "reopen"])(
   "discards pending terminal paste after %s instead of sending it to a stale context",
@@ -259,9 +452,14 @@ it("allows only one clipboard read until the pending paste completes", async () 
   const paste = wrapper.get('[aria-label="terminal.paste"]');
   await paste.trigger("click");
   expect(paste.attributes("disabled")).toBeDefined();
-  mocks.terminals[0].handler(new KeyboardEvent("keydown", {
-    key: "V", code: "KeyV", ctrlKey: true, shiftKey: true,
-  }));
+  mocks.terminals[0].handler(
+    new KeyboardEvent("keydown", {
+      key: "V",
+      code: "KeyV",
+      ctrlKey: true,
+      shiftKey: true,
+    }),
+  );
   await flushPromises();
   expect(navigator.clipboard.readText).toHaveBeenCalledTimes(1);
   pending.resolve("once");
@@ -276,8 +474,12 @@ it.each(["typing", "composition", "native-paste"])(
     const wrapper = await runningTerminal();
     const pending = delayedClipboard();
     await wrapper.get('[aria-label="terminal.paste"]').trigger("click");
-    if (input === "typing") mocks.terminals[0].handler(new KeyboardEvent("keydown", { key: "x", code: "KeyX" }));
-    else await wrapper.get('[data-terminal-host]').trigger(input === "composition" ? "compositionstart" : "paste");
+    if (input === "typing")
+      mocks.terminals[0].handler(new KeyboardEvent("keydown", { key: "x", code: "KeyX" }));
+    else
+      await wrapper
+        .get("[data-terminal-host]")
+        .trigger(input === "composition" ? "compositionstart" : "paste");
     pending.resolve("old clipboard");
     await flushPromises();
     expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
@@ -347,7 +549,9 @@ it.each(["close", "unmount", "exit", "external-focus"])(
       expect(mocks.terminals[0].paste).not.toHaveBeenCalled();
       expect(mocks.terminals[0].focus).not.toHaveBeenCalled();
       if (change === "external-focus") expect(document.activeElement).toBe(otherInput);
-    } finally { otherInput.remove(); }
+    } finally {
+      otherInput.remove();
+    }
   },
 );
 
@@ -364,7 +568,7 @@ it("does not cancel clipboard input when the terminal sends a parser reply", asy
 
 it("dismisses a terminal menu when a directory request selects a new session", async () => {
   const wrapper = await runningTerminal();
-  await wrapper.get('[data-terminal-host]').trigger("contextmenu", { clientX: 40, clientY: 60 });
+  await wrapper.get("[data-terminal-host]").trigger("contextmenu", { clientX: 40, clientY: 60 });
   await flushPromises();
   expect(document.querySelector('[role="menu"]')).not.toBeNull();
   requestTerminalDirectory("C:/first/src", () => true);

@@ -15,9 +15,11 @@ Up to 16 sessions can remain open. After switching projects, do not infer an exi
 | --- | --- |
 | Copy a selection | `Ctrl+Shift+C` or Copy in the terminal menu |
 | Paste | `Ctrl+Shift+V` or Paste; inspect commands before executing them |
-| Interrupt a command | `Ctrl+C` normally sends an interrupt inside the terminal |
+| Interrupt a command | With no selection, `Ctrl+C` reaches the shell; with a selection, it copies the selected text |
 | Select all or clear | Context menu → Select All / Clear |
 | Close | Close terminal and stop its process |
+
+Press `Shift+F10` or the menu key in terminal input to open the context menu. When a session tab has focus, use Left / Right to switch tabs or Home / End to reach the first or last tab. Holding a shortcut does not repeat copy, paste, or menu actions; extra modifiers such as Alt do not trigger those shortcuts.
 
 The web demonstration backend does not provide an interactive terminal. Use the desktop app.
 
