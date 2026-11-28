@@ -31,6 +31,8 @@ QA007当前Windows原生续验观察到PowerShell黄色/浅灰文字偏淡，双
 
 DIM指令有意减弱文字，上游仅使用一半阈值且有透明度混合；默认前景的inverse路径在当前xterm中使用原foreground计算对比，然后渲染成背景色，浅色样本仍为2.507。两者已保留实际测量，不声称全部SGR序列符合文字对比标准；QA163对原生普通文字/选区/光标的修复与剩余inverse边界分开记录，后续需评估兼容性后再调整。
 
+交付审阅另确认`ColorContrastCache`/`TwoKeyMap`按背景/前景配对保留结果，无显式容量限额；主题或选项变化时清空。本次启用对比校正后，长期输出持续变化的RGB是否造成显著存活增长尚未测量，归入QA163资源待核查，不能把普通20类颜色对照或关闭后释放扩展为长时运行无增长。下一步使用有界真实xterm负载测配对数量、GC后存活和渲染耗时，再决定是否需要限制缓存；没有据静态代码直接判定内存泄漏。
+
 ## 最终Windows原生复查
 
 最终构建成功。独立程序`native/gitx-terminal-colors.exe` SHA256为`29fedcf23df821b1f883d507ae29f41700ebea8c8ab267e7851304787ec71b0c`，启动前核对打包程序包含当前`TerminalView-BpauT2tM.js`资源名，资源哈希记录在`native-target.json`。复用已由用户处理权限的QA007专用profile与identifier，个人settings没有改动。
@@ -43,3 +45,7 @@ DIM指令有意减弱文字，上游仅使用一半阈值且有透明度混合�
 上述终端选区复制证据更新QA007原生范围；运行中命令中断与持续滚轮仍未完成。QA163普通文字/选区/块光标修复已验证，inverse边界继续保留，不把本项记成全部终端颜色完成。用户安装版未更新。
 
 证据目录：`E:/IDEAproject/gitx/test-results/qa163-terminal-colors-20261128`，含旧组件、harness、浏览器脚本、10场JSON与截图、原生构建日志，以及`native/native-identities.json`、`native/native-exit.json`和`native/verification-final.json`；原生截图保存在CUA会话。提交前再次fetch整合两分支并核对受影响范围，独立提交推送状态见统一台账。
+
+## 交付及远端回归
+
+功能提交`654e8e367f1a47ece12e71907d6e9e89676db1d3`已首次推送，`ls-remote`完整SHA一致。该提交的CI run `46148944302`已完成且为success：前端2569项/4既有skip、类型/Vite/bindings，以及Linux应用lib72项（含真实终端5项）、原工作区Rust/fmt/Clippy/编译均通过。echo占位job不计浏览器E2E。`ci-final.json`、`ci.log`和`ci-watch.log`保存精确提交证据；补记是文档交付，不据后续文档CI重复制造新验收结论。
