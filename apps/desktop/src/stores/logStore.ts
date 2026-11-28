@@ -520,9 +520,12 @@ export const useLogStore = defineStore("log", () => {
   async function loadPrevious() {
     const isCurrentRepository = currentRepository();
     const path = workspace.repoPath;
+    const first = commits.value[0];
     if (
+      disposed ||
       !path ||
       !workspace.repoId ||
+      !first ||
       !startOffset.value ||
       loading.value ||
       loadingMore.value ||
@@ -532,39 +535,46 @@ export const useLogStore = defineStore("log", () => {
       return;
     const gen = ++loadGen;
     loadingPrevious.value = true;
+    const current = () => !disposed && gen === loadGen && isCurrentRepository();
+    const jobs = useJobsStore();
+    const job = jobs.begin(String(i18n.global.t("log.loadNewer")), path);
     try {
       const backend = getBackend();
       const requestFilters = copyFilters(filters.value);
       const anchor = await backend.logLocate({
         path,
-        revision: commits.value[0]!.sha,
+        revision: first.sha,
         filters: requestFilters,
       });
-      if (gen !== loadGen || !isCurrentRepository()) return;
+      if (!current()) return;
       if (anchor.offset === null) throw new Error(String(i18n.global.t("log.historyChanged")));
       const offset = Math.max(0, anchor.offset - 100);
-      const page =
-        anchor.offset === 0
-          ? { commits: [] }
-          : await backend.logQuery({
-              repoId: workspace.repoId,
-              path,
-              offset,
-              limit: anchor.offset - offset,
-              filters: requestFilters,
-            });
-      if (gen !== loadGen || !isCurrentRepository()) return;
+      const count = anchor.offset - offset;
+      // Locate and query are separate Git snapshots. Read the join commit too,
+      // including at offset zero, so a shifted history cannot silently leave a gap.
+      const page = await backend.logQuery({
+        repoId: workspace.repoId,
+        path,
+        offset,
+        limit: count + 1,
+        filters: requestFilters,
+      });
+      if (!current()) return;
+      if (page.commits.length !== count + 1 || page.commits[count]?.sha !== first.sha)
+        throw new Error(String(i18n.global.t("log.historyChanged")));
       const known = new Set(commits.value.map((c) => c.sha));
-      commits.value = [...page.commits.filter((c) => !known.has(c.sha)), ...commits.value];
+      const added = page.commits.slice(0, count).filter((c) => !known.has(c.sha));
+      if (added.length) commits.value = [...added, ...commits.value];
       nextOffset.value += anchor.offset - startOffset.value;
       startOffset.value = offset;
     } catch (e) {
-      if (gen === loadGen && isCurrentRepository())
+      if (current())
         toast({
           title: String(i18n.global.t("log.loadMoreFailed")),
           description: formatErrorMessage(e),
         });
     } finally {
+      jobs.finished(job);
       if (gen === loadGen) loadingPrevious.value = false;
     }
   }

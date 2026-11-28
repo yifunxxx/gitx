@@ -23,6 +23,8 @@ Confirming an input-method candidate does not apply filters or navigate; press E
 
 Scrolling to a boundary loads additional history; use Load more or newer-record controls when shown. Wide graphs can be inspected horizontally. The graph column is another presentation of the same commits.
 
+**Load newer commits** adds a task identifying the source repository until reading finishes. If history changes during the read, the existing list and selection stay intact and an error appears. Click again to retry, or use **Back to latest** to reload; incompatible pages are not joined into a discontinuous history.
+
 If the initial history query or a filter fails, the filter bar stays available so you can correct the condition, clear it, or use **Retry** in the error area. The failed view does not present old commits as current results. Retry uses the current input conditions and returns focus to the message filter.
 
 **Log list mode** selects a flat list or branch-oriented tree. **Rebuild index** rebuilds a local index used for filtering; it does not create or rewrite commits. If filters return nothing, Clear them and check the revision scope.
