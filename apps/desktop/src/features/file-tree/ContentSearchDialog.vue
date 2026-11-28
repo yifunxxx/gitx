@@ -69,6 +69,8 @@ const sessionId = crypto.randomUUID();
 let generation = 0;
 let disposed = false;
 let debounce: ReturnType<typeof setTimeout> | undefined;
+let previewDebounce: ReturnType<typeof setTimeout> | undefined;
+let searchStarted = false;
 let poll: ReturnType<typeof setTimeout> | undefined;
 let pageRequest = 0;
 const matches = computed(() => result.value?.matches ?? []);
@@ -115,6 +117,8 @@ function setMode(replace: boolean) {
 function cancel() {
   finishJob();
   clearTimeout(debounce);
+  clearTimeout(previewDebounce);
+  searchStarted = false;
   clearTimeout(poll);
   ++pageRequest;
   void getBackend()
@@ -137,6 +141,7 @@ async function stop() {
     return;
   }
   clearTimeout(debounce);
+  clearTimeout(previewDebounce);
   clearTimeout(poll);
   ++pageRequest;
   pageLoading.value = false;
@@ -169,13 +174,19 @@ async function readPage(token: number, target = page.value, resetSelection = fal
   if (!current(token)) return;
   clearTimeout(poll);
   const request = ++pageRequest;
+  const template = replacement.value;
   try {
     const response = await getBackend().fsContentSearchPage({
       sessionId,
       generation: token,
       page: target,
+      replacement: template,
     });
     if (!current(token) || request !== pageRequest) return;
+    if (template !== replacement.value) {
+      await readPage(token, target, resetSelection);
+      return;
+    }
     const lastPage = Math.max(0, Math.ceil(response.total / 200) - 1);
     if (target > lastPage) {
       await readPage(token, lastPage, true);
@@ -210,6 +221,10 @@ async function readPage(token: number, target = page.value, resetSelection = fal
     }
   } catch (failure) {
     if (current(token) && request === pageRequest) {
+      if (template !== replacement.value) {
+        await readPage(token, target, resetSelection);
+        return;
+      }
       error.value = formatErrorMessage(failure);
       pageLoading.value = false;
       retryPage.value = target;
@@ -223,7 +238,6 @@ async function start(token: number) {
     await getBackend().fsStartContentSearch({
       folderPath: folder,
       query: query.value,
-      replacement: replacement.value,
       caseSensitive: caseSensitive.value,
       wholeWord: wholeWord.value,
       regex: regex.value,
@@ -234,7 +248,10 @@ async function start(token: number) {
       sessionId,
       generation: token,
     });
-    if (current(token) && !stopped.value) await readPage(token);
+    if (current(token)) {
+      searchStarted = true;
+      if (!stopped.value) await readPage(token);
+    }
   } catch (failure) {
     if (current(token) && !stopped.value) {
       error.value = formatErrorMessage(failure);
@@ -259,9 +276,22 @@ function schedule() {
   debounce = setTimeout(() => void start(token), 220);
 }
 watch(
-  [query, replacement, caseSensitive, wholeWord, regex, include, exclude, showHidden, showIgnored],
+  [query, caseSensitive, wholeWord, regex, include, exclude, showHidden, showIgnored],
   schedule,
 );
+watch(replacement, () => {
+  confirming.value = false;
+  // An initial scan or an in-flight stop will read the newest template when it
+  // settles. Editing the replacement never discards matches or file selection.
+  if (!searchStarted || stopping.value || applying.value || !current(generation)) return;
+  clearTimeout(previewDebounce);
+  clearTimeout(poll);
+  ++pageRequest;
+  pageLoading.value = true;
+  retryPage.value = null;
+  const token = generation;
+  previewDebounce = setTimeout(() => void readPage(token), 220);
+});
 watch(
   () => [workspace.folderPath, workspace.navigationToken()],
   () => {
@@ -281,6 +311,7 @@ async function loadPage(target: number) {
   )
     return;
   clearTimeout(poll);
+  clearTimeout(previewDebounce);
   pageLoading.value = true;
   error.value = "";
   await readPage(generation, target, true);
@@ -336,6 +367,7 @@ async function apply() {
       sessionId,
       generation: token,
       excludedPaths: [...excluded.value],
+      replacement: replacement.value,
     });
     // Invalidate only clean buffers of files that were actually written. Any
     // draft entered through another surface survives and is never overwritten.

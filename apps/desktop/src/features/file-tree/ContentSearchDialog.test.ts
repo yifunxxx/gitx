@@ -109,7 +109,7 @@ async function search(text = "hit") {
   await flushPromises();
 }
 const button = (text: string) => wrapper.findAll("button").find((b) => b.text() === text)!;
-it("passes every search condition, replacement and include/exclude globs to the same scan", async () => {
+it("passes search conditions to the scan and replacement to page previews", async () => {
   for (const key of ["caseSensitive", "wholeWord", "regex"])
     await wrapper.get(`input[aria-label="contentSearch.${key}"]`).setValue(true);
   await wrapper.get('input[aria-label="contentSearch.include"]').setValue("src/**,*.vue");
@@ -119,13 +119,15 @@ it("passes every search condition, replacement and include/exclude globs to the 
   expect(m.backend.fsStartContentSearch).toHaveBeenLastCalledWith(
     expect.objectContaining({
       query: "(hit)",
-      replacement: "$1",
       caseSensitive: true,
       wholeWord: true,
       regex: true,
       include: "src/**,*.vue",
       exclude: "dist",
     }),
+  );
+  expect(m.backend.fsContentSearchPage).toHaveBeenLastCalledWith(
+    expect.objectContaining({ replacement: "$1" }),
   );
   expect(wrapper.findAll("mark")).toHaveLength(3);
 });
@@ -163,6 +165,161 @@ it("excludes the whole file across occurrences and requires a concrete replaceme
   );
   expect(wrapper.text()).toContain("contentSearch.replaced");
   expect(m.viewer.fileMutationPending).toBe(false);
+});
+it("keeps excluded files when editing replacement text and applies only the reviewed selection", async () => {
+  await search();
+  await wrapper.findAll('input[aria-label="contentSearch.selectFile"]')[0]!.setValue(false);
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("changed");
+  await vi.advanceTimersByTimeAsync(220);
+  await flushPromises();
+  const checks = wrapper.findAll('input[aria-label="contentSearch.selectFile"]');
+  expect((checks[0]!.element as HTMLInputElement).checked).toBe(false);
+  expect((checks[1]!.element as HTMLInputElement).checked).toBe(false);
+  await button("contentSearch.replaceFiles").trigger("click");
+  await button("contentSearch.confirmReplace").trigger("click");
+  expect(m.backend.fsReplaceContent).toHaveBeenCalledWith(
+    expect.objectContaining({ excludedPaths: ["a.txt"], replacement: "changed" }),
+  );
+});
+it("refreshes replacement previews on the current page without rescanning the workspace", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ total: 601 }));
+  await search();
+  await wrapper.get('button[aria-label="contentSearch.nextPage"]').trigger("click");
+  await flushPromises();
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("changed");
+  await vi.advanceTimersByTimeAsync(220);
+  await flushPromises();
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+  expect(wrapper.get(".search-pagination").text()).toContain("2/4");
+  expect(m.backend.fsContentSearchPage).toHaveBeenLastCalledWith(
+    expect.objectContaining({ page: 1, replacement: "changed" }),
+  );
+});
+it("invalidates confirmation immediately and rejects late previews for an older replacement", async () => {
+  await search();
+  await button("contentSearch.replaceFiles").trigger("click");
+  const old = deferred();
+  m.backend.fsContentSearchPage.mockReturnValueOnce(old.promise);
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("first");
+  expect(wrapper.text()).not.toContain("contentSearch.confirmReplace");
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+  await vi.advanceTimersByTimeAsync(220);
+  m.backend.fsContentSearchPage.mockResolvedValueOnce(
+    response({ matches: [{ ...match(), replacementPreview: "latest-preview" }] }),
+  );
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("latest");
+  await vi.advanceTimersByTimeAsync(220);
+  await flushPromises();
+  old.resolve(response({ matches: [{ ...match(), replacementPreview: "old-preview" }] }));
+  await flushPromises();
+  expect(wrapper.text()).toContain("latest-preview");
+  expect(wrapper.text()).not.toContain("old-preview");
+  expect(m.backend.fsReplaceContent).not.toHaveBeenCalled();
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+});
+it("retries a failed replacement preview without losing exclusions or rescanning", async () => {
+  await search();
+  await wrapper.findAll('input[aria-label="contentSearch.selectFile"]')[0]!.setValue(false);
+  m.backend.fsContentSearchPage.mockRejectedValueOnce(new Error("preview unavailable"));
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("new-template");
+  await vi.advanceTimersByTimeAsync(220);
+  await flushPromises();
+  expect(wrapper.get('[role="alert"]').text()).toContain("preview unavailable");
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+  await button("common.retry").trigger("click");
+  await flushPromises();
+  expect(
+    (
+      wrapper.findAll('input[aria-label="contentSearch.selectFile"]')[0]!
+        .element as HTMLInputElement
+    ).checked,
+  ).toBe(false);
+  expect(m.backend.fsContentSearchPage).toHaveBeenLastCalledWith(
+    expect.objectContaining({ replacement: "new-template" }),
+  );
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeUndefined();
+});
+it("resets selection only for a changed search condition and cancels its old preview timer", async () => {
+  await search();
+  await wrapper.findAll('input[aria-label="contentSearch.selectFile"]')[0]!.setValue(false);
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("template");
+  await search("changed-query");
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledTimes(2);
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledTimes(2);
+  expect(
+    (
+      wrapper.findAll('input[aria-label="contentSearch.selectFile"]')[0]!
+        .element as HTMLInputElement
+    ).checked,
+  ).toBe(true);
+});
+it("keeps stopped results non-writable after a replacement preview refresh", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ done: false }));
+  await search();
+  m.backend.fsContentSearchPage.mockResolvedValue(response());
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("template");
+  await vi.advanceTimersByTimeAsync(220);
+  await flushPromises();
+  expect(wrapper.text()).toContain("contentSearch.stopped");
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeDefined();
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+});
+it("keeps the running scan and its job when the replacement changes", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ done: false }));
+  await search();
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("template");
+  await vi.advanceTimersByTimeAsync(220);
+  await flushPromises();
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+  expect(m.jobs.finished).not.toHaveBeenCalled();
+  m.backend.fsContentSearchPage.mockResolvedValue(response());
+  await vi.advanceTimersByTimeAsync(150);
+  await flushPromises();
+  expect(m.jobs.finished).toHaveBeenCalledExactlyOnceWith("search");
+  expect(button("contentSearch.replaceFiles").attributes("disabled")).toBeUndefined();
+});
+it("uses the newest template after a slow start without reading an unstarted session", async () => {
+  const start = deferred();
+  m.backend.fsStartContentSearch.mockReturnValueOnce(start.promise);
+  await search();
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("template");
+  await vi.advanceTimersByTimeAsync(220);
+  expect(m.backend.fsContentSearchPage).not.toHaveBeenCalled();
+  start.resolve(null);
+  await flushPromises();
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ replacement: "template" }),
+  );
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+});
+it("refreshes the latest template if it changes during the final stopped-page read", async () => {
+  m.backend.fsContentSearchPage.mockResolvedValue(response({ done: false }));
+  await search();
+  const page = deferred();
+  m.backend.fsContentSearchPage.mockReturnValueOnce(page.promise);
+  await button("common.cancel").trigger("click");
+  await flushPromises();
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("latest");
+  m.backend.fsContentSearchPage.mockResolvedValue(response());
+  page.resolve(response({ matches: [{ ...match(), replacementPreview: "stale-preview" }] }));
+  await flushPromises();
+  expect(m.backend.fsContentSearchPage).toHaveBeenLastCalledWith(
+    expect.objectContaining({ replacement: "latest" }),
+  );
+  expect(wrapper.text()).not.toContain("stale-preview");
+  expect(wrapper.text()).toContain("contentSearch.stopped");
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
+});
+it("releases pending preview work when the dialog unmounts", async () => {
+  await search();
+  await wrapper.get('input[aria-label="contentSearch.replacement"]').setValue("template");
+  wrapper.unmount();
+  await vi.advanceTimersByTimeAsync(300);
+  expect(m.backend.fsContentSearchPage).toHaveBeenCalledOnce();
+  expect(m.backend.fsStartContentSearch).toHaveBeenCalledOnce();
 });
 it("switches find/replace modes without losing the query and requires fresh confirmation after switching", async () => {
   await search();

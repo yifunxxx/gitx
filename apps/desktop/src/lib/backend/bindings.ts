@@ -883,7 +883,12 @@ export type ContentMatch = {
   matchEnd: number;
   replacementPreview: string;
 };
-export type ContentReplaceReq = { sessionId: string; generation: number; excludedPaths: string[] };
+export type ContentReplaceReq = {
+  sessionId: string;
+  generation: number;
+  excludedPaths: string[];
+  replacement: string;
+};
 export type ContentReplaceResult = { completed: string[]; failed: string[] };
 export type ContentSearchPage = {
   matches: ContentMatch[];
@@ -895,11 +900,15 @@ export type ContentSearchPage = {
   done: boolean;
   error: string | null;
 };
-export type ContentSearchPageReq = { sessionId: string; generation: number; page: number };
+export type ContentSearchPageReq = {
+  sessionId: string;
+  generation: number;
+  page: number;
+  replacement: string;
+};
 export type ContentSearchReq = {
   folderPath: string;
   query: string;
-  replacement: string;
   caseSensitive: boolean;
   wholeWord: boolean;
   regex: boolean;

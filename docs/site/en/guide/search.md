@@ -47,6 +47,8 @@ Replacement writes to disk without committing. Content hashes for every selected
 
 If the project changes during a write, the old search dialog closes and requests cancellation of further replacements. The task queue retains the source project's task until it settles. A notification identifies the source folder, completed count and any error; completed writes are not rolled back. Other file operations and saves are temporarily unavailable while the write finishes; retry them afterward.
 
+Editing the replacement refreshes the current page preview without scanning the workspace again. Excluded files, the current page, and the result position are retained. Replacement is disabled while the preview refreshes; a failed read can be retried in place, and changed text requires fresh confirmation. Changing the query, search options or scope, or choosing **Search again**, starts a new search and resets file selection. Previews use the saved search snapshot; files changed on disk are still detected before any write.
+
 ## Find and replace in an editor
 
 Focus an editor and press `Ctrl+F`. Selected text seeds the query. The bar starts as a single find row; use the left chevron to expand replace (`Ctrl+H` expands and focuses replace). Aa / .* / W inside the find field control case, regex, and whole-word matching. The up/down arrows navigate matches; **Find All** selects every match. Find and replace share the same field width, with actions moving below the fields in narrow panes. Focus and enabled options have distinct highlights. Editor regex uses JavaScript syntax, which differs from the global engine. The bar sits in the editor content area and does not cover Settings or other global dialogs.
