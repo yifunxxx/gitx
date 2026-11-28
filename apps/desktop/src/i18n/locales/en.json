@@ -11,6 +11,7 @@
     "exited": "exit {code}",
     "failed": "failed",
     "sessionLimit": "Close a terminal before opening another (maximum 16 sessions).",
+    "inputFailed": "Terminal input failed. Further input is disabled and queued input was discarded. Open a new terminal. {error}",
     "startedIn": "Started in:",
     "desktopOnly": "Interactive terminals are available in the desktop app.",
     "openFolder": "Open a folder or repository to start a terminal.",

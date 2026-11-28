@@ -175,8 +175,12 @@ async function create(cwd = directory.value, current: () => boolean = () => true
       update(session, { status: "exited", code });
       terminal.options.disableStdin = true;
     },
-    error: (reason) => {
-      showError(reason);
+    error: (reason, source) => {
+      showError(
+        source === "input"
+          ? t("terminal.inputFailed", { error: formatErrorMessage(reason) })
+          : reason,
+      );
       if (session.status === "starting") update(session, { status: "failed" });
     },
   });

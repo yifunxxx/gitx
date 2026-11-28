@@ -21,6 +21,8 @@ Up to 16 sessions can remain open. After switching projects, do not infer an exi
 
 Press `Shift+F10` or the menu key in terminal input to open the context menu. When a session tab has focus, use Left / Right to switch tabs or Home / End to reach the first or last tab. Holding a shortcut does not repeat copy, paste, or menu actions; extra modifiers such as Alt do not trigger those shortcuts.
 
+If sending input fails partway through, GitX disables that session's input, discards queued text, and requests session closure so a queued Enter cannot execute incomplete input. Output and the error remain available. Check the original operation's actual outcome, then open a new terminal to continue. Input is never retried automatically.
+
 The web demonstration backend does not provide an interactive terminal. Use the desktop app.
 
 ## Console

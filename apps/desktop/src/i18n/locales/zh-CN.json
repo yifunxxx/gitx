@@ -11,6 +11,7 @@
     "exited": "已退出 {code}",
     "failed": "启动失败",
     "sessionLimit": "请先关闭一个终端，再打开新的终端（最多 16 个会话）。",
+    "inputFailed": "终端输入发送失败，已停止输入并丢弃后续排队内容。请新建终端。{error}",
     "startedIn": "启动目录：",
     "desktopOnly": "交互式终端仅在桌面应用中可用。",
     "openFolder": "打开文件夹或仓库后即可启动终端。",
