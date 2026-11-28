@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, main, "docs/**", "cursor/**"]
+    branches: [master, main, "docs/**", "cursor/**", "codex/**"]
   pull_request:
 
 concurrency:
@@ -54,6 +54,9 @@ jobs:
           cp "$src" "src-tauri/binaries/gitx-helper-${triple}"
           # Windows-style name is unused on Linux CI; keep bare name for helper_bin sibling lookup.
           ls -la src-tauri/binaries/
+      # The application owns PTY, search and filesystem tests; compiling it alone
+      # does not exercise those Unix implementations.
+      - run: cargo test -p gitx --lib --locked
       - run: cargo build -p gitx
 
   # Full desktop e2e (tauri-driver) is deferred — smoke via web mock in M0.
