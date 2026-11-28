@@ -182,11 +182,11 @@ onUnmounted(() => {
 
 <template>
   <TooltipProvider :delay-duration="350" :skip-delay-duration="200">
-    <div class="glass-shell app-no-drag flex h-full min-h-0 flex-col overflow-hidden">
+    <div class="glass-shell flex h-full min-h-0 flex-col overflow-hidden">
       <TitleBar />
-      <div class="app-no-drag flex min-h-0 flex-1">
+      <div class="flex min-h-0 flex-1">
         <ToolWindowStripe />
-        <div class="glass-workspace app-no-drag min-h-0 min-w-0 flex-1">
+        <div class="glass-workspace min-h-0 min-w-0 flex-1">
           <WorkspacePanels>
             <template #editor>
               <Splitpanes

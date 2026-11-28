@@ -103,23 +103,9 @@ body {
   color: rgb(var(--foreground));
 }
 
-[data-tauri-drag-region] {
-  app-region: drag;
-  -webkit-app-region: drag;
-}
-
-button,
-a,
-input,
-textarea,
-[role="button"],
-[role="option"],
-[role="listbox"],
-.overflow-auto,
-.app-no-drag {
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
+/* Tauri handles data-tauri-drag-region itself, including interactive children.
+   Do not add CSS app-region declarations: WebView2 republishes their geometry
+   during scrolling, blocking native input even when list rendering is fast. */
 
 /* Clickable chrome: pointer cursor (GIT-29). */
 button:not(:disabled),

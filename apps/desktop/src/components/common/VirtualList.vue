@@ -401,11 +401,11 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col [app-region:no-drag]">
+  <div class="flex min-h-0 flex-1 flex-col">
     <div
       ref="root"
       :tabindex="scrollTabindex ?? (recycleKeys ? -1 : undefined)"
-      class="min-h-0 flex-1 overflow-auto [overflow-anchor:none] [app-region:no-drag]"
+      class="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
       @scroll.passive="onScroll"
       @pointerdown="onPointerDown"
     >
