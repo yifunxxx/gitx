@@ -32,3 +32,5 @@ Chrome158.0.8127.37，实际JobsPopup、StatusBar、jobsStore、Pinia、CSS及�
 本项没有在Windows应用注入jobList读取失败，浏览器模拟不作为原生IPC故障验收。QA007旧剪贴板权限现场保留，未操作隐私提示；旧fixture HEAD/index/status/文件和个人settings经脚本复核保持，个人settings SHA256为`1CE741747AEA8FBDDEB9542177A5B86028C7854F0B9B20EDC3D7B7A8D919A910`。用户安装版未更新。
 
 提交前fetch及master/交付分支检查成功，无新提交。新增并解决QA147一项；相邻启动事件缺少取消能力/重复事件覆盖问题另登记QA148候选，尚未受控确认。原9项加QA148共10项已知未关闭，整体七项目标继续。独立提交推送结果随后核对。
+
+功能提交`9daf49a44f032bf4d368c50eca702d22075351bb`首次推送成功，ls-remote完整SHA与本地一致，无凭据提示；补记前再次fetch及master/交付分支检查成功，无新提交。370处本地报告链接、Pages及fixture/settings保持检查通过，交付状态见统一台账。
