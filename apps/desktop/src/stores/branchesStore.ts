@@ -11,6 +11,7 @@ import { i18n } from "@/i18n";
 import { useJobsStore } from "./jobsStore";
 import { useChangesStore } from "./changesStore";
 import { useLogStore } from "./logStore";
+import { sameRefsList, sameRemotes } from "./branchSnapshots";
 
 export const useBranchesStore = defineStore("branches", () => {
   // Shallow: thousands of refs must not be deep-proxied on every refresh.
@@ -82,8 +83,8 @@ export const useBranchesStore = defineStore("branches", () => {
         backend.remoteList({ path: ws.repoPath }),
       ]);
       if (!current()) return;
-      refs.value = list;
-      remotes.value = remoteList;
+      if (!sameRefsList(refs.value, list)) refs.value = list;
+      if (!sameRemotes(remotes.value, remoteList)) remotes.value = remoteList;
     } catch (e) {
       if (current()) error.value = formatErrorMessage(e);
     } finally {

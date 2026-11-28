@@ -9,7 +9,7 @@ export type TerminalSink = {
   output: (bytes: Uint8Array, done: () => void) => void;
   opened: (info: TerminalInfo) => void;
   exited: (code: number | null) => void;
-  error: (error: unknown) => void;
+  error: (error: unknown, source?: "input" | "close") => void;
 };
 
 /** One outstanding read per PTY; only request more once xterm has parsed it. */
@@ -22,6 +22,8 @@ export class TerminalConnection {
   private resizeRunning = false;
   private dimensions: { cols: number; rows: number } | null = null;
   private releaseOutput: (() => void) | null = null;
+  private releasing: Promise<boolean> | null = null;
+  private opening: Promise<TerminalInfo> | null = null;
 
   constructor(
     private sink: TerminalSink,
@@ -29,9 +31,12 @@ export class TerminalConnection {
   ) {}
 
   async start(req: TerminalOpenReq) {
+    if (this.closed || this.ended || this.opening || this.id) return;
     try {
-      const info = await this.api.terminalOpen(req);
+      this.opening = this.api.terminalOpen(req);
+      const info = await this.opening;
       this.id = info.id;
+      this.opening = null;
       if (this.closed) {
         await this.release();
         return;
@@ -40,19 +45,15 @@ export class TerminalConnection {
       void this.flushResize();
       await this.pump();
     } catch (error) {
-      if (!this.closed) {
-        this.sink.error(error);
-        if (this.id) this.sink.exited(null);
-      }
-      this.ended = true;
-      await this.release();
+      this.opening = null;
+      await this.fail(error);
     }
   }
 
   private async pump() {
-    while (!this.closed && this.id) {
+    while (!this.closed && !this.ended && this.id) {
       const output = await this.api.terminalRead(this.id);
-      if (this.closed) break;
+      if (this.closed || this.ended) break;
       if (output.data.length) {
         await new Promise<void>((resolve) => {
           this.releaseOutput = resolve;
@@ -62,7 +63,7 @@ export class TerminalConnection {
           });
         });
       }
-      if (this.closed) break;
+      if (this.closed || this.ended) break;
       if (output.error) this.sink.error(output.error);
       if (output.exited) {
         this.ended = true;
@@ -92,9 +93,7 @@ export class TerminalConnection {
           from = to;
         }
       })
-      .catch((error) => {
-        if (!this.closed && !this.ended) this.sink.error(error);
-      })
+      .catch((error) => this.fail(error, "input"))
       .finally(() => {
         this.queuedInput -= data.length;
       });
@@ -128,22 +127,55 @@ export class TerminalConnection {
     }
   }
 
+  private async fail(error: unknown, source?: "input") {
+    if (this.closed || this.ended) return;
+    // A failed write may have reached the shell only partially. Never let
+    // queued input (especially Enter) continue against that unknown state.
+    this.ended = true;
+    this.dimensions = null;
+    this.releaseOutput?.();
+    this.releaseOutput = null;
+    if (source) this.sink.error(error, source);
+    else this.sink.error(error);
+    if (this.id) this.sink.exited(null);
+    await this.release();
+  }
+
   private async release() {
+    if (this.releasing) return this.releasing;
     const id = this.id;
-    this.id = null;
-    if (id) {
+    if (!id) return true;
+    this.releasing = (async () => {
       try {
         await this.api.terminalClose(id);
+        this.id = null;
+        return true;
       } catch (error) {
-        this.sink.error(error);
+        // Keep the identity for an explicit retry. A lost response does not
+        // prove that the backend released the shell; close is idempotent.
+        this.sink.error(error, "close");
+        return false;
       }
+    })();
+    try {
+      return await this.releasing;
+    } finally {
+      this.releasing = null;
     }
   }
 
   async close() {
     this.closed = true;
+    this.dimensions = null;
     this.releaseOutput?.();
     this.releaseOutput = null;
-    await this.release();
+    if (this.opening) {
+      try {
+        await this.opening;
+      } catch {
+        // A failed open has no PTY identity to release.
+      }
+    }
+    return this.release();
   }
 }

@@ -44,6 +44,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 futures-util = "0.3"
 portable-pty = "0.9"
 regex = "1"
+regex-automata = { version = "0.4", default-features = false, features = ["std"] }
 ignore = "0.4"
 globset = "0.4"
 sha2 = "0.10"

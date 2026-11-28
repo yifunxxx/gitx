@@ -63,9 +63,12 @@ it("dispatches the context's files and repository", async () => {
 it("preserves the action's checked-file fallback when the context has no selected files", async () => {
   mocks.changes.selectedPaths = [];
   (await openMenu()).click();
-  expect(mocks.run).toHaveBeenCalledWith("stage", expect.objectContaining({
-    selection: { files: undefined },
-  }));
+  expect(mocks.run).toHaveBeenCalledWith(
+    "stage",
+    expect.objectContaining({
+      selection: { files: undefined },
+    }),
+  );
 });
 it.each(["navigation", "selection"])("closes on %s and ignores a queued click", async (kind) => {
   const button = await openMenu();
@@ -76,3 +79,75 @@ it.each(["navigation", "selection"])("closes on %s and ignores a queued click", 
   expect(document.querySelector('[role="menu"]')).toBeNull();
   expect(mocks.run).not.toHaveBeenCalled();
 });
+
+it.each(["textarea", "input", "readonly", "password", "editable", "plaintext", "inherited"])(
+  "leaves a %s text control to its native editing menu instead of Git actions",
+  async (kind) => {
+    const control = document.createElement(
+      kind === "textarea" || kind === "readonly"
+        ? "textarea"
+        : kind === "input" || kind === "password"
+          ? "input"
+          : "div",
+    );
+    if (control instanceof HTMLInputElement)
+      control.type = kind === "password" ? "password" : "text";
+    if (control instanceof HTMLTextAreaElement) {
+      control.value = "Commit message";
+      control.readOnly = kind === "readonly";
+    }
+    if (["editable", "plaintext", "inherited"].includes(kind))
+      control.setAttribute("contenteditable", kind === "plaintext" ? "plaintext-only" : "true");
+    let target: HTMLElement = control;
+    if (kind === "inherited") {
+      target = document.createElement("span");
+      control.append(target);
+    }
+    surface.append(control);
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    await flushPromises();
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(mocks.run).not.toHaveBeenCalled();
+  },
+);
+
+it("preserves text input routing outside the Changes surface and closes an old menu", async () => {
+  await openMenu();
+  const input = document.createElement("input");
+  document.body.append(input);
+  try {
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    await flushPromises();
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  } finally {
+    input.remove();
+  }
+});
+
+it("does not replace a component-owned menu when its event is already prevented", async () => {
+  const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+  event.preventDefault();
+  surface.dispatchEvent(event);
+  await flushPromises();
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(mocks.run).not.toHaveBeenCalled();
+});
+
+it.each(["checkbox", "button", "noneditable"])(
+  "keeps the Changes menu for a non-text %s control",
+  async (kind) => {
+    const control = document.createElement(kind === "noneditable" ? "div" : "input");
+    if (control instanceof HTMLInputElement) control.type = kind;
+    else control.setAttribute("contenteditable", "false");
+    surface.append(control);
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    control.dispatchEvent(event);
+    await flushPromises();
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.querySelector('[role="menuitem"]')?.textContent).toContain("Stage");
+  },
+);

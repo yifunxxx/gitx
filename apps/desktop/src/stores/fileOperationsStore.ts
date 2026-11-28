@@ -3,7 +3,7 @@ import { computed, onScopeDispose, ref, shallowRef } from "vue";
 import { getBackend, type FsMutation, type FsOperation } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useFileTreeStore } from "./fileTreeStore";
-import { useFileViewerStore } from "./fileViewerStore";
+import { useFileViewerStore, type FileViewerTab } from "./fileViewerStore";
 import { useChangesStore } from "./changesStore";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
 import { toast } from "@/composables/useToast";
@@ -32,9 +32,19 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
   const viewer = useFileViewerStore();
   const jobs = useJobsStore();
   const t = i18n.global.t;
-  const activity = shallowRef<{ operation: FsOperation; current: () => boolean } | null>(null);
+  const activity = shallowRef<{
+    operation: FsOperation;
+    current: () => boolean;
+    phase?: "refreshing" | "opening";
+  } | null>(null);
   const activityTitle = computed(() =>
-    activity.value?.current() ? t(`fileOps.running.${activity.value.operation}`) : "",
+    activity.value?.current()
+      ? t(
+          activity.value.phase
+            ? `fileOps.${activity.value.phase}`
+            : `fileOps.running.${activity.value.operation}`,
+        )
+      : "",
   );
   let disposed = false;
   onScopeDispose(() => {
@@ -45,6 +55,10 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
   async function run(operation: FsOperation, paths: string[], destination?: string) {
     const folder = workspace.folderPath;
     if (disposed || busy.value || !folder) return;
+    if (viewer.fileMutationPending) {
+      toast({ title: t("fileOps.editorBusy") });
+      return;
+    }
     const navigation = workspace.navigationToken();
     const applied = workspace.appliedOpenToken();
     const current = () =>
@@ -54,6 +68,7 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
       workspace.appliedOpenToken() === applied;
     busy.value = true;
     let job: string | undefined;
+    let diskResultReceived = false;
     try {
       paths = topLevelPaths(paths);
       const create = operation === "createFile" || operation === "createDirectory";
@@ -138,11 +153,17 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
         }
       }
       let affected = viewer.affectedByFiles(folder, paths);
+      let confirmedDeletes: Map<FileViewerTab, string> | undefined;
       if (affected.some((tab) => tab.loading || tab.saving)) {
         toast({ title: t("fileOps.editorBusy") });
         return;
       }
       if (operation === "delete" && affected.some((tab) => tab.dirty)) {
+        // Authorize only these tab instances and the text shown before the
+        // confirmation. Failed recycling must leave every draft dirty.
+        confirmedDeletes = new Map(
+          affected.filter((tab) => tab.dirty).map((tab) => [tab, tab.text]),
+        );
         if (
           !(await confirmDialog({
             title: t("fileOps.delete"),
@@ -152,10 +173,6 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
           !current()
         )
           return;
-        // Confirmed discard: clear dirty so applyFileMutation closes tabs.
-        for (const tab of affected) {
-          if (tab.dirty) tab.dirty = false;
-        }
       }
       if (operation === "copy" && affected.some((tab) => tab.dirty)) {
         if (
@@ -187,6 +204,11 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
       }
       // Prompts and validation are not running disk work. Keep one task from
       // dispatch through refresh, including partial failures and navigation.
+      // Another surface can start a write while a confirmation is pending.
+      if (viewer.fileMutationPending) {
+        toast({ title: t("fileOps.editorBusy") });
+        return;
+      }
       job = jobs.begin(t(`fileOps.running.${operation}`), folder);
       activity.value = { operation, current };
       for (const tab of affected) tab.fileOperationPending = true;
@@ -194,29 +216,49 @@ export const useFileOperationsStore = defineStore("fileOperations", () => {
       let result;
       try {
         result = await getBackend().fsMutate({ folderPath: folder, operation, items });
-        if (!current()) return;
+        diskResultReceived = true;
+        // Navigation does not cancel dispatched disk work. Report its source
+        // and outcome before any optional view refresh can delay or hide it.
+        if (!disposed)
+          toast({
+            title: t(result.failures.length ? "fileOps.failed" : "fileOps.completed"),
+            description: [
+              t(`fileOps.${operation}`),
+              folder,
+              t("fileOps.resultSummary", {
+                completed: result.completed.length,
+                failed: result.failures.length,
+              }),
+              ...result.failures.map((failure) => `${failure.path}: ${failure.message}`),
+            ].join("\n"),
+            persistent: result.failures.length > 0,
+          });
         // Remap before releasing the save lock, including synchronous watchers.
-        viewer.applyFileMutation(folder, operation, result.completed);
+        if (current())
+          viewer.applyFileMutation(folder, operation, result.completed, confirmedDeletes);
       } finally {
         viewer.fileMutationPending = false;
         for (const tab of affected) tab.fileOperationPending = false;
       }
       // A refresh failure must not turn a successful disk operation into a retry.
+      if (!current()) return;
+      activity.value = { operation, current, phase: "refreshing" };
+      jobs.progress(job, { title: t("fileOps.refreshing") });
       await tree.refreshExpanded();
       if (!current()) return;
       if (workspace.isRepo) void useChangesStore().refresh(true);
-      if (result.failures.length)
-        toast({
-          title: t("fileOps.failed"),
-          description: result.failures
-            .map((failure) => `${failure.path}: ${failure.message}`)
-            .join("\n"),
-        });
-      else toast({ title: t("fileOps.completed") });
-      if (create && operation === "createFile" && result.completed[0])
+      if (create && operation === "createFile" && result.completed[0]) {
+        activity.value = { operation, current, phase: "opening" };
+        jobs.progress(job, { title: t("fileOps.opening") });
         await viewer.open(result.completed[0].path, { folderPath: folder });
+      }
     } catch (error) {
-      if (current()) toast({ title: t("fileOps.failed"), description: formatErrorMessage(error) });
+      if (!disposed && (job !== undefined || current()))
+        toast({
+          title: t(diskResultReceived ? "fileOps.followUpFailed" : "fileOps.failed"),
+          description: `${t(`fileOps.${operation}`)}\n${folder}\n${formatErrorMessage(error)}`,
+          persistent: true,
+        });
     } finally {
       if (job !== undefined) jobs.finished(job);
       activity.value = null;

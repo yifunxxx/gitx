@@ -133,7 +133,10 @@ it("finishes a failed task and allows a successful retry", async () => {
   expect(jobs.count).toBe(0);
   expect(store.busy).toBe(false);
   expect(mocks.toast).toHaveBeenCalledWith(
-    expect.objectContaining({ description: "disk unavailable" }),
+    expect.objectContaining({
+      description: expect.stringContaining("disk unavailable"),
+      persistent: true,
+    }),
   );
   await store.run("copy", ["a"]);
   expect(mocks.fsMutate).toHaveBeenCalledTimes(2);
@@ -162,7 +165,12 @@ it.each(["success", "failure"])(
     expect(jobs.running.map((job) => job.id)).toEqual([other]);
     expect(mocks.apply).not.toHaveBeenCalled();
     expect(mocks.refreshTree).not.toHaveBeenCalled();
-    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        title: i18n.global.t(outcome === "success" ? "fileOps.completed" : "fileOps.failed"),
+        description: expect.stringContaining("C:/project"),
+      }),
+    );
     expect(store.busy).toBe(false);
   },
 );
@@ -176,11 +184,20 @@ it("finishes partial results and a rejected refresh without leaving a task or re
     failures: [{ path: "b", message: "exists" }],
   });
   await store.run("copy", ["a", "b"]);
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ description: "b: exists" }));
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ description: expect.stringContaining("b: exists") }),
+  );
   expect(jobs.count).toBe(0);
   mocks.refreshTree.mockRejectedValueOnce(new Error("refresh unavailable"));
   await store.run("copy", ["a", "b"]);
   expect(mocks.fsMutate).toHaveBeenCalledTimes(2);
+  expect(mocks.toast).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      title: i18n.global.t("fileOps.followUpFailed"),
+      description: expect.stringContaining("refresh unavailable"),
+      persistent: true,
+    }),
+  );
   expect(jobs.count).toBe(0);
   expect(store.activityTitle).toBe("");
   expect(store.busy).toBe(false);
@@ -251,9 +268,12 @@ it("prevents duplicate commands and saves while mutation is pending", async () =
   pending.resolve({ completed: [{ path: "a", destination: "b" }], failures: [] });
   await task;
   expect(mocks.tabs[0].fileOperationPending).toBe(false);
-  expect(mocks.apply).toHaveBeenCalledWith("C:/project", "rename", [
-    { path: "a", destination: "b" },
-  ]);
+  expect(mocks.apply).toHaveBeenCalledWith(
+    "C:/project",
+    "rename",
+    [{ path: "a", destination: "b" }],
+    undefined,
+  );
   expect(mocks.fsMutate).toHaveBeenCalledTimes(1);
   expect(store.busy).toBe(false);
 });
@@ -266,9 +286,9 @@ it("reports conflicts and refreshes partial success without retrying the disk op
     failures: [{ path: "b", message: "destination exists" }],
   });
   await useFileOperationsStore().run("move", ["a", "b"]);
-  expect(mocks.apply).toHaveBeenCalledWith("C:/project", "move", completed);
+  expect(mocks.apply).toHaveBeenCalledWith("C:/project", "move", completed, undefined);
   expect(mocks.toast).toHaveBeenCalledWith(
-    expect.objectContaining({ description: "b: destination exists" }),
+    expect.objectContaining({ description: expect.stringContaining("b: destination exists") }),
   );
   expect(mocks.refreshTree).toHaveBeenCalledTimes(1);
 });
@@ -477,7 +497,8 @@ it("confirms recycle operations and asks before discarding unsaved drafts", asyn
   mocks.tabs = [{ dirty: true }];
   mocks.confirm.mockResolvedValue(true);
   await useFileOperationsStore().run("delete", ["a"]);
-  expect(mocks.tabs[0].dirty).toBe(false);
+  // This mocked result has no completed deletions; no draft may be discarded.
+  expect(mocks.tabs[0].dirty).toBe(true);
   expect(mocks.fsMutate).toHaveBeenCalledWith({
     folderPath: "C:/project",
     operation: "delete",

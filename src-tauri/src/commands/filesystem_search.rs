@@ -130,18 +130,30 @@ pub(super) fn begin(session: &str, generation: u32) -> Result<CancellationToken,
 #[tauri::command]
 #[specta::specta]
 pub fn fs_cancel_search(req: FsCancelSearchReq) -> Result<(), AppError> {
+    cancel_search(req, false).map(|_| ())
+}
+
+pub(super) fn cancel_search(req: FsCancelSearchReq, keep_results: bool) -> Result<bool, AppError> {
     if req.session_id.is_empty() || req.session_id.len() > 128 {
         return Err(error("invalid search session"));
     }
     let mut sessions = sessions().lock().map_err(error)?;
     if let Some(old) = sessions.get(&req.session_id) {
         if old.generation > req.generation {
-            return Ok(());
+            return Ok(false);
         }
+    }
+    // Mark an intentional stop before signalling the shared token, so the scan
+    // can finish without publishing cancellation as a search error.
+    let retained = if keep_results {
+        super::content_search::stop_session(&req.session_id, req.generation)?
+    } else {
+        super::content_search::cancel_session(&req.session_id, req.generation);
+        false
+    };
+    if let Some(old) = sessions.remove(&req.session_id) {
         old.cancel.cancel();
     }
-    sessions.remove(&req.session_id);
-    super::content_search::cancel_session(&req.session_id, req.generation);
     prune(&mut sessions);
     let cancel = CancellationToken::new();
     cancel.cancel();
@@ -153,7 +165,7 @@ pub fn fs_cancel_search(req: FsCancelSearchReq) -> Result<(), AppError> {
             touched: Instant::now(),
         },
     );
-    Ok(())
+    Ok(retained)
 }
 
 /// Lower is better: prefer contiguous basenames, then basename subsequences,

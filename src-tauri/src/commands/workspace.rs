@@ -186,17 +186,11 @@ pub async fn status_probe(
     let git = Arc::clone(&state.git);
     let scheduler = Arc::clone(&state.scheduler);
     let job_id = job.info.id.clone();
-    let job_title = job.info.title.clone();
+    let job_info = job.info.clone();
     let cancel = job.cancel.clone();
 
     tauri::async_runtime::spawn(async move {
-        let _ = app.emit(
-            "job://started",
-            serde_json::json!({
-                "id": job_id.0,
-                "title": job_title,
-            }),
-        );
+        let _ = app.emit("job://started", &job_info);
 
         let runner = git.read().await;
         let cmd_display = format!(

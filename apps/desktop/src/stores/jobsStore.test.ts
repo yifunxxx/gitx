@@ -50,7 +50,10 @@ it("opens a popup anchor and cancels a running job", async () => {
 });
 it("keeps progress details across a native list refresh", async () => {
   const jobs = useJobsStore();
-  jobs.started({ id: "clone", title: "Cloning…", message: "Receiving objects", percent: 42 }, "native");
+  jobs.started(
+    { id: "clone", title: "Cloning…", message: "Receiving objects", percent: 42 },
+    "native",
+  );
   mocks.list.mockResolvedValue([
     { id: "clone", title: "Cloning…", startedAt: 1, cancellable: true },
   ]);
@@ -81,7 +84,10 @@ it("rejects snapshots superseded by job events and coalesces overlapping polls",
 it("ignores snapshots returned after the owner was disposed and recovers from errors", async () => {
   const jobs = useJobsStore();
   mocks.list.mockResolvedValueOnce([{ id: "old", title: "old", startedAt: 0 }]);
-  await jobs.refresh(() => false);
+  let current = true;
+  const pending = jobs.refresh(() => current);
+  current = false;
+  await pending;
   expect(jobs.count).toBe(0);
   mocks.list.mockRejectedValueOnce(new Error("offline"));
   await expect(jobs.refresh()).rejects.toThrow("offline");

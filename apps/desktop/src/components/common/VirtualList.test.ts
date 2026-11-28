@@ -131,7 +131,7 @@ it("suppresses hover/title while scrolling without disabling pointer events", as
   expect(windowEl().attributes("data-scrolling")).toBeDefined();
   expect(windowEl().classes()).not.toContain("pointer-events-none");
   expect((wrapper.vm as unknown as { scrolling: boolean }).scrolling).toBe(true);
-  expect(wrapper.get(".row").attributes("title")).toBeUndefined();
+  expect(wrapper.get(".row").attributes("title")).toBe("");
   expect(wrapper.get(".row").attributes("data-vl-title")).toBe("tip");
   await vi.advanceTimersByTimeAsync(149);
   expect(windowEl().attributes("data-scrolling")).toBeDefined();
@@ -155,6 +155,116 @@ it("suppresses hover/title while scrolling without disabling pointer events", as
   wrapper.unmount();
   vi.useRealTimers();
 });
+
+it.each([undefined, null, "", "new tip"])(
+  "restores the current title after a recycled row changes to %s during scrolling",
+  async (title) => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const wrapper = mount(VirtualList, {
+      props: {
+        items: [{ id: "first", title: "old tip" }],
+        itemHeight: 22,
+        getKey: (item) => (item as { id: string }).id,
+        recycleKeys: true,
+      },
+      slots: {
+        default: `<button class="row" :title="params.item.title">{{ params.item.id }}</button>`,
+      },
+    });
+    try {
+      const row = wrapper.get(".row").element;
+      await wrapper.get(".overflow-auto").trigger("scroll");
+      await wrapper.setProps({ items: [{ id: "second", title }] });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(wrapper.get(".row").element).toBe(row);
+      expect(wrapper.get(".row").text()).toBe("second");
+      await vi.advanceTimersByTimeAsync(160);
+      expect(row.getAttribute("title")).toBe(title ?? null);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("consumes a pending title removal when the list unmounts during scrolling", async () => {
+  vi.useFakeTimers();
+  const disconnect = vi.spyOn(MutationObserver.prototype, "disconnect");
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const wrapper = mount(VirtualList, {
+    props: { items: ["row"], itemHeight: 22, getKey: String },
+    slots: { default: `<button class="row" title="old tip">{{ params.item }}</button>` },
+  });
+  try {
+    await wrapper.get(".overflow-auto").trigger("scroll");
+    const row = wrapper.get(".row").element;
+    row.removeAttribute("title");
+    wrapper.unmount();
+    expect(row.getAttribute("title")).toBeNull();
+    expect(disconnect).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(row.getAttribute("title")).toBeNull();
+  } finally {
+    wrapper.unmount();
+    disconnect.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+it("keeps the last title across multiple updates and a second scroll gesture", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const wrapper = mount(VirtualList, {
+    props: { items: [{ title: "first" }], itemHeight: 22, getKey: () => "row" },
+    slots: { default: `<button class="row" :title="params.item.title">row</button>` },
+  });
+  try {
+    await wrapper.get(".overflow-auto").trigger("scroll");
+    await wrapper.setProps({ items: [{ title: undefined }] });
+    await wrapper.setProps({ items: [{ title: "last" }] });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(wrapper.get(".row").attributes("title")).toBe("");
+    await vi.advanceTimersByTimeAsync(160);
+    expect(wrapper.get(".row").attributes("title")).toBe("last");
+    await wrapper.get(".overflow-auto").trigger("scroll");
+    await vi.advanceTimersByTimeAsync(160);
+    expect(wrapper.get(".row").attributes("title")).toBe("last");
+    expect(wrapper.get(".row").attributes("data-vl-title")).toBeUndefined();
+  } finally {
+    wrapper.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it.each(["latest", undefined])(
+  "flushes pending title %s before the idle timer restores it",
+  async (title) => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const wrapper = mount(VirtualList, {
+      props: { items: ["row"], itemHeight: 22, getKey: String },
+      slots: { default: `<button class="row" title="old tip">row</button>` },
+    });
+    try {
+      await wrapper.get(".overflow-auto").trigger("scroll");
+      const row = wrapper.get(".row").element;
+      if (title === undefined) row.removeAttribute("title");
+      else row.setAttribute("title", title);
+      // End scrolling before queued mutation callbacks are delivered.
+      vi.advanceTimersByTime(151);
+      expect(row.getAttribute("title")).toBe(title ?? null);
+      expect(row.hasAttribute("data-vl-title")).toBe(false);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("renders each wheel destination on its animation frame", async () => {
   vi.useFakeTimers();

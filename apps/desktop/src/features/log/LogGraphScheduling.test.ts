@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, shallowMount } from "@vue/test-utils";
-import { createPinia, setActivePinia } from "pinia";
+import { createPinia, getActivePinia, setActivePinia } from "pinia";
 import { nextTick, reactive, ref } from "vue";
 import { useLogStore } from "@/stores/logStore";
+import { useJobsStore } from "@/stores/jobsStore";
 import { layoutCommitGraphIncremental } from "./graphLayout";
 import CommitGraphCell from "./CommitGraphCell.vue";
 import LogView from "./LogView.vue";
@@ -13,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   settings: {} as any,
   scroll: vi.fn(),
   details: vi.fn(),
+  locate: vi.fn(),
+  query: vi.fn(),
 }));
 vi.mock("./graphLayout", async (original) => {
   const module = await original<typeof import("./graphLayout")>();
@@ -22,6 +25,8 @@ vi.mock("@/lib/backend", () => ({
   getBackend: () => ({
     logCommitDetails: mocks.details,
     logChangedFiles: async () => [],
+    logLocate: mocks.locate,
+    logQuery: mocks.query,
   }),
 }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.ws }));
@@ -58,7 +63,9 @@ let nextFrameId = 0;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.details.mockResolvedValue(null);
+  mocks.details.mockReset().mockResolvedValue(null);
+  mocks.locate.mockReset();
+  mocks.query.mockReset();
   frames = new Map();
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frames.set(++nextFrameId, callback);
@@ -82,6 +89,7 @@ async function mountView(mode: "tree" | "flat" = "tree", realList = false) {
   mocks.settings.settings.git.logListMode = mode;
   wrapper = shallowMount(LogView, {
     global: {
+      plugins: [getActivePinia()!],
       stubs: {
         Splitpanes: { template: "<div><slot /></div>" },
         Pane: { template: "<div><slot /></div>" },
@@ -115,6 +123,41 @@ it("does not build a hidden graph when mounting the tree view", async () => {
   expect(wrapper!.findAllComponents(CommitGraphCell)).toHaveLength(0);
   expect(layoutCommitGraphIncremental).not.toHaveBeenCalled();
 });
+
+it.each(["flat", "tree"] as const)(
+  "refreshes author and first-parent navigation with the same SHA in %s mode",
+  async (mode) => {
+    const log = useLogStore();
+    const rows = [commit("tip", ["left", "right"]), commit("right", ["base"]), commit("left", ["base"]), commit("base")];
+    log.commits = rows;
+    await mountView(mode);
+    await renderFrame();
+    const oldGraph = wrapper!.findAllComponents(CommitGraphCell).map(cell => cell.props("graph"));
+    vi.mocked(log.load).mockRestore();
+    const updated = rows.map(row => ({ ...row, parents: [...row.parents], refs: [...row.refs] }));
+    updated[0]!.parents.reverse();
+    updated[0]!.author = "After";
+    mocks.query.mockResolvedValue({ commits: updated, nextOffset: 4, truncated: false });
+    await log.load(true, true);
+    await renderFrame();
+    const tip = wrapper!.findAll('[role="option"]').find(row => row.text().includes("tip"))!;
+    expect(tip.text()).toContain("After");
+    if (mode === "flat") {
+      const graphs = wrapper!.findAllComponents(CommitGraphCell).map(cell => cell.props("graph"));
+      expect(graphs).not.toEqual(oldGraph);
+    }
+    await tip.trigger("keydown", { key: "ArrowLeft" });
+    await renderFrame();
+    expect(log.selectedSha).toBe("right");
+    vi.mocked(layoutCommitGraphIncremental).mockClear();
+    const current = log.commits;
+    mocks.query.mockResolvedValue({ commits: structuredClone(updated), nextOffset: 4, truncated: false });
+    await log.load(true, true);
+    await renderFrame();
+    expect(log.commits).toBe(current);
+    expect(layoutCommitGraphIncremental).not.toHaveBeenCalled();
+  },
+);
 
 it("defers graph changes while tree rows receive refreshed commits and filters", async () => {
   await mountView();
@@ -279,6 +322,169 @@ it("uses the displayed order for Shift ranges and keyboard navigation while layo
   await renderFrame();
   expect(mocks.scroll).toHaveBeenCalledExactlyOnceWith(0);
 });
+
+it.each([
+  ["flat", false],
+  ["flat", true],
+  ["tree", false],
+  ["tree", true],
+] as const)(
+  "reveals a %s target before slow details settle (distant=%s)",
+  async (mode, distant) => {
+    const log = useLogStore();
+    const target = distant ? "distant" : "root";
+    mocks.locate.mockResolvedValue({ sha: target, offset: distant ? 10000 : 1 });
+    mocks.query.mockResolvedValue({
+      commits: [commit(target)],
+      nextOffset: 10001,
+      truncated: true,
+    });
+    let finish!: (value: null) => void;
+    mocks.details.mockReturnValue(
+      new Promise<null>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await mountView(mode);
+    await renderFrame();
+    log.goToInput = target;
+    await wrapper!
+      .get('input[placeholder="log.goToPlaceholder"]')
+      .trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    await renderFrame();
+    expect(log.selectedSha).toBe(target);
+    expect(log.detailsLoading).toBe(true);
+    expect(log.locating).toBe(false);
+    expect(
+      wrapper!.get('input[placeholder="log.goToPlaceholder"]').attributes("disabled"),
+    ).toBeUndefined();
+    expect(mocks.scroll).toHaveBeenCalledOnce();
+    expect(mocks.scroll.mock.lastCall![1]).toBe("center");
+    expect(useJobsStore().running.map((job) => job.title)).toEqual(["log.loadingDetails"]);
+    finish(null);
+    await flushPromises();
+    expect(useJobsStore().count).toBe(0);
+  },
+);
+
+it("reveals a located commit even when its details fail, keeping the local error", async () => {
+  const log = useLogStore();
+  mocks.locate.mockResolvedValue({ sha: "root", offset: 1 });
+  mocks.details.mockRejectedValue(new Error("details unavailable"));
+  await mountView("flat");
+  await renderFrame();
+  log.goToInput = "root";
+  await wrapper!
+    .get('input[placeholder="log.goToPlaceholder"]')
+    .trigger("keydown", { key: "Enter" });
+  await flushPromises();
+  await renderFrame();
+  expect(log.selectedSha).toBe("root");
+  expect(log.detailsError).toBe("details unavailable");
+  expect(mocks.scroll).toHaveBeenCalledExactlyOnceWith(1, "center");
+  expect(useJobsStore().count).toBe(0);
+});
+
+it("reads a previously unloaded parent once and scrolls while details remain pending", async () => {
+  const log = useLogStore();
+  log.commits = [commit("child", ["parent"])];
+  mocks.locate.mockResolvedValue({ sha: "parent", offset: 100 });
+  mocks.query.mockResolvedValue({ commits: [commit("parent")], nextOffset: 101, truncated: false });
+  let finish!: (value: null) => void;
+  mocks.details.mockReturnValue(
+    new Promise<null>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await mountView("flat");
+  await renderFrame();
+  await wrapper!.get('[role="option"]').trigger("keydown", { key: "ArrowLeft" });
+  await flushPromises();
+  await renderFrame();
+  expect(log.selectedSha).toBe("parent");
+  expect(mocks.scroll).toHaveBeenCalledOnce();
+  expect(mocks.details).toHaveBeenCalledOnce();
+  finish(null);
+  await flushPromises();
+  await renderFrame();
+  expect(mocks.details).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])(
+  "keeps a navigation task until locate settles (failure=%s)",
+  async (failure) => {
+    const log = useLogStore();
+    let finish!: (value: { sha: string; offset: number | null }) => void;
+    let fail!: (reason: Error) => void;
+    mocks.locate.mockReturnValue(
+      new Promise((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      }),
+    );
+    const request = log.goToHashOrRef("hidden").catch((error: Error) => error);
+    await flushPromises();
+    expect(log.locating).toBe(true);
+    expect(useJobsStore().running).toEqual([
+      expect.objectContaining({ title: "log.locating · hidden", message: "A" }),
+    ]);
+    if (failure) fail(new Error("cannot resolve revision"));
+    else finish({ sha: "hidden", offset: null });
+    const result = await request;
+    expect(log.locating).toBe(false);
+    expect(useJobsStore().count).toBe(0);
+    if (failure) expect(result).toBeInstanceOf(Error);
+    else expect(log.navigationMiss).toBe("hidden");
+  },
+);
+
+it("keeps the locate task through the target page and ends it when the page fails", async () => {
+  const log = useLogStore();
+  mocks.locate.mockResolvedValue({ sha: "far", offset: 10000 });
+  let fail!: (error: Error) => void;
+  mocks.query.mockReturnValue(
+    new Promise((_, reject) => {
+      fail = reject;
+    }),
+  );
+  const request = log.goToHashOrRef("far").catch((error: Error) => error);
+  await flushPromises();
+  expect(log.locating).toBe(true);
+  expect(useJobsStore().count).toBe(1);
+  fail(new Error("page unavailable"));
+  expect(await request).toBeInstanceOf(Error);
+  expect(log.locating).toBe(false);
+  expect(useJobsStore().count).toBe(0);
+  expect(mocks.details).not.toHaveBeenCalled();
+});
+
+it.each(["selection", "repository", "dispose"])(
+  "does not publish late detail failure after %s invalidates the located target",
+  async (reason) => {
+    const log = useLogStore();
+    mocks.locate.mockResolvedValue({ sha: "root", offset: 1 });
+    let fail!: (error: Error) => void;
+    mocks.details.mockReturnValueOnce(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+    const request = log.goToHashOrRef("root");
+    await flushPromises();
+    expect(log.locating).toBe(false);
+    expect(await request).toBe("root");
+    if (reason === "selection") await log.select("tip");
+    else if (reason === "repository") mocks.ws.repoPath = "B";
+    else log.$dispose();
+    fail(new Error("obsolete detail failure"));
+    await flushPromises();
+    expect(log.detailsError).toBeNull();
+    expect(log.detailsLoading).toBe(false);
+    expect(useJobsStore().count).toBe(0);
+    if (reason === "selection") expect(log.selectedSha).toBe("tip");
+  },
+);
 
 async function jumpToReplacement() {
   const log = useLogStore();

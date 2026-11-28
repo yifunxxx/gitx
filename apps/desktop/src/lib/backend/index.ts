@@ -232,6 +232,7 @@ export type Backend = {
   fsContentSearchPage(req: ContentSearchPageReq): Promise<ContentSearchPage>;
   fsReplaceContent(req: ContentReplaceReq): Promise<ContentReplaceResult>;
   fsCancelSearch(req: FsCancelSearchReq): Promise<null>;
+  fsStopContentSearch(req: FsCancelSearchReq): Promise<boolean>;
   stagePaths(req: PathsReq): Promise<null>;
   unstagePaths(req: PathsReq): Promise<null>;
   addPaths(req: AddPathsReq): Promise<null>;
@@ -411,6 +412,7 @@ export const tauriBackend: Backend = {
   fsContentSearchPage: (req) => commands.fsContentSearchPage(req),
   fsReplaceContent: (req) => commands.fsReplaceContent(req),
   fsCancelSearch: (req) => commands.fsCancelSearch(req),
+  fsStopContentSearch: (req) => commands.fsStopContentSearch(req),
   stagePaths: (req) => commands.stagePaths(req),
   unstagePaths: (req) => commands.unstagePaths(req),
   addPaths: (req) => commands.addPaths(req),

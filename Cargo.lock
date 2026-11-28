@@ -1420,6 +1420,7 @@ dependencies = [
  "ignore",
  "portable-pty",
  "regex",
+ "regex-automata",
  "reqwest 0.12.28",
  "rustix",
  "serde",

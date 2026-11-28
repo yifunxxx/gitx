@@ -227,3 +227,121 @@ it("reveals a nested file by expanding parents, clearing a blocking filter, and 
   expect(await store.revealPath("missing/file.ts")).toBe(false);
   expect(await store.revealPath("../escape")).toBe(false);
 });
+
+it("clears a directory-only filter to reveal the requested file and preserves a matching filter", async () => {
+  mocks.fsReadDir.mockImplementation(async ({ dir: path }) =>
+    path === "" ? [dir("src")] : [file("src/target.ts")],
+  );
+  const store = useFileTreeStore();
+  await store.loadRoot();
+  store.filter = "src";
+  expect(await store.revealPath("src/target.ts")).toBe(true);
+  expect(store.filter).toBe("");
+  expect(store.selectedPaths).toEqual(["src/target.ts"]);
+  store.filter = "TARGET";
+  expect(await store.revealPath("src/target.ts")).toBe(true);
+  expect(store.filter).toBe("TARGET");
+});
+
+it.each(["root", "ancestor"])(
+  "does not continue a %s reveal in a newly opened workspace",
+  async (stage) => {
+    const old = deferred();
+    const store = useFileTreeStore();
+    mocks.fsReadDir.mockImplementation(async ({ dir: path }) =>
+      path === "" ? [dir("src"), file("keep.txt")] : [file("src/target.ts")],
+    );
+    if (stage === "ancestor") await store.loadRoot();
+    mocks.fsReadDir.mockReturnValueOnce(old.promise);
+    const locating = store.revealPath("src/target.ts");
+    await vi.waitFor(() => expect(mocks.fsReadDir).toHaveBeenCalledTimes(stage === "root" ? 1 : 2));
+    mocks.workspace.folderPath = "C:/next";
+    await store.loadRoot();
+    await store.expand("src");
+    store.select("keep.txt");
+    mocks.fsReadDir.mockClear();
+    old.resolve(stage === "root" ? [dir("src")] : [file("src/target.ts")]);
+    expect(await locating).toBe(false);
+    expect(store.selectedPaths).toEqual(["keep.txt"]);
+    expect(mocks.fsReadDir).not.toHaveBeenCalled();
+  },
+);
+
+it("ignores a stale reveal after reopening the same folder", async () => {
+  const old = deferred();
+  mocks.fsReadDir.mockReturnValueOnce(old.promise);
+  const store = useFileTreeStore();
+  const locating = store.revealPath("target.ts");
+  mocks.workspace.token++;
+  mocks.fsReadDir.mockResolvedValueOnce([file("target.ts"), file("keep.txt")]);
+  await store.loadRoot();
+  store.select("keep.txt");
+  old.resolve([file("target.ts")]);
+  expect(await locating).toBe(false);
+  expect(store.selectedPaths).toEqual(["keep.txt"]);
+});
+
+it("lets a newer reveal win while the older request is still loading an ancestor", async () => {
+  const old = deferred();
+  mocks.fsReadDir.mockResolvedValueOnce([dir("src"), file("keep.txt")]);
+  const store = useFileTreeStore();
+  await store.loadRoot();
+  mocks.fsReadDir.mockReturnValueOnce(old.promise);
+  const first = store.revealPath("src/target.ts");
+  await vi.waitFor(() => expect(mocks.fsReadDir).toHaveBeenCalledTimes(2));
+  expect(await store.revealPath("keep.txt")).toBe(true);
+  old.resolve([file("src/target.ts")]);
+  expect(await first).toBe(false);
+  expect(store.selectedPaths).toEqual(["keep.txt"]);
+});
+
+it("shares an ancestor read with a newer reveal and only selects the newer target", async () => {
+  const pending = deferred();
+  mocks.fsReadDir.mockResolvedValueOnce([dir("src")]);
+  const store = useFileTreeStore();
+  await store.loadRoot();
+  mocks.fsReadDir.mockReturnValueOnce(pending.promise);
+  const first = store.revealPath("src/old.ts");
+  await vi.waitFor(() => expect(mocks.fsReadDir).toHaveBeenCalledTimes(2));
+  const second = store.revealPath("src/new.ts");
+  pending.resolve([file("src/old.ts"), file("src/new.ts")]);
+  expect(await first).toBe(false);
+  expect(await second).toBe(true);
+  expect(store.selectedPaths).toEqual(["src/new.ts"]);
+  expect(mocks.fsReadDir).toHaveBeenCalledTimes(2);
+});
+
+it.each(["root", "ancestor"])(
+  "honors caller cancellation during the %s read without clearing the filter",
+  async (stage) => {
+    const pending = deferred();
+    mocks.fsReadDir.mockResolvedValueOnce([dir("src"), file("keep.txt")]);
+    const store = useFileTreeStore();
+    if (stage === "ancestor") await store.loadRoot();
+    mocks.fsReadDir.mockReturnValueOnce(pending.promise);
+    if (stage === "root") mocks.fsReadDir.mockReset().mockReturnValueOnce(pending.promise);
+    let active = true;
+    store.filter = "keep";
+    const locating = store.revealPath("src/nested/target.ts", () => active);
+    await vi.waitFor(() => expect(mocks.fsReadDir).toHaveBeenCalledTimes(stage === "root" ? 1 : 2));
+    active = false;
+    pending.resolve(stage === "root" ? [dir("src")] : [dir("src/nested")]);
+    expect(await locating).toBe(false);
+    expect(store.filter).toBe("keep");
+    expect(store.selectedPaths).toEqual([]);
+    expect(mocks.fsReadDir).toHaveBeenCalledTimes(stage === "root" ? 1 : 2);
+  },
+);
+
+it("retries failed root and ancestor reads on a later locate", async () => {
+  const store = useFileTreeStore();
+  mocks.fsReadDir.mockRejectedValueOnce(new Error("root denied"));
+  expect(await store.revealPath("src/target.ts")).toBe(false);
+  mocks.fsReadDir
+    .mockResolvedValueOnce([dir("src")])
+    .mockRejectedValueOnce(new Error("child denied"));
+  expect(await store.revealPath("src/target.ts")).toBe(false);
+  mocks.fsReadDir.mockResolvedValueOnce([file("src/target.ts")]);
+  expect(await store.revealPath("src/target.ts")).toBe(true);
+  expect(store.selectedPath).toBe("src/target.ts");
+});

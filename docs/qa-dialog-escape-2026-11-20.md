@@ -1,5 +1,7 @@
 # QA-042：弹窗 Escape 输入边界
 
+后续证据：2026-11-28[系统IME原生续验](qa-native-ime-2026-11-28.md)确认New Changelist中首次Escape只取消实际中文候选、第二次才关闭Prompt；全局搜索替换同样通过。Confirm/Credential、精确长按及其他输入法仍保留边界。
+
 日期：2026-11-20。接续QA-041独立审阅；本项处理Confirm、Prompt、Credential和DialogHost的Escape，不与Enter行为混为同一交付。
 
 ## 复现及影响

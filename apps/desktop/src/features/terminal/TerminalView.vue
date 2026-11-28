@@ -4,7 +4,14 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import {
-  Plus, Trash2, Copy, ClipboardPaste, Eraser, LoaderCircle, Terminal as TerminalIcon,
+  Plus,
+  Trash2,
+  Copy,
+  ClipboardPaste,
+  Eraser,
+  LoaderCircle,
+  CircleAlert,
+  Terminal as TerminalIcon,
 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -26,7 +33,7 @@ const workspace = useWorkspaceStore();
 const host = ref<HTMLElement | null>(null);
 const activeId = ref(0);
 const profile = ref<TerminalShell>("default");
-const error = ref("");
+const panelError = ref("");
 const pasting = ref(false);
 let pasteGeneration = 0;
 function invalidatePaste() {
@@ -71,7 +78,11 @@ type Session = {
   key: number;
   cwd: string;
   label: string;
-  status: "starting" | "running" | "exited" | "failed";
+  status: "starting" | "running" | "exited" | "failed" | "closing" | "close-failed";
+  closeError: string;
+  error: string;
+  clipboardError: string;
+  clipboardRequest: number;
   code: number | null;
   terminal: Terminal;
   fit: FitAddon;
@@ -85,20 +96,33 @@ let observer: ResizeObserver | undefined;
 let themeObserver: MutationObserver | undefined;
 let frame = 0;
 const active = computed(() => sessions.find((session) => session.key === activeId.value));
+function sessionError(session: Session) {
+  return [session.closeError, session.error, session.clipboardError].filter(Boolean).join("\n");
+}
+const displayedError = computed(() =>
+  [active.value && sessionError(active.value), panelError.value].filter(Boolean).join("\n"),
+);
 function update(session: Session, fields: Partial<Session>) {
   Object.assign(session, fields);
 }
-function showError(reason: unknown) {
-  if (!disposed) error.value = formatErrorMessage(reason);
+function isLive(session: Session) {
+  return !disposed && sessions.includes(session);
 }
 function colors() {
   const css = getComputedStyle(document.documentElement);
-  const color = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  const color = (name: string, fallback: string) => {
+    const [channels, alpha] = (css.getPropertyValue(name).trim() || fallback).split("/");
+    // xterm's canvas fallback rejects translucent space-separated CSS colors.
+    const rgb = channels.trim().split(/\s+/).join(", ");
+    return alpha === undefined ? `rgb(${rgb})` : `rgba(${rgb}, ${alpha.trim()})`;
+  };
   return {
-    background: `rgb(${color("--background", "20 20 23")})`,
-    foreground: `rgb(${color("--foreground", "225 225 230")})`,
-    cursor: `rgb(${color("--foreground", "225 225 230")})`,
-    selectionBackground: `rgb(${color("--selection", "55 85 135")})`,
+    background: color("--background", "20 20 23"),
+    foreground: color("--foreground", "225 225 230"),
+    cursor: color("--foreground", "225 225 230"),
+    cursorAccent: color("--background", "20 20 23"),
+    selectionBackground: color("--selection", "55 85 135"),
+    selectionForeground: color("--selection-foreground", "225 225 230"),
   };
 }
 function fitActive() {
@@ -122,10 +146,10 @@ async function activate(key: number, focus = true) {
 async function create(cwd = directory.value, current: () => boolean = () => true) {
   if (!desktop || !cwd || !host.value || disposed || !current()) return;
   if (sessions.length >= 16) {
-    error.value = t("terminal.sessionLimit");
+    panelError.value = t("terminal.sessionLimit");
     return;
   }
-  error.value = "";
+  panelError.value = "";
   const element = document.createElement("div");
   const shell = profile.value;
   element.className = "h-full min-h-0 overflow-hidden";
@@ -135,6 +159,7 @@ async function create(cwd = directory.value, current: () => boolean = () => true
     scrollback: 5000,
     fontSize: 12,
     lineHeight: 1.2,
+    minimumContrastRatio: 4.5,
     fontFamily:
       getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() ||
       "monospace",
@@ -151,6 +176,10 @@ async function create(cwd = directory.value, current: () => boolean = () => true
     cwd,
     label: windows ? (profile.value === "cmd" ? "cmd" : "PowerShell") : "Shell",
     status: "starting",
+    closeError: "",
+    error: "",
+    clipboardError: "",
+    clipboardRequest: 0,
     code: null,
     terminal,
     fit,
@@ -166,11 +195,25 @@ async function create(cwd = directory.value, current: () => boolean = () => true
     },
     exited: (code) => {
       if (active.value === session) invalidatePaste();
-      update(session, { status: "exited", code });
+      update(session, { code });
+      if (session.status !== "closing" && session.status !== "close-failed")
+        update(session, { status: "exited" });
       terminal.options.disableStdin = true;
     },
-    error: (reason) => {
-      showError(reason);
+    error: (reason, source) => {
+      if (!isLive(session)) return;
+      if (source === "close") {
+        update(session, {
+          status: session.status === "closing" ? "closing" : "close-failed",
+          closeError: t("terminal.closeFailedDetail", { error: formatErrorMessage(reason) }),
+        });
+        return;
+      }
+      session.error = formatErrorMessage(
+        source === "input"
+          ? t("terminal.inputFailed", { error: formatErrorMessage(reason) })
+          : reason,
+      );
       if (session.status === "starting") update(session, { status: "failed" });
     },
   });
@@ -178,32 +221,42 @@ async function create(cwd = directory.value, current: () => boolean = () => true
   session.cancel.push(() => inputSubscription.dispose());
   terminal.attachCustomKeyEventHandler((event) => {
     if (event.type !== "keydown") return true;
-    const pasteShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey &&
-      !event.altKey && event.code === "KeyV";
+    if (event.defaultPrevented) return false;
+    if (event.isComposing || event.keyCode === 229) {
+      invalidatePaste();
+      return true;
+    }
+    const matchesKey = (code: string, key: string) =>
+      event.code === code || (!event.code && event.key.toLowerCase() === key);
+    const mod = event.ctrlKey !== event.metaKey && !event.altKey;
+    const pasteShortcut = mod && event.shiftKey && matchesKey("KeyV", "v");
     // New keyboard input changes the shell's insertion point. Parser replies
     // arrive through onData too, so they must not invalidate clipboard reads.
     if (!pasteShortcut && !["Control", "Shift", "Alt", "Meta", "CapsLock"].includes(event.key))
       invalidatePaste();
-    if (event.isComposing) return true;
     if (isTerminalToggle(event)) return false;
-    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-      void openMenu(event);
+    const menuShortcut =
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      ((!event.shiftKey && event.key === "ContextMenu") || (event.shiftKey && event.key === "F10"));
+    if (menuShortcut) {
+      event.preventDefault();
+      if (!event.repeat) void openMenu(event);
       return false;
     }
-    const mod = event.ctrlKey || event.metaKey;
-    if (mod && event.shiftKey && event.code === "KeyC") {
+    if (
+      mod &&
+      matchesKey("KeyC", "c") &&
+      (event.shiftKey || (event.ctrlKey && terminal.hasSelection()))
+    ) {
       event.preventDefault();
-      void copy(session);
+      if (!event.repeat) void copy(session);
       return false;
     }
-    if (mod && event.shiftKey && event.code === "KeyV") {
+    if (pasteShortcut) {
       event.preventDefault();
-      void paste(session);
-      return false;
-    }
-    if (event.ctrlKey && event.code === "KeyC" && terminal.hasSelection()) {
-      event.preventDefault();
-      void copy(session);
+      if (!event.repeat) void paste(session);
       return false;
     }
     return true;
@@ -224,46 +277,81 @@ async function create(cwd = directory.value, current: () => boolean = () => true
   }
 }
 async function close(session: Session) {
+  if (!sessions.includes(session) || session.status === "closing") return;
+  update(session, { status: "closing", closeError: "" });
+  session.terminal.options.disableStdin = true;
+  if (active.value === session) {
+    invalidatePaste();
+    menu.value = null;
+  }
+  const closed = await session.connection.close();
+  if (disposed) return;
+  if (!closed) {
+    update(session, { status: "close-failed" });
+    return;
+  }
+  await removeSession(session);
+}
+async function removeSession(session: Session) {
   const index = sessions.indexOf(session);
   if (index < 0) return;
   sessions.splice(index, 1);
+  panelError.value = "";
   session.cancel.forEach((cancel) => cancel());
-  const closing = session.connection.close();
   session.terminal.dispose();
   session.element.remove();
-  if (activeId.value === session.key)
+  if (!disposed && activeId.value === session.key)
     await activate(sessions[Math.min(index, sessions.length - 1)]?.key ?? 0);
-  await closing;
 }
 async function copy(session = active.value) {
-  if (!session?.terminal.hasSelection()) return;
+  if (!session || !isLive(session) || !session.terminal.hasSelection()) return;
+  invalidatePaste();
+  const request = ++session.clipboardRequest;
+  session.clipboardError = "";
   try {
     await navigator.clipboard.writeText(session.terminal.getSelection());
   } catch (reason) {
-    showError(reason);
+    if (isLive(session) && request === session.clipboardRequest)
+      session.clipboardError = formatErrorMessage(reason);
   }
 }
 async function paste(session = active.value) {
-  if (!session || session.status !== "running" || disposed || !props.visible ||
-    active.value !== session || pasting.value) return;
+  if (
+    !session ||
+    session.status !== "running" ||
+    disposed ||
+    !props.visible ||
+    active.value !== session ||
+    pasting.value
+  )
+    return;
   const request = ++pasteGeneration;
+  const clipboardRequest = ++session.clipboardRequest;
   const opener = document.activeElement;
   const current = () => {
     const focused = document.activeElement;
-    return !disposed && request === pasteGeneration && props.visible &&
-      active.value === session && sessions.includes(session) && session.status === "running" &&
-      (focused === opener || focused === document.body ||
-        (focused !== null && session.element.contains(focused)));
+    return (
+      !disposed &&
+      request === pasteGeneration &&
+      clipboardRequest === session.clipboardRequest &&
+      props.visible &&
+      active.value === session &&
+      sessions.includes(session) &&
+      session.status === "running" &&
+      (focused === opener ||
+        focused === document.body ||
+        (focused !== null && session.element.contains(focused)))
+    );
   };
   pasting.value = true;
-  error.value = "";
+  session.clipboardError = "";
   try {
     const text = await navigator.clipboard.readText();
     if (!current()) return;
     session.terminal.paste(text);
     session.terminal.focus();
   } catch (reason) {
-    if (current()) showError(reason);
+    if (current()) session.clipboardError = formatErrorMessage(reason);
   } finally {
     // A canceled read may settle after another session starts a new request.
     if (request === pasteGeneration) pasting.value = false;
@@ -274,7 +362,16 @@ function clear() {
   active.value?.terminal.focus();
 }
 function sessionKey(event: KeyboardEvent, index: number) {
-  if (event.isComposing) return;
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.metaKey ||
+    event.shiftKey
+  )
+    return;
   const next =
     event.key === "ArrowRight"
       ? (index + 1) % sessions.length
@@ -351,7 +448,10 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   themeObserver?.disconnect();
   if (frame) cancelAnimationFrame(frame);
-  for (const session of sessions.slice()) void close(session);
+  for (const session of sessions.slice()) {
+    void session.connection.close();
+    void removeSession(session);
+  }
 });
 </script>
 
@@ -382,11 +482,25 @@ onBeforeUnmount(() => {
           @keydown="sessionKey($event, index)"
         >
           <TerminalIcon class="size-3.5" /> {{ session.key }}: {{ session.label }}
+          <span
+            v-if="sessionError(session)"
+            data-terminal-error
+            role="img"
+            :aria-label="t('terminal.hasError')"
+            :title="sessionError(session)"
+            class="text-destructive"
+          >
+            <CircleAlert class="size-3.5" aria-hidden="true" />
+          </span>
           <span v-if="session.status === 'exited'"
             >({{ t("terminal.exited", { code: session.code ?? "?" }) }})</span
           >
           <span v-else-if="session.status === 'starting'">…</span>
           <span v-else-if="session.status === 'failed'">({{ t("terminal.failed") }})</span>
+          <span v-else-if="session.status === 'closing'">({{ t("terminal.closing") }})</span>
+          <span v-else-if="session.status === 'close-failed'"
+            >({{ t("terminal.closeFailed") }})</span
+          >
         </button>
       </div>
       <select
@@ -444,19 +558,24 @@ onBeforeUnmount(() => {
         type="button"
         :title="t('terminal.close')"
         :aria-label="t('terminal.close')"
+        :aria-busy="active?.status === 'closing'"
         class="rounded p-1 hover:bg-accent disabled:opacity-40"
-        :disabled="!active"
+        :disabled="!active || active.status === 'closing'"
         @click="active && close(active)"
       >
-        <Trash2 class="size-3.5" />
+        <LoaderCircle
+          v-if="active?.status === 'closing'"
+          class="size-3.5 animate-spin motion-reduce:animate-none"
+        />
+        <Trash2 v-else class="size-3.5" />
       </button>
     </div>
     <p
-      v-if="error"
+      v-if="displayedError"
       role="alert"
-      class="max-h-16 overflow-auto break-words px-2 py-1 text-destructive"
+      class="max-h-16 overflow-auto whitespace-pre-line break-words px-2 py-1 text-destructive"
     >
-      {{ error }}
+      {{ displayedError }}
     </p>
     <p
       v-if="active"

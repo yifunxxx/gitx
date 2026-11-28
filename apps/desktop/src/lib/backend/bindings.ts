@@ -131,6 +131,13 @@ export const commands = {
   async fsStartContentSearch(req: ContentSearchReq): Promise<null> {
     return await TAURI_INVOKE("fs_start_content_search", { req });
   },
+  /**
+   * Stop scanning while retaining completed files' results for paging. Closing
+   * the dialog or starting a new query still uses fs_cancel_search to release them.
+   */
+  async fsStopContentSearch(req: FsCancelSearchReq): Promise<boolean> {
+    return await TAURI_INVOKE("fs_stop_content_search", { req });
+  },
   async fsContentSearchPage(req: ContentSearchPageReq): Promise<ContentSearchPage> {
     return await TAURI_INVOKE("fs_content_search_page", { req });
   },
@@ -876,7 +883,12 @@ export type ContentMatch = {
   matchEnd: number;
   replacementPreview: string;
 };
-export type ContentReplaceReq = { sessionId: string; generation: number; excludedPaths: string[] };
+export type ContentReplaceReq = {
+  sessionId: string;
+  generation: number;
+  excludedPaths: string[];
+  replacement: string;
+};
 export type ContentReplaceResult = { completed: string[]; failed: string[] };
 export type ContentSearchPage = {
   matches: ContentMatch[];
@@ -888,11 +900,15 @@ export type ContentSearchPage = {
   done: boolean;
   error: string | null;
 };
-export type ContentSearchPageReq = { sessionId: string; generation: number; page: number };
+export type ContentSearchPageReq = {
+  sessionId: string;
+  generation: number;
+  page: number;
+  replacement: string;
+};
 export type ContentSearchReq = {
   folderPath: string;
   query: string;
-  replacement: string;
   caseSensitive: boolean;
   wholeWord: boolean;
   regex: boolean;

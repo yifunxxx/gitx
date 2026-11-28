@@ -21,7 +21,19 @@ macOS uses Cmd; Replace in File uses `Cmd+Option+F`. These actions, plus Replace
 
 Content search has no file-size, total-volume, elapsed-time or match-count cutoff. A background worker reads lines and spools results to temporary disk storage; the UI reads only the current page. Memory depends mainly on the longest line, and result storage needs free disk space. Cancel, change the query, close the dialog, or switch projects to stop scanning. The task queue shows scan progress.
 
+When an exclude pattern matches a directory, search skips that directory and its descendants to avoid traversing dependencies or build output. Excluding `node_modules` skips that name at any depth; `build/**` only covers build output under the workspace root. Include patterns still traverse parents to find matching files. Exclusions take precedence over inclusions and remain active when hidden or ignored files are enabled.
+
+Click **Cancel** beside the scan progress to stop scanning. Once it settles, results from fully scanned files remain available for paging. Provisional matches from an unfinished file are removed, so the total may decrease. Stopped results cannot be replaced: choose **Search again** and wait for completion first. Changing conditions, closing the dialog, or switching projects releases the old results.
+
+Filtering explicitly excluded directories also checks for cancellation, so stopping does not wait for every excluded entry to be traversed. A system file read already in progress may still need to return before the worker finishes. The task queue remains active until the backend confirms that it has stopped.
+
+While a page loads, the current page number and rows remain visible with a loading indicator; opening rows and paging are temporarily disabled. A successful read switches to the requested page. A failed read keeps the current page and offers **Retry**, which reads the failed target page without rescanning.
+
+When refresh, stop, paging or retry makes the focused button unavailable, focus returns to the query field. Continue typing, select results with Up/Down, or press Esc to close. Esc does not interrupt an active replacement write; the dialog can be closed once writing finishes. Filename search also keeps keyboard focus inside the dialog after stopping or retrying.
+
 Search reads saved UTF-8 text, not unsaved editor buffers. Binary, invalid-encoding and unreadable paths are reported with reasons (the first 20 reasons are displayed). Symlinks are not followed, and Git metadata is excluded. Global regex searches are line-based and support Unicode, character classes, groups, repetitions and captures. **Multiline matching, backreferences and lookaround are unsupported** and invalid expressions show an error.
+
+LF, CRLF, CR and mixed line endings use the same line/column positions as the editor. Replacement preserves each original separator. Empty files and the final empty line after a separator also participate in regex searches; for example, `^$` matches these empty lines.
 
 ## Replace in Files
 
@@ -31,7 +43,13 @@ Search reads saved UTF-8 text, not unsaved editor buffers. Binary, invalid-encod
 4. Wait for the scan, save/close unsaved file drafts, and finish or close merge editors. Click **Replace in N files**, review the count, then **Confirm replacement**.
 5. Search again and review the changes in Commit.
 
+After confirmation, the dialog and action button show **Replacing…**, and the task queue retains the operation until it finishes. Inputs and repeat submissions are temporarily disabled. Success or failure clears the busy state and displays the result.
+
 Replacement writes to disk without committing. Content hashes for every selected file are checked before writing; files changed since search require a new scan. Each file is published through a sibling temporary file, preserving line endings, UTF-8 BOM and permissions. A failure stops further writes and reports the completed count and error. This is not a transaction across all files: completed files are not automatically rolled back. Use Git diffs and rollback to undo, or keep backups for non-Git files. Clean open tabs for changed files are invalidated and closed to prevent saving stale content; unsaved drafts are preserved.
+
+If the project changes during a write, the old search dialog closes and requests cancellation of further replacements. The task queue retains the source project's task until it settles. A notification identifies the source folder, completed count and any error; completed writes are not rolled back. Other file operations and saves are temporarily unavailable while the write finishes; retry them afterward.
+
+Editing the replacement refreshes the current page preview without scanning the workspace again. Excluded files, the current page, and the result position are retained. Replacement is disabled while the preview refreshes; a failed read can be retried in place, and changed text requires fresh confirmation. Changing the query, search options or scope, or choosing **Search again**, starts a new search and resets file selection. Previews use the saved search snapshot; files changed on disk are still detected before any write.
 
 ## Find and replace in an editor
 

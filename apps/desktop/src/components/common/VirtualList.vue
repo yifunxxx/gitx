@@ -1,5 +1,14 @@
 <script setup lang="ts" generic="T">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type ObjectDirective,
+} from "vue";
 import { isPerfLogEnabled, perfLog } from "@/lib/longTaskLog";
 
 const props = withDefaults(
@@ -108,6 +117,24 @@ function rowKey(item: T, index: number, slot: number) {
   return props.getItemHeight ? slot : index % poolSize.value;
 }
 
+// A recycled button must never keep keyboard focus after changing its target.
+// Move focus before patching the row, without scrolling back to its old offset.
+let unmounting = false;
+onBeforeUnmount(() => {
+  unmounting = true;
+});
+function releaseRowFocus(row: HTMLElement) {
+  if (unmounting || !props.recycleKeys || !root.value) return;
+  const active = row.ownerDocument.activeElement;
+  if (active && row.contains(active)) root.value.focus({ preventScroll: true });
+}
+const vRowIdentity: ObjectDirective<HTMLElement, string | number> = {
+  beforeUpdate(row, { value, oldValue }) {
+    if (value !== oldValue) releaseRowFocus(row);
+  },
+  beforeUnmount: releaseRowFocus,
+};
+
 const offsetY = computed(() => rowTop(start.value));
 
 let ro: ResizeObserver | null = null;
@@ -145,14 +172,26 @@ function flushScroll() {
   applyScrollTop(top, ev);
 }
 
-function stripTitles(target: HTMLElement) {
+function stripTitles(target: HTMLElement, updates: MutationRecord[] = []) {
+  // Vue may clear or replace a recycled row's title while it is suppressed.
+  // Consume those writes before scanning newly mounted descendants.
+  for (const update of updates) {
+    if (update.type !== "attributes" || !(update.target instanceof HTMLElement)) continue;
+    const el = update.target;
+    if (!target.contains(el)) continue;
+    const text = el.getAttribute("title");
+    if (text === null) el.removeAttribute(TITLE_HOLD);
+    else el.setAttribute(TITLE_HOLD, text);
+  }
   for (const el of target.querySelectorAll<HTMLElement>("[title]")) {
     const text = el.getAttribute("title");
     if (text === null) continue;
-    el.setAttribute(TITLE_HOLD, text);
-    el.removeAttribute("title");
+    if (text !== "" || !el.hasAttribute(TITLE_HOLD)) el.setAttribute(TITLE_HOLD, text);
+    // An empty attribute suppresses native tooltips but still lets a later
+    // removeAttribute produce a mutation, unlike an already absent title.
+    if (text !== "") el.setAttribute("title", "");
   }
-  // Discard records produced by our own removeAttribute("title") calls.
+  // Discard records produced by our own empty-title writes.
   titleObserver?.takeRecords?.();
 }
 
@@ -169,8 +208,8 @@ function startTitleSuppress() {
   if (!target) return;
   stripTitles(target);
   if (titleObserver) return;
-  titleObserver = new MutationObserver(() => {
-    if (windowEl.value) stripTitles(windowEl.value);
+  titleObserver = new MutationObserver((updates) => {
+    if (windowEl.value) stripTitles(windowEl.value, updates);
   });
   titleObserver.observe(target, {
     subtree: true,
@@ -181,6 +220,8 @@ function startTitleSuppress() {
 }
 
 function stopTitleSuppress() {
+  const updates = titleObserver?.takeRecords() ?? [];
+  if (windowEl.value && updates.length) stripTitles(windowEl.value, updates);
   titleObserver?.disconnect();
   titleObserver = null;
   if (windowEl.value) restoreTitles(windowEl.value);
@@ -363,7 +404,7 @@ defineExpose({
   <div class="flex min-h-0 flex-1 flex-col [app-region:no-drag]">
     <div
       ref="root"
-      :tabindex="scrollTabindex"
+      :tabindex="scrollTabindex ?? (recycleKeys ? -1 : undefined)"
       class="min-h-0 flex-1 overflow-auto [overflow-anchor:none] [app-region:no-drag]"
       @scroll.passive="onScroll"
       @pointerdown="onPointerDown"
@@ -386,6 +427,7 @@ defineExpose({
           <div
             v-for="(row, slot) in visible"
             :key="rowKey(row.item, row.index, slot)"
+            v-row-identity="getKey(row.item, row.index)"
             class="[contain:layout_paint]"
             :style="{ height: `${rowHeight(row.index)}px` }"
           >

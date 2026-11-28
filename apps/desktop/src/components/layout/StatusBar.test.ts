@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import StatusBar from "./StatusBar.vue";
 import { useJobsStore } from "@/stores/jobsStore";
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 
+const mocks = vi.hoisted(() => ({ list: vi.fn(), cancel: vi.fn() }));
 vi.mock("@/lib/backend", () => ({
-  getBackend: () => ({ jobList: vi.fn().mockResolvedValue([]), jobCancel: vi.fn().mockResolvedValue(true) }),
+  getBackend: () => ({ jobList: mocks.list, jobCancel: mocks.cancel }),
 }));
 vi.mock("vue-i18n", () => ({
-  useI18n: () => ({ t: (key: string, params?: { count?: number }) =>
-    params?.count != null ? `${key}:${params.count}` : key,
+  useI18n: () => ({
+    t: (key: string, params?: { count?: number }) =>
+      params?.count != null ? `${key}:${params.count}` : key,
   }),
 }));
 vi.mock("@/stores/workspaceStore", () => ({
@@ -22,6 +24,9 @@ vi.mock("@/stores/branchesStore", () => ({
 
 enableAutoUnmount(afterEach);
 beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.list.mockResolvedValue([]);
+  mocks.cancel.mockResolvedValue(true);
   setActivePinia(createPinia());
 });
 
@@ -69,4 +74,45 @@ it("shows cancellation in the status indicator until completion", async () => {
   await wrapper.vm.$nextTick();
   expect(button.text()).toContain("status.idle");
   expect(button.find("svg").exists()).toBe(false);
+});
+
+it("distinguishes checking and unavailable process status from idle", async () => {
+  const jobs = useJobsStore();
+  let reject!: (error: Error) => void;
+  mocks.list.mockReturnValueOnce(
+    new Promise((_done, no) => {
+      reject = no;
+    }),
+  );
+  const wrapper = mount(StatusBar);
+  const button = wrapper.get('button[aria-label="status.jobsTitle"]');
+  await button.trigger("click");
+  expect(button.text()).toContain("status.jobsLoading");
+  expect(button.text()).not.toContain("status.idle");
+  reject(new Error("queue unavailable"));
+  await flushPromises();
+  expect(button.text()).toContain("status.jobsUnavailable");
+  expect(button.attributes("title")).toContain("queue unavailable");
+  expect(button.find('[role="img"]').exists()).toBe(true);
+  await jobs.refresh();
+  await flushPromises();
+  expect(button.text()).toContain("status.idle");
+  expect(button.find('[role="img"]').exists()).toBe(false);
+});
+
+it("retains the running task title and indicates a failed queue refresh alongside it", async () => {
+  const jobs = useJobsStore();
+  jobs.started({ id: "known", title: "Known operation" }, "native");
+  const wrapper = mount(StatusBar);
+  mocks.list.mockRejectedValueOnce(new Error("queue unavailable"));
+  await expect(jobs.refresh()).rejects.toThrow("queue unavailable");
+  await flushPromises();
+  const button = wrapper.get('button[aria-label="status.jobsTitle"]');
+  expect(button.text()).toContain("Known operation");
+  expect(button.find('[role="img"]').exists()).toBe(true);
+  expect(button.attributes("title")).toContain("queue unavailable");
+  jobs.finished("known");
+  await flushPromises();
+  expect(button.text()).toContain("status.jobsUnavailable");
+  expect(button.text()).not.toContain("status.idle");
 });

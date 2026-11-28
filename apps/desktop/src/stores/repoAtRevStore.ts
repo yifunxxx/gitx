@@ -12,6 +12,7 @@ import { useChangesStore } from "./changesStore";
 import { confirmDialog } from "@/composables/useConfirm";
 import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
+import { beginWorktreeRestore } from "./worktreeRestoreEditors";
 
 export type RepoAtRevTab = {
   id: string;
@@ -188,12 +189,18 @@ export const useRepoAtRevStore = defineStore("repoAtRev", () => {
         useLayoutStore().activeEditorKind !== "repoAtRev"
       )
         return false;
-      await getBackend().checkoutPathFromRev({
-        repoId: source.repoId,
-        path: source.path,
-        rev,
-        filePath,
-      });
+      const editors = beginWorktreeRestore(source.path, [filePath]);
+      try {
+        await getBackend().checkoutPathFromRev({
+          repoId: source.repoId,
+          path: source.path,
+          rev,
+          filePath,
+        });
+        editors.restored(filePath);
+      } finally {
+        editors.release();
+      }
     } catch (e) {
       if (current()) tab.restoreError = formatErrorMessage(e);
       return false;

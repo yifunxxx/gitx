@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@xterm/xterm@6.0.0':
+    hash: a6aa90d833e3d6db43f81da3be10ac7b044c5123ae7b77d5e84f711119d1c935
+    path: patches/@xterm__xterm@6.0.0.patch
+
 importers:
 
   .:
@@ -55,7 +60,7 @@ importers:
         version: 0.11.0
       '@xterm/xterm':
         specifier: ^6.0.0
-        version: 6.0.0
+        version: 6.0.0(patch_hash=a6aa90d833e3d6db43f81da3be10ac7b044c5123ae7b77d5e84f711119d1c935)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -3308,7 +3313,7 @@ snapshots:
 
   '@xterm/addon-fit@0.11.0': {}
 
-  '@xterm/xterm@6.0.0': {}
+  '@xterm/xterm@6.0.0(patch_hash=a6aa90d833e3d6db43f81da3be10ac7b044c5123ae7b77d5e84f711119d1c935)': {}
 
   abbrev@5.0.0: {}
 

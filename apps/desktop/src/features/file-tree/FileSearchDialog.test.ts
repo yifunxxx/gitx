@@ -86,6 +86,34 @@ async function query(value: string) {
   await flushPromises();
 }
 
+it("keeps keyboard focus after stopping filename search removes its focused button", async () => {
+  const pending = deferred();
+  mocks.fsSearchFiles.mockReturnValueOnce(pending.promise);
+  await query("file");
+  const stop = wrapper.findAll("button").find((b) => b.text() === "common.cancel")!;
+  (stop.element as HTMLButtonElement).focus();
+  await stop.trigger("click");
+  expect(document.activeElement).toBe(wrapper.get('input[type="search"]').element);
+  document.activeElement!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
+  expect(mocks.close).toHaveBeenCalledWith(null, 8);
+  pending.resolve(response("late.txt"));
+  await flushPromises();
+});
+it("keeps keyboard focus when filename retry removes its focused button", async () => {
+  mocks.fsSearchFiles.mockRejectedValueOnce(new Error("failed"));
+  await query("file");
+  const retry = wrapper.findAll("button").find((b) => b.text() === "empty.retry")!;
+  (retry.element as HTMLButtonElement).focus();
+  await retry.trigger("click");
+  expect(document.activeElement).toBe(wrapper.get('input[type="search"]').element);
+  document.activeElement!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
+  expect(mocks.close).toHaveBeenCalledWith(null, 8);
+});
+
 it("searches unopened workspace paths and opens the selected result with Enter", async () => {
   await query("nfl");
   expect(mocks.fsSearchFiles).toHaveBeenCalledWith(

@@ -182,6 +182,31 @@ it("still reads when panels mount without a shared opening operation", async () 
   expect(m.opState).toHaveBeenCalledOnce();
 });
 
+it("registers an explicit user query independently while the opening task still owns initial reads", async () => {
+  const entry = createWorkspaceOpen((key) => key);
+  const history = deferred(page);
+  const userHistory = deferred(page);
+  const branches = deferred(refs);
+  m.backend.logQuery.mockReturnValueOnce(history.promise).mockReturnValueOnce(userHistory.promise);
+  m.backend.refsList.mockReturnValueOnce(branches.promise);
+  const opening = track(entry.openRecent("repo"));
+  await flushPromises();
+  expect(useJobsStore().count).toBe(1);
+  const log = useLogStore();
+  log.setTextFilter("manual query");
+  const query = track(log.applyFilters());
+  await flushPromises();
+  expect(useJobsStore().count).toBe(2);
+  history.resolve(page);
+  branches.resolve(refs);
+  await opening;
+  expect(useJobsStore().count).toBe(1);
+  expect(log.loading).toBe(true);
+  userHistory.resolve(page);
+  await query;
+  expect(useJobsStore().count).toBe(0);
+});
+
 it("does not let a late panel mount replace reads owned by the opening task", async () => {
   const entry = createWorkspaceOpen((key) => key);
   const files = deferred(status());

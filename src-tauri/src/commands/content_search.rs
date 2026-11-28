@@ -1,6 +1,9 @@
 //! Saved-text search. Scans run off the IPC thread; results live in a temporary
 //! spool, so neither a large workspace nor many matches require one huge IPC.
-use super::{filesystem::resolve_entry, filesystem_search::begin};
+use super::{
+    filesystem::resolve_entry,
+    filesystem_search::{begin, FsCancelSearchReq},
+};
 use gitx_core::{AppError, ErrorCode};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::{Regex, RegexBuilder};
@@ -34,7 +37,6 @@ fn check(cancel: &CancellationToken) -> Result<(), AppError> {
 pub struct ContentSearchReq {
     pub folder_path: String,
     pub query: String,
-    pub replacement: String,
     pub case_sensitive: bool,
     pub whole_word: bool,
     pub regex: bool,
@@ -51,6 +53,7 @@ pub struct ContentSearchPageReq {
     pub session_id: String,
     pub generation: u32,
     pub page: u32,
+    pub replacement: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +84,7 @@ pub struct ContentReplaceReq {
     pub session_id: String,
     pub generation: u32,
     pub excluded_paths: Vec<String>,
+    pub replacement: String,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +101,7 @@ struct Progress {
     skipped: u32,
     issues: Vec<String>,
     done: bool,
+    stopped: bool,
     error: Option<String>,
     hashes: BTreeMap<String, Vec<u8>>,
     replacing: bool,
@@ -107,6 +112,46 @@ struct Search {
     cancel: CancellationToken,
     progress: Mutex<Progress>,
     touched: Mutex<Instant>,
+}
+/// Only the visible preview needs captured text. Retain bounded prefixes on
+/// disk, not entire matched lines; writes still read and validate original files.
+#[derive(Serialize, Deserialize)]
+struct StoredMatch {
+    occurrence: ContentMatch,
+    prefix: String,
+    suffix: String,
+    captures: Vec<String>,
+}
+impl StoredMatch {
+    fn render(mut self, replacement: &str, regex: Option<&Regex>) -> ContentMatch {
+        let expanded = if let Some(regex) = regex {
+            let mut value = String::new();
+            regex_automata::util::interpolate::string(
+                replacement,
+                |index, dst| {
+                    if let Some(capture) = self.captures.get(index) {
+                        dst.push_str(capture);
+                    }
+                },
+                |name| {
+                    regex
+                        .capture_names()
+                        .position(|candidate| candidate == Some(name))
+                },
+                &mut value,
+            );
+            value
+        } else {
+            replacement.to_owned()
+        };
+        self.occurrence.replacement_preview = format!(
+            "{}{}{}",
+            self.prefix,
+            expanded.chars().take(240).collect::<String>(),
+            self.suffix
+        );
+        self.occurrence
+    }
 }
 fn sessions() -> &'static Mutex<HashMap<String, Arc<Search>>> {
     static S: OnceLock<Mutex<HashMap<String, Arc<Search>>>> = OnceLock::new();
@@ -124,6 +169,24 @@ pub(super) fn cancel_session(id: &str, generation: u32) {
         }
     }
 }
+pub(super) fn stop_session(id: &str, generation: u32) -> Result<bool, AppError> {
+    let jobs = sessions().lock().map_err(err)?;
+    let Some(job) = jobs.get(id).filter(|job| job.req.generation == generation) else {
+        return Ok(false);
+    };
+    job.progress.lock().map_err(err)?.stopped = true;
+    job.cancel.cancel();
+    Ok(true)
+}
+
+/// Stop scanning while retaining completed files' results for paging. Closing
+/// the dialog or starting a new query still uses fs_cancel_search to release them.
+#[tauri::command]
+#[specta::specta]
+pub fn fs_stop_content_search(req: FsCancelSearchReq) -> Result<bool, AppError> {
+    super::filesystem_search::cancel_search(req, true)
+}
+
 fn get(id: &str, generation: u32) -> Result<Arc<Search>, AppError> {
     super::filesystem_search::touch(id, generation);
     let jobs = sessions().lock().map_err(err)?;
@@ -170,7 +233,7 @@ fn globs(value: &str) -> Result<GlobSet, AppError> {
     }
     builder.build().map_err(err)
 }
-fn append(job: &Search, value: ContentMatch) -> Result<(), AppError> {
+fn append(job: &Search, value: StoredMatch) -> Result<(), AppError> {
     check(&job.cancel)?;
     let mut p = job.progress.lock().map_err(err)?;
     let mut bytes = serde_json::to_vec(&value).map_err(err)?;
@@ -187,7 +250,7 @@ fn append(job: &Search, value: ContentMatch) -> Result<(), AppError> {
     p.total += 1;
     Ok(())
 }
-fn preview(line: &str, start: usize, end: usize, replacement: &str) -> (String, u32, u32, String) {
+fn preview(line: &str, start: usize, end: usize) -> (String, u32, u32, String, String) {
     let left = line[..start]
         .char_indices()
         .rev()
@@ -205,32 +268,22 @@ fn preview(line: &str, start: usize, end: usize, replacement: &str) -> (String, 
     );
     let from = prefix.encode_utf16().count() + line[left..start].encode_utf16().count();
     let to = from + line[start..end.min(right)].encode_utf16().count();
-    let after = format!(
-        "{prefix}{}{}{}",
-        &line[left..start],
-        replacement.chars().take(240).collect::<String>(),
-        line[end..].chars().take(80).collect::<String>()
-    );
-    (text, from as u32, to as u32, after)
+    let before = format!("{prefix}{}", &line[left..start]);
+    let after = line[end..].chars().take(80).collect();
+    (text, from as u32, to as u32, before, after)
 }
 fn scan_file(job: &Search, path: &Path, relative: &str, regex: &Regex) -> Result<(), AppError> {
-    let mut reader = BufReader::new(File::open(path).map_err(err)?);
-    let mut bytes = Vec::new();
+    let mut lines = TextLines::new(BufReader::new(File::open(path).map_err(err)?));
     let mut hasher = Sha256::new();
     let mut line_number = 0;
     let mut found = false;
-    loop {
-        check(&job.cancel)?;
-        bytes.clear();
-        if read_line(&mut reader, &mut bytes, &job.cancel)? == 0 {
-            break;
-        }
-        hasher.update(&bytes);
+    while let Some(bytes) = lines.next(&job.cancel)? {
+        hasher.update(bytes);
         line_number += 1;
         if bytes.contains(&0) {
             return Err(err("Binary file"));
         }
-        let line = std::str::from_utf8(&bytes)
+        let line = std::str::from_utf8(bytes)
             .map_err(|_| err("Not UTF-8 text"))?
             .trim_end_matches(['\r', '\n']);
         let bom = line_number == 1 && line.starts_with('\u{feff}');
@@ -248,23 +301,31 @@ fn scan_file(job: &Search, path: &Path, relative: &str, regex: &Regex) -> Result
             let m = caps.get(0).unwrap();
             column += line[previous..m.start()].encode_utf16().count() as u32;
             previous = m.start();
-            let mut replacement = String::new();
-            if job.req.regex {
-                caps.expand(&job.req.replacement, &mut replacement);
+            let captures = if job.req.regex {
+                caps.iter()
+                    .map(|capture| {
+                        capture.map_or_else(String::new, |m| m.as_str().chars().take(240).collect())
+                    })
+                    .collect()
             } else {
-                replacement = job.req.replacement.clone();
-            }
-            let (text, from, to, after) = preview(line, m.start(), m.end(), &replacement);
+                vec![]
+            };
+            let (text, from, to, prefix, suffix) = preview(line, m.start(), m.end());
             append(
                 job,
-                ContentMatch {
-                    path: relative.into(),
-                    line: line_number,
-                    column,
-                    preview: text,
-                    match_start: from,
-                    match_end: to,
-                    replacement_preview: after,
+                StoredMatch {
+                    occurrence: ContentMatch {
+                        path: relative.into(),
+                        line: line_number,
+                        column,
+                        preview: text,
+                        match_start: from,
+                        match_end: to,
+                        replacement_preview: String::new(),
+                    },
+                    prefix,
+                    suffix,
+                    captures,
                 },
             )?;
             found = true;
@@ -279,6 +340,34 @@ fn scan_file(job: &Search, path: &Path, relative: &str, regex: &Regex) -> Result
     }
     Ok(())
 }
+
+/// Stream editor lines while retaining their original separators for hashing
+/// and replacement. Empty documents and a final separator each have an empty
+/// last line, just as the editor does; no extra line follows unterminated text.
+struct TextLines<R> {
+    reader: R,
+    bytes: Vec<u8>,
+    finished: bool,
+}
+impl<R: BufRead> TextLines<R> {
+    fn new(reader: R) -> Self {
+        Self {
+            reader,
+            bytes: Vec::new(),
+            finished: false,
+        }
+    }
+    fn next(&mut self, cancel: &CancellationToken) -> Result<Option<&[u8]>, AppError> {
+        check(cancel)?;
+        if self.finished {
+            return Ok(None);
+        }
+        self.bytes.clear();
+        read_line(&mut self.reader, &mut self.bytes, cancel)?;
+        self.finished = !matches!(self.bytes.last(), Some(b'\r' | b'\n'));
+        Ok(Some(&self.bytes))
+    }
+}
 fn read_line(
     reader: &mut impl BufRead,
     out: &mut Vec<u8>,
@@ -290,35 +379,95 @@ fn read_line(
         if chunk.is_empty() {
             return Ok(out.len());
         }
-        let end = chunk.iter().position(|b| *b == b'\n');
+        let end = chunk.iter().position(|b| matches!(b, b'\r' | b'\n'));
         let n = end.map_or(chunk.len(), |i| i + 1);
         out.extend_from_slice(&chunk[..n]);
         reader.consume(n);
         if end.is_some() {
+            // CRLF is one editor separator even if it straddles two buffers.
+            if out.last() == Some(&b'\r') {
+                check(cancel)?;
+                if reader.fill_buf().map_err(err)?.first() == Some(&b'\n') {
+                    out.push(b'\n');
+                    reader.consume(1);
+                }
+            }
             return Ok(out.len());
         }
     }
+}
+fn search_entries(
+    root: &Path,
+    req: &ContentSearchReq,
+    exclude: GlobSet,
+    cancel: CancellationToken,
+) -> impl Iterator<Item = Result<ignore::DirEntry, AppError>> {
+    let base = root.to_path_buf();
+    let interrupt = cancel.clone();
+    let mut walker = ignore::WalkBuilder::new(root)
+        .hidden(!req.show_hidden)
+        .ignore(!req.show_ignored)
+        .git_ignore(!req.show_ignored)
+        .git_global(!req.show_ignored)
+        .git_exclude(!req.show_ignored)
+        .follow_links(false)
+        .filter_entry(move |entry| {
+            // Return control from Walk::next even when all remaining entries
+            // would be filtered out. The outer iterator converts this entry
+            // into cancellation before it can reach the scanner.
+            if interrupt.is_cancelled() {
+                return true;
+            }
+            let name = entry.file_name().to_string_lossy();
+            if name.eq_ignore_ascii_case(".git")
+                || name.starts_with(".gitx-copy-")
+                || name.starts_with(".gitx-replace-")
+            {
+                return false;
+            }
+            // Excluded directories include their descendants (see globs).
+            // Filter them before descent; include globs must not prune parents
+            // that do not match yet, since matching files can be below them.
+            if exclude.is_empty()
+                || entry.depth() == 0
+                || !entry.file_type().is_some_and(|kind| kind.is_dir())
+            {
+                return true;
+            }
+            entry
+                .path()
+                .strip_prefix(&base)
+                .ok()
+                .and_then(Path::to_str)
+                .is_none_or(|path| !exclude.is_match(path.replace('\\', "/")))
+        })
+        .build();
+    let mut finished = false;
+    std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+        let entry = if cancel.is_cancelled() {
+            None
+        } else {
+            walker.next()
+        };
+        // Also check after next: it can exhaust a filtered directory without
+        // yielding a result, or return an entry just as cancellation arrives.
+        if let Err(error) = check(&cancel) {
+            finished = true;
+            return Some(Err(error));
+        }
+        finished = entry.is_none();
+        entry.map(|entry| entry.map_err(err))
+    })
 }
 fn scan(job: &Search) -> Result<(), AppError> {
     let regex = pattern(&job.req)?;
     let include = globs(&job.req.include)?;
     let exclude = globs(&job.req.exclude)?;
     let root = resolve_entry(&job.req.folder_path, "", true)?;
-    let walker = ignore::WalkBuilder::new(&root)
-        .hidden(!job.req.show_hidden)
-        .ignore(!job.req.show_ignored)
-        .git_ignore(!job.req.show_ignored)
-        .git_global(!job.req.show_ignored)
-        .git_exclude(!job.req.show_ignored)
-        .follow_links(false)
-        .filter_entry(|entry| {
-            let name = entry.file_name().to_string_lossy();
-            !name.eq_ignore_ascii_case(".git")
-                && !name.starts_with(".gitx-copy-")
-                && !name.starts_with(".gitx-replace-")
-        })
-        .build();
-    for entry in walker {
+    for entry in search_entries(&root, &job.req, exclude.clone(), job.cancel.clone()) {
         check(&job.cancel)?;
         let entry = match entry {
             Ok(e) => e,
@@ -404,6 +553,7 @@ pub fn fs_start_content_search(req: ContentSearchReq) -> Result<(), AppError> {
             skipped: 0,
             issues: vec![],
             done: false,
+            stopped: false,
             error: None,
             hashes: BTreeMap::new(),
             replacing: false,
@@ -439,7 +589,9 @@ pub fn fs_start_content_search(req: ContentSearchReq) -> Result<(), AppError> {
         if let Ok(mut p) = job.progress.lock() {
             p.done = true;
             if let Err(e) = result {
-                p.error = Some(e.message);
+                if !(p.stopped && e.code == ErrorCode::Cancelled) {
+                    p.error = Some(e.message);
+                }
             }
         }
     });
@@ -452,6 +604,7 @@ pub async fn fs_content_search_page(
 ) -> Result<ContentSearchPage, AppError> {
     tokio::task::spawn_blocking(move || {
         let job = get(&req.session_id, req.generation)?;
+        let regex = job.req.regex.then(|| pattern(&job.req)).transpose()?;
         let mut p = job.progress.lock().map_err(err)?;
         p.spool.flush().map_err(err)?;
         let mut result = ContentSearchPage {
@@ -468,9 +621,10 @@ pub async fn fs_content_search_page(
             let mut file = File::open(p.spool.get_ref().path()).map_err(err)?;
             file.seek(SeekFrom::Start(*offset)).map_err(err)?;
             for line in BufReader::new(file).lines().take(PAGE) {
+                let stored: StoredMatch = serde_json::from_str(&line.map_err(err)?).map_err(err)?;
                 result
                     .matches
-                    .push(serde_json::from_str(&line.map_err(err)?).map_err(err)?);
+                    .push(stored.render(&req.replacement, regex.as_ref()));
             }
         }
         Ok(result)
@@ -497,6 +651,7 @@ fn replace_file(
     relative: &str,
     expected: &[u8],
     regex: &Regex,
+    replacement: &str,
 ) -> Result<(), AppError> {
     let path = resolve_entry(&job.req.folder_path, relative, false)?;
     let source = File::open(&path).map_err(err)?;
@@ -504,23 +659,17 @@ fn replace_file(
     if permissions.readonly() {
         return Err(err("File is read-only"));
     }
-    let mut reader = BufReader::new(source);
+    let mut lines = TextLines::new(BufReader::new(source));
     let mut temp = tempfile::Builder::new()
         .prefix(".gitx-replace-")
         .tempfile_in(path.parent().unwrap())
         .map_err(err)?;
-    let mut bytes = Vec::new();
     let mut h = Sha256::new();
     let mut first_line = true;
     let mut writer = BufWriter::new(temp.as_file_mut());
-    loop {
-        check(&job.cancel)?;
-        bytes.clear();
-        if read_line(&mut reader, &mut bytes, &job.cancel)? == 0 {
-            break;
-        }
-        h.update(&bytes);
-        let line = std::str::from_utf8(&bytes).map_err(err)?;
+    while let Some(bytes) = lines.next(&job.cancel)? {
+        h.update(bytes);
+        let line = std::str::from_utf8(bytes).map_err(err)?;
         let line = if first_line && line.starts_with('\u{feff}') {
             writer.write_all("\u{feff}".as_bytes()).map_err(err)?;
             &line['\u{feff}'.len_utf8()..]
@@ -531,9 +680,9 @@ fn replace_file(
         let body = line.trim_end_matches(['\r', '\n']);
         let ending = &line[body.len()..];
         let replaced = if job.req.regex {
-            regex.replace_all(body, job.req.replacement.as_str())
+            regex.replace_all(body, replacement)
         } else {
-            regex.replace_all(body, regex::NoExpand(&job.req.replacement))
+            regex.replace_all(body, regex::NoExpand(replacement))
         };
         writer.write_all(replaced.as_bytes()).map_err(err)?;
         writer.write_all(ending.as_bytes()).map_err(err)?;
@@ -550,11 +699,15 @@ fn replace_file(
     check(&job.cancel)?;
     temp.as_file().set_permissions(permissions).map_err(err)?;
     temp.as_file().sync_all().map_err(err)?;
-    drop(reader);
+    drop(lines);
     temp.persist(&path).map_err(err)?;
     Ok(())
 }
-fn replace(job: &Search, excluded: &[String]) -> Result<ContentReplaceResult, AppError> {
+fn replace(
+    job: &Search,
+    excluded: &[String],
+    replacement: &str,
+) -> Result<ContentReplaceResult, AppError> {
     let files = {
         let mut p = job.progress.lock().map_err(err)?;
         if !p.done || p.error.is_some() || p.replacing || p.replaced {
@@ -582,7 +735,7 @@ fn replace(job: &Search, excluded: &[String]) -> Result<ContentReplaceResult, Ap
         }
         let mut result = ContentReplaceResult::default();
         for (relative, expected) in files {
-            match replace_file(job, &relative, &expected, &regex) {
+            match replace_file(job, &relative, &expected, &regex, replacement) {
                 Ok(()) => result.completed.push(relative),
                 Err(e) => {
                     result.failed.push(format!("{relative}: {}", e.message));
@@ -601,7 +754,7 @@ fn replace(job: &Search, excluded: &[String]) -> Result<ContentReplaceResult, Ap
 #[specta::specta]
 pub async fn fs_replace_content(req: ContentReplaceReq) -> Result<ContentReplaceResult, AppError> {
     let job = get(&req.session_id, req.generation)?;
-    tokio::task::spawn_blocking(move || replace(&job, &req.excluded_paths))
+    tokio::task::spawn_blocking(move || replace(&job, &req.excluded_paths, &req.replacement))
         .await
         .map_err(err)?
 }
@@ -633,7 +786,6 @@ mod tests {
         ContentSearchReq {
             folder_path: root.to_string_lossy().into(),
             query: query.into(),
-            replacement: "new".into(),
             case_sensitive: false,
             whole_word: false,
             regex: false,
@@ -659,6 +811,7 @@ mod tests {
                 skipped: 0,
                 issues: vec![],
                 done: false,
+                stopped: false,
                 error: None,
                 hashes: BTreeMap::new(),
                 replacing: false,
@@ -673,12 +826,142 @@ mod tests {
         job
     }
     fn matches(job: &Search) -> Vec<ContentMatch> {
+        matches_with(job, "new")
+    }
+    fn matches_with(job: &Search, replacement: &str) -> Vec<ContentMatch> {
+        let regex = job.req.regex.then(|| pattern(&job.req).unwrap());
         let mut p = job.progress.lock().unwrap();
         p.spool.flush().unwrap();
         BufReader::new(File::open(p.spool.get_ref().path()).unwrap())
             .lines()
-            .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
+            .map(|line| {
+                serde_json::from_str::<StoredMatch>(&line.unwrap())
+                    .unwrap()
+                    .render(replacement, regex.as_ref())
+            })
             .collect()
+    }
+    fn cancel_request(req: &ContentSearchReq) -> FsCancelSearchReq {
+        FsCancelSearchReq {
+            session_id: req.session_id.clone(),
+            generation: req.generation,
+        }
+    }
+    async fn wait_done(job: &Search) {
+        let started = Instant::now();
+        while !job.progress.lock().unwrap().done {
+            assert!(started.elapsed() < Duration::from_secs(10));
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    #[tokio::test]
+    async fn stopped_results_remain_pageable_but_cannot_replace_and_close_releases_spool() {
+        let root = tempfile::tempdir().unwrap();
+        let contents = "hit\n".repeat(1001);
+        std::fs::write(root.path().join("a"), &contents).unwrap();
+        let req = request(root.path(), "hit");
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        wait_done(&job).await;
+        let spool = job
+            .progress
+            .lock()
+            .unwrap()
+            .spool
+            .get_ref()
+            .path()
+            .to_owned();
+        assert!(fs_stop_content_search(cancel_request(&req)).unwrap());
+        let mut all = vec![];
+        for page in 0..6 {
+            let found = fs_content_search_page(ContentSearchPageReq {
+                session_id: req.session_id.clone(),
+                generation: req.generation,
+                page,
+                replacement: "new".into(),
+            })
+            .await
+            .unwrap();
+            assert!(found.done && found.error.is_none());
+            assert_eq!(found.total, 1001);
+            assert_eq!(found.files, 1);
+            all.extend(found.matches);
+        }
+        assert_eq!(all.len(), 1001);
+        assert_eq!(
+            all.iter().map(|m| m.line).collect::<Vec<_>>(),
+            (1..=1001).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            replace(&job, &[], "new").unwrap_err().code,
+            ErrorCode::Cancelled
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("a")).unwrap(),
+            contents
+        );
+        super::super::filesystem_search::fs_cancel_search(cancel_request(&req)).unwrap();
+        assert!(get(&req.session_id, req.generation).is_err());
+        drop(job);
+        assert!(!spool.exists());
+    }
+    #[tokio::test]
+    async fn stopping_an_active_file_rolls_back_its_provisional_results_without_error() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a"), "hit\n".repeat(200_000)).unwrap();
+        let req = request(root.path(), "hit");
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        let started = Instant::now();
+        loop {
+            let total = job.progress.lock().unwrap().total;
+            if total >= 200 {
+                assert!(total < 200_000, "scan must still be inside the file");
+                break;
+            }
+            assert!(started.elapsed() < Duration::from_secs(10));
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        assert!(fs_stop_content_search(cancel_request(&req)).unwrap());
+        wait_done(&job).await;
+        let found = fs_content_search_page(ContentSearchPageReq {
+            session_id: req.session_id.clone(),
+            generation: req.generation,
+            page: 0,
+            replacement: "new".into(),
+        })
+        .await
+        .unwrap();
+        assert!(found.done && found.error.is_none());
+        assert_eq!(found.total, 0);
+        assert_eq!(found.files, 0);
+        assert!(found.matches.is_empty());
+        let p = job.progress.lock().unwrap();
+        assert!(p.pages.is_empty());
+        assert_eq!(p.bytes, 0);
+        drop(p);
+        super::super::filesystem_search::fs_cancel_search(cancel_request(&req)).unwrap();
+    }
+    #[tokio::test]
+    async fn stop_before_start_rejects_late_start_and_old_stop_cannot_cancel_a_new_scan() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a"), "hit").unwrap();
+        let mut req = request(root.path(), "hit");
+        let old = cancel_request(&req);
+        assert!(!fs_stop_content_search(cancel_request(&req)).unwrap());
+        assert_eq!(
+            fs_start_content_search(req.clone()).unwrap_err().code,
+            ErrorCode::Cancelled
+        );
+        req.generation += 1;
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        assert!(!fs_stop_content_search(old).unwrap());
+        assert!(!job.cancel.is_cancelled());
+        wait_done(&job).await;
+        assert_eq!(matches(&job).len(), 1);
+        assert_eq!(replace(&job, &[], "new").unwrap().completed, ["a"]);
+        super::super::filesystem_search::fs_cancel_search(cancel_request(&req)).unwrap();
     }
     #[test]
     fn every_occurrence_case_word_unicode_and_original_columns() {
@@ -697,6 +980,99 @@ mod tests {
         assert_eq!(matches(&run(req.clone())).len(), 3);
         req.case_sensitive = true;
         assert_eq!(matches(&run(req)).len(), 1);
+    }
+    #[test]
+    fn cr_and_mixed_newlines_report_editor_line_and_utf16_column() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("a"),
+            "\u{feff}hit\r😀 hit\r\nprefix\rhit\nhit",
+        )
+        .unwrap();
+        let found = matches(&run(request(root.path(), "hit")));
+        assert_eq!(
+            found.iter().map(|m| (m.line, m.column)).collect::<Vec<_>>(),
+            [(1, 2), (2, 4), (4, 1), (5, 1)]
+        );
+        assert!(found.iter().all(|m| !m.preview.contains(['\r', '\n'])));
+    }
+    #[test]
+    fn anchored_replacement_preserves_every_mixed_line_ending() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("a"),
+            "\u{feff}foo1\rfoo2\r\n\rfoo3\nfoo4\r\rfoo5",
+        )
+        .unwrap();
+        let mut req = request(root.path(), r"^foo(\d)$");
+        req.regex = true;
+        let job = run(req);
+        assert_eq!(
+            matches(&job).iter().map(|m| m.line).collect::<Vec<_>>(),
+            [1, 2, 4, 5, 7]
+        );
+        assert_eq!(replace(&job, &[], "bar$1").unwrap().completed, ["a"]);
+        assert_eq!(
+            std::fs::read(root.path().join("a")).unwrap(),
+            "\u{feff}bar1\rbar2\r\n\rbar3\nbar4\r\rbar5".as_bytes()
+        );
+    }
+    #[test]
+    fn reader_keeps_crlf_together_at_each_buffer_boundary() {
+        let input = b"abc\r\n\r\rdef\nz\rlast";
+        for capacity in [1, 2, 3, 4, 8, 8192] {
+            let mut reader = BufReader::with_capacity(capacity, input.as_slice());
+            let mut lines = Vec::new();
+            loop {
+                let mut line = Vec::new();
+                if read_line(&mut reader, &mut line, &CancellationToken::new()).unwrap() == 0 {
+                    break;
+                }
+                lines.push(line);
+            }
+            assert_eq!(
+                lines,
+                [
+                    b"abc\r\n".as_slice(),
+                    b"\r",
+                    b"\r",
+                    b"def\n",
+                    b"z\r",
+                    b"last"
+                ],
+                "buffer capacity {capacity}"
+            );
+            assert_eq!(lines.concat(), input);
+        }
+    }
+    #[test]
+    fn empty_file_and_terminal_empty_lines_match_and_replace_like_the_editor() {
+        for (text, line, column, expected) in [
+            ("", 1, 1, "new"),
+            ("\u{feff}", 1, 2, "\u{feff}new"),
+            ("first\n", 2, 1, "first\nnew"),
+            ("first\r", 2, 1, "first\rnew"),
+            ("first\r\n", 2, 1, "first\r\nnew"),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::write(root.path().join("a"), text).unwrap();
+            let mut req = request(root.path(), "^$");
+            req.regex = true;
+            let job = run(req);
+            assert_eq!(
+                matches(&job)
+                    .iter()
+                    .map(|m| (m.line, m.column))
+                    .collect::<Vec<_>>(),
+                [(line, column)],
+                "{text:?}"
+            );
+            assert_eq!(replace(&job, &[], "new").unwrap().completed, ["a"]);
+            assert_eq!(
+                std::fs::read(root.path().join("a")).unwrap(),
+                expected.as_bytes()
+            );
+        }
     }
     #[test]
     fn searches_past_former_file_and_total_size_limits() {
@@ -745,6 +1121,7 @@ mod tests {
                 session_id: job.req.session_id.clone(),
                 generation: 1,
                 page,
+                replacement: "new".into(),
             })
             .await
             .unwrap();
@@ -796,8 +1173,8 @@ mod tests {
     #[test]
     fn late_binary_and_invalid_utf8_remove_provisional_results() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("binary"), b"hit\nhit\0").unwrap();
-        std::fs::write(root.path().join("invalid"), b"hit\n\xff").unwrap();
+        std::fs::write(root.path().join("binary"), b"hit\rhit\r\nhit\0").unwrap();
+        std::fs::write(root.path().join("invalid"), b"hit\r\nhit\r\xff").unwrap();
         std::fs::write(root.path().join("text"), "hit").unwrap();
         let job = run(request(root.path(), "hit"));
         let found = matches(&job);
@@ -807,21 +1184,232 @@ mod tests {
         assert_eq!(p.skipped, 2);
         assert_eq!(p.hashes.len(), 1);
     }
+
+    fn visited(req: &ContentSearchReq) -> Vec<String> {
+        let root = Path::new(&req.folder_path);
+        search_entries(
+            root,
+            req,
+            globs(&req.exclude).unwrap(),
+            CancellationToken::new(),
+        )
+        .map(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace('\\', "/")
+        })
+        .collect()
+    }
+
+    #[test]
+    fn excluded_directory_names_are_pruned_before_visiting_their_children() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            "node_modules/pkg/deep/a.ts",
+            "nested/node_modules/pkg/b.ts",
+            "src/a.ts",
+            "nested/src/b.ts",
+            "node_modules-extra/c.ts",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        let mut req = request(root.path(), "hit");
+        req.exclude = "node_modules".into();
+        req.include = "*.ts".into();
+        let entries = visited(&req);
+        assert!(
+            entries
+                .iter()
+                .all(|path| !path.split('/').any(|part| part == "node_modules")),
+            "{entries:?}"
+        );
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(
+            paths,
+            HashSet::from([
+                "src/a.ts".into(),
+                "nested/src/b.ts".into(),
+                "node_modules-extra/c.ts".into(),
+            ])
+        );
+    }
+
+    #[test]
+    fn excluded_directory_globs_prune_only_the_matching_scope() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            "build/a/deep/a.txt",
+            "nested/build/b.txt",
+            "src/x/a.txt",
+            "src/y/b.txt",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        let mut req = request(root.path(), "hit");
+        req.include = "**/*.txt".into();
+        req.exclude = "build/**,src/{x}".into();
+        let entries = visited(&req);
+        assert!(
+            !entries
+                .iter()
+                .any(|path| path.starts_with("build/a") || path.starts_with("src/x")),
+            "{entries:?}"
+        );
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(
+            paths,
+            HashSet::from(["nested/build/b.txt".into(), "src/y/b.txt".into()])
+        );
+    }
+
+    #[test]
+    fn include_patterns_keep_parent_traversal_and_exclusion_wins_over_inclusion() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            "parent/child/keep.rs",
+            "parent/cache/skip.rs",
+            "parent/child/skip.log",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        let mut req = request(root.path(), "hit");
+        req.include = "**/*.rs".into();
+        req.exclude = "cache".into();
+        let paths: HashSet<_> = matches(&run(req.clone()))
+            .into_iter()
+            .map(|m| m.path)
+            .collect();
+        assert_eq!(paths, HashSet::from(["parent/child/keep.rs".into()]));
+        req.exclude = "**".into();
+        assert_eq!(visited(&req), vec![String::new()]);
+        assert!(matches(&run(req)).is_empty());
+    }
+
+    #[test]
+    fn explicit_directory_exclusions_still_apply_when_hidden_and_ignored_are_enabled() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            ".git/config",
+            ".gitx-copy-stage/a.txt",
+            ".gitx-replace-stage/a.txt",
+            ".cache/deep/a.txt",
+            "ignored/deep/a.txt",
+            "src/vendor/deep/a.txt",
+            "src/keep.lock",
+            "src/keep.txt",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        std::fs::write(root.path().join(".gitignore"), "ignored/\n").unwrap();
+        let mut req = request(root.path(), "hit");
+        req.show_hidden = true;
+        req.show_ignored = true;
+        req.exclude = ".cache,ignored,src\\vendor/,*.lock".into();
+        let entries = visited(&req);
+        assert!(
+            entries.iter().all(|path| !path.starts_with(".cache")
+                && !path.starts_with("ignored/")
+                && !path.starts_with("src/vendor/")
+                && !path.starts_with(".git/")
+                && !path.starts_with(".gitx-")),
+            "{entries:?}"
+        );
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(paths, HashSet::from(["src/keep.txt".into()]));
+    }
+
+    #[test]
+    fn exclusion_matches_relative_paths_not_the_workspace_root_name() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("cache");
+        std::fs::create_dir_all(root.join("cache")).unwrap();
+        std::fs::write(root.join("keep.txt"), "hit").unwrap();
+        std::fs::write(root.join("cache/skip.txt"), "hit").unwrap();
+        let mut req = request(&root, "hit");
+        req.exclude = "cache".into();
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(paths, HashSet::from(["keep.txt".into()]));
+    }
+
+    #[test]
+    fn cancelled_traversal_reports_cancellation_before_reading_the_root() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("keep.txt"), "hit").unwrap();
+        let req = request(root.path(), "hit");
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let mut entries = search_entries(root.path(), &req, globs("").unwrap(), cancel);
+        assert_eq!(
+            entries.next().unwrap().unwrap_err().code,
+            ErrorCode::Cancelled
+        );
+        assert!(entries.next().is_none());
+    }
+
+    #[test]
+    fn cancelling_after_the_root_prevents_regular_and_filtered_descendants() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("cache")).unwrap();
+        std::fs::write(root.path().join("cache/keep.txt"), "hit").unwrap();
+        for exclude in ["", "cache"] {
+            let req = request(root.path(), "hit");
+            let cancel = CancellationToken::new();
+            let mut entries =
+                search_entries(root.path(), &req, globs(exclude).unwrap(), cancel.clone());
+            assert_eq!(entries.next().unwrap().unwrap().depth(), 0);
+            cancel.cancel();
+            assert_eq!(
+                entries.next().unwrap().unwrap_err().code,
+                ErrorCode::Cancelled
+            );
+            assert!(entries.next().is_none());
+        }
+    }
+
+    #[test]
+    fn directory_read_errors_remain_errors_and_finished_walks_stay_finished() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing");
+        let req = request(&missing, "hit");
+        let cancel = CancellationToken::new();
+        let mut entries = search_entries(&missing, &req, globs("").unwrap(), cancel.clone());
+        assert_eq!(
+            entries.next().unwrap().unwrap_err().code,
+            ErrorCode::FsError
+        );
+        assert!(entries.next().is_none());
+        cancel.cancel();
+        assert!(entries.next().is_none());
+    }
     #[test]
     fn regex_captures_replace_all_occurrences_and_preserve_crlf_and_bom() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("a"), "\u{feff}foo1 foo2\r\nfoo3\n").unwrap();
         let mut req = request(root.path(), r"foo(?P<n>\d)");
         req.regex = true;
-        req.replacement = "bar${n}$$".into();
         let job = run(req);
-        assert!(matches(&job)[0].replacement_preview.contains("bar1$"));
-        assert_eq!(replace(&job, &[]).unwrap().completed, ["a"]);
+        assert!(matches_with(&job, "bar${n}$$")[0]
+            .replacement_preview
+            .contains("bar1$"));
+        assert_eq!(replace(&job, &[], "bar${n}$$").unwrap().completed, ["a"]);
         assert_eq!(
             std::fs::read_to_string(root.path().join("a")).unwrap(),
             "\u{feff}bar1$ bar2$\r\nbar3$\n"
         );
-        assert!(replace(&job, &[]).is_err());
+        assert!(replace(&job, &[], "bar${n}$$").is_err());
     }
     #[test]
     fn bom_is_not_matched_by_anchors_or_removed_by_whole_line_replacement() {
@@ -834,10 +1422,12 @@ mod tests {
         assert_eq!(found[0].column, 2);
         req.query = "^.*$".into();
         let job = run(req);
-        assert_eq!(replace(&job, &[]).unwrap().completed, ["a"]);
+        // The terminal separator creates an empty second editor line.
+        assert_eq!(matches(&job).len(), 2);
+        assert_eq!(replace(&job, &[], "new").unwrap().completed, ["a"]);
         assert_eq!(
             std::fs::read_to_string(root.path().join("a")).unwrap(),
-            "\u{feff}new\r\n"
+            "\u{feff}new\r\nnew"
         );
     }
     #[test]
@@ -846,10 +1436,12 @@ mod tests {
         for path in ["a", "b"] {
             std::fs::write(root.path().join(path), "hit hit").unwrap();
         }
-        let mut req = request(root.path(), "hit");
-        req.replacement = "$1\\n".into();
+        let req = request(root.path(), "hit");
         let job = run(req);
-        assert_eq!(replace(&job, &["b".into()]).unwrap().completed, ["a"]);
+        assert_eq!(
+            replace(&job, &["b".into()], "$1\\n").unwrap().completed,
+            ["a"]
+        );
         assert_eq!(
             std::fs::read_to_string(root.path().join("a")).unwrap(),
             "$1\\n $1\\n"
@@ -867,7 +1459,10 @@ mod tests {
         }
         let job = run(request(root.path(), "hit"));
         std::fs::write(root.path().join("b"), "new").unwrap();
-        assert!(replace(&job, &[]).unwrap_err().message.contains("changed"));
+        assert!(replace(&job, &[], "new")
+            .unwrap_err()
+            .message
+            .contains("changed"));
         assert_eq!(
             std::fs::read_to_string(root.path().join("a")).unwrap(),
             "hit"
@@ -879,17 +1474,15 @@ mod tests {
         std::fs::write(root.path().join("a"), "abc\nxyz").unwrap();
         let mut req = request(root.path(), "^|$");
         req.regex = true;
-        req.replacement = "!".into();
         let job = run(req);
         assert_eq!(matches(&job).len(), 4);
-        replace(&job, &[]).unwrap();
+        replace(&job, &[], "!").unwrap();
         assert_eq!(
             std::fs::read_to_string(root.path().join("a")).unwrap(),
             "!abc!\n!xyz!"
         );
-        let mut req = request(root.path(), "!");
-        req.replacement.clear();
-        replace(&run(req), &[]).unwrap();
+        let req = request(root.path(), "!");
+        replace(&run(req), &[], "").unwrap();
         assert_eq!(
             std::fs::read_to_string(root.path().join("a")).unwrap(),
             "abc\nxyz"
@@ -901,7 +1494,7 @@ mod tests {
         std::fs::write(root.path().join("a"), "hit").unwrap();
         let job = run(request(root.path(), "hit"));
         job.cancel.cancel();
-        assert!(replace(&job, &[]).is_err());
+        assert!(replace(&job, &[], "new").is_err());
         assert!(scan(&job).is_err());
         let mut req = request(root.path(), "[");
         req.regex = true;
@@ -911,5 +1504,184 @@ mod tests {
             std::fs::read_to_string(root.path().join("a")).unwrap(),
             "hit"
         );
+    }
+
+    #[test]
+    fn stored_capture_previews_match_regex_expansion_for_new_templates() {
+        let root = tempfile::tempdir().unwrap();
+        let line = format!("{}😀{} tail", "前".repeat(90), "文".repeat(500));
+        std::fs::write(root.path().join("a"), &line).unwrap();
+        let mut req = request(root.path(), r"(?P<字>😀文+)(?P<optional>x)?");
+        req.regex = true;
+        let regex = pattern(&req).unwrap();
+        let job = run(req);
+        let caps = regex.captures(&line).unwrap();
+        let original = caps.get(0).unwrap();
+        let (_, _, _, prefix, suffix) = preview(&line, original.start(), original.end());
+        for template in [
+            "",
+            "$0",
+            "$1",
+            "${字}$$",
+            "$optional-$missing",
+            "${1}tail",
+            "$1tail",
+            "${unclosed",
+            "😀$2$1$1",
+        ] {
+            let mut expected = String::new();
+            caps.expand(template, &mut expected);
+            assert_eq!(
+                matches_with(&job, template)[0].replacement_preview,
+                format!(
+                    "{prefix}{}{suffix}",
+                    expected.chars().take(240).collect::<String>()
+                ),
+                "template: {template}"
+            );
+        }
+        // Truncation applies only to previews, never to the actual write.
+        replace(&job, &[], "${字}${字}").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("a")).unwrap(),
+            regex.replace_all(&line, "${字}${字}")
+        );
+    }
+
+    #[tokio::test]
+    async fn changing_templates_reads_only_the_retained_page_and_keeps_the_scan_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("a");
+        std::fs::write(&source, "hit\n".repeat(601)).unwrap();
+        let req = request(root.path(), "hit");
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        wait_done(&job).await;
+        let snapshot = {
+            let p = job.progress.lock().unwrap();
+            (
+                p.scanned,
+                p.total,
+                p.bytes,
+                p.pages.clone(),
+                p.hashes.clone(),
+            )
+        };
+        // If paging re-read the source tree it could no longer find this file.
+        std::fs::rename(&source, root.path().join("renamed")).unwrap();
+        for replacement in ["first", "$1-literal", "", "中文"] {
+            let page = fs_content_search_page(ContentSearchPageReq {
+                session_id: req.session_id.clone(),
+                generation: req.generation,
+                page: 2,
+                replacement: replacement.into(),
+            })
+            .await
+            .unwrap();
+            assert_eq!((page.total, page.scanned, page.files), (601, 1, 1));
+            assert_eq!((page.matches.len(), page.matches[0].line), (200, 401));
+            assert!(page
+                .matches
+                .iter()
+                .all(|m| m.replacement_preview == replacement));
+            assert_eq!(page.matches[0].path, "a");
+        }
+        let p = job.progress.lock().unwrap();
+        assert_eq!(
+            snapshot,
+            (
+                p.scanned,
+                p.total,
+                p.bytes,
+                p.pages.clone(),
+                p.hashes.clone()
+            )
+        );
+        drop(p);
+        cancel_session(&req.session_id, req.generation);
+    }
+
+    #[tokio::test]
+    async fn apply_uses_the_confirmed_template_and_exclusions_after_multiple_previews() {
+        let root = tempfile::tempdir().unwrap();
+        for path in ["a", "b"] {
+            std::fs::write(root.path().join(path), "foo1 foo2\r\n").unwrap();
+        }
+        let mut req = request(root.path(), r"foo(?P<n>\d)");
+        req.regex = true;
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        wait_done(&job).await;
+        for template in ["first", "${n}$$"] {
+            let page = fs_content_search_page(ContentSearchPageReq {
+                session_id: req.session_id.clone(),
+                generation: req.generation,
+                page: 0,
+                replacement: template.into(),
+            })
+            .await
+            .unwrap();
+            assert_eq!(page.total, 4);
+        }
+        let result = fs_replace_content(ContentReplaceReq {
+            session_id: req.session_id.clone(),
+            generation: req.generation,
+            excluded_paths: vec!["b".into()],
+            replacement: "final${n}".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(result.completed, ["a"]);
+        assert!(result.failed.is_empty());
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("a")).unwrap(),
+            "final1 final2\r\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("b")).unwrap(),
+            "foo1 foo2\r\n"
+        );
+        cancel_session(&req.session_id, req.generation);
+    }
+
+    #[tokio::test]
+    async fn refreshed_previews_do_not_renew_hashes_or_allow_stale_files_to_be_written() {
+        let root = tempfile::tempdir().unwrap();
+        for path in ["a", "b"] {
+            std::fs::write(root.path().join(path), "hit").unwrap();
+        }
+        let req = request(root.path(), "hit");
+        fs_start_content_search(req.clone()).unwrap();
+        let job = get(&req.session_id, req.generation).unwrap();
+        wait_done(&job).await;
+        std::fs::write(root.path().join("b"), "new").unwrap();
+        let page = fs_content_search_page(ContentSearchPageReq {
+            session_id: req.session_id.clone(),
+            generation: req.generation,
+            page: 0,
+            replacement: "updated".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(page.matches.len(), 2);
+        assert!(fs_replace_content(ContentReplaceReq {
+            session_id: req.session_id.clone(),
+            generation: req.generation,
+            excluded_paths: vec![],
+            replacement: "updated".into(),
+        })
+        .await
+        .unwrap_err()
+        .message
+        .contains("changed since search"));
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("a")).unwrap(),
+            "hit"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("b")).unwrap(),
+            "new"
+        );
+        cancel_session(&req.session_id, req.generation);
     }
 }

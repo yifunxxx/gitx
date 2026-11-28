@@ -35,6 +35,7 @@ export const useFileTreeStore = defineStore("fileTree", () => {
   const initialized = ref(false);
   const pending = new Map<string, Promise<void>>();
   let generation = 0;
+  let revealSequence = 0;
 
   function directory(path: string) {
     let value = directories.get(path);
@@ -282,28 +283,32 @@ export const useFileTreeStore = defineStore("fileTree", () => {
     await loadDir("");
   }
   /** Expand ancestors, select, and return whether `path` is visible in the tree. */
-  async function revealPath(path: string): Promise<boolean> {
+  async function revealPath(
+    path: string,
+    stillCurrent: () => boolean = () => true,
+  ): Promise<boolean> {
     if (!workspace.folderPath || !path || path.includes("\0")) return false;
     const normalized = path.replace(/\\/g, "/").replace(/^\/+/, "");
     if (!normalized || normalized.split("/").some((part) => part === "." || part === ".."))
       return false;
-    const leaf = normalized.split("/").pop() ?? normalized;
-    const query = filter.value.trim().toLocaleLowerCase();
-    if (
-      query &&
-      !leaf.toLocaleLowerCase().includes(query) &&
-      !normalized.toLocaleLowerCase().includes(query)
-    ) {
-      filter.value = "";
-    }
-    if (!initialized.value) await loadRoot();
+    const epoch = generation;
+    const request = ++revealSequence;
+    const current = () => epoch === generation && request === revealSequence && stillCurrent();
+    if (!current()) return false;
+    await loadRoot();
+    if (!current()) return false;
     const parts = normalized.split("/");
     for (let i = 1; i < parts.length; i++) {
       const parent = parts.slice(0, i).join("/");
       if (!expanded.has(parent)) await expand(parent);
+      else await loadDir(parent);
+      if (!current()) return false;
       if (!directories.has(parent) || directories.get(parent)?.error) return false;
     }
     if (!visibleRows.value.some((row) => row.path === normalized)) return false;
+    // Filtering matches visible row names, not every component of a full path.
+    // Only clear it after locating a real target that the current filter hides.
+    if (!rows.value.some((row) => row.path === normalized)) filter.value = "";
     select(normalized);
     return selectedPath.value === normalized;
   }

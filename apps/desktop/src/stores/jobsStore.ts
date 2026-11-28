@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref } from "vue";
 import { getBackend } from "@/lib/backend";
 import { observeBackendActivity } from "@/lib/backend/activity";
 import { i18n } from "@/i18n";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type JobUi = {
   id: string;
@@ -15,6 +16,7 @@ export type JobUi = {
 };
 
 export type JobStartSource = "ui" | "native";
+export type JobStart = Pick<JobUi, "id"> & Partial<Omit<JobUi, "id" | "cancelling">>;
 
 export const useJobsStore = defineStore("jobs", () => {
   const running = ref<JobUi[]>([]);
@@ -24,7 +26,8 @@ export const useJobsStore = defineStore("jobs", () => {
   /** IDs observed via native JobManager (jobList / job://started). */
   let knownNativeIds = new Set<string>();
   let eventVersion = 0;
-  let refreshing = false;
+  const refreshing = ref(false);
+  const refreshError = ref("");
   let nextUiId = 0;
   const cancellations = new Map<string, object>();
   let disposed = false;
@@ -48,17 +51,24 @@ export const useJobsStore = defineStore("jobs", () => {
     return id;
   }
 
-  function started(
-    job: Omit<JobUi, "startedAt"> & { startedAt?: number },
-    source: JobStartSource = "ui",
-  ) {
+  function started(job: JobStart, source: JobStartSource = "ui") {
     ++eventVersion;
     const previous = running.value.find((entry) => entry.id === job.id);
     if (source === "native") knownNativeIds.add(job.id);
-    running.value = [
-      ...running.value.filter((j) => j.id !== job.id),
-      { ...job, startedAt: job.startedAt ?? Date.now(), cancelling: previous?.cancelling },
-    ];
+    // A native start can arrive after a list response or a UI observation.
+    // Missing fields must not erase known progress or move its cancel button.
+    const next: JobUi = {
+      id: job.id,
+      title: job.title ?? previous?.title ?? "job",
+      startedAt: job.startedAt ?? previous?.startedAt ?? Date.now(),
+      cancellable: job.cancellable ?? previous?.cancellable,
+      percent: job.percent ?? previous?.percent,
+      message: job.message ?? previous?.message,
+      cancelling: previous?.cancelling,
+    };
+    running.value = previous
+      ? running.value.map((entry) => (entry.id === job.id ? next : entry))
+      : [...running.value, next];
   }
 
   function progress(id: string, patch: Partial<JobUi>) {
@@ -79,7 +89,7 @@ export const useJobsStore = defineStore("jobs", () => {
     }
     popupOpen.value = true;
     void refresh().catch(() => {
-      /* StatusBar list can still show event-driven rows. */
+      /* The popup exposes refreshError while retaining event-driven rows. */
     });
   }
 
@@ -115,13 +125,14 @@ export const useJobsStore = defineStore("jobs", () => {
   }
 
   async function refresh(current: () => boolean = () => true) {
-    if (refreshing) return;
-    refreshing = true;
+    if (disposed || !current() || refreshing.value) return;
+    refreshing.value = true;
     const version = eventVersion;
     try {
       const jobs = await getBackend().jobList();
       // Events received during the read are more recent than its snapshot.
       if (disposed || !current() || version !== eventVersion) return;
+      refreshError.value = "";
       const prevById = new Map(running.value.map((job) => [job.id, job]));
       const listedIds = new Set(jobs.map((job) => job.id));
       const previouslyNative = knownNativeIds;
@@ -149,8 +160,12 @@ export const useJobsStore = defineStore("jobs", () => {
         }),
         ...uiOnly,
       ];
+    } catch (error) {
+      if (disposed || !current()) return;
+      refreshError.value = formatErrorMessage(error);
+      throw error;
     } finally {
-      refreshing = false;
+      refreshing.value = false;
     }
   }
 
@@ -160,6 +175,8 @@ export const useJobsStore = defineStore("jobs", () => {
     popupOpen,
     anchorX,
     anchorY,
+    refreshing,
+    refreshError,
     started,
     begin,
     progress,

@@ -8,9 +8,14 @@
     "paste": "Paste (Ctrl+Shift+V)",
     "clear": "Clear terminal",
     "close": "Close terminal and stop its process",
+    "closing": "closing…",
+    "closeFailed": "close failed",
+    "closeFailedDetail": "Terminal closure could not be confirmed. Click Close terminal again to retry. {error}",
     "exited": "exit {code}",
     "failed": "failed",
+    "hasError": "This terminal has an error",
     "sessionLimit": "Close a terminal before opening another (maximum 16 sessions).",
+    "inputFailed": "Terminal input failed. Further input is disabled and queued input was discarded. Open a new terminal. {error}",
     "startedIn": "Started in:",
     "desktopOnly": "Interactive terminals are available in the desktop app.",
     "openFolder": "Open a folder or repository to start a terminal.",
@@ -21,6 +26,18 @@
     "welcome": "Welcome to gitx"
   },
   "editor": {
+    "clipboardPending": {
+      "copy": "Copying…",
+      "cut": "Cutting…",
+      "paste": "Reading clipboard…"
+    },
+    "clipboardFailed": {
+      "copy": "Could not copy.",
+      "cut": "Could not cut.",
+      "paste": "Could not paste."
+    },
+    "retryClipboard": "Retry",
+    "dismissClipboard": "Dismiss",
     "menu": "Editor",
     "unsaved": "unsaved",
     "saving": "saving…",
@@ -196,6 +213,7 @@
     "graphTip": "Show graph options",
     "goToPlaceholder": "Go to Hash / Branch / Tag",
     "rebuildIndex": "Rebuild index",
+    "rebuildingIndex": "Rebuilding…",
     "rebuildIndexTip": "Rebuild log index to accelerate filters",
     "indexEmpty": "Index empty — Rebuild to accelerate filters",
     "indexed": "Indexed {count} commits",
@@ -213,6 +231,10 @@
     "colAuthor": "Author",
     "colDate": "Date",
     "changedFiles": "Changed Files",
+    "loadingDetails": "Reading commit {sha} and files…",
+    "detailsFailed": "Could not read this commit",
+    "noChangedFiles": "This commit has no changed files",
+    "selectCommitHint": "Select a commit to view its details",
     "author": "Author",
     "date": "Date",
     "parents": "Parents",
@@ -227,6 +249,7 @@
     "clearAndGo": "Clear filters and go",
     "historyChanged": "History changed while loading. Refresh and try again.",
     "retryLoadMore": "Retry",
+    "loadingHistory": "Loading commit history…",
     "chipText": "Text: {value}",
     "chipUser": "User: {value}",
     "chipSince": "Since: {value}",
@@ -468,6 +491,7 @@
     "refreshFailed": "Operation completed, but the view could not refresh. Refresh the repository to see the result."
   },
   "common": {
+    "retry": "Retry",
     "cancel": "Cancel",
     "ok": "OK",
     "apply": "Apply",
@@ -589,6 +613,9 @@
     "busy": "{count} process(es)",
     "jobsTitle": "Background processes",
     "jobsEmpty": "No running processes",
+    "jobsLoading": "Checking running processes…",
+    "jobsUnavailable": "Process status unavailable",
+    "jobsRefreshFailed": "Could not refresh running processes. The list may be incomplete.",
     "jobRunning": "Running…",
     "jobPercent": "{percent}%",
     "cancelFailed": "Could not cancel process",
@@ -951,6 +978,10 @@
     "up": "Up",
     "restore": "Restore file…",
     "restoreConfirm": "Restore {file} from {rev}? This replaces this file in both the working tree and the staging area, including any local changes.",
+    "restoreBusy": "Wait for file loading, saving, or file operations to finish, then retry.",
+    "restoring": "Restoring file…",
+    "restoreDrafts": "Save or close unsaved editor tabs for these files before restoring them. Your drafts have been kept.",
+    "restoreMergeOpen": "Finish or close the merge editor for these files before restoring them.",
     "restored": "File restored from revision",
     "restoreRefreshFailed": "File restored, but refreshing Changes failed",
     "directoryFailed": "Could not load directory",
@@ -1158,6 +1189,10 @@
     "copySavedContent": "Some selected files have unsaved edits. Copy the saved content on disk?",
     "failed": "Some file operations failed",
     "completed": "File operation completed",
+    "resultSummary": "Entries completed: {completed} · Failed: {failed}",
+    "followUpFailed": "File results recorded; updating the view failed. Refresh the view without repeating the file operation.",
+    "refreshing": "Refreshing file view",
+    "opening": "Opening created file",
     "destinationOpen": "Close the destination editor tab before moving files.",
     "noChangesToMove": "Select changed files belonging to this repository.",
     "delete": "Delete…",
@@ -1167,6 +1202,8 @@
     "deletedDraft": "File recycled; copy this draft before closing."
   },
   "contentSearch": {
+    "stopped": "Search stopped. Results from completed files are still available. Refresh before replacing.",
+    "stopping": "Stopping search…",
     "mode": "Search mode",
     "includeLabel": "Include",
     "excludeLabel": "Exclude",
@@ -1202,6 +1239,7 @@
     "saveDrafts": "Save or close unsaved files, finish or close merge editors, and wait for file operations before replacing across files.",
     "confirm": "Write changes to {count} files?",
     "confirmReplace": "Confirm replacement",
+    "replacing": "Replacing…",
     "replaceFiles": "Replace in {count} files…",
     "replaced": "Replaced {count} files. Search again to see updated results."
   }

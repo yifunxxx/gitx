@@ -32,6 +32,10 @@ When this guide says “open through Find Action,” it means this dialog. Comma
 
 Click a tab to switch views. Its context menu can close the current tab, other tabs, tabs to the right, or all tabs. “To the right” follows the visible tab order. Unsaved or unapplied edits may block closing or navigation until you save or confirm discarding them. Closing a diff only closes the view; it does not roll back a file.
 
+Ordinary file tabs retain their cursor or selection, scroll position, undo/redo history, and in-file search settings when you visit another file, the workspace, history, or a diff. Saving keeps the tab's undo history; undoing to content different from the saved version marks it unsaved again. Closing and reopening a tab reads the file afresh. These editing states belong to the open tab and do not survive closing it or restarting the app. A search-result jump runs once, so returning to the tab preserves any position you moved to afterward.
+
+Copy, Cut, and Paste from an ordinary file editor's context menu show a pending status. A failure keeps the document intact and offers Retry and Dismiss. You can continue editing while waiting, but Cut or Paste only applies to the original text and selection. Changing the text or selection clears an old error; start again from the menu. Switching tabs prevents an old request's result or error from affecting another file.
+
 ## Commit tool-window layout
 
 Search for **Commit Tool Window** in Find Action, or use **Settings → Git → Commit tool window mode**. Choose **Docked**, **Window**, or **Float**. These are presentations within the app; Float overlays part of the workspace. Switching to File and back preserves the commit draft.

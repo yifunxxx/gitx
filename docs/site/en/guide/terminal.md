@@ -15,9 +15,17 @@ Up to 16 sessions can remain open. After switching projects, do not infer an exi
 | --- | --- |
 | Copy a selection | `Ctrl+Shift+C` or Copy in the terminal menu |
 | Paste | `Ctrl+Shift+V` or Paste; inspect commands before executing them |
-| Interrupt a command | `Ctrl+C` normally sends an interrupt inside the terminal |
+| Interrupt a command | With no selection, `Ctrl+C` reaches the shell; with a selection, it copies the selected text |
 | Select all or clear | Context menu → Select All / Clear |
 | Close | Close terminal and stop its process |
+
+Press `Shift+F10` or the menu key in terminal input to open the context menu. When a session tab has focus, use Left / Right to switch tabs or Home / End to reach the first or last tab. Holding a shortcut does not repeat copy, paste, or menu actions; extra modifiers such as Alt do not trigger those shortcuts.
+
+If sending input fails partway through, GitX disables that session's input, discards queued text, and requests session closure so a queued Enter cannot execute incomplete input. Output and the error remain available. Check the original operation's actual outcome, then open a new terminal to continue. Input is never retried automatically.
+
+After clicking Close, the tab shows “closing…” and retains its output with input disabled until closure is confirmed. If it shows “close failed”, click Close again to retry that session. Switching to another terminal preserves the original session's error and retry control.
+
+Startup, transport, or clipboard failures mark the affected terminal tab. Select that tab to see the reason; other terminals keep their own status. Creating a terminal preserves the original session's errors, and retrying copy or paste clears only its clipboard error.
 
 The web demonstration backend does not provide an interactive terminal. Use the desktop app.
 
@@ -32,6 +40,7 @@ Review paths, repository addresses, and personal information before sharing logs
 Click **Background processes** in the status bar to inspect unfinished operations. Clone, Fetch, Push, comparisons, updates, and file reads may appear here. Completed tasks are removed; this queue does not retain history.
 
 - Details show a phase message, progress, or **Running…**. Writes to the same repository may be waiting for another operation to finish.
+- Opening the queue checks running processes. If reading fails, known tasks remain visible with a warning that the list may be incomplete. Click **Retry** to read it again. The status bar also flags the failure; it does not confirm that no tasks are running.
 - **Cancel**, when available, requests cancellation. The queue shows **Cancelling…** and disables the button until task completion is confirmed. Closing and reopening the queue preserves that state.
 - A failed cancellation request reports an error and allows retry. Cancellation does not automatically roll back every effect. When a task fails, inspect its error notification and Console, and verify the actual state before retrying.
 

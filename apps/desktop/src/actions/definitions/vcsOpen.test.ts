@@ -182,7 +182,7 @@ it("keeps initialization busy until independent initial reads finish", async () 
   expect(entry.pending.value).toBe(true);
   expect(entry.pendingPath.value).toBe("new repo");
   expect(m.refresh).toHaveBeenCalledOnce();
-  expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+  expect(m.load).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
   expect(m.branches).toHaveBeenCalledOnce();
   await run("Git.Init");
   expect(m.initRun).toHaveBeenCalledExactlyOnceWith({ path: "new repo", initialBranch: "main" });
@@ -206,7 +206,7 @@ it.each(["File.OpenFolder", "Git.Init"])(
     expect(workspace.folderPath).toBe("opened repo");
     expect(workspace.recent).toEqual(["previous repo"]);
     expect(m.refresh).toHaveBeenCalledOnce();
-    expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+    expect(m.load).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
     expect(m.branches).toHaveBeenCalledOnce();
     expect(useLayoutStore().leftOpen).toBe(true);
     expect(useLayoutStore().bottomOpen).toBe(true);
@@ -262,7 +262,7 @@ it.each(["folder", "create", "recent", "clone"] as const)(
     expect(workspace.repoPath).toBe("opened repo");
     expect(workspace.recent).toEqual(["previous repo"]);
     expect(m.refresh).toHaveBeenCalledOnce();
-    expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+    expect(m.load).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
     expect(m.branches).toHaveBeenCalledOnce();
     expect(useLayoutStore().activeBottomTab).toBe("log");
     expect(entry.pending.value).toBe(true);
@@ -419,6 +419,6 @@ it("reports enable-VCS failure without losing the folder and permits retry", asy
   expect(useWorkspaceStore().isRepo).toBe(true);
   expect(m.pick).not.toHaveBeenCalled();
   expect(m.refresh).toHaveBeenCalledOnce();
-  expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+  expect(m.load).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
   expect(m.branches).toHaveBeenCalledOnce();
 });

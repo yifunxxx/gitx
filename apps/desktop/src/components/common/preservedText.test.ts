@@ -85,3 +85,29 @@ it("keeps an empty document empty, including after undo", () => {
   undo(editor);
   expect(sourceText(editor.state)).toBe("");
 });
+
+it("preserves explicit mixed replacement endings after starting from a uniform file", () => {
+  const original = "one\r\ntwo\r\n";
+  const editor = document(original);
+  const replacement = parseSource("new\nlast\r");
+  editor.dispatch(
+    editor.state.update({
+      changes: { from: 0, to: editor.state.doc.length, insert: replacement.doc },
+      effects: restoreEndings.of(replacement.endings),
+    }),
+  );
+  expect(sourceText(editor.state)).toBe("new\nlast\r");
+  undo(editor);
+  expect(sourceText(editor.state)).toBe(original);
+  redo(editor);
+  expect(sourceText(editor.state)).toBe("new\nlast\r");
+});
+
+it("honors an explicit separator change even without a document change", () => {
+  const editor = document("one\r\ntwo\r\n");
+  const replacement = parseSource("one\ntwo\r");
+  editor.dispatch(editor.state.update({ effects: restoreEndings.of(replacement.endings) }));
+  expect(sourceText(editor.state)).toBe("one\ntwo\r");
+  editor.dispatch(editor.state.update({ changes: { from: 0, insert: "added\n" } }));
+  expect(sourceText(editor.state)).toBe("added\r\none\ntwo\r");
+});

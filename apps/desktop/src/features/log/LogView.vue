@@ -3,7 +3,7 @@ import { formatCommitTime as formatTime } from "@/lib/commitTime";
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Pane, Splitpanes } from "splitpanes";
-import { Eye, Filter, List, ListTree, Search } from "@lucide/vue";
+import { Eye, Filter, List, ListTree, LoaderCircle, Search } from "@lucide/vue";
 import { useLogStore } from "@/stores/logStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -80,9 +80,10 @@ const {
   ctxDrop,
   ctxExtract,
 } = useLogContextMenus();
-const captureAction = useRepositoryAction();
+const captureAction = useRepositoryAction(cancelLoadMore);
 
 const ROW_H = 22;
+const textInput = ref<HTMLInputElement | null>(null);
 const textDraft = ref("");
 const authorDraft = ref("");
 const revDraft = ref("");
@@ -278,13 +279,33 @@ async function toggleChangedFilesListMode() {
 }
 
 let loadMoreTimer = 0;
+function cancelLoadMore() {
+  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
+  loadMoreTimer = 0;
+}
+// Invalidate synchronously, including A → B → A changes within one Vue tick.
+// Do not deeply traverse commits on every update: only their window identity
+// matters here. Filters are small and can also change in place.
+watch([listMode, () => log.commits], cancelLoadMore, { flush: "sync" });
+watch(() => log.filters, cancelLoadMore, { flush: "sync", deep: true });
+
+function nearListBottom(el: HTMLElement) {
+  return el.clientHeight > 0 && el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+}
 /** Trailing debounce: only fetch after scroll settles so loadMore IPC + layout
  * do not collide with an in-flight wheel/thumb gesture. */
-function scheduleLoadMore() {
-  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
+function scheduleLoadMore(el: HTMLElement) {
+  cancelLoadMore();
+  const source = captureAction();
   loadMoreTimer = window.setTimeout(() => {
     loadMoreTimer = 0;
-    if (commitListRef.value?.pointerDown) return;
+    if (
+      !source.current() ||
+      commitListRef.value?.el !== el ||
+      commitListRef.value.pointerDown ||
+      !nearListBottom(el)
+    )
+      return;
     void log.loadMore();
   }, 180);
 }
@@ -294,7 +315,7 @@ onUnmounted(() => {
   finishLayout();
   if (graphRaf) cancelAnimationFrame(graphRaf);
   graphRaf = 0;
-  if (loadMoreTimer) window.clearTimeout(loadMoreTimer);
+  cancelLoadMore();
 });
 
 const scrollLeft = ref(0);
@@ -378,8 +399,24 @@ async function selectCommit(sha: string, multi = false, range = false) {
   }
 }
 
+async function retryCommitDetails() {
+  try {
+    await log.retryDetails();
+  } catch {
+    // The current selection's persistent error and retry remain in the panel.
+  }
+}
+
 async function onCommitKeydown(sha: string, event: KeyboardEvent) {
-  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey
+  )
+    return;
   const source = captureAction();
   const navigation = commitNavigation.value;
   const displayedCommits = listMode.value === "flat" ? graphCommits.value : log.commits;
@@ -400,6 +437,9 @@ async function onCommitKeydown(sha: string, event: KeyboardEvent) {
       try {
         const selected = await log.goToHashOrRef();
         if (!source.current() || selected !== parent) return;
+        // The navigation already selected the parent and started its details.
+        await scrollToCommit(parent, undefined, true);
+        return;
       } catch (error) {
         if (source.current())
           toast({ title: t("log.failed"), description: formatErrorMessage(error) });
@@ -450,12 +490,36 @@ async function waitForLayout(current: () => boolean) {
   }
 }
 
+function onInputEnter(event: KeyboardEvent, action: () => Promise<void>) {
+  // Candidate confirmation and held keys must not publish drafts or navigate.
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.repeat ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey
+  )
+    return;
+  event.preventDefault();
+  void action();
+}
+
 async function applySearch() {
   log.setTextFilter(textDraft.value);
   log.setAuthorFilter(authorDraft.value);
   log.setRevisions(revDraft.value.trim() ? [revDraft.value.trim()] : []);
   log.setPathsFilter(pathDraft.value.trim() ? [pathDraft.value.trim()] : []);
   await reloadFilters();
+}
+
+function retrySearch() {
+  // The error panel disappears on retry. Keep keyboard focus in a stable
+  // input so the user can continue correcting the query while it is loading.
+  textInput.value?.focus({ preventScroll: true });
+  void applySearch();
 }
 
 async function reloadFilters() {
@@ -496,9 +560,11 @@ function onListScroll(e: Event) {
   scrollLeft.value = el.scrollLeft;
   // Defer load-more while the scrollbar thumb is being dragged — appending
   // rows mid-drag changes scrollHeight and makes the thumb jam (GIT-40).
-  if (commitListRef.value?.pointerDown) return;
-  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
-  if (remaining < 80) scheduleLoadMore();
+  if (commitListRef.value?.pointerDown || !nearListBottom(el)) {
+    cancelLoadMore();
+    return;
+  }
+  scheduleLoadMore(el);
 }
 
 function onCommitClick(sha: string, e: MouseEvent) {
@@ -519,33 +585,33 @@ function onCommitContext(sha: string, e: MouseEvent) {
       :title="t('log.noRepoTitle')"
       :description="t('log.noRepoHint')"
     />
-    <ErrorState v-else-if="log.error" :title="t('log.failed')" :message="log.error" />
     <template v-else>
       <div class="flex flex-wrap items-center gap-1 border-b bg-dbx-chrome px-2 py-1 text-[11px]">
         <Filter class="h-3.5 w-3.5 text-muted-foreground" />
         <input
+          ref="textInput"
           v-model="textDraft"
           class="h-6 w-36 rounded border bg-background px-1.5"
           :placeholder="t('log.searchPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <input
           v-model="authorDraft"
           class="h-6 w-24 rounded border bg-background px-1.5"
           :placeholder="t('log.userPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <input
           v-model="revDraft"
           class="h-6 w-28 rounded border bg-background px-1.5"
           :placeholder="t('log.branchPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <input
           v-model="pathDraft"
           class="h-6 w-28 rounded border bg-background px-1.5"
           :placeholder="t('log.pathsPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <Select
           :model-value="datePreset"
@@ -593,7 +659,7 @@ function onCommitContext(sha: string, e: MouseEvent) {
             class="h-6 min-w-[8rem] flex-1 rounded border bg-background px-1.5"
             :placeholder="t('log.goToPlaceholder')"
             :disabled="log.locating"
-            @keydown.enter="!$event.isComposing && goToCommit()"
+            @keydown.enter="onInputEnter($event, goToCommit)"
           />
         </div>
         <span v-if="log.locating" role="status" class="text-muted-foreground">{{
@@ -603,8 +669,19 @@ function onCommitContext(sha: string, e: MouseEvent) {
           {{ indexLabel }}
         </span>
         <Tip :text="t('log.rebuildIndexTip')">
-          <Button size="xs" variant="ghost" @click="log.rebuildIndex()">
-            {{ t("log.rebuildIndex") }}
+          <Button
+            size="xs"
+            variant="ghost"
+            :disabled="log.rebuildingIndex"
+            :aria-busy="log.rebuildingIndex"
+            @click="log.rebuildIndex()"
+          >
+            <LoaderCircle
+              v-if="log.rebuildingIndex"
+              class="h-3 w-3 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            {{ log.rebuildingIndex ? t("log.rebuildingIndex") : t("log.rebuildIndex") }}
           </Button>
         </Tip>
       </div>
@@ -696,13 +773,27 @@ function onCommitContext(sha: string, e: MouseEvent) {
         </button>
       </div>
 
+      <div
+        v-if="log.loading"
+        role="status"
+        class="flex shrink-0 items-center gap-2 border-b px-2 py-1 text-xs text-muted-foreground"
+      >
+        <LoaderCircle class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        {{ t("log.loadingHistory") }}
+      </div>
+
       <Splitpanes class="min-h-0 flex-1">
         <Pane :size="18" min-size="12" max-size="36">
           <BranchesPane />
         </Pane>
-        <Pane :size="82" min-size="40">
+        <Pane :size="82" min-size="40" :aria-busy="log.loading">
+          <ErrorState v-if="log.error" role="alert" :title="t('log.failed')" :message="log.error">
+            <Button size="xs" variant="outline" @click="retrySearch">
+              {{ t("log.retryLoadMore") }}
+            </Button>
+          </ErrorState>
           <EmptyState
-            v-if="!log.loading && !log.commits.length"
+            v-else-if="!log.loading && !log.commits.length"
             :title="t('log.noMatchesTitle')"
             :description="t('log.noMatchesHint')"
           />
@@ -932,7 +1023,7 @@ function onCommitContext(sha: string, e: MouseEvent) {
             <Pane :size="28" min-size="20">
               <Splitpanes horizontal class="h-full">
                 <Pane :size="45">
-                  <div class="flex h-full min-h-0 flex-col">
+                  <div class="flex h-full min-h-0 flex-col" :aria-busy="log.detailsLoading">
                     <div
                       class="flex items-center justify-between border-b px-2 py-1 text-[11px] font-medium"
                     >
@@ -951,6 +1042,17 @@ function onCommitContext(sha: string, e: MouseEvent) {
                         </Button>
                       </Tip>
                     </div>
+                    <div
+                      v-if="log.detailsLoading"
+                      role="status"
+                      class="flex items-center gap-2 p-2 text-xs text-muted-foreground"
+                    >
+                      <LoaderCircle
+                        class="h-3.5 w-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                      {{ t("log.loadingDetails", { sha: log.selectedSha?.slice(0, 7) ?? "" }) }}
+                    </div>
                     <PathTreeList
                       v-for="source in fileList ? [fileList] : []"
                       :key="source.id"
@@ -959,14 +1061,27 @@ function onCommitContext(sha: string, e: MouseEvent) {
                       :selected-path="selectedFile?.path"
                       @select="selectFile"
                       :status-class="(f: ChangedFile) => statusClass(mapStatus(f.status))"
-                      empty-text=""
+                      :empty-text="t('log.noChangedFiles')"
                       @open="(file) => openChangedFile(source, file)"
                       @context="(payload) => onFileContext(source, payload)"
                     />
                   </div>
                 </Pane>
                 <Pane :size="55">
-                  <div v-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
+                  <div
+                    v-if="log.detailsError"
+                    role="alert"
+                    class="h-full overflow-auto p-2 text-xs"
+                  >
+                    <p class="font-medium text-destructive">{{ t("log.detailsFailed") }}</p>
+                    <p class="mt-1 break-words whitespace-pre-wrap text-muted-foreground">
+                      {{ log.detailsError }}
+                    </p>
+                    <Button size="xs" variant="outline" class="mt-2" @click="retryCommitDetails">
+                      {{ t("log.retryLoadMore") }}
+                    </Button>
+                  </div>
+                  <div v-else-if="log.details" class="h-full overflow-auto p-2 text-[12px]">
                     <div class="font-mono text-[11px] text-muted-foreground">
                       {{ log.details.sha }}
                     </div>
@@ -987,6 +1102,9 @@ function onCommitContext(sha: string, e: MouseEvent) {
                         {{ log.details.parents.map((p) => p.slice(0, 7)).join(", ") || "—" }}
                       </dd>
                     </dl>
+                  </div>
+                  <div v-else-if="!log.selectedSha" class="p-2 text-xs text-muted-foreground">
+                    {{ t("log.selectCommitHint") }}
                   </div>
                 </Pane>
               </Splitpanes>

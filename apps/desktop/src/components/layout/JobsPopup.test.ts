@@ -177,3 +177,101 @@ it("does not display a stale cancel error after the job has finished", async () 
   expect(mocks.toast).not.toHaveBeenCalled();
   expect(jobs.count).toBe(0);
 });
+
+it("shows loading instead of an empty queue until the native list returns", async () => {
+  const jobs = useJobsStore();
+  let resolve!: (value: unknown[]) => void;
+  mocks.list.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  jobs.openPopup();
+  mount(JobsPopup, { attachTo: document.body });
+  await flushPromises();
+  const pendingText = document.querySelector('[role="dialog"]')!.textContent;
+  resolve([]);
+  await flushPromises();
+  expect(pendingText).toContain("status.jobsLoading");
+  expect(pendingText).not.toContain("status.jobsEmpty");
+  expect(document.querySelector('[role="dialog"]')!.textContent).toContain("status.jobsEmpty");
+});
+
+it("shows a failed list and retries once without falsely claiming an empty queue", async () => {
+  const jobs = useJobsStore();
+  mocks.list.mockRejectedValueOnce({ message: "native queue unavailable" });
+  jobs.openPopup();
+  mount(JobsPopup, { attachTo: document.body });
+  await flushPromises();
+  const panel = document.querySelector('[role="dialog"]')!;
+  expect(panel.textContent).not.toContain("status.jobsEmpty");
+  expect(panel.querySelector('[role="alert"]')!.textContent).toContain("native queue unavailable");
+  let resolve!: (value: unknown[]) => void;
+  mocks.list.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const retry = panel.querySelector<HTMLButtonElement>("[data-jobs-retry]")!;
+  retry.focus();
+  retry.click();
+  await flushPromises();
+  retry.click();
+  expect(mocks.list).toHaveBeenCalledTimes(2);
+  expect(retry.disabled).toBe(true);
+  expect(panel.contains(document.activeElement)).toBe(true);
+  expect(panel.textContent).toContain("status.jobsLoading");
+  resolve([{ id: "found", title: "Still cloning", startedAt: 1, cancellable: true }]);
+  await flushPromises();
+  expect(panel.textContent).toContain("Still cloning");
+  expect(panel.querySelector('[role="alert"]')).toBeNull();
+  expect(panel.querySelector("[data-jobs-retry]")).toBeNull();
+  expect(panel.contains(document.activeElement)).toBe(true);
+});
+
+it("keeps event-driven rows and cancellation available when list refresh fails", async () => {
+  const jobs = useJobsStore();
+  jobs.started({ id: "running", title: "Known clone", cancellable: true }, "native");
+  mocks.list.mockRejectedValueOnce(new Error("list unavailable"));
+  jobs.openPopup();
+  mount(JobsPopup, { attachTo: document.body });
+  await flushPromises();
+  const panel = document.querySelector('[role="dialog"]')!;
+  expect(panel.textContent).toContain("Known clone");
+  expect(panel.querySelector('[role="alert"]')!.textContent).toContain("list unavailable");
+  const cancel = Array.from(panel.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent?.trim() === "common.cancel",
+  )!;
+  cancel.click();
+  await flushPromises();
+  expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith("running");
+  expect(cancel.disabled).toBe(true);
+  jobs.finished("running");
+  await flushPromises();
+  expect(panel.textContent).not.toContain("Known clone");
+  expect(panel.textContent).not.toContain("status.jobsEmpty");
+  expect(panel.querySelector('[role="alert"]')).not.toBeNull();
+});
+
+it("retains a pending refresh across popup close and reopen", async () => {
+  const jobs = useJobsStore();
+  let reject!: (error: unknown) => void;
+  mocks.list.mockReturnValueOnce(
+    new Promise((_done, no) => {
+      reject = no;
+    }),
+  );
+  jobs.openPopup();
+  mount(JobsPopup, { attachTo: document.body });
+  await flushPromises();
+  jobs.closePopup();
+  await flushPromises();
+  jobs.openPopup();
+  await flushPromises();
+  expect(mocks.list).toHaveBeenCalledOnce();
+  const pendingText = document.querySelector('[role="dialog"]')!.textContent;
+  reject(new Error("slow failure"));
+  await flushPromises();
+  expect(pendingText).toContain("status.jobsLoading");
+  expect(document.querySelector('[role="alert"]')!.textContent).toContain("slow failure");
+});

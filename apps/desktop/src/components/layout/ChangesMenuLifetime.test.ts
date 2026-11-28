@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   ws: {} as any,
   changes: {} as any,
   settings: {} as any,
+  files: {} as any,
+  conflicts: {} as any,
   layout: {
     commitTwMode: "docked" as string,
     leftOpen: true,
@@ -36,7 +38,8 @@ vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => mocks.setting
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/rewriteStore", () => ({ useRewriteStore: () => ({ refreshOpState: vi.fn() }) }));
 vi.mock("@/stores/stashShelfStore", () => ({ useStashShelfStore: () => ({}) }));
-vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => ({ open: mocks.open }) }));
+vi.mock("@/stores/fileViewerStore", () => ({ useFileViewerStore: () => mocks.files }));
+vi.mock("@/stores/conflictsStore", () => ({ useConflictsStore: () => mocks.conflicts }));
 vi.mock("@/stores/historyStore", () => ({ useHistoryStore: () => ({}) }));
 vi.mock("@/stores/diffStore", () => ({ useDiffStore: () => ({}) }));
 vi.mock("@/features/commit/focusCommitUi", () => ({ focusCommitUi: mocks.focusCommitUi }));
@@ -59,10 +62,12 @@ vi.mock("@/lib/backend/bindings", () => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 let wrapper: ReturnType<typeof shallowMount>;
 beforeEach(() => {
@@ -114,6 +119,17 @@ beforeEach(() => {
     }),
   });
   mocks.confirm.mockResolvedValue(true);
+  mocks.files = reactive({
+    open: mocks.open,
+    tabs: [],
+    fileMutationPending: false,
+    affectedByFiles: (_root: string, paths: string[]) =>
+      mocks.files.tabs.filter((tab: any) => paths.includes(tab.path)),
+    closeTab: (id: string) => {
+      mocks.files.tabs = mocks.files.tabs.filter((tab: any) => tab.id !== id);
+    },
+  });
+  mocks.conflicts = reactive({ busy: false, mergeTabs: [] });
   wrapper = shallowMount(CommitToolWindow, {
     global: {
       stubs: {
@@ -266,6 +282,61 @@ it.each(["unstage", "checkout"])("stops rollback after navigation during %s", as
   await flushPromises();
   expect(mocks.checkout).toHaveBeenCalledTimes(step === "checkout" ? 1 : 0);
   expect(mocks.toast).not.toHaveBeenCalled();
+});
+
+it.each(["dirty", "saving", "loading", "file operation", "merge"])(
+  "rejects rollback before unstaging when selected editors have %s work",
+  async (kind) => {
+    mocks.files.tabs = [
+      {
+        id: "first",
+        path: "first.txt",
+        text: "keep",
+        editable: true,
+        dirty: kind === "dirty",
+        saving: kind === "saving",
+        loading: kind === "loading",
+      },
+    ];
+    mocks.files.fileMutationPending = kind === "file operation";
+    if (kind === "merge") mocks.conflicts.mergeTabs = [{ path: "first.txt" }];
+    mocks.dialog.mockResolvedValue({ paths: ["first.txt", "second.txt"] });
+    await openMenu();
+    await click("commitTw.rollback");
+    expect(mocks.changes.unstage).not.toHaveBeenCalled();
+    expect(mocks.checkout).not.toHaveBeenCalled();
+    expect(mocks.files.tabs[0]?.text).toBe("keep");
+    expect(mocks.toast).toHaveBeenCalled();
+    expect(mocks.files.fileMutationPending).toBe(kind === "file operation");
+  },
+);
+
+it("retains failed rollback buffers, closes successful ones, and releases the shared write lock", async () => {
+  mocks.files.tabs = ["first.txt", "second.txt"].map((path) => ({
+    id: path,
+    path,
+    text: path,
+    editable: true,
+    dirty: false,
+  }));
+  const second = mocks.files.tabs[1];
+  const pending = deferred<null>();
+  mocks.checkout.mockResolvedValueOnce(null).mockReturnValueOnce(pending.promise);
+  mocks.dialog.mockResolvedValue({ paths: ["first.txt", "second.txt"] });
+  await openMenu();
+  await click("commitTw.rollback");
+  expect(mocks.files.fileMutationPending).toBe(true);
+  expect(mocks.files.tabs).toEqual([second]);
+  expect(second.restorePending).toBe(true);
+  pending.reject(new Error("second file locked"));
+  await flushPromises();
+  expect(mocks.files.fileMutationPending).toBe(false);
+  expect(second.editable).toBe(true);
+  expect(second.restorePending).toBe(false);
+  expect(second.text).toBe("second.txt");
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ title: "second file locked" }),
+  );
 });
 
 it("cancels untracking when its confirmation is dismissed", async () => {

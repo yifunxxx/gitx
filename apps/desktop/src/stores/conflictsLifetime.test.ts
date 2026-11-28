@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
 import { useConflictsStore } from "./conflictsStore";
+import { useFileViewerStore } from "./fileViewerStore";
 import type { ConflictEntry, Merge3Result } from "@/lib/backend";
 
 const m = vi.hoisted(() => ({
@@ -157,6 +158,38 @@ it("invalidates pending editor loads when a resolution writes the file", async (
   pending.resolve(merge);
   await opening;
   expect(store.mergeTabs).toEqual([]);
+});
+
+it("invalidates merge reads across a disk write and permits a fresh read afterward", async () => {
+  const pending = deferred<Merge3Result>();
+  m.backend.conflictMerge3.mockReturnValueOnce(pending.promise);
+  const opening = store.openMerge(entry);
+  const files = useFileViewerStore();
+  files.fileMutationPending = true;
+  expect(await store.openMerge(entry)).toBe(false);
+  files.fileMutationPending = false;
+  pending.resolve(merge);
+  expect(await opening).toBe(false);
+  expect(store.mergeTabs).toHaveLength(0);
+  expect(await store.openMerge(entry)).toBe(true);
+});
+
+it("blocks merge writes while a file mutation owns the worktree", async () => {
+  await store.openMerge(entry);
+  const tab = store.mergeTabs[0]!;
+  const files = useFileViewerStore();
+  files.fileMutationPending = true;
+  expect(await store.acceptSide("ours", [entry.path])).toBe(false);
+  expect(await store.resolveSimple()).toBe(false);
+  expect(await store.applyMergeResult(tab.id)).toBe(false);
+  expect(m.backend.conflictAcceptSide).not.toHaveBeenCalled();
+  expect(m.backend.conflictResolveSimple).not.toHaveBeenCalled();
+  expect(m.backend.conflictSaveResult).not.toHaveBeenCalled();
+  expect(store.mergeTabs).toContain(tab);
+  expect(m.toast).toHaveBeenCalledWith({ title: "history.restoreBusy" });
+  files.fileMutationPending = false;
+  expect(await store.applyMergeResult(tab.id)).toBe(true);
+  expect(m.backend.conflictSaveResult).toHaveBeenCalledOnce();
 });
 
 it("does not treat a failed refresh as a failed write or allow another write until reload", async () => {

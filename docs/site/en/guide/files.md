@@ -10,6 +10,8 @@ File shows the workspace's files, including unchanged ones. It also works with o
 4. The editor context menu provides Undo, Redo, Cut, Copy, Paste, Select All, and Save.
 5. Besides New/Refresh, use **Locate current file** (crosshair) in the toolbar to scroll to and select the active editor or Diff path.
 
+Locate shows a spinner while reading directories. If a filter hides the target, it is cleared after the file is found. Switching projects or editor tabs, or changing the tree selection/filter, cancels the pending locate so it cannot jump back to an old target. If reading a directory fails, click Locate again to retry.
+
 ![The File tree and text editor](/screenshots/files-en.jpg)
 
 Git markers show changes. Parent-directory markers summarize changed descendants. With compact directories enabled, a loaded single-child directory chain can appear as `src/components/ui`.
@@ -26,7 +28,11 @@ Git markers show changes. Parent-directory markers summarize changed descendants
 
 Existing destinations are not silently overwritten. A batch can partly succeed; inspect each result. Failed recycling preserves the source instead of falling back to permanent deletion. Restore files through Windows Recycle Bin, then refresh gitx.
 
-Once confirmed work starts, File shows the current operation and the bottom-left task queue shows its name and workspace path until the tree refresh finishes. Waiting for confirmation does not start a running task. Saving a file in an ordinary non-Git folder also appears in the queue.
+Files that fail to recycle keep their editor drafts and unsaved markers, so you can save or retry deleting them. A tab closes only after its file is recycled successfully and its draft still matches the confirmed content. Edits made during confirmation or recycling remain open with a notice that the file was deleted on disk.
+
+Once confirmed work starts, File and the bottom-left task queue show its name and workspace path, then follow the refresh and opening stages until the work finishes. Waiting for confirmation does not start a running task. Saving a file in an ordinary non-Git folder also appears in the queue.
+
+Disk results are reported immediately with the source folder, operation and completed/failed counts, without waiting for the directory refresh. Counts refer to selected file or folder entries, not every file inside a folder. Failure notices remain until dismissed. Switching projects does not cancel an operation already dispatched; its result still identifies the source folder and does not update the new project's tree or editors. If a later view update fails, refresh the view instead of repeating the file operation.
 
 A directory cannot move into itself or a descendant. Repository roots, conflicted files, destinations outside the workspace, and some link or cross-volume operations have restrictions. Read the failing path and reason before retrying a partly completed operation.
 
@@ -52,5 +58,7 @@ Open **Settings → Project Files** to show hidden files, show ignored files, or
 **Filter loaded files** filters only nodes already loaded. Use `Ctrl+P` or `Ctrl+Shift+R` for a workspace-wide search. The toolbar locate icon scrolls to and selects the active editor/diff file in the tree. See [search](./search).
 
 ## Text editing limits
+
+Text edits, in-file replacements, and saves preserve existing LF, CRLF, or CR separators at untouched positions, including mixed endings and a UTF-8 BOM. New lines use the first separator found in the file, or LF if the file has none. Undo restores deleted original separators, and the same rules apply when editing after a save.
 
 The File tree, search results, and Commit's **Open File** read the complete UTF-8 text from disk using the same rules, without the former 5 MiB cutoff. Binary, invalid UTF-8, and unreadable files show a read-only message and cannot be saved as text. Editing needs memory for the entire document; large files omit the optional HEAD gutter comparison. A failed HEAD comparison does not prevent opening valid disk text. Resolve conflicts before saving normally. Find in File searches drafts; global search reads disk. See [search and replace](./search).

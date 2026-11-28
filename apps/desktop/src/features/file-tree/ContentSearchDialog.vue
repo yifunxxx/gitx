@@ -19,7 +19,9 @@ import { useChangesStore } from "@/stores/changesStore";
 import { useConflictsStore } from "@/stores/conflictsStore";
 import { useJobsStore } from "@/stores/jobsStore";
 import { closeDialog, useDialogState } from "@/composables/useDialog";
+import { toast } from "@/composables/useToast";
 import { formatErrorMessage } from "@/lib/errors";
+import { useSearchFocus } from "./useSearchFocus";
 
 const props = defineProps<{ replace?: boolean }>();
 const { t } = useI18n();
@@ -37,6 +39,8 @@ const folder = workspace.folderPath;
 const navigation = workspace.navigationToken();
 const dialogId = useDialogState().value?.id;
 const query = ref("");
+const searchPanel = ref<HTMLElement | null>(null);
+const queryInput = ref<HTMLInputElement | null>(null);
 const replacement = ref("");
 const replacingMode = ref(!!props.replace);
 const caseSensitive = ref(false);
@@ -47,6 +51,9 @@ const exclude = ref("");
 const showHidden = ref(!!settings.settings?.showHiddenInFileTree);
 const showIgnored = ref(!!settings.settings?.showIgnoredInFileTree);
 const loading = ref(false);
+const pageLoading = ref(false);
+const stopping = ref(false);
+const retryPage = ref<number | null>(null);
 const applying = ref(false);
 const opening = ref(false);
 const stopped = ref(false);
@@ -62,6 +69,8 @@ const sessionId = crypto.randomUUID();
 let generation = 0;
 let disposed = false;
 let debounce: ReturnType<typeof setTimeout> | undefined;
+let previewDebounce: ReturnType<typeof setTimeout> | undefined;
+let searchStarted = false;
 let poll: ReturnType<typeof setTimeout> | undefined;
 let pageRequest = 0;
 const matches = computed(() => result.value?.matches ?? []);
@@ -85,13 +94,21 @@ const canReplace = computed(
     !error.value &&
     selectedFiles.value > 0 &&
     !busyDrafts.value &&
-    !applying.value,
+    !applying.value &&
+    !opening.value &&
+    !pageLoading.value &&
+    !stopping.value,
 );
 const current = (token: number) =>
   !disposed &&
   token === generation &&
   workspace.folderPath === folder &&
   workspace.navigationToken() === navigation;
+useSearchFocus(
+  searchPanel,
+  queryInput,
+  () => current(generation) && useDialogState().value?.id === dialogId,
+);
 function setMode(replace: boolean) {
   if (applying.value || opening.value) return;
   replacingMode.value = replace;
@@ -100,6 +117,8 @@ function setMode(replace: boolean) {
 function cancel() {
   finishJob();
   clearTimeout(debounce);
+  clearTimeout(previewDebounce);
+  searchStarted = false;
   clearTimeout(poll);
   ++pageRequest;
   void getBackend()
@@ -107,32 +126,80 @@ function cancel() {
     .catch(() => {});
   ++generation;
   loading.value = false;
+  pageLoading.value = false;
+  stopping.value = false;
+  retryPage.value = null;
 }
 function close() {
   if (!applying.value) closeDialog(null, dialogId);
 }
-function stop() {
-  cancel();
+async function stop() {
+  if (!loading.value || stopping.value || opening.value || applying.value) return;
+  if (!searchJob) {
+    cancel();
+    stopped.value = true;
+    return;
+  }
+  clearTimeout(debounce);
+  clearTimeout(previewDebounce);
+  clearTimeout(poll);
+  ++pageRequest;
+  pageLoading.value = false;
+  retryPage.value = null;
+  error.value = "";
   stopped.value = true;
   confirming.value = false;
+  stopping.value = true;
+  const token = generation;
+  try {
+    const retained = await getBackend().fsStopContentSearch({ sessionId, generation: token });
+    if (!current(token)) return;
+    if (retained) await readPage(token);
+    else {
+      result.value = null;
+      loading.value = false;
+      finishJob();
+    }
+  } catch (failure) {
+    if (current(token)) {
+      error.value = formatErrorMessage(failure);
+      stopped.value = false;
+      poll = setTimeout(() => void readPage(token), 150);
+    }
+  } finally {
+    if (current(token)) stopping.value = false;
+  }
 }
-async function readPage(token: number) {
+async function readPage(token: number, target = page.value, resetSelection = false): Promise<void> {
+  if (!current(token)) return;
+  clearTimeout(poll);
   const request = ++pageRequest;
+  const template = replacement.value;
   try {
     const response = await getBackend().fsContentSearchPage({
       sessionId,
       generation: token,
-      page: page.value,
+      page: target,
+      replacement: template,
     });
     if (!current(token) || request !== pageRequest) return;
-    result.value = response;
-    loading.value = !response.done;
-    error.value = response.error ?? "";
-    if (page.value >= Math.max(1, Math.ceil(response.total / 200))) {
-      page.value = Math.max(0, Math.ceil(response.total / 200) - 1);
-      await readPage(token);
+    if (template !== replacement.value) {
+      await readPage(token, target, resetSelection);
       return;
     }
+    const lastPage = Math.max(0, Math.ceil(response.total / 200) - 1);
+    if (target > lastPage) {
+      await readPage(token, lastPage, true);
+      return;
+    }
+    result.value = response;
+    page.value = target;
+    loading.value = !response.done;
+    pageLoading.value = false;
+    error.value = response.error ?? "";
+    retryPage.value = null;
+    if (resetSelection) selected.value = 0;
+    else selected.value = Math.max(0, Math.min(selected.value, response.matches.length - 1));
     if (searchJob)
       jobs.progress(searchJob, {
         message: t("contentSearch.summary", {
@@ -141,13 +208,26 @@ async function readPage(token: number) {
           scanned: response.scanned,
         }),
       });
-    if (response.done) finishJob();
+    if (response.done) {
+      finishJob();
+      if (stopped.value) notice.value = t("contentSearch.stopped");
+    }
     if (!response.done) poll = setTimeout(() => void readPage(token), 150);
+    if (resetSelection) {
+      const owner = list.value;
+      await nextTick();
+      if (current(token) && request === pageRequest && list.value === owner)
+        owner?.scrollToIndex(0);
+    }
   } catch (failure) {
     if (current(token) && request === pageRequest) {
+      if (template !== replacement.value) {
+        await readPage(token, target, resetSelection);
+        return;
+      }
       error.value = formatErrorMessage(failure);
-      loading.value = false;
-      finishJob();
+      pageLoading.value = false;
+      retryPage.value = target;
     }
   }
 }
@@ -158,7 +238,6 @@ async function start(token: number) {
     await getBackend().fsStartContentSearch({
       folderPath: folder,
       query: query.value,
-      replacement: replacement.value,
       caseSensitive: caseSensitive.value,
       wholeWord: wholeWord.value,
       regex: regex.value,
@@ -169,9 +248,12 @@ async function start(token: number) {
       sessionId,
       generation: token,
     });
-    if (current(token)) await readPage(token);
-  } catch (failure) {
     if (current(token)) {
+      searchStarted = true;
+      if (!stopped.value) await readPage(token);
+    }
+  } catch (failure) {
+    if (current(token) && !stopped.value) {
       error.value = formatErrorMessage(failure);
       loading.value = false;
       finishJob();
@@ -194,9 +276,22 @@ function schedule() {
   debounce = setTimeout(() => void start(token), 220);
 }
 watch(
-  [query, replacement, caseSensitive, wholeWord, regex, include, exclude, showHidden, showIgnored],
+  [query, caseSensitive, wholeWord, regex, include, exclude, showHidden, showIgnored],
   schedule,
 );
+watch(replacement, () => {
+  confirming.value = false;
+  // An initial scan or an in-flight stop will read the newest template when it
+  // settles. Editing the replacement never discards matches or file selection.
+  if (!searchStarted || stopping.value || applying.value || !current(generation)) return;
+  clearTimeout(previewDebounce);
+  clearTimeout(poll);
+  ++pageRequest;
+  pageLoading.value = true;
+  retryPage.value = null;
+  const token = generation;
+  previewDebounce = setTimeout(() => void readPage(token), 220);
+});
 watch(
   () => [workspace.folderPath, workspace.navigationToken()],
   () => {
@@ -206,12 +301,24 @@ watch(
     }
   },
 );
-async function changePage(delta: number) {
-  page.value = Math.max(0, Math.min(pageCount.value - 1, page.value + delta));
-  selected.value = 0;
+async function loadPage(target: number) {
+  if (
+    pageLoading.value ||
+    applying.value ||
+    opening.value ||
+    stopping.value ||
+    !current(generation)
+  )
+    return;
   clearTimeout(poll);
-  await readPage(generation);
-  list.value?.scrollToIndex(0);
+  clearTimeout(previewDebounce);
+  pageLoading.value = true;
+  error.value = "";
+  await readPage(generation, target, true);
+}
+async function changePage(delta: number) {
+  const target = Math.max(0, Math.min(pageCount.value - 1, page.value + delta));
+  if (target !== page.value) await loadPage(target);
 }
 function toggleFile(path: string) {
   const next = new Set(excluded.value);
@@ -221,7 +328,8 @@ function toggleFile(path: string) {
   confirming.value = false;
 }
 async function open(match: ContentMatch) {
-  if (opening.value || applying.value || !folder || !current(generation)) return;
+  if (opening.value || applying.value || pageLoading.value || !folder || !current(generation))
+    return;
   opening.value = true;
   const token = generation;
   try {
@@ -259,6 +367,7 @@ async function apply() {
       sessionId,
       generation: token,
       excludedPaths: [...excluded.value],
+      replacement: replacement.value,
     });
     // Invalidate only clean buffers of files that were actually written. Any
     // draft entered through another surface survives and is never overwritten.
@@ -266,16 +375,30 @@ async function apply() {
       if (!tab.dirty && !tab.saving) viewer.closeTab(tab.id);
     }
     if (workspace.isRepo && current(token)) void useChangesStore().refresh();
+    const summary = t("contentSearch.replaced", { count: response.completed.length });
+    const failure = response.failed.join("\n");
     if (current(token)) {
-      notice.value = t("contentSearch.replaced", { count: response.completed.length });
-      error.value = response.failed.join("\n");
+      notice.value = summary;
+      error.value = failure;
       stopped.value = true;
       confirming.value = false;
+    } else {
+      toast({
+        title: summary,
+        description: [folder, failure].filter(Boolean).join("\n"),
+        persistent: !!failure,
+      });
     }
   } catch (failure) {
     if (current(token)) {
       error.value = formatErrorMessage(failure);
       confirming.value = false;
+    } else {
+      toast({
+        title: t("contentSearch.replaceTitle"),
+        description: `${folder}\n${formatErrorMessage(failure)}`,
+        persistent: true,
+      });
     }
   } finally {
     viewer.fileMutationPending = false;
@@ -320,6 +443,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="content-search-overlay" @keydown="keydown">
     <section
+      ref="searchPanel"
+      tabindex="-1"
       role="dialog"
       aria-modal="true"
       :aria-label="t(replacingMode ? 'contentSearch.replaceTitle' : 'fileSearch.contentTitle')"
@@ -359,6 +484,7 @@ onBeforeUnmount(() => {
             <span class="search-field-label">{{ t("editor.find") }}</span>
             <span class="search-query-field">
               <input
+                ref="queryInput"
                 v-model="query"
                 autofocus
                 data-search-query
@@ -450,7 +576,7 @@ onBeforeUnmount(() => {
         <div class="search-results-heading">
           <div role="status" class="search-result-summary">
             <LoaderCircle
-              v-if="loading || applying"
+              v-if="loading || applying || pageLoading || stopping"
               class="h-3.5 w-3.5 shrink-0 animate-spin"
               aria-hidden="true"
             />
@@ -464,20 +590,35 @@ onBeforeUnmount(() => {
                 : t(loading ? "fileSearch.searching" : "fileSearch.results")
             }}</span>
           </div>
-          <button v-if="loading" type="button" class="search-text-button" @click="stop">
-            {{ t("common.cancel") }}
+          <button
+            v-if="loading"
+            type="button"
+            class="search-text-button"
+            :disabled="stopping || stopped || opening"
+            @click="stop"
+          >
+            {{ t(stopping || stopped ? "contentSearch.stopping" : "common.cancel") }}
           </button>
           <button
             v-else-if="query"
             type="button"
             class="search-text-button"
-            :disabled="applying"
+            :disabled="applying || opening || stopping"
             @click="schedule"
           >
             {{ t("contentSearch.refresh") }}
           </button>
         </div>
         <div v-if="error" role="alert" class="search-message search-error">{{ error }}</div>
+        <button
+          v-if="retryPage !== null"
+          type="button"
+          class="search-text-button"
+          :disabled="pageLoading || applying || opening || stopping"
+          @click="loadPage(retryPage)"
+        >
+          {{ t("common.retry") }}
+        </button>
         <p v-if="notice" role="status" class="search-message search-notice">{{ notice }}</p>
         <div v-if="!matches.length && !loading && !error" class="search-empty">
           <Search class="h-6 w-6" aria-hidden="true" />
@@ -493,6 +634,7 @@ onBeforeUnmount(() => {
           v-if="matches.length"
           class="search-results"
           role="listbox"
+          :aria-busy="pageLoading"
           :aria-label="t('fileSearch.results')"
         >
           <VirtualList
@@ -516,14 +658,14 @@ onBeforeUnmount(() => {
                   type="checkbox"
                   :aria-label="t('contentSearch.selectFile', { path: match.path })"
                   :checked="!excluded.has(match.path)"
-                  :disabled="applying || loading"
+                  :disabled="applying || loading || pageLoading || opening || stopped"
                   @change="toggleFile(match.path)"
                 />
                 <button
                   role="option"
                   :aria-selected="selected === index"
                   :aria-label="`${match.path}:${match.line}:${match.column}`"
-                  :disabled="opening || applying"
+                  :disabled="opening || applying || pageLoading"
                   class="search-result-content"
                   @click="open(match)"
                 >
@@ -556,7 +698,7 @@ onBeforeUnmount(() => {
         <div v-if="result && pageCount > 1" class="search-pagination">
           <button
             type="button"
-            :disabled="page === 0 || applying"
+            :disabled="page === 0 || applying || opening || pageLoading || stopping"
             :aria-label="t('contentSearch.previousPage')"
             class="search-icon-button"
             @click="changePage(-1)"
@@ -564,9 +706,10 @@ onBeforeUnmount(() => {
             <ChevronLeft class="h-4 w-4" aria-hidden="true" />
           </button>
           <span>{{ t("contentSearch.page", { page: page + 1, pages: pageCount }) }}</span>
+          <span v-if="pageLoading" role="status">{{ t("common.loading") }}</span>
           <button
             type="button"
-            :disabled="page + 1 >= pageCount || applying"
+            :disabled="page + 1 >= pageCount || applying || opening || pageLoading || stopping"
             :aria-label="t('contentSearch.nextPage')"
             class="search-icon-button"
             @click="changePage(1)"
@@ -584,10 +727,14 @@ onBeforeUnmount(() => {
           <strong>{{ t("contentSearch.selectedFiles", { count: selectedFiles }) }}</strong>
           <span>{{ t("contentSearch.selectionScope") }}</span>
         </div>
-        <p v-if="replacingMode && busyDrafts" class="search-draft-warning">
+        <p v-if="replacingMode && busyDrafts && !applying" class="search-draft-warning">
           {{ t("contentSearch.saveDrafts") }}
         </p>
-        <div v-if="replacingMode && confirming" class="search-confirmation" role="status">
+        <div v-if="replacingMode && applying" class="search-applying" role="status">
+          <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
+          <span>{{ t("contentSearch.replacing") }}</span>
+        </div>
+        <div v-else-if="replacingMode && confirming" class="search-confirmation" role="status">
           <strong>{{ t("contentSearch.confirm", { count: selectedFiles }) }}</strong>
           <span>{{ t("contentSearch.writeHint") }}</span>
         </div>
@@ -603,13 +750,19 @@ onBeforeUnmount(() => {
               v-if="replacingMode"
               type="button"
               :disabled="!canReplace"
+              :aria-busy="applying"
               class="search-button search-button-primary"
               @click="apply"
             >
               {{
-                t(confirming ? "contentSearch.confirmReplace" : "contentSearch.replaceFiles", {
-                  count: selectedFiles,
-                })
+                t(
+                  applying
+                    ? "contentSearch.replacing"
+                    : confirming
+                      ? "contentSearch.confirmReplace"
+                      : "contentSearch.replaceFiles",
+                  { count: selectedFiles },
+                )
               }}
             </button>
             <button
@@ -1068,6 +1221,18 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
   color: var(--color-warning);
   font-size: 11px;
+}
+.search-applying {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.search-applying svg {
+  flex: none;
 }
 .search-confirmation {
   display: flex;
