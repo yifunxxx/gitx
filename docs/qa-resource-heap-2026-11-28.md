@@ -61,4 +61,6 @@ QA034/008继续：自然末窗内存并未归零，仍有未归因的GC后余量
 
 ## 证据位置
 
+后续[当前版本堆保留路径](qa-heap-retainers-2026-11-28.md)已补齐四份快照和EditorView实例识别：本次快照净增约85.61%为code，Performance记录和可访问性缓存取得保留路径，关闭后EditorView从2降为0。实验写入正文/恢复/GC时机不同，不将它反向解释为本报告1.846MiB的逐字节归因；避免重复同一自然六周期实验，持续输入及其他长期边界继续。
+
 `E:/IDEAproject/gitx/test-results/qa-resource-heap-20261128`：准备、采样、六周期写入、分析脚本；`target.json`、运行时协议/版本、`scene-ui.txt`、辅助进程前后身份、`heap-samples.jsonl`、`metrics`及各周期恢复记录。原始采样仅在本地，报告记录必要汇总。
