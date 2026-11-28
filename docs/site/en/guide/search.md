@@ -25,6 +25,8 @@ When an exclude pattern matches a directory, search skips that directory and its
 
 Click **Cancel** beside the scan progress to stop scanning. Once it settles, results from fully scanned files remain available for paging. Provisional matches from an unfinished file are removed, so the total may decrease. Stopped results cannot be replaced: choose **Search again** and wait for completion first. Changing conditions, closing the dialog, or switching projects releases the old results.
 
+Filtering explicitly excluded directories also checks for cancellation, so stopping does not wait for every excluded entry to be traversed. A system file read already in progress may still need to return before the worker finishes. The task queue remains active until the backend confirms that it has stopped.
+
 While a page loads, the current page number and rows remain visible with a loading indicator; opening rows and paging are temporarily disabled. A successful read switches to the requested page. A failed read keeps the current page and offers **Retry**, which reads the failed target page without rescanning.
 
 When refresh, stop, paging or retry makes the focused button unavailable, focus returns to the query field. Continue typing, select results with Up/Down, or press Esc to close. Esc does not interrupt an active replacement write; the dialog can be closed once writing finishes. Filename search also keeps keyboard focus inside the dialog after stopping or retrying.

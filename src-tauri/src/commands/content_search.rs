@@ -351,9 +351,15 @@ fn read_line(
         }
     }
 }
-fn search_entries(root: &Path, req: &ContentSearchReq, exclude: GlobSet) -> ignore::Walk {
+fn search_entries(
+    root: &Path,
+    req: &ContentSearchReq,
+    exclude: GlobSet,
+    cancel: CancellationToken,
+) -> impl Iterator<Item = Result<ignore::DirEntry, AppError>> {
     let base = root.to_path_buf();
-    ignore::WalkBuilder::new(root)
+    let interrupt = cancel.clone();
+    let mut walker = ignore::WalkBuilder::new(root)
         .hidden(!req.show_hidden)
         .ignore(!req.show_ignored)
         .git_ignore(!req.show_ignored)
@@ -361,6 +367,12 @@ fn search_entries(root: &Path, req: &ContentSearchReq, exclude: GlobSet) -> igno
         .git_exclude(!req.show_ignored)
         .follow_links(false)
         .filter_entry(move |entry| {
+            // Return control from Walk::next even when all remaining entries
+            // would be filtered out. The outer iterator converts this entry
+            // into cancellation before it can reach the scanner.
+            if interrupt.is_cancelled() {
+                return true;
+            }
             let name = entry.file_name().to_string_lossy();
             if name.eq_ignore_ascii_case(".git")
                 || name.starts_with(".gitx-copy-")
@@ -384,14 +396,33 @@ fn search_entries(root: &Path, req: &ContentSearchReq, exclude: GlobSet) -> igno
                 .and_then(Path::to_str)
                 .is_none_or(|path| !exclude.is_match(path.replace('\\', "/")))
         })
-        .build()
+        .build();
+    let mut finished = false;
+    std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+        let entry = if cancel.is_cancelled() {
+            None
+        } else {
+            walker.next()
+        };
+        // Also check after next: it can exhaust a filtered directory without
+        // yielding a result, or return an entry just as cancellation arrives.
+        if let Err(error) = check(&cancel) {
+            finished = true;
+            return Some(Err(error));
+        }
+        finished = entry.is_none();
+        entry.map(|entry| entry.map_err(err))
+    })
 }
 fn scan(job: &Search) -> Result<(), AppError> {
     let regex = pattern(&job.req)?;
     let include = globs(&job.req.include)?;
     let exclude = globs(&job.req.exclude)?;
     let root = resolve_entry(&job.req.folder_path, "", true)?;
-    for entry in search_entries(&root, &job.req, exclude.clone()) {
+    for entry in search_entries(&root, &job.req, exclude.clone(), job.cancel.clone()) {
         check(&job.cancel)?;
         let entry = match entry {
             Ok(e) => e,
@@ -1092,18 +1123,23 @@ mod tests {
 
     fn visited(req: &ContentSearchReq) -> Vec<String> {
         let root = Path::new(&req.folder_path);
-        search_entries(root, req, globs(&req.exclude).unwrap())
-            .map(|entry| {
-                entry
-                    .unwrap()
-                    .path()
-                    .strip_prefix(root)
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .replace('\\', "/")
-            })
-            .collect()
+        search_entries(
+            root,
+            req,
+            globs(&req.exclude).unwrap(),
+            CancellationToken::new(),
+        )
+        .map(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace('\\', "/")
+        })
+        .collect()
     }
 
     #[test]
@@ -1242,6 +1278,57 @@ mod tests {
         req.exclude = "cache".into();
         let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
         assert_eq!(paths, HashSet::from(["keep.txt".into()]));
+    }
+
+    #[test]
+    fn cancelled_traversal_reports_cancellation_before_reading_the_root() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("keep.txt"), "hit").unwrap();
+        let req = request(root.path(), "hit");
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let mut entries = search_entries(root.path(), &req, globs("").unwrap(), cancel);
+        assert_eq!(
+            entries.next().unwrap().unwrap_err().code,
+            ErrorCode::Cancelled
+        );
+        assert!(entries.next().is_none());
+    }
+
+    #[test]
+    fn cancelling_after_the_root_prevents_regular_and_filtered_descendants() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("cache")).unwrap();
+        std::fs::write(root.path().join("cache/keep.txt"), "hit").unwrap();
+        for exclude in ["", "cache"] {
+            let req = request(root.path(), "hit");
+            let cancel = CancellationToken::new();
+            let mut entries =
+                search_entries(root.path(), &req, globs(exclude).unwrap(), cancel.clone());
+            assert_eq!(entries.next().unwrap().unwrap().depth(), 0);
+            cancel.cancel();
+            assert_eq!(
+                entries.next().unwrap().unwrap_err().code,
+                ErrorCode::Cancelled
+            );
+            assert!(entries.next().is_none());
+        }
+    }
+
+    #[test]
+    fn directory_read_errors_remain_errors_and_finished_walks_stay_finished() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing");
+        let req = request(&missing, "hit");
+        let cancel = CancellationToken::new();
+        let mut entries = search_entries(&missing, &req, globs("").unwrap(), cancel.clone());
+        assert_eq!(
+            entries.next().unwrap().unwrap_err().code,
+            ErrorCode::FsError
+        );
+        assert!(entries.next().is_none());
+        cancel.cancel();
+        assert!(entries.next().is_none());
     }
     #[test]
     fn regex_captures_replace_all_occurrences_and_preserve_crlf_and_bom() {
