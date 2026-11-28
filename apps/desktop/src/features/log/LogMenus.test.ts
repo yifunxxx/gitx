@@ -149,6 +149,30 @@ it("ignores repeated and modified Enter on commit rows", async () => {
   expect(m.compare.compareVersions).not.toHaveBeenCalled();
 });
 
+it.each([
+  ["Enter", "composing"],
+  ["Enter", "229"],
+  ["Enter", "consumed"],
+  ["ArrowDown", "composing"],
+  ["ArrowDown", "229"],
+  ["ArrowDown", "consumed"],
+])("ignores %s on a commit row when the event is %s", async (key, kind) => {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    isComposing: kind === "composing",
+    keyCode: kind === "229" ? 229 : 0,
+  });
+  if (kind === "consumed") event.preventDefault();
+  m.backend.logCommitDetails.mockClear();
+  wrapper.findAll('[role="option"]')[0]!.element.dispatchEvent(event);
+  await flushPromises();
+  expect(useLogStore().selectedSha).toBe("a");
+  expect(m.backend.logCommitDetails).not.toHaveBeenCalled();
+  expect(m.compare.compareVersions).not.toHaveBeenCalled();
+});
+
 it("opens the real tree row's copied file metadata from right click and double click", async () => {
   const row = wrapper.findComponent({ name: "PathTreeList" }).get(".cursor-pointer");
   await row.trigger("contextmenu", { clientX: 10, clientY: 20 });

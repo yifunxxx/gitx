@@ -408,7 +408,15 @@ async function retryCommitDetails() {
 }
 
 async function onCommitKeydown(sha: string, event: KeyboardEvent) {
-  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey
+  )
+    return;
   const source = captureAction();
   const navigation = commitNavigation.value;
   const displayedCommits = listMode.value === "flat" ? graphCommits.value : log.commits;
@@ -480,6 +488,23 @@ async function waitForLayout(current: () => boolean) {
     await new Promise<void>((resolve) => layoutWaiters.add(resolve));
     await nextTick();
   }
+}
+
+function onInputEnter(event: KeyboardEvent, action: () => Promise<void>) {
+  // Candidate confirmation and held keys must not publish drafts or navigate.
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.repeat ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey
+  )
+    return;
+  event.preventDefault();
+  void action();
 }
 
 async function applySearch() {
@@ -568,25 +593,25 @@ function onCommitContext(sha: string, e: MouseEvent) {
           v-model="textDraft"
           class="h-6 w-36 rounded border bg-background px-1.5"
           :placeholder="t('log.searchPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <input
           v-model="authorDraft"
           class="h-6 w-24 rounded border bg-background px-1.5"
           :placeholder="t('log.userPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <input
           v-model="revDraft"
           class="h-6 w-28 rounded border bg-background px-1.5"
           :placeholder="t('log.branchPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <input
           v-model="pathDraft"
           class="h-6 w-28 rounded border bg-background px-1.5"
           :placeholder="t('log.pathsPlaceholder')"
-          @keydown.enter="applySearch"
+          @keydown.enter="onInputEnter($event, applySearch)"
         />
         <Select
           :model-value="datePreset"
@@ -634,7 +659,7 @@ function onCommitContext(sha: string, e: MouseEvent) {
             class="h-6 min-w-[8rem] flex-1 rounded border bg-background px-1.5"
             :placeholder="t('log.goToPlaceholder')"
             :disabled="log.locating"
-            @keydown.enter="!$event.isComposing && goToCommit()"
+            @keydown.enter="onInputEnter($event, goToCommit)"
           />
         </div>
         <span v-if="log.locating" role="status" class="text-muted-foreground">{{

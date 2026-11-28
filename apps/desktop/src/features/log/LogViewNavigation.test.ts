@@ -74,6 +74,43 @@ const mountView = () =>
     },
   });
 
+it("ignores composing, consumed, repeated and modified Enter in the locate field", async () => {
+  const wrapper = mountView();
+  try {
+    await flushPromises();
+    const field = wrapper.get<HTMLInputElement>('input[placeholder="log.goToPlaceholder"]');
+    await field.setValue("main");
+    mocks.backend.logLocate.mockResolvedValue(null);
+    mocks.backend.logQuery.mockClear();
+    for (const options of [
+      { isComposing: true },
+      { keyCode: 229 },
+      { consumed: true },
+      { repeat: true },
+      { ctrlKey: true },
+      { altKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+    ]) {
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+        ...options,
+      });
+      if ("consumed" in options) event.preventDefault();
+      field.element.dispatchEvent(event);
+      await flushPromises();
+    }
+    expect(mocks.backend.logLocate).not.toHaveBeenCalled();
+    expect(mocks.backend.logQuery).not.toHaveBeenCalled();
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(useLogStore().goToInput).toBe("main");
+  } finally {
+    wrapper.unmount();
+  }
+});
+
 it("centers a resolved target and shows navigation errors without changing filters", async () => {
   const wrapper = mountView();
   await flushPromises();

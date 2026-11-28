@@ -15,9 +15,11 @@ Ctrl-click selects multiple commits; Shift extends a range. The context menu can
 ## Filter and locate commits
 
 1. Enter message text, authors, branches/revision ranges such as `main..feature/search`, or file paths.
-2. Choose a date condition and click **Apply**. **Clear** removes filters.
+2. Choose a date condition and click **Apply**, or press Enter in a filter field. **Clear** removes filters.
 3. Additional controls include date/topological ordering, First parent, and hiding merge commits.
-4. Use **Go to Hash / Branch / Tag** to locate a revision. If it is outside the loaded window, related history is loaded. Use the return-to-latest entry point to return to the current tip.
+4. Enter a revision in **Go to Hash / Branch / Tag** and press Enter to locate it. If it is outside the loaded window, related history is loaded. Use the return-to-latest entry point to return to the current tip.
+
+Confirming an input-method candidate does not apply filters or navigate; press Enter again after completing the text. Holding Enter or adding Ctrl, Alt, Shift, or Meta does not repeat these actions. Commit rows support continuous Up/Down navigation and Shift selection; ordinary Enter opens the commit's diff.
 
 Scrolling to a boundary loads additional history; use Load more or newer-record controls when shown. Wide graphs can be inspected horizontally. The graph column is another presentation of the same commits.
 

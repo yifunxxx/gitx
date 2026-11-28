@@ -166,6 +166,82 @@ it("corrects an invalid branch in place without exposing stale rows as matching 
   expect(view.get('[role="option"]').text()).toContain("correct history");
 });
 
+it.each(["search", "user", "branch", "paths"])(
+  "keeps %s drafts local during composition, consumed, repeated and modified Enter",
+  async (name) => {
+    mocks.backend.logQuery.mockResolvedValue(page("existing"));
+    mountView();
+    await settle();
+    const log = useLogStore();
+    const filters = JSON.stringify(log.filters);
+    await field(name).setValue("中文草稿");
+    mocks.backend.logQuery.mockClear();
+    const effects = [];
+    for (const options of [
+      { isComposing: true },
+      { keyCode: 229 },
+      { consumed: true },
+      { repeat: true },
+      { ctrlKey: true },
+      { altKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+    ]) {
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+        ...options,
+      });
+      if ("consumed" in options) event.preventDefault();
+      field(name).element.dispatchEvent(event);
+      await settle();
+      effects.push({
+        queries: mocks.backend.logQuery.mock.calls.length,
+        filters: JSON.stringify(log.filters),
+        selection: log.selectedSha,
+        draft: field(name).element.value,
+      });
+    }
+    expect(effects).toEqual(
+      Array.from({ length: 8 }, () => ({
+        queries: 0,
+        filters,
+        selection: "existing",
+        draft: "中文草稿",
+      })),
+    );
+  },
+);
+
+it("applies all four completed drafts once on ordinary Enter and permits a later query", async () => {
+  mountView();
+  await settle();
+  await field("search").setValue("修复");
+  await field("user").setValue("QA");
+  await field("branch").setValue("main");
+  await field("paths").setValue("src/中文.ts");
+  mocks.backend.logQuery.mockClear();
+  await field("search").trigger("keydown", { key: "Enter" });
+  await settle();
+  expect(mocks.backend.logQuery).toHaveBeenCalledTimes(1);
+  expect(mocks.backend.logQuery.mock.lastCall![0].filters).toMatchObject({
+    text: "修复",
+    authors: ["QA"],
+    revisions: ["main"],
+    paths: ["src/中文.ts"],
+  });
+  await field("search").trigger("keydown", { key: "Enter", repeat: true });
+  await field("search").trigger("keydown", { key: "Enter", repeat: true });
+  await settle();
+  expect(mocks.backend.logQuery).toHaveBeenCalledTimes(1);
+  await field("user").setValue("Other author");
+  await field("user").trigger("keydown", { key: "Enter" });
+  await settle();
+  expect(mocks.backend.logQuery).toHaveBeenCalledTimes(2);
+  expect(mocks.backend.logQuery.mock.lastCall![0].filters.authors).toEqual(["Other author"]);
+});
+
 it("retries again after another failure and restores a useful keyboard focus", async () => {
   const log = useLogStore();
   log.setTextFilter("release");
