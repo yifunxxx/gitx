@@ -57,6 +57,8 @@ beforeEach(() => {
     loading: false,
     error: null,
     selectedPaths: ["中文 added.txt"],
+    checkedPaths: [],
+    unversioned: [],
     selectedSection: "changelist:default",
     staged: [],
     unstaged: [],

@@ -55,6 +55,8 @@ beforeEach(() => {
     loading: false,
     error: null,
     selectedPaths: ["first.txt"],
+    checkedPaths: [],
+    unversioned: [],
     changelists: { lists: [] },
     refresh: vi.fn(),
     createChangelist: vi.fn().mockResolvedValue(created),
@@ -84,9 +86,13 @@ const clickNew = () =>
     .find((b) => b.text() === "changelist.new")!
     .trigger("click");
 async function clickMove() {
-  wrapper
-    .findComponent(ChangesTree)
-    .vm.$emit("context", { path: "first.txt", section: "changelist:default", x: 10, y: 10, header: false });
+  wrapper.findComponent(ChangesTree).vm.$emit("context", {
+    path: "first.txt",
+    section: "changelist:default",
+    x: 10,
+    y: 10,
+    header: false,
+  });
   await flushPromises();
   await wrapper
     .findAll("button")

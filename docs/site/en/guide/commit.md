@@ -4,6 +4,8 @@
 
 Clicking a file **selects** it for a diff or context-menu operation. A **checkbox** controls the file scope of a changelist-mode commit. **Stage** writes content to Git's index. These are separate states.
 
+**Batch Add to VCS:** Ctrl/⌘-click or Shift-click unversioned files, then right-click a selected row and choose **Add to VCS**. You can also check several unversioned files and right-click one of those checked files to add the checked group; the menu shows the count. An explicit selection of multiple rows takes priority. Right-clicking an unchecked, unselected file adds only that file. Checks in other groups are excluded. `Ctrl+Alt+A` (`⌘+Alt+A` on macOS) follows the same rules and uses checked unversioned files when there is no unversioned row selection. Other context-menu actions continue to use row selection.
+
 | Mode | Setting | What gets committed |
 | --- | --- | --- |
 | Changelist (default) | Settings → Git, staging mode off | Check the files for this commit; changelists organize changes by task |
