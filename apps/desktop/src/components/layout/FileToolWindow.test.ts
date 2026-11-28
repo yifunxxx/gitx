@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, flushPromises, type VueWrapper } from "@vue/test-utils";
 import { nextTick, reactive } from "vue";
+import { createPinia, setActivePinia } from "pinia";
 import FileToolWindow from "./FileToolWindow.vue";
 import type { FileTreeRow } from "@/stores/fileTreeStore";
 import type { FileChange } from "@/lib/backend";
@@ -25,7 +26,10 @@ const mocks = vi.hoisted(() => ({
   operation: vi.fn(),
   operations: {} as any,
   showLeftTab: vi.fn(),
+  fsReadDir: vi.fn(),
 }));
+vi.mock("@/lib/backend", () => ({ getBackend: () => ({ fsReadDir: mocks.fsReadDir }) }));
+vi.mock("@/stores/settingsStore", () => ({ useSettingsStore: () => ({ settings: {} }) }));
 vi.mock("vue-i18n", async (original) => ({
   ...(await original<typeof import("vue-i18n")>()),
   useI18n: () => ({ t: (key: string) => key }),
@@ -95,6 +99,7 @@ async function menu(path: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.fsReadDir.mockReset().mockResolvedValue([]);
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -191,7 +196,7 @@ it("disables locate until an editor file is active, then reveals and scrolls to 
   await locate.trigger("click");
   await flushPromises();
   expect(mocks.showLeftTab).toHaveBeenCalledWith("file");
-  expect(mocks.revealPath).toHaveBeenCalledWith("changed.txt");
+  expect(mocks.revealPath).toHaveBeenCalledWith("changed.txt", expect.any(Function));
 });
 
 it("locates the active diff path and reports when the tree has no match", async () => {
@@ -203,9 +208,148 @@ it("locates the active diff path and reports when the tree has no match", async 
   await nextTick();
   await wrapper.get('[aria-label="fileTree.locateCurrent"]').trigger("click");
   await flushPromises();
-  expect(mocks.revealPath).toHaveBeenCalledWith("src/nested.txt");
+  expect(mocks.revealPath).toHaveBeenCalledWith("src/nested.txt", expect.any(Function));
   expect(mocks.toast).toHaveBeenCalledWith({ title: "fileTree.locateUnavailable" });
 });
+
+it.each(["navigation", "reopen", "editor", "hidden", "unmount"])(
+  "ignores obsolete locate feedback after %s",
+  async (reason) => {
+    let finish!: (found: boolean) => void;
+    mocks.revealPath.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mocks.viewer.tabs = [{ id: "file:changed.txt", path: "changed.txt" }];
+    mocks.viewer.activeId = "file:changed.txt";
+    mocks.layout.activeEditorKind = "file";
+    create();
+    await wrapper.get('[aria-label="fileTree.locateCurrent"]').trigger("click");
+    if (reason === "navigation") mocks.ws.navigation++;
+    if (reason === "reopen") mocks.ws.applied++;
+    if (reason === "editor") mocks.layout.activeEditorKind = "welcome";
+    if (reason === "hidden") mocks.layout.leftOpen = false;
+    if (reason === "unmount") wrapper.unmount();
+    finish(false);
+    await flushPromises();
+    expect(mocks.toast).not.toHaveBeenCalled();
+  },
+);
+
+it("allows a new editor locate and keeps its busy state when the old request finishes", async () => {
+  let finishOld!: (found: boolean) => void;
+  let finishNew!: (found: boolean) => void;
+  mocks.revealPath
+    .mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finishOld = resolve;
+      }),
+    )
+    .mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finishNew = resolve;
+      }),
+    );
+  mocks.viewer.tabs = [
+    { id: "file:changed.txt", path: "changed.txt" },
+    { id: "file:clean.txt", path: "clean.txt" },
+  ];
+  mocks.viewer.activeId = "file:changed.txt";
+  mocks.layout.activeEditorKind = "file";
+  create();
+  const locate = wrapper.get('[aria-label="fileTree.locateCurrent"]');
+  await locate.trigger("click");
+  expect(locate.attributes("disabled")).toBeDefined();
+  mocks.viewer.activeId = "file:clean.txt";
+  await nextTick();
+  expect(locate.attributes("disabled")).toBeUndefined();
+  await locate.trigger("click");
+  finishOld(false);
+  await flushPromises();
+  expect(locate.attributes("disabled")).toBeDefined();
+  expect(mocks.toast).not.toHaveBeenCalled();
+  finishNew(true);
+  await flushPromises();
+  expect(locate.attributes("disabled")).toBeUndefined();
+});
+
+it("does not take focus back from a field used while locate was loading", async () => {
+  let finish!: (found: boolean) => void;
+  mocks.revealPath.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  mocks.viewer.tabs = [{ id: "file:changed.txt", path: "changed.txt" }];
+  mocks.viewer.activeId = "file:changed.txt";
+  mocks.layout.activeEditorKind = "file";
+  create();
+  const locate = wrapper.get<HTMLButtonElement>('[aria-label="fileTree.locateCurrent"]');
+  locate.element.focus();
+  await locate.trigger("click");
+  const field = wrapper.get<HTMLInputElement>('input[type="search"]');
+  field.element.focus();
+  finish(true);
+  await flushPromises();
+  expect(document.activeElement).toBe(field.element);
+});
+
+it("focuses the located tree after the browser blurs the disabled locate button", async () => {
+  let finish!: (found: boolean) => void;
+  mocks.revealPath.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  mocks.viewer.tabs = [{ id: "file:changed.txt", path: "changed.txt" }];
+  mocks.viewer.activeId = "file:changed.txt";
+  mocks.layout.activeEditorKind = "file";
+  create();
+  const locate = wrapper.get<HTMLButtonElement>('[aria-label="fileTree.locateCurrent"]');
+  locate.element.focus();
+  await locate.trigger("click");
+  expect(locate.element.disabled).toBe(true);
+  locate.element.blur();
+  finish(true);
+  await flushPromises();
+  expect(document.activeElement).toBe(tree().element);
+});
+
+it.each(["editor", "filter", "selection"])(
+  "stops the real tree reveal when the user changes %s during a directory read",
+  async (interaction) => {
+    setActivePinia(createPinia());
+    const { useFileTreeStore } =
+      await vi.importActual<typeof import("@/stores/fileTreeStore")>("@/stores/fileTreeStore");
+    mocks.tree = useFileTreeStore();
+    mocks.fsReadDir.mockResolvedValueOnce([row("src", "directory"), row("keep.txt")]);
+    await mocks.tree.loadRoot();
+    let finish!: (rows: FileTreeRow[]) => void;
+    mocks.fsReadDir.mockReturnValueOnce(
+      new Promise<FileTreeRow[]>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mocks.viewer.tabs = [{ id: "target", path: "src/target.ts" }];
+    mocks.viewer.activeId = "target";
+    mocks.layout.activeEditorKind = "file";
+    create();
+    await wrapper.get('[aria-label="fileTree.locateCurrent"]').trigger("click");
+    await vi.waitFor(() => expect(mocks.fsReadDir).toHaveBeenCalledTimes(2));
+    if (interaction === "editor") mocks.viewer.activeId = null;
+    if (interaction === "filter") await wrapper.get('input[type="search"]').setValue("keep");
+    if (interaction === "selection") await item("keep.txt").trigger("click");
+    finish([row("src/target.ts")]);
+    await flushPromises();
+    expect(mocks.tree.selectedPaths).toEqual(interaction === "selection" ? ["keep.txt"] : []);
+    expect(mocks.tree.filter).toBe(interaction === "filter" ? "keep" : "");
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(
+      wrapper.get('[aria-label="fileTree.locateCurrent"]').find(".animate-spin").exists(),
+    ).toBe(false);
+  },
+);
 
 it("shows active file work and disables mutation actions until it finishes", async () => {
   create();

@@ -69,6 +69,7 @@ const diffs = useDiffStore();
 const operations = useFileOperationsStore();
 const history = useHistoryStore();
 const locating = ref(false);
+let locateRequest = 0;
 const tree = ref<HTMLElement | null>(null);
 const list = ref<{
   el: HTMLElement | null;
@@ -156,7 +157,29 @@ function activeEditorTreePath(): string | null {
   }
   return null;
 }
-const canLocateCurrent = computed(() => !!activeEditorTreePath() && !operations.busy && !locating.value);
+const canLocateCurrent = computed(
+  () => !!activeEditorTreePath() && !operations.busy && !locating.value,
+);
+
+function invalidateLocate() {
+  ++locateRequest;
+  locating.value = false;
+}
+watch(
+  () => [
+    workspace.folderPath,
+    workspace.repoId,
+    workspace.navigationToken(),
+    workspace.appliedOpenToken(),
+    visible.value,
+    layout.activeEditorKind,
+    viewer.activeId,
+    diffs.activeId,
+    activeEditorTreePath(),
+  ],
+  invalidateLocate,
+  { flush: "sync" },
+);
 
 async function locateCurrentFile() {
   const target = activeEditorTreePath();
@@ -164,20 +187,33 @@ async function locateCurrentFile() {
     toast({ title: t("fileTree.locateUnavailable") });
     return;
   }
+  layout.showLeftTab("file");
+  const request = ++locateRequest;
+  const current = () => !disposed && request === locateRequest;
+  const focused = document.activeElement;
   locating.value = true;
   try {
-    layout.showLeftTab("file");
-    const found = await files.revealPath(target);
+    const found = await files.revealPath(target, current);
+    if (!current()) return;
     if (!found) {
       toast({ title: t("fileTree.locateUnavailable") });
       return;
     }
     await nextTick();
+    if (!current()) return;
     const index = files.rows.findIndex((row) => row.path === target);
     if (index >= 0) list.value?.scrollToIndex(index);
-    tree.value?.focus({ preventScroll: true });
+    // Browsers blur a button when it becomes disabled. That blur still belongs
+    // to this request; focus moved to another control must be left untouched.
+    if (
+      document.activeElement === focused ||
+      (document.activeElement === document.body &&
+        focused instanceof HTMLButtonElement &&
+        focused.disabled)
+    )
+      tree.value?.focus({ preventScroll: true });
   } finally {
-    locating.value = false;
+    if (current()) locating.value = false;
   }
 }
 
@@ -209,6 +245,7 @@ watch(
 );
 onBeforeUnmount(() => {
   disposed = true;
+  invalidateLocate();
   closeMenu();
   clearDrop();
   endFileDrag();
@@ -281,6 +318,7 @@ async function runAction(action: FileAction, row: FileRow, source = capture(row)
 }
 
 function select(row: FileRow, event?: MouseEvent | KeyboardEvent) {
+  invalidateLocate();
   files.select(row.path, { toggle: event?.ctrlKey || event?.metaKey, range: event?.shiftKey });
   tree.value?.focus({ preventScroll: true });
 }
@@ -296,6 +334,7 @@ function click(row: FileRow, event: MouseEvent) {
     void files.toggle(row.path);
 }
 function selectContextTarget(row: FileRow) {
+  invalidateLocate();
   if (!selectedPathSet.value.has(row.path)) select(row);
   else files.selectedPath = row.path;
 }
@@ -354,12 +393,7 @@ function operate(operation: FsOperation, row?: FileRow) {
     const selected = selectedRows.value.map((item) => item.path);
     // Prefer multi-selection; fall back to the focused/context row so Delete
     // never silently no-ops when focus and selection briefly diverge.
-    const paths =
-      operation === "rename"
-        ? [row.path]
-        : selected.length
-          ? selected
-          : [row.path];
+    const paths = operation === "rename" ? [row.path] : selected.length ? selected : [row.path];
     void operations.run(operation, paths);
   }
 }
@@ -380,6 +414,7 @@ function onKeydown(event: KeyboardEvent) {
   ) {
     event.preventDefault();
     event.stopPropagation();
+    invalidateLocate();
     files.selectAll();
     return;
   }
@@ -434,6 +469,7 @@ function onKeydown(event: KeyboardEvent) {
     return;
   event.preventDefault();
   event.stopPropagation();
+  invalidateLocate();
   if (event.key === "ArrowDown") void selectIndex(currentIndex.value + 1, event);
   else if (event.key === "ArrowUp") void selectIndex(currentIndex.value - 1, event);
   else if (event.key === "Home") void selectIndex(0, event);
@@ -553,7 +589,8 @@ function drop(event: DragEvent, row?: FileRow) {
           :disabled="!workspace.folderPath || !canLocateCurrent"
           @click="locateCurrentFile()"
         >
-          <Crosshair class="h-3.5 w-3.5" />
+          <LoaderCircle v-if="locating" class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          <Crosshair v-else class="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
@@ -583,6 +620,7 @@ function drop(event: DragEvent, row?: FileRow) {
       <div class="shrink-0 border-b p-2">
         <input
           v-model="files.filter"
+          @input="invalidateLocate"
           type="search"
           :aria-label="t('fileTree.filter')"
           :placeholder="t('fileTree.filter')"

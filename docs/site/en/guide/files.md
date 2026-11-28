@@ -10,6 +10,8 @@ File shows the workspace's files, including unchanged ones. It also works with o
 4. The editor context menu provides Undo, Redo, Cut, Copy, Paste, Select All, and Save.
 5. Besides New/Refresh, use **Locate current file** (crosshair) in the toolbar to scroll to and select the active editor or Diff path.
 
+Locate shows a spinner while reading directories. If a filter hides the target, it is cleared after the file is found. Switching projects or editor tabs, or changing the tree selection/filter, cancels the pending locate so it cannot jump back to an old target. If reading a directory fails, click Locate again to retry.
+
 ![The File tree and text editor](/screenshots/files-en.jpg)
 
 Git markers show changes. Parent-directory markers summarize changed descendants. With compact directories enabled, a loaded single-child directory chain can appear as `src/components/ui`.
