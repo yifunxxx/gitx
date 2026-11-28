@@ -39,3 +39,5 @@
 初次现场校验脚本误把结果写为LF预期，断言失败；检查夹具生成脚本、HEAD原始字节及实际文件确认原文为`hit\r\n`，产品正确保留CRLF。校验改为从已核哈希的HEAD原文推导预期后通过，未改产品或掩盖文件差异。`after/native-replaced.json`保存实际替换后的状态，随后恢复b.txt并以`native-verified.json`核对两文件、HEAD/index/status及个人settings全部回到基线。
 
 修后根PID22652及7个子身份正常退出，`native-identities.json`与`native-exit.json`按路径/创建时间核对；专用settings归档移除。旧QA007窗口未操作，用户安装版未更新。QA157代码修复、自动检查和本项原生对照完成，关闭该项，回到原9项；QA008/034持续滚动根因及七项目标继续。提交前fetch及master/交付分支整合成功，无新提交；提交/推送结果见统一台账。
+
+功能提交`3ae153b4a09bb4782ab9e3e094ec300d8c3e1d1f`首次推送成功，远端`codex/checkout-target-safety`完整SHA核对一致。补记交付前再次同步两分支成功，无新提交，无凭据提示。
