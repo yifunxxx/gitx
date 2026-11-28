@@ -33,3 +33,5 @@
 证据根：`E:/IDEAproject/gitx/test-results/qa159-recycled-focus-20261128`。保留旧组件、before/after/related日志、浏览器脚本/入口/16截图/结果、构建日志及原生fixture脚本。提交前再次同步并核远端完整SHA，结果见统一台账。
 
 过程记录：证据汇总脚本首次以Windows默认GBK读取含中文的JSON失败，显式UTF-8后继续；这是校验脚本问题，不计产品缺陷。首次Node工具闲置重置后重新导入并从新窗口列表取句柄，没有复用已退出窗口。
+
+功能提交`7094b652108a1f1394a17850e526130faf7d05f8`已首次推送到`codex/checkout-target-safety`，ls-remote完整SHA一致，无凭据提示。补记交付前再次fetch并整合master/交付分支，无新提交；证据汇总及426处报告链接检查通过。
