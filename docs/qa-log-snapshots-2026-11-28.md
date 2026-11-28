@@ -33,3 +33,5 @@ CUA 逐动作展开 Log、输入并应用 `main` 筛选，确认 Before、邮箱
 本轮新增并解决 QA161，回到原 9 项及整体七项目标继续。提交前再次 fetch 并整合 master/交付分支成功，无新提交；提交和推送结果见统一台账。
 
 证据根：`E:/IDEAproject/gitx/test-results/qa161-log-snapshots-20261128`。包含真实 Git fixture/两份快照、旧 store、回归与构建日志、浏览器脚本/结果及 8 张截图。原生逐动作截图保留在聊天工具记录中。
+
+功能提交 `6f11702e7608cf96a8d2bdb537ecf4c67b52f7e3` 已首次推送至 `codex/checkout-target-safety`，ls-remote 完整 SHA 一致，无凭据提示。补记前再次 fetch 并整合两分支无新提交；430 处报告链接与双语 Pages 检查通过。
