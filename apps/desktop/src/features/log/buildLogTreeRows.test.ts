@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildLogTreeRows } from "./buildLogTreeRows";
 import type { LogCommit } from "@/lib/backend";
 
-const commit = (
-  sha: string,
-  parents: string[] = [],
-  refs: string[] = [],
-): LogCommit => ({
+const commit = (sha: string, parents: string[] = [], refs: string[] = []): LogCommit => ({
   sha,
   shortSha: sha,
   parents,
@@ -43,5 +39,22 @@ describe("buildLogTreeRows", () => {
   it("emits a stable key per row", () => {
     const rows = buildLogTreeRows([commit("a", [], ["main"])], "Other");
     expect(rows.map((row) => row.key)).toEqual(["branch:main", "commit:a"]);
+  });
+
+  it("keeps branch identities distinct from the fallback group, even with matching names", () => {
+    const commits = [commit("tip", [], ["HEAD -> __other__", "__other__"]), commit("merged-side")];
+    const rows = buildLogTreeRows(commits, "__other__");
+    expect(rows.filter((row) => row.kind === "branch").map((row) => row.name)).toEqual([
+      "__other__",
+      "__other__",
+    ]);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+    expect(rows.filter((row) => row.kind === "commit").map((row) => row.commit.sha)).toEqual([
+      "tip",
+      "merged-side",
+    ]);
+    expect(buildLogTreeRows(commits, "其他提交").map((row) => row.key)).toEqual(
+      rows.map((row) => row.key),
+    );
   });
 });

@@ -13,7 +13,10 @@ function refLabel(ref: string) {
  * one section per tip ref, first-parent chain until a commit already shown.
  * Remaining loaded commits append under an "Other" bucket so nothing disappears.
  */
-export function buildLogTreeRows(commits: readonly LogCommit[], otherLabel = "Other"): LogTreeRow[] {
+export function buildLogTreeRows(
+  commits: readonly LogCommit[],
+  otherLabel = "Other",
+): LogTreeRow[] {
   const bySha = new Map(commits.map((commit, flatIndex) => [commit.sha, { commit, flatIndex }]));
   const seen = new Set<string>();
   const rows: LogTreeRow[] = [];
@@ -52,7 +55,8 @@ export function buildLogTreeRows(commits: readonly LogCommit[], otherLabel = "Ot
   for (const commit of commits) {
     if (seen.has(commit.sha)) continue;
     if (!otherOpened) {
-      rows.push({ kind: "branch", key: "branch:__other__", name: otherLabel });
+      // A synthetic group must never alias a real branch such as __other__.
+      rows.push({ kind: "branch", key: "group:other", name: otherLabel });
       otherOpened = true;
     }
     const flatIndex = bySha.get(commit.sha)!.flatIndex;
