@@ -39,3 +39,5 @@ CUA逐动作操作实际窗口。滚动稳定在branch-0014处后，重写相同
 本轮新增并解决QA160一项，原9项及整体七项目标继续。提交前再次fetch并整合两分支成功，无新提交；提交/推送结果见统一台账。
 
 证据根：`E:/IDEAproject/gitx/test-results/qa160-branch-snapshots-20261128`，保留旧store、测试/构建日志、浏览器脚本/结果/32截图，以及独立原生fixture、身份、恢复校验；原生逐动作截图在本聊天工具记录中。
+
+功能提交`0a75d085ce760f3fdda4b8022613ca385688e06e`已首次推送到`codex/checkout-target-safety`，ls-remote完整SHA一致，无凭据提示。补记前再次fetch并整合master/交付分支，无新提交；428处报告链接及双语Pages检查通过。
