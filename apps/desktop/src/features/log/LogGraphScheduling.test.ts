@@ -124,6 +124,41 @@ it("does not build a hidden graph when mounting the tree view", async () => {
   expect(layoutCommitGraphIncremental).not.toHaveBeenCalled();
 });
 
+it.each(["flat", "tree"] as const)(
+  "refreshes author and first-parent navigation with the same SHA in %s mode",
+  async (mode) => {
+    const log = useLogStore();
+    const rows = [commit("tip", ["left", "right"]), commit("right", ["base"]), commit("left", ["base"]), commit("base")];
+    log.commits = rows;
+    await mountView(mode);
+    await renderFrame();
+    const oldGraph = wrapper!.findAllComponents(CommitGraphCell).map(cell => cell.props("graph"));
+    vi.mocked(log.load).mockRestore();
+    const updated = rows.map(row => ({ ...row, parents: [...row.parents], refs: [...row.refs] }));
+    updated[0]!.parents.reverse();
+    updated[0]!.author = "After";
+    mocks.query.mockResolvedValue({ commits: updated, nextOffset: 4, truncated: false });
+    await log.load(true, true);
+    await renderFrame();
+    const tip = wrapper!.findAll('[role="option"]').find(row => row.text().includes("tip"))!;
+    expect(tip.text()).toContain("After");
+    if (mode === "flat") {
+      const graphs = wrapper!.findAllComponents(CommitGraphCell).map(cell => cell.props("graph"));
+      expect(graphs).not.toEqual(oldGraph);
+    }
+    await tip.trigger("keydown", { key: "ArrowLeft" });
+    await renderFrame();
+    expect(log.selectedSha).toBe("right");
+    vi.mocked(layoutCommitGraphIncremental).mockClear();
+    const current = log.commits;
+    mocks.query.mockResolvedValue({ commits: structuredClone(updated), nextOffset: 4, truncated: false });
+    await log.load(true, true);
+    await renderFrame();
+    expect(log.commits).toBe(current);
+    expect(layoutCommitGraphIncremental).not.toHaveBeenCalled();
+  },
+);
+
 it("defers graph changes while tree rows receive refreshed commits and filters", async () => {
   await mountView();
   await renderFrame();

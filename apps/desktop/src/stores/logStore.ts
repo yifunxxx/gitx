@@ -17,22 +17,30 @@ import { timedAsync } from "@/lib/longTaskLog";
 import { sameWorkspacePath, workspacePathKey } from "@/lib/workspacePath";
 import { useJobsStore } from "./jobsStore";
 
-/**
- * Background-refresh equality without JSON.stringify of the whole page
- * (that was multi-second on large loaded windows).
- */
+function sameCommitMetadata(left: LogCommit, right: LogCommit): boolean {
+  if (
+    left.sha !== right.sha ||
+    left.shortSha !== right.shortSha ||
+    left.subject !== right.subject ||
+    left.author !== right.author ||
+    left.authorEmail !== right.authorEmail ||
+    left.authorTime !== right.authorTime ||
+    left.parents.length !== right.parents.length
+  )
+    return false;
+  // Parent order determines the first-parent navigation and graph edges.
+  return left.parents.every((parent, index) => parent === right.parents[index]);
+}
+
+/** Compare Git metadata without serializing a potentially large loaded window. */
 function sameCommitWindow(a: readonly LogCommit[], b: readonly LogCommit[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     const left = a[i]!;
     const right = b[i]!;
-    if (
-      left.sha !== right.sha ||
-      left.subject !== right.subject ||
-      left.authorTime !== right.authorTime ||
-      left.refs.length !== right.refs.length
-    )
+    // The backend graph is a placeholder; LogView computes it from this metadata.
+    if (!sameCommitMetadata(left, right) || left.refs.length !== right.refs.length)
       return false;
     for (let r = 0; r < left.refs.length; r++) {
       if (left.refs[r] !== right.refs[r]) return false;
@@ -338,10 +346,16 @@ export const useLogStore = defineStore("log", () => {
       if (reset) {
         startOffset.value = offset;
         const windowChanged = !sameCommitWindow(commits.value, page.commits);
+        const nextSelected = background
+          ? page.commits.find((c) => c.sha === selectedSha.value)
+          : undefined;
+        const previousSelected = windowChanged && nextSelected
+          ? commits.value.find((c) => c.sha === selectedSha.value)
+          : undefined;
         if (windowChanged) commits.value = page.commits;
         truncated.value = page.truncated;
         nextOffset.value = page.nextOffset;
-        if (!background || !page.commits.some((c) => c.sha === selectedSha.value)) {
+        if (!background || !nextSelected) {
           invalidateSelection();
           selectedSha.value = null;
           selectedShas.value = [];
@@ -350,6 +364,16 @@ export const useLogStore = defineStore("log", () => {
         } else if (windowChanged) {
           const known = new Set(page.commits.map((c) => c.sha));
           selectedShas.value = selectedShas.value.filter((sha) => known.has(sha));
+          // A replacement object can change metadata under the same displayed SHA.
+          // Supersede even pending details, preserving the selection and its anchor.
+          if (!previousSelected || !sameCommitMetadata(previousSelected, nextSelected)) {
+            void readSelectedDetails(++selectGen).catch((e) => {
+              toast({
+                title: String(i18n.global.t("log.failed")),
+                description: formatErrorMessage(e),
+              });
+            });
+          }
         }
       } else {
         const seen = new Set(commits.value.map((c) => c.sha));
