@@ -26,7 +26,7 @@ remain available.
 To reproduce with pnpm 10.33.4:
 
 ```sh
-pnpm patch @xterm/xterm@6.0.0 --edit-dir /absolute/path/to/fresh-directory
+pnpm patch @xterm/xterm@6.0.0 --ignore-existing --edit-dir /absolute/path/to/fresh-directory
 node scripts/patch-xterm.mjs /absolute/path/to/fresh-directory
 pnpm patch-commit /absolute/path/to/fresh-directory
 pnpm install --frozen-lockfile

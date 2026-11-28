@@ -1,4 +1,4 @@
-// Run on a fresh `pnpm patch @xterm/xterm@6.0.0 --edit-dir <directory>` checkout,
+// Run on a fresh `pnpm patch @xterm/xterm@6.0.0 --ignore-existing --edit-dir <directory>` checkout,
 // then run `pnpm patch-commit <directory>`. Never modify installed node_modules.
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";

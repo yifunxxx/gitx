@@ -42,3 +42,7 @@ Windows最终构建成功；独立程序SHA256为`1ea37936eb6cbb36cc932d49d398c3
 关闭程序后10个记录身份（程序、WebView、Shell和conhost）按路径/PID/创建时间核对自然退出，fixture的HEAD/index/status/文件字节和个人settings保持，专用settings已归档移除。精确反相和大量颜色压力没有在原生Shell中复演，不把基本会话检查扩大为此类证据。相关格式/lint和Pages检查也通过。
 
 QA163两个遗留边界已在上述范围修复验证，统一台账关闭本项，回到原9项；整体七项目标继续，QA007运行中命令中断和持续滚轮仍待原生验收。用户安装版未更新。提交前再次同步两分支；独立提交/推送结果随后记录。
+
+2026-11-29交付复核：功能`cfeeef5bfa383e3d0c71c5b0b99358470b77fb5a`首次推送且远端完整SHA一致；精确CI run `46151442762`成功，前端2576项/4既有skip、应用lib72项、原工作区Rust、类型/Vite/bindings/fmt/Clippy/编译通过，echo占位job不计E2E。复核时远端已合入PR #40/#41并发布版本提交`b5987ae`（0.1.57），交付分支已删除；命名stash保留仅有的台账归档编辑后快进master并无冲突恢复。没有将主分支新增Add to VCS代码视为本轮实现或把旧CI当成新master验证。补丁重建命令补上`--ignore-existing`，确保从未打补丁的包开始；不影响已交付产品代码或锁文件。
+
+新master整合验证：终端及Add/Commit相关11文件225项通过，Pages检查通过。实际执行上述pnpm忽略旧补丁的提取命令后重建，5个文件与安装结果逐字节一致，`pnpm-regeneration-verified.json`保留；未重跑未变的颜色压力与原生界面。
