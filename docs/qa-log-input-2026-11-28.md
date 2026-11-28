@@ -1,5 +1,7 @@
 # QA151 Log键盘输入边界
 
+后续证据：2026-11-28[系统IME原生续验](qa-native-ime-2026-11-28.md)补齐消息筛选框实际候选Return/Space与普通Return的对照；其他筛选字段、修订定位和精确长按仍保留原生边界。下文初始阶段的IME限制不代表后续没有取得任何系统候选证据。
+
 日期：2026-11-28。开始前已读取统一台账，fetch并整合`origin/master`及`origin/codex/checkout-target-safety`成功。基线`f1eb4cb8bbebc33613ae7449307780cb7f56d239`包含master`50a4802dd23f61055668e165f6fe7c0b93b17680`（0.1.56），工作区干净，全程主线程。
 
 ## 发现与修复
