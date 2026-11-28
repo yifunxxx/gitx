@@ -24,3 +24,7 @@
 本地证据：`E:/IDEAproject/gitx/test-results/qa167-log-tree-keys-20261129`，包含`before.log`、`targeted.log`、`targeted-final.log`、首次`build.log`、最终`build-final.log`、`before-builder.ts`、`browser-server.mjs`、`browser-harness.html`、`browser-results.json`。截图及AX留在工具记录中。
 
 提交前再次fetch并ff-only整合两分支成功，无新提交。新增并解决QA167一项，关闭本项后回到原9项；七项目标继续。独立提交、推送完整SHA和精确提交CI结果随后记录在统一台账及本地`delivery.json`。
+
+功能提交`bdb5f27b6b48bdddc1089ddf42e359591388a65c`首次推送成功，远端完整SHA一致，无凭据提示。精确提交CI run `46181341274`全部成功：前端2635项通过/4项既有skip，Linux应用lib73项及原工作区Rust、类型/Vite/bindings/fmt/Clippy和编译通过；echo占位job不计E2E。CI JSON与两组日志已归档。工具链Node版本弃用提示不影响本次结果。
+
+交付核对覆盖浏览器3步结果、379处报告链接及9份证据文件哈希。旧builder导出仅少一个末尾换行，其余文本与父提交完全一致；首轮严格全文核对因此未通过，补充忽略末尾换行的核对后通过，未改动旧对照实现或结果。临时服务器无剩余进程、端口已关闭。补记前再次同步两分支，无新提交。
