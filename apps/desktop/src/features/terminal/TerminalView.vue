@@ -110,12 +110,19 @@ function isLive(session: Session) {
 }
 function colors() {
   const css = getComputedStyle(document.documentElement);
-  const color = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  const color = (name: string, fallback: string) => {
+    const [channels, alpha] = (css.getPropertyValue(name).trim() || fallback).split("/");
+    // xterm's canvas fallback rejects translucent space-separated CSS colors.
+    const rgb = channels.trim().split(/\s+/).join(", ");
+    return alpha === undefined ? `rgb(${rgb})` : `rgba(${rgb}, ${alpha.trim()})`;
+  };
   return {
-    background: `rgb(${color("--background", "20 20 23")})`,
-    foreground: `rgb(${color("--foreground", "225 225 230")})`,
-    cursor: `rgb(${color("--foreground", "225 225 230")})`,
-    selectionBackground: `rgb(${color("--selection", "55 85 135")})`,
+    background: color("--background", "20 20 23"),
+    foreground: color("--foreground", "225 225 230"),
+    cursor: color("--foreground", "225 225 230"),
+    cursorAccent: color("--background", "20 20 23"),
+    selectionBackground: color("--selection", "55 85 135"),
+    selectionForeground: color("--selection-foreground", "225 225 230"),
   };
 }
 function fitActive() {
@@ -152,6 +159,7 @@ async function create(cwd = directory.value, current: () => boolean = () => true
     scrollback: 5000,
     fontSize: 12,
     lineHeight: 1.2,
+    minimumContrastRatio: 4.5,
     fontFamily:
       getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() ||
       "monospace",

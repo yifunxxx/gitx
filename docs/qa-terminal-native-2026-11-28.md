@@ -41,3 +41,5 @@
 当前证据：`current/native-target.json`、`current/native-identities.json`、`current/session-exit.json`、`current/native-exit.json`、`current/verification-final.json`、构建日志与CUA会话截图。根PID30268创建于20:49:07；以上身份记录防止把复用PID当成原进程。
 
 仍未覆盖运行中命令的原生中断、终端选择复制和持续滚轮。另观察浅色背景上的PowerShell黄色/浅灰输入偏淡，登记QA163配色候选；代码仅映射默认前景/背景/光标/选择色，ANSI色仍为默认，下一步按真实xterm及主题切换核查。Linux关闭行为已有[QA162](qa-linux-ci-2026-11-28.md)有限自动证据，旧Windows及其他Unix保留。QA007/046继续，安装版未更新，全程主线程。
+
+21时后续证据：[QA163配色修复与原生复查](qa-terminal-colors-2026-11-28.md)确认旧浅色选区实际回退为白色并修复，当前程序双击`Unicode`及拖选`QA007`均可见；分别通过工具栏、Ctrl+Shift+C复制后在筛选框核对准确文本，并清空恢复。主题深浅往返、Unicode粘贴/取消及10身份自然退出通过，fixture/个人设置保持。本报告上方“选区复制未取得证据”由此补齐；运行中命令中断及持续滚轮继续保留，不能倒推此前未观测的具体选区。
