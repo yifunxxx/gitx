@@ -26,6 +26,18 @@
     "welcome": "欢迎使用 gitx"
   },
   "editor": {
+    "clipboardPending": {
+      "copy": "正在复制…",
+      "cut": "正在剪切…",
+      "paste": "正在读取剪贴板…"
+    },
+    "clipboardFailed": {
+      "copy": "复制失败。",
+      "cut": "剪切失败。",
+      "paste": "粘贴失败。"
+    },
+    "retryClipboard": "重试",
+    "dismissClipboard": "关闭",
     "menu": "编辑器",
     "unsaved": "未保存",
     "saving": "保存中…",

@@ -26,6 +26,18 @@
     "welcome": "Welcome to gitx"
   },
   "editor": {
+    "clipboardPending": {
+      "copy": "Copying…",
+      "cut": "Cutting…",
+      "paste": "Reading clipboard…"
+    },
+    "clipboardFailed": {
+      "copy": "Could not copy.",
+      "cut": "Could not cut.",
+      "paste": "Could not paste."
+    },
+    "retryClipboard": "Retry",
+    "dismissClipboard": "Dismiss",
     "menu": "Editor",
     "unsaved": "unsaved",
     "saving": "saving…",

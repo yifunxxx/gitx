@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { fileTheme } from "@/features/editor/editorThemes";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import {
@@ -19,6 +19,7 @@ import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
 import { sourceText } from "@/components/common/preservedText";
 import { createFileEditorState, fileViewConfig } from "./fileEditorState";
 import { useI18n } from "vue-i18n";
+import { formatErrorMessage } from "@/lib/errors";
 
 const props = defineProps<{ tabId: string }>();
 const store = useFileViewerStore();
@@ -35,6 +36,19 @@ const highlights = new Compartment();
 const editability = new Compartment();
 
 type MenuAction = "undo" | "redo" | "cut" | "copy" | "paste" | "selectAll" | "save";
+type ClipboardAction = "copy" | "cut" | "paste";
+type ClipboardRequest = {
+  action: ClipboardAction;
+  view: EditorView;
+  tab: FileViewerTab;
+  state: EditorState;
+};
+const clipboardPending = shallowRef<ClipboardRequest | null>(null);
+const clipboardFailure = shallowRef<{ request: ClipboardRequest; message: string } | null>(null);
+const canRetryClipboard = computed(() => {
+  const request = clipboardFailure.value?.request;
+  return !!request && clipboardContextCurrent(request);
+});
 type MenuState = {
   x: number;
   y: number;
@@ -49,6 +63,8 @@ const menu = ref<MenuState | null>(null);
 
 function release() {
   closeMenu();
+  clipboardPending.value = null;
+  clipboardFailure.value = null;
   if (view && viewTab) {
     store.cacheEditorSnapshot(viewTab, {
       state: view.state.update({ effects: fileViewConfig.reconfigure([]) }).state,
@@ -97,6 +113,7 @@ function openMenu(event: MouseEvent | KeyboardEvent) {
 function menuDisabled(action: MenuAction) {
   const state = menu.value;
   if (!state || !view) return true;
+  if (clipboardPending.value && ["copy", "cut", "paste"].includes(action)) return true;
   switch (action) {
     case "undo":
       return !state.editable || !state.canUndo;
@@ -133,13 +150,9 @@ async function runMenu(action: MenuAction) {
       selectAll(live);
       break;
     case "copy":
-      await copySelection(live);
-      break;
     case "cut":
-      await cutSelection(live);
-      break;
     case "paste":
-      await pasteClipboard(live);
+      await runClipboard(action);
       break;
     case "save":
       await store.save(current.id);
@@ -147,69 +160,53 @@ async function runMenu(action: MenuAction) {
   }
 }
 
-async function copySelection(target: EditorView) {
-  const { from, to } = target.state.selection.main;
-  if (from === to) return;
-  const text = target.state.sliceDoc(from, to);
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // Clipboard may be denied in some test / locked-down hosts.
-  }
-}
-
-async function cutSelection(target: EditorView) {
+async function runClipboard(action: ClipboardAction) {
+  const target = view;
   const current = tab.value;
+  if (!target || !current || clipboardPending.value) return;
   const state = target.state;
   const { from, to } = state.selection.main;
-  if (
-    from === to ||
-    !current?.editable ||
-    current.restorePending ||
-    !state.facet(EditorView.editable)
-  )
-    return;
-  const text = state.sliceDoc(from, to);
+  const request = { action, view: target, tab: current, state };
+  if (!clipboardContextCurrent(request) || (action !== "paste" && from === to)) return;
+  clipboardFailure.value = null;
+  clipboardPending.value = request;
   try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
+    let text = "";
+    if (action === "paste") text = await navigator.clipboard.readText();
+    else await navigator.clipboard.writeText(state.sliceDoc(from, to));
+    if (clipboardPending.value !== request || !clipboardContextCurrent(request)) return;
+    if (action === "copy") return;
+    const insert = state.toText(text);
+    target.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+      userEvent: action === "paste" ? "input.paste" : "delete.cut",
+    });
+  } catch (reason) {
+    if (clipboardPending.value === request && clipboardContextCurrent(request))
+      clipboardFailure.value = { request, message: formatErrorMessage(reason) };
+  } finally {
+    if (clipboardPending.value === request) clipboardPending.value = null;
   }
-  if (!canApplyClipboard(target, current, state)) return;
-  target.dispatch({ changes: { from, to, insert: "" }, userEvent: "delete.cut" });
 }
 
-async function pasteClipboard(target: EditorView) {
-  const current = tab.value;
-  const state = target.state;
-  if (!current?.editable || current.restorePending || !state.facet(EditorView.editable)) return;
-  let text = "";
-  try {
-    text = await navigator.clipboard.readText();
-  } catch {
-    return;
-  }
-  if (!canApplyClipboard(target, current, state)) return;
-  const { from, to } = state.selection.main;
-  const insert = state.toText(text);
-  target.dispatch({
-    changes: { from, to, insert },
-    selection: { anchor: from + insert.length },
-    userEvent: "input.paste",
-  });
+function retryClipboard() {
+  const request = clipboardFailure.value?.request;
+  if (request && clipboardContextCurrent(request)) void runMenu(request.action);
 }
 
-function canApplyClipboard(
-  target: EditorView,
-  current: NonNullable<typeof tab.value>,
-  state: EditorState,
-) {
+function dismissClipboardFailure() {
+  clipboardFailure.value = null;
+  view?.focus();
+}
+
+function clipboardContextCurrent({ view: target, tab: current, state, action }: ClipboardRequest) {
   return (
     view === target &&
     tab.value === current &&
     store.tabs.includes(current) &&
-    current.editable &&
-    !current.restorePending &&
+    (action === "copy" ||
+      (current.editable && !current.restorePending && target.state.facet(EditorView.editable))) &&
     !current.loading &&
     target.state.doc === state.doc &&
     target.state.selection.eq(state.selection)
@@ -254,6 +251,7 @@ function mount() {
         fileTheme,
         highlights.of(fileChangeHighlights(hunks)),
         EditorView.updateListener.of((update) => {
+          if (update.docChanged || update.selectionSet) clipboardFailure.value = null;
           if (!update.docChanged) return;
           if (tab.value !== current || !store.tabs.includes(current)) return;
           viewText = sourceText(update.state);
@@ -357,7 +355,7 @@ const menuActions = computed(() => {
   <div
     v-if="tab"
     class="flex h-full min-h-0 flex-col"
-    :aria-busy="tab.restorePending || undefined"
+    :aria-busy="tab.restorePending || !!clipboardPending || undefined"
     @keydown="
       ($event.key === 'ContextMenu' || ($event.shiftKey && $event.key === 'F10')) &&
       openMenu($event)
@@ -372,6 +370,39 @@ const menuActions = computed(() => {
         >· {{ t("history.restoring") }}</span
       >
       <span v-if="tab.deletedOnDisk" class="text-warning">{{ t("fileOps.deletedDraft") }}</span>
+    </div>
+    <div
+      v-if="clipboardPending"
+      role="status"
+      class="shrink-0 border-b px-2 py-1 text-xs text-muted-foreground"
+    >
+      {{ t(`editor.clipboardPending.${clipboardPending.action}`) }}
+    </div>
+    <div
+      v-if="clipboardFailure"
+      role="alert"
+      class="flex shrink-0 items-start gap-2 border-b px-2 py-1 text-xs"
+    >
+      <span class="max-h-24 min-w-0 flex-1 overflow-auto break-words text-destructive">
+        {{ t(`editor.clipboardFailed.${clipboardFailure.request.action}`) }}
+        {{ clipboardFailure.message }}
+      </span>
+      <button
+        type="button"
+        data-clipboard-retry
+        class="shrink-0 rounded px-1 hover:bg-accent focus-visible:outline-2 disabled:opacity-40"
+        :disabled="!canRetryClipboard"
+        @click="retryClipboard"
+      >
+        {{ t("editor.retryClipboard") }}
+      </button>
+      <button
+        type="button"
+        class="shrink-0 rounded px-1 hover:bg-accent focus-visible:outline-2"
+        @click="dismissClipboardFailure"
+      >
+        {{ t("editor.dismissClipboard") }}
+      </button>
     </div>
     <div v-if="tab.loading" class="p-4 text-xs text-muted-foreground">Loading…</div>
     <div

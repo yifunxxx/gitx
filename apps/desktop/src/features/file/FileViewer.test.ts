@@ -799,3 +799,172 @@ it("edits and saves a non-Git file through the same editor component", async () 
   expect(mocks.diffFile).not.toHaveBeenCalled();
   expect(store.tabs[0]!.dirty).toBe(false);
 });
+
+async function clipboardFixture(action: string) {
+  const request = deferred();
+  const method = vi.mocked(
+    action === "paste" ? navigator.clipboard.readText : navigator.clipboard.writeText,
+  );
+  method.mockReturnValueOnce(request.promise);
+  mocks.fsReadFile.mockResolvedValueOnce("hello world");
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const wrapper = mount(FileViewer, {
+    props: { tabId: store.activeId! },
+    attachTo: document.body,
+  });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ selection: { anchor: 0, head: 5 } });
+  return { request, method, store, wrapper, cm };
+}
+
+it.each(["copy", "cut", "paste"])(
+  "shows a pending %s request and prevents duplicate clipboard menu operations",
+  async (action) => {
+    const { request, method, wrapper } = await clipboardFixture(action);
+    await clickEditorMenu(wrapper, action);
+    expect(wrapper.get('[role="status"]').text()).toContain(`editor.clipboardPending.${action}`);
+    expect(wrapper.attributes("aria-busy")).toBe("true");
+    await wrapper.get("[data-file-viewer-host]").trigger("contextmenu");
+    await flushPromises();
+    for (const name of ["copy", "cut", "paste"]) {
+      const button = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+      ).find((item) => item.textContent?.includes(`editor.${name}`))!;
+      expect(button.disabled).toBe(true);
+      button.click();
+    }
+    expect(method).toHaveBeenCalledOnce();
+    request.reject(new Error("clipboard denied"));
+    await flushPromises();
+    expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    expect(wrapper.attributes("aria-busy")).toBeUndefined();
+  },
+);
+
+it.each(["copy", "cut", "paste"])(
+  "reports a failed %s, keeps the text intact, and allows an explicit retry",
+  async (action) => {
+    const { request, method, store, wrapper, cm } = await clipboardFixture(action);
+    await clickEditorMenu(wrapper, action);
+    request.reject(new Error("clipboard denied"));
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain(`editor.clipboardFailed.${action}`);
+    expect(wrapper.get('[role="alert"]').text()).toContain("clipboard denied");
+    expect(store.tabs[0]!.text).toBe("hello world");
+    const retry = deferred();
+    method.mockReturnValueOnce(retry.promise);
+    await wrapper.get("[data-clipboard-retry]").trigger("click");
+    expect(method).toHaveBeenCalledTimes(2);
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    cm.contentDOM.blur();
+    retry.resolve(action === "paste" ? "new" : undefined);
+    await flushPromises();
+    expect(store.tabs[0]!.text).toBe(
+      action === "copy" ? "hello world" : action === "cut" ? " world" : "new world",
+    );
+    expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    if (action !== "copy") {
+      expect(undo(cm)).toBe(true);
+      expect(store.tabs[0]!.text).toBe("hello world");
+    }
+  },
+);
+
+it.each(["copy", "cut", "paste"])(
+  "does not attach an old %s error to another file or clear its pending request",
+  async (action) => {
+    const { request, method, store, wrapper } = await clipboardFixture(action);
+    await clickEditorMenu(wrapper, action);
+    await store.open("b.txt");
+    await wrapper.setProps({ tabId: store.activeId! });
+    editor(wrapper).dispatch({ selection: { anchor: 0, head: 4 } });
+    const second = deferred();
+    method.mockReturnValueOnce(second.promise);
+    await clickEditorMenu(wrapper, action);
+    request.reject(new Error("old clipboard failure"));
+    await flushPromises();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(wrapper.get('[role="status"]').text()).toContain(`editor.clipboardPending.${action}`);
+    second.reject(new Error("current clipboard failure"));
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("current clipboard failure");
+    expect(wrapper.get('[role="alert"]').text()).not.toContain("old clipboard failure");
+  },
+);
+
+it("does not read or write the clipboard just by mounting, focusing or opening its menu", async () => {
+  const { wrapper, cm } = await clipboardFixture("paste");
+  cm.focus();
+  await wrapper.get("[data-file-viewer-host]").trigger("contextmenu");
+  await flushPromises();
+  expect(navigator.clipboard.readText).not.toHaveBeenCalled();
+  expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+});
+
+it.each(["edit", "selection", "close", "unmount"])(
+  "does not publish a clipboard failure after %s invalidates its target",
+  async (change) => {
+    const { request, store, wrapper, cm } = await clipboardFixture("paste");
+    await clickEditorMenu(wrapper, "paste");
+    cm.contentDOM.blur();
+    if (change === "edit") cm.dispatch({ changes: { from: 0, insert: "new " } });
+    if (change === "selection") cm.dispatch({ selection: { anchor: 2 } });
+    if (change === "close") store.closeTab(store.activeId!);
+    if (change === "unmount") wrapper.unmount();
+    await flushPromises();
+    request.reject(new Error("obsolete clipboard failure"));
+    await flushPromises();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(mocks.toast).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["edit", "selection"])("clears the old retry after a new %s", async (change) => {
+  const { request, wrapper, cm } = await clipboardFixture("cut");
+  await clickEditorMenu(wrapper, "cut");
+  request.reject(new Error("clipboard failed"));
+  await flushPromises();
+  expect(wrapper.find("[data-clipboard-retry]").exists()).toBe(true);
+  cm.contentDOM.blur();
+  if (change === "edit") cm.dispatch({ changes: { from: 0, insert: "new " } });
+  else cm.dispatch({ selection: { anchor: 2 } });
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+});
+
+it("disables retry during a disk restore and re-enables it after failure", async () => {
+  const { request, wrapper, cm } = await clipboardFixture("paste");
+  await clickEditorMenu(wrapper, "paste");
+  request.reject(new Error("clipboard failed"));
+  await flushPromises();
+  const lock = beginWorktreeRestore("repo-A", ["a.txt"]);
+  await flushPromises();
+  expect(wrapper.get("[data-clipboard-retry]").attributes("disabled")).toBeDefined();
+  expect(cm.state.readOnly).toBe(true);
+  lock.release();
+  await flushPromises();
+  expect(wrapper.get("[data-clipboard-retry]").attributes("disabled")).toBeUndefined();
+});
+
+it("returns focus to the editor when dismissing the clipboard error", async () => {
+  const { request, wrapper, cm } = await clipboardFixture("copy");
+  await clickEditorMenu(wrapper, "copy");
+  request.reject(new Error("clipboard failed"));
+  await flushPromises();
+  const button = wrapper.get('[role="alert"]').findAll("button")[1]!;
+  (button.element as HTMLButtonElement).focus();
+  await button.trigger("click");
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  expect(cm.hasFocus).toBe(true);
+});
+
+it("shows clipboard API unavailability as a failure instead of silently doing nothing", async () => {
+  const { wrapper } = await clipboardFixture("paste");
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+  await clickEditorMenu(wrapper, "paste");
+  expect(wrapper.get('[role="alert"]').text()).toContain("editor.clipboardFailed.paste");
+  expect(wrapper.attributes("aria-busy")).toBeUndefined();
+});
