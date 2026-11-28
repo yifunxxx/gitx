@@ -53,3 +53,5 @@
 测试程序 SHA256：`279c4cdff51e5cfcb8e3afed1072b07d64608ca07e39c3e86d3f55b96ceb0af3`。证据包括 `target.json`、`baseline.json`、`native-shelved.json`、`native-restored.json`、`fixture-verification.json`、`native-identities.json`、`exit-verification.json`、`test-summary.json`，GUI 状态和截图保留在本任务工具输出中。
 
 QA165 按上述范围关闭，新增并解决 1 项，原 9 项及七项目标继续。提交前再次 fetch/整合两分支无新提交，准备独立提交推送；最终完整 SHA 与远端核对留在本目录 `delivery.json`。用户安装版未更新。
+
+功能提交 `3b9b2041289605139a81000a0a9ebf85e984107d` 已首次推送到 `codex/checkout-target-safety`，ls-remote 完整 SHA 一致，无凭据提示。476 处报告链接、程序哈希及测试/现场证据核对通过。精确提交 CI run `46176983763` 全部成功：前端 2610 项 / 4 既有 skip、类型/Vite/bindings，以及 Linux 原工作区 Rust 测试、应用 lib 73 项、fmt/Clippy 和编译均通过。echo 占位 job 不计为 E2E，日志保留 `ci.json`、`ci-frontend.log`、`ci-rust.log`、`ci-watch.log`；补记前再次同步无新提交。

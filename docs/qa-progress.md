@@ -4,6 +4,8 @@
 
 ## 当前进度
 
+2026-11-29 QA165独立交付：功能`3b9b2041289605139a81000a0a9ebf85e984107d`首次推送成功，ls-remote完整SHA一致，无凭据提示。新增并解决1项，Git/meta553、应用lib76及原生特殊目录打开/Shelf保存恢复验收完成；476处报告链接、程序哈希、8身份退出及fixture/settings核对通过。精确提交CI run `46176983763`全部成功：前端2610项/4既有skip、Linux应用lib73项及原工作区Rust、类型/Vite/bindings/fmt/Clippy和编译通过，echo占位不计E2E。补记前再次同步无新提交；原9项及七项目标继续，安装版未更新，全程主线程。
+
 2026-11-29 QA165修复验收完成：[Git目录解析报告](qa-common-directory-2026-11-29.md)确认末尾全角空格被trim，Shelf和exclude写入相邻路径；统一git-dir/common-dir及打开/多仓库探测，修正--open参数并复用WSL转换。新增12项，Git/meta 553项/8既有ignored、应用lib76项/1既有ignored、末次路径8项、Clippy/fmt及Windows构建通过。原生特殊目录打开、Shelf保存/恢复及实际落点通过；恢复暂存按原行为记录，CLI取消暂存后fixture回到基线，8身份自然退出、个人settings保持、专用settings归档移除。关闭QA165，新增并解决1项，原9项及七项目标继续，QA023不归因；安装版未更新，全程主线程。提交前同步无新提交，独立提交推送随后核对。
 
 2026-11-29 QA165受控确认：首5项真实Git回归中旧4失败/1普通worktree对照通过，确认common-dir被trim后Shelf及info/exclude落到相邻目录，多仓库识别也返回错误路径。修后首5项通过；扩展为6项并核git-dir、根目录空白、bare、导出保护，统一打开项目/多仓库四字段解析与WSL转换。准备原生检查时另发现--open启动参数也trim，已同项修正并补测试。相关Rust回归及最终程序继续，QA023不归因、不关闭；原9项加本项暂10项，全程主线程。
