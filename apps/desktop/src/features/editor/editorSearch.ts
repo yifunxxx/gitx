@@ -594,11 +594,17 @@ const searchTheme = EditorView.theme({
   ".cm-searchMatch": { backgroundColor: "#eab30830", outline: "1px solid #eab30860" },
   ".cm-searchMatch-selected": { backgroundColor: "#eab30860" },
 });
+// Stable document extensions can survive a view being destroyed and recreated.
+// They contain no component callbacks or DOM references.
+export const editorSearchState = [
+  replaceExpanded,
+  search({ top: true, literal: true, createPanel: (view) => new IdeaSearchPanel(view) }),
+];
+
 export function editorSearch(translate?: (key: string) => string): Extension {
   return [
     EditorView.contentAttributes.of({ tabindex: "0" }),
-    replaceExpanded,
-    search({ top: true, literal: true, createPanel: (view) => new IdeaSearchPanel(view) }),
+    editorSearchState,
     keymap.of([{ key: "Escape", run: closeSearchPanel, scope: "editor search-panel" }]),
     ViewPlugin.define((view) => {
       const focus = () => {

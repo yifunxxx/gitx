@@ -116,6 +116,8 @@ it("bounds Shelf preview styles across patch replacement and remounts", async ()
 
 it("bounds file styles across editable/read-only tab switches and reloads", async () => {
   mocks.store = reactive({
+    cacheEditorSnapshot: vi.fn(),
+    takeEditorSnapshot: vi.fn(),
     tabs: [
       {
         id: "edit",

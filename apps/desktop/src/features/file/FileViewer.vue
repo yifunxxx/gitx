@@ -5,7 +5,6 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import {
   defaultKeymap,
-  history,
   historyKeymap,
   redo,
   redoDepth,
@@ -15,9 +14,10 @@ import {
 } from "@codemirror/commands";
 import { fileChangeHighlights } from "./fileChangeHighlights";
 import { editorChrome } from "@/features/editor/editorChrome";
-import { useFileViewerStore } from "@/stores/fileViewerStore";
+import { useFileViewerStore, type FileViewerTab } from "@/stores/fileViewerStore";
 import ContextMenuSurface from "@/components/common/ContextMenuSurface.vue";
-import { parseSource, sourceExtensions, sourceText } from "@/components/common/preservedText";
+import { sourceText } from "@/components/common/preservedText";
+import { createFileEditorState, fileViewConfig } from "./fileEditorState";
 import { useI18n } from "vue-i18n";
 
 const props = defineProps<{ tabId: string }>();
@@ -27,6 +27,10 @@ const { t } = useI18n();
 const tab = computed(() => store.tabs.find((t) => t.id === props.tabId));
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
+let viewTab: FileViewerTab | null = null;
+let viewGeneration = 0;
+let viewEditable = false;
+let viewText = "";
 const highlights = new Compartment();
 const editability = new Compartment();
 
@@ -45,8 +49,18 @@ const menu = ref<MenuState | null>(null);
 
 function release() {
   closeMenu();
+  if (view && viewTab) {
+    store.cacheEditorSnapshot(viewTab, {
+      state: view.state.update({ effects: fileViewConfig.reconfigure([]) }).state,
+      scroll: view.scrollSnapshot(),
+      text: viewText,
+      generation: viewGeneration,
+      editable: viewEditable,
+    });
+  }
   view?.destroy();
   view = null;
+  viewTab = null;
 }
 
 function closeMenu() {
@@ -206,16 +220,19 @@ function mount() {
   release();
   if (!host.value || !tab.value || tab.value.loading) return;
   const current = tab.value;
-  const source = parseSource(current.text);
+  const snapshot = store.takeEditorSnapshot(current);
+  const state = snapshot?.state ?? createFileEditorState(current.text);
+  viewTab = current;
+  viewGeneration = current.loadGeneration;
+  viewEditable = current.editable;
+  viewText = current.text;
   const hunks = current.hunks;
   view = new EditorView({
     parent: host.value,
-    state: EditorState.create({
-      doc: source.doc,
-      extensions: [
-        sourceExtensions(source),
+    scrollTo: snapshot?.scroll,
+    state: state.update({
+      effects: fileViewConfig.reconfigure([
         lineNumbers(),
-        history(),
         keymap.of([
           {
             key: "Mod-s",
@@ -239,7 +256,8 @@ function mount() {
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           if (tab.value !== current || !store.tabs.includes(current)) return;
-          store.setDocument(current.id, sourceText(update.state));
+          viewText = sourceText(update.state);
+          store.setDocument(current.id, viewText);
         }),
         EditorView.domEventHandlers({
           contextmenu: (event, editorView) => {
@@ -257,14 +275,16 @@ function mount() {
             return true;
           },
         }),
-      ],
-    }),
+      ]),
+    }).state,
   });
 }
 
 function revealPosition() {
   const target = tab.value?.reveal;
-  if (!view || !target || tab.value?.loading) return;
+  if (!view || viewTab !== tab.value || !target || tab.value?.loading) return;
+  // A search jump is a request, not the tab's permanent cursor position.
+  tab.value.reveal = undefined;
   const line = view.state.doc.line(
     Math.max(1, Math.min(view.state.doc.lines, Math.floor(target.line))),
   );
@@ -280,7 +300,7 @@ watch(() => tab.value?.reveal, revealPosition, { flush: "post" });
 watch(
   () => tab.value?.restorePending,
   () => {
-    if (!view || !tab.value) return;
+    if (!view || !tab.value || viewTab !== tab.value) return;
     closeMenu();
     const editable = !!tab.value.editable && !tab.value.restorePending;
     // Temporary disk-write protection must not remount the editor: failed
@@ -302,7 +322,7 @@ onBeforeUnmount(() => {
 watch(
   [
     host,
-    () => tab.value?.id,
+    () => tab.value,
     () => tab.value?.loading,
     () => tab.value?.editable,
     () => tab.value?.loadGeneration,
@@ -317,7 +337,7 @@ watch(
 watch(
   () => tab.value?.hunks,
   (hunks) => {
-    if (!view || !tab.value || !hunks || tab.value.dirty) return;
+    if (!view || viewTab !== tab.value || !tab.value || !hunks || tab.value.dirty) return;
     // Updating saved line marks must preserve the draft, selection and undo history.
     view.dispatch({ effects: highlights.reconfigure(fileChangeHighlights(hunks)) });
   },

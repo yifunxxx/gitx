@@ -11,6 +11,7 @@ import { toast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 import { relativeToRoot } from "@/lib/projectFilePath";
 import { workspacePathKey } from "@/lib/workspacePath";
+import type { FileEditorSnapshot } from "@/features/file/fileEditorState";
 
 export type FileViewerTab = {
   id: string;
@@ -53,18 +54,44 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
   const fileMutationPending = ref(false);
   const workspace = useWorkspaceStore();
   const gutterQueues = new WeakMap<FileViewerTab, SavedGutterQueue>();
+  let editorSnapshots = new WeakMap<FileViewerTab, FileEditorSnapshot>();
   let disposed = false;
+  function cacheEditorSnapshot(tab: FileViewerTab, snapshot: FileEditorSnapshot) {
+    if (
+      disposed ||
+      !tabs.value.includes(tab) ||
+      tab.loading ||
+      tab.text !== snapshot.text ||
+      tab.loadGeneration !== snapshot.generation ||
+      tab.editable !== snapshot.editable
+    )
+      return;
+    editorSnapshots.set(tab, snapshot);
+  }
+  function takeEditorSnapshot(tab: FileViewerTab) {
+    const snapshot = editorSnapshots.get(tab);
+    editorSnapshots.delete(tab);
+    return !disposed &&
+      snapshot &&
+      snapshot.text === tab.text &&
+      snapshot.generation === tab.loadGeneration &&
+      snapshot.editable === tab.editable
+      ? snapshot
+      : undefined;
+  }
   function invalidateGutters(tab: FileViewerTab) {
     const queue = gutterQueues.get(tab);
     if (queue) queue.latest = queue.pending = null;
   }
   onScopeDispose(() => {
     disposed = true;
+    editorSnapshots = new WeakMap();
     tabs.value.forEach(invalidateGutters);
   });
   watch(
     () => [workspace.repoPath, workspace.folderPath, workspace.appliedOpenToken?.()],
     () => {
+      editorSnapshots = new WeakMap();
       tabs.value.forEach(invalidateGutters);
       tabs.value = [];
       activeId.value = null;
@@ -363,6 +390,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
   function closeTab(id: string) {
     const idx = tabs.value.findIndex((t) => t.id === id);
     if (idx < 0) return;
+    editorSnapshots.delete(tabs.value[idx]!);
     invalidateGutters(tabs.value[idx]!);
     tabs.value.splice(idx, 1);
     if (activeId.value === id) {
@@ -384,5 +412,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     closeTab,
     affectedByFiles,
     applyFileMutation,
+    cacheEditorSnapshot,
+    takeEditorSnapshot,
   };
 });
