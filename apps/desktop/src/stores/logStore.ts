@@ -630,7 +630,7 @@ export const useLogStore = defineStore("log", () => {
   async function goToHashOrRef(revision = goToInput.value.trim()) {
     const isCurrentRepository = currentRepository();
     const path = workspace.repoPath;
-    if (!revision || !path || !workspace.repoId) return;
+    if (disposed || !revision || !path || !workspace.repoId) return;
     const gen = ++loadGen;
     locating.value = true;
     loading.value = false;
@@ -639,7 +639,8 @@ export const useLogStore = defineStore("log", () => {
     navigationMiss.value = null;
     const selectionAtStart = selectGen;
     const requestFilters = copyFilters(filters.value);
-    let applyingSelection = false;
+    const jobs = useJobsStore();
+    const job = jobs.begin(`${i18n.global.t("log.locating")} · ${revision}`, path);
     try {
       const backend = getBackend();
       const location = await backend.logLocate({ path, revision, filters: requestFilters });
@@ -669,18 +670,16 @@ export const useLogStore = defineStore("log", () => {
         truncated.value = page.truncated;
       }
       error.value = null;
-      applyingSelection = true;
-      await select(location.sha);
-      if (gen === loadGen && isCurrentRepository() && selectedSha.value === location.sha)
-        return location.sha;
+      // Selection is synchronous; its details read has its own task and local
+      // error/retry panel. Reveal the target without waiting for that read.
+      void select(location.sha).catch(() => {
+        // readSelectedDetails publishes only the current selection's error.
+      });
+      return location.sha;
     } catch (e) {
-      if (
-        gen === loadGen &&
-        isCurrentRepository() &&
-        (applyingSelection || selectionAtStart === selectGen)
-      )
-        throw e;
+      if (gen === loadGen && isCurrentRepository() && selectionAtStart === selectGen) throw e;
     } finally {
+      jobs.finished(job);
       if (gen === loadGen) locating.value = false;
     }
   }

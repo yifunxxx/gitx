@@ -4,6 +4,8 @@
 
 Click **Show Log** in the toolbar or **Log** in the bottom panel. Graph lines show parent relationships; rows show messages, authors, dates, and branch/tag labels. Select a commit to read its full message, parents, and Changed Files. Open a changed file to inspect that commit's diff.
 
+**Go to hash / branch / tag** adds a task while resolving the target and reading its history window. Once found, the target is selected and scrolled into view while its details load independently. Slow or failed details do not block navigation; retry a failed read in the details area. The same applies when the left arrow key jumps to a parent that has not been loaded yet.
+
 While reading, the details area and task queue identify the revision being loaded. On failure, the details area keeps the error and a **Retry** button. Retrying details preserves multiple selections and the Shift-range anchor. A successfully loaded empty commit explicitly shows that it has no changed files, distinguishing it from loading or failure.
 
 ![Example commit graph and branch list](/screenshots/history-en.jpg)

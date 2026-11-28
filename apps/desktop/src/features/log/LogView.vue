@@ -429,6 +429,9 @@ async function onCommitKeydown(sha: string, event: KeyboardEvent) {
       try {
         const selected = await log.goToHashOrRef();
         if (!source.current() || selected !== parent) return;
+        // The navigation already selected the parent and started its details.
+        await scrollToCommit(parent, undefined, true);
+        return;
       } catch (error) {
         if (source.current())
           toast({ title: t("log.failed"), description: formatErrorMessage(error) });
