@@ -1,5 +1,14 @@
 <script setup lang="ts" generic="T">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type ObjectDirective,
+} from "vue";
 import { isPerfLogEnabled, perfLog } from "@/lib/longTaskLog";
 
 const props = withDefaults(
@@ -107,6 +116,24 @@ function rowKey(item: T, index: number, slot: number) {
   if (!props.recycleKeys) return props.getKey(item, index);
   return props.getItemHeight ? slot : index % poolSize.value;
 }
+
+// A recycled button must never keep keyboard focus after changing its target.
+// Move focus before patching the row, without scrolling back to its old offset.
+let unmounting = false;
+onBeforeUnmount(() => {
+  unmounting = true;
+});
+function releaseRowFocus(row: HTMLElement) {
+  if (unmounting || !props.recycleKeys || !root.value) return;
+  const active = row.ownerDocument.activeElement;
+  if (active && row.contains(active)) root.value.focus({ preventScroll: true });
+}
+const vRowIdentity: ObjectDirective<HTMLElement, string | number> = {
+  beforeUpdate(row, { value, oldValue }) {
+    if (value !== oldValue) releaseRowFocus(row);
+  },
+  beforeUnmount: releaseRowFocus,
+};
 
 const offsetY = computed(() => rowTop(start.value));
 
@@ -377,7 +404,7 @@ defineExpose({
   <div class="flex min-h-0 flex-1 flex-col [app-region:no-drag]">
     <div
       ref="root"
-      :tabindex="scrollTabindex"
+      :tabindex="scrollTabindex ?? (recycleKeys ? -1 : undefined)"
       class="min-h-0 flex-1 overflow-auto [overflow-anchor:none] [app-region:no-drag]"
       @scroll.passive="onScroll"
       @pointerdown="onPointerDown"
@@ -400,6 +427,7 @@ defineExpose({
           <div
             v-for="(row, slot) in visible"
             :key="rowKey(row.item, row.index, slot)"
+            v-row-identity="getKey(row.item, row.index)"
             class="[contain:layout_paint]"
             :style="{ height: `${rowHeight(row.index)}px` }"
           >
