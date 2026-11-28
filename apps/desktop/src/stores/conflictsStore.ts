@@ -8,7 +8,7 @@ import {
   syncMergeText,
 } from "@/features/merge/mergeDocument";
 import { defineStore } from "pinia";
-import { computed, markRaw, reactive, ref, type Raw } from "vue";
+import { computed, markRaw, reactive, ref, watch, type Raw } from "vue";
 import { getBackend } from "@/lib/backend";
 import type { ConflictEntry, ConflictsList, ConflictSide, Merge3Result } from "@/lib/backend";
 import { useWorkspaceStore } from "./workspaceStore";
@@ -20,6 +20,7 @@ import { formatErrorMessage } from "@/lib/errors";
 import { useRepositoryAction } from "@/composables/useRepositoryAction";
 import { useRewriteStore } from "./rewriteStore";
 import { useStashShelfStore } from "./stashShelfStore";
+import { useFileViewerStore } from "./fileViewerStore";
 
 export type MergeTab = {
   id: string;
@@ -50,6 +51,22 @@ export const useConflictsStore = defineStore("conflicts", () => {
   // A write still owns its repository after navigation, until the backend settles.
   const pendingWrites = reactive(new Set<string>());
   const workspace = useWorkspaceStore();
+  const files = useFileViewerStore();
+  watch(
+    () => files.fileMutationPending,
+    (pending) => {
+      if (pending) {
+        ++contentGeneration;
+        pendingMerges.clear();
+      }
+    },
+    { flush: "sync" },
+  );
+  function fileWritePending() {
+    if (!files.fileMutationPending) return false;
+    toast({ title: i18n.global.t("history.restoreBusy") });
+    return true;
+  }
   const busy = computed(() => !!workspace.repoPath && pendingWrites.has(workspace.repoPath));
   const capture = useRepositoryAction(() => {
     ++refreshGeneration;
@@ -112,9 +129,11 @@ export const useConflictsStore = defineStore("conflicts", () => {
         () => useRewriteStore().refreshOpState(),
         // Update Project may drop its managed stash once conflicts clear.
         () => useStashShelfStore().refresh(),
-      ].map((reload) => Promise.resolve().then(async () => {
-        if (source.current()) await reload();
-      })),
+      ].map((reload) =>
+        Promise.resolve().then(async () => {
+          if (source.current()) await reload();
+        }),
+      ),
     );
     if (!source.current()) return;
     const failure = results.find((result) => result.status === "rejected");
@@ -127,6 +146,7 @@ export const useConflictsStore = defineStore("conflicts", () => {
   async function resolveFiles(side?: ConflictSide, paths?: string[]) {
     const source = capture();
     if (!source.path || !source.current() || busy.value || refreshError.value) return false;
+    if (fileWritePending()) return false;
     const targets = [...(paths ?? selected.value)];
     if (side && !targets.length) return false;
     pendingWrites.add(source.path);
@@ -182,6 +202,7 @@ export const useConflictsStore = defineStore("conflicts", () => {
       entry.kind === "submodule"
     )
       return false;
+    if (fileWritePending()) return false;
     const filePath = entry.path;
     const existing = mergeTabs.value.find((t) => t.path === entry.path);
     if (existing) {
@@ -242,8 +263,8 @@ export const useConflictsStore = defineStore("conflicts", () => {
   async function applyMergeResult(id: string) {
     const source = capture();
     const tab = mergeTabs.value.find((t) => t.id === id);
-    if (!source.path || !source.current() || !tab || tab.saving || busy.value)
-      return false;
+    if (!source.path || !source.current() || !tab || tab.saving || busy.value) return false;
+    if (fileWritePending()) return false;
     if (refreshError.value) {
       tab.error = refreshError.value;
       return false;

@@ -8,6 +8,7 @@ import { redo, undo } from "@codemirror/commands";
 import { SearchQuery, replaceAll, setSearchQuery } from "@codemirror/search";
 import FileViewer from "./FileViewer.vue";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
+import { beginWorktreeRestore } from "@/stores/worktreeRestoreEditors";
 
 const mocks = vi.hoisted(() => ({
   diffFile: vi.fn(),
@@ -23,6 +24,9 @@ vi.mock("@/lib/backend", () => ({ getBackend: () => mocks }));
 vi.mock("@/stores/workspaceStore", () => ({ useWorkspaceStore: () => mocks.workspace }));
 vi.mock("@/stores/layoutStore", () => ({ useLayoutStore: () => mocks.layout }));
 vi.mock("@/stores/changesStore", () => ({ useChangesStore: () => mocks.changes }));
+vi.mock("@/stores/conflictsStore", () => ({
+  useConflictsStore: () => ({ busy: false, mergeTabs: [] }),
+}));
 vi.mock("@/composables/useToast", () => ({ toast: mocks.toast }));
 vi.mock("@/i18n", () => ({ i18n: { global: { t: (key: string) => key } } }));
 vi.mock("vue-i18n", async (original) => ({
@@ -67,6 +71,35 @@ function deferred() {
 const result = (text: string) => ({ rightText: text, hunks: [] });
 const editor = (wrapper: ReturnType<typeof mount>) =>
   EditorView.findFromDOM(wrapper.get(".cm-editor").element as HTMLElement)!;
+
+it("temporarily protects a restored file without losing selection or undo after failure", async () => {
+  const store = useFileViewerStore();
+  await store.open("a.txt");
+  const tab = store.tabs[0]!;
+  const wrapper = mount(FileViewer, { props: { tabId: tab.id } });
+  await flushPromises();
+  const cm = editor(wrapper);
+  cm.dispatch({ changes: { from: 0, to: 4, insert: "saved" }, selection: { anchor: 3 } });
+  await store.save(tab.id);
+  const selection = cm.state.selection;
+  const lock = beginWorktreeRestore("repo-A", ["a.txt"]);
+  await flushPromises();
+  expect(editor(wrapper)).toBe(cm);
+  expect(cm.state.facet(EditorState.readOnly)).toBe(true);
+  expect(wrapper.get('[role="status"]').text()).toContain("history.restoring");
+  expect(wrapper.attributes("aria-busy")).toBe("true");
+  expect(cm.contentDOM.getAttribute("contenteditable")).toBe("false");
+  expect(undo(cm)).toBe(false);
+  expect(cm.state.doc.toString()).toBe("saved\n");
+  lock.release();
+  await flushPromises();
+  expect(editor(wrapper)).toBe(cm);
+  expect(cm.state.selection.eq(selection)).toBe(true);
+  expect(cm.state.facet(EditorState.readOnly)).toBe(false);
+  expect(undo(cm)).toBe(true);
+  expect(tab.text).toBe("base\n");
+  expect(tab.dirty).toBe(true);
+});
 it("reveals a search result after loading and keeps a cached draft and undo history", async () => {
   mocks.fsReadFile.mockResolvedValue("first\n😀 match\nlast");
   const store = useFileViewerStore();

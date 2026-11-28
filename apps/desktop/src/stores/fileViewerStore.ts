@@ -25,6 +25,7 @@ export type FileViewerTab = {
   loading: boolean;
   saving: boolean;
   fileOperationPending?: boolean;
+  restorePending?: boolean;
   deletedOnDisk?: boolean;
   reveal?: { line: number; column: number };
   editable: boolean;
@@ -224,7 +225,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
 
   function setDocument(id: string, text: string) {
     const tab = tabs.value.find((t) => t.id === id);
-    if (!tab || !tab.editable || tab.loading) return;
+    if (!tab || !tab.editable || tab.loading || tab.restorePending) return;
     tab.text = text;
     tab.dirty = text !== tab.baseline;
   }
@@ -366,7 +367,7 @@ export const useFileViewerStore = defineStore("fileViewer", () => {
     tabs.value.splice(idx, 1);
     if (activeId.value === id) {
       activeId.value = tabs.value[idx]?.id ?? tabs.value[idx - 1]?.id ?? null;
-      if (!activeId.value) {
+      if (!activeId.value && useLayoutStore().activeEditorKind === "file") {
         useLayoutStore().activeEditorKind = "welcome";
       }
     }

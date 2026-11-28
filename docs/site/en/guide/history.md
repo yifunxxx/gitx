@@ -50,6 +50,8 @@ History follows earlier paths across renames. A first commit, deleted file, or m
 
 Select a Log commit and use **Show Repository at Revision** (`Ctrl+Shift+O`). Browse directories and choose a file to read its historical text. **Up** goes to the parent, **Show History** opens file history, and **Compare with Local** compares it with the working file.
 
-**Restore** writes the selected historical file into your working tree. Verify the revision, path, and any local content that may be overwritten before confirming. Restoration leaves local changes to review, stage, and commit. Reading a revision and restoring it are separate actions.
+**Restore** writes the selected historical file into both your working tree and staging area. Verify the revision, path, and any local content that may be overwritten before confirming. Review and commit the restored changes. Reading a revision and restoring it are separate actions.
+
+Save or close unsaved editor tabs for the affected files first, and finish or close their merge editors. Restore keeps these drafts intact. Wait for file loading, saving, or other file operations to finish before retrying. Affected editors become temporarily read-only and show **Restoring file…**. Successful writes close their old content tabs; reopening reads the disk version. Failure keeps the file tabs and text; resolve the reported cause and retry.
 
 Binary or oversized content, invalid revisions, and unreadable objects produce messages. Retry or select the revision again; an error does not mean the file is empty.

@@ -28,6 +28,7 @@ const tab = computed(() => store.tabs.find((t) => t.id === props.tabId));
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
 const highlights = new Compartment();
+const editability = new Compartment();
 
 type MenuAction = "undo" | "redo" | "cut" | "copy" | "paste" | "selectAll" | "save";
 type MenuState = {
@@ -67,7 +68,7 @@ function snapshotMenu(event: MouseEvent | KeyboardEvent): MenuState | null {
     hasSelection: !view.state.selection.main.empty,
     canUndo: undoDepth(view.state) > 0,
     canRedo: redoDepth(view.state) > 0,
-    editable: !!tab.value.editable,
+    editable: !!tab.value.editable && !tab.value.restorePending,
     dirty: !!tab.value.dirty,
     saving: !!tab.value.saving,
   };
@@ -105,6 +106,7 @@ async function runMenu(action: MenuAction) {
   const current = tab.value;
   closeMenu();
   if (!live || !current) return;
+  if (current.restorePending && action !== "copy" && action !== "selectAll") return;
   live.focus();
   switch (action) {
     case "undo":
@@ -146,7 +148,13 @@ async function cutSelection(target: EditorView) {
   const current = tab.value;
   const state = target.state;
   const { from, to } = state.selection.main;
-  if (from === to || !current?.editable || !state.facet(EditorView.editable)) return;
+  if (
+    from === to ||
+    !current?.editable ||
+    current.restorePending ||
+    !state.facet(EditorView.editable)
+  )
+    return;
   const text = state.sliceDoc(from, to);
   try {
     await navigator.clipboard.writeText(text);
@@ -160,7 +168,7 @@ async function cutSelection(target: EditorView) {
 async function pasteClipboard(target: EditorView) {
   const current = tab.value;
   const state = target.state;
-  if (!current?.editable || !state.facet(EditorView.editable)) return;
+  if (!current?.editable || current.restorePending || !state.facet(EditorView.editable)) return;
   let text = "";
   try {
     text = await navigator.clipboard.readText();
@@ -187,6 +195,7 @@ function canApplyClipboard(
     tab.value === current &&
     store.tabs.includes(current) &&
     current.editable &&
+    !current.restorePending &&
     !current.loading &&
     target.state.doc === state.doc &&
     target.state.selection.eq(state.selection)
@@ -220,8 +229,10 @@ function mount() {
           ...defaultKeymap,
           ...historyKeymap,
         ]),
-        EditorView.editable.of(!!current.editable),
-        EditorState.readOnly.of(!current.editable),
+        editability.of([
+          EditorView.editable.of(!!current.editable && !current.restorePending),
+          EditorState.readOnly.of(!current.editable || !!current.restorePending),
+        ]),
         ...editorChrome({ caret: !!current.editable, translate: t }),
         fileTheme,
         highlights.of(fileChangeHighlights(hunks)),
@@ -239,7 +250,7 @@ function mount() {
               hasSelection: !editorView.state.selection.main.empty,
               canUndo: undoDepth(editorView.state) > 0,
               canRedo: redoDepth(editorView.state) > 0,
-              editable: !!store.tabs.find((t) => t.id === props.tabId)?.editable,
+              editable: !!current.editable && !current.restorePending,
               dirty: !!store.tabs.find((t) => t.id === props.tabId)?.dirty,
               saving: !!store.tabs.find((t) => t.id === props.tabId)?.saving,
             };
@@ -265,6 +276,24 @@ function revealPosition() {
   view.focus();
 }
 watch(() => tab.value?.reveal, revealPosition, { flush: "post" });
+
+watch(
+  () => tab.value?.restorePending,
+  () => {
+    if (!view || !tab.value) return;
+    closeMenu();
+    const editable = !!tab.value.editable && !tab.value.restorePending;
+    // Temporary disk-write protection must not remount the editor: failed
+    // restores retain selection, scroll position and the complete undo history.
+    view.dispatch({
+      effects: editability.reconfigure([
+        EditorView.editable.of(editable),
+        EditorState.readOnly.of(!editable),
+      ]),
+    });
+  },
+  { flush: "sync" },
+);
 
 onBeforeUnmount(() => {
   closeMenu();
@@ -308,6 +337,7 @@ const menuActions = computed(() => {
   <div
     v-if="tab"
     class="flex h-full min-h-0 flex-col"
+    :aria-busy="tab.restorePending || undefined"
     @keydown="
       ($event.key === 'ContextMenu' || ($event.shiftKey && $event.key === 'F10')) &&
       openMenu($event)
@@ -318,6 +348,9 @@ const menuActions = computed(() => {
       <span v-if="!tab.folderPath" class="text-muted-foreground">vs HEAD</span>
       <span v-if="tab.dirty" class="text-muted-foreground">· {{ t("editor.unsaved") }}</span>
       <span v-if="tab.saving" class="text-muted-foreground">· {{ t("editor.saving") }}</span>
+      <span v-if="tab.restorePending" role="status" class="text-muted-foreground"
+        >· {{ t("history.restoring") }}</span
+      >
       <span v-if="tab.deletedOnDisk" class="text-warning">{{ t("fileOps.deletedDraft") }}</span>
     </div>
     <div v-if="tab.loading" class="p-4 text-xs text-muted-foreground">Loading…</div>

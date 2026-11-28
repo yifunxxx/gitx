@@ -49,6 +49,8 @@ Enable **Amend**, wait for HEAD's full message to load, then edit the message or
 
 ## Roll back, ignore, or stop tracking
 
+Save or close unsaved editor tabs for the selected files first, and finish or close their merge editors. Wait for loading, saving, or file operations to finish before retrying. Affected editors are temporarily read-only during rollback. Successful writes close their old content tabs; failed files keep their text. The editor that remains displayed also keeps its selection and undo history. Reopening a successfully restored file reads its current disk content.
+
 | Command | How to use it | Result |
 | --- | --- | --- |
 | Rollback | Select changes, inspect the rollback dialog and options, then confirm | Discards the selected local edits; preserve anything needed in Stash or Shelf first |

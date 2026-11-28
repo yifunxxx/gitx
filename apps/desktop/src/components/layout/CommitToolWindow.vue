@@ -20,6 +20,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useRewriteStore } from "@/stores/rewriteStore";
 import { useStashShelfStore } from "@/stores/stashShelfStore";
 import { useFileViewerStore } from "@/stores/fileViewerStore";
+import { beginWorktreeRestore } from "@/stores/worktreeRestoreEditors";
 import { useHistoryStore } from "@/stores/historyStore";
 import { toast } from "@/composables/useToast";
 import { confirmDialog, promptDialog } from "@/composables/useConfirm";
@@ -249,20 +250,26 @@ async function rollbackSelected(target: ChangesTarget) {
   });
   if (!choice?.paths.length || !target.current()) return;
   const paths = [...choice.paths];
-  // Freeze the section as well as paths: confirmation may outlive selection.
-  if (target.stagingMode && target.section === "staged") {
-    const stagedSet = new Set(changes.staged.map((file) => file.path));
-    const stagedPaths = paths.filter((path) => stagedSet.has(path));
-    if (stagedPaths.length) await changes.unstage(stagedPaths);
-  }
-  for (const filePath of paths) {
-    if (!target.current()) return;
-    await getBackend().checkoutPathFromRev({
-      repoId: target.repoId,
-      path: target.path,
-      rev: "HEAD",
-      filePath,
-    });
+  const editors = beginWorktreeRestore(target.path, paths);
+  try {
+    // Freeze the section as well as paths: confirmation may outlive selection.
+    if (target.stagingMode && target.section === "staged") {
+      const stagedSet = new Set(changes.staged.map((file) => file.path));
+      const stagedPaths = paths.filter((path) => stagedSet.has(path));
+      if (stagedPaths.length) await changes.unstage(stagedPaths);
+    }
+    for (const filePath of paths) {
+      if (!target.current()) return;
+      await getBackend().checkoutPathFromRev({
+        repoId: target.repoId,
+        path: target.path,
+        rev: "HEAD",
+        filePath,
+      });
+      editors.restored(filePath);
+    }
+  } finally {
+    editors.release();
   }
   if (!target.current()) return;
   toast({ title: t("commitTw.rollbackDone"), description: `${paths.length}` });
