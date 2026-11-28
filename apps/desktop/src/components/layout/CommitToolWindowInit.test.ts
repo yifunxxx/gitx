@@ -127,7 +127,7 @@ it("uses the shared first reads and keeps progress until they finish", async () 
   await flushPromises();
   expect(useWorkspaceStore().isRepo).toBe(true);
   expect(m.refresh).toHaveBeenCalledOnce();
-  expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+  expect(m.load).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
   expect(m.branches).toHaveBeenCalledOnce();
   expect(isWorkspaceOpening()).toBe(true);
   reading.resolve();

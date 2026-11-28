@@ -122,7 +122,7 @@ export function createWorkspaceOpen(t: (key: string) => string) {
         // These independent reads should not make the user wait for one another.
         const results = await Promise.allSettled([
           changes.refresh(),
-          log.load(true),
+          log.load(true, false, { taskOwned: true }),
           branches.refresh(),
         ]);
         const failed = results.find((result) => result.status === "rejected");

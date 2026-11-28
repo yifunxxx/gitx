@@ -232,6 +232,7 @@
     "clearAndGo": "Clear filters and go",
     "historyChanged": "History changed while loading. Refresh and try again.",
     "retryLoadMore": "Retry",
+    "loadingHistory": "Loading commit history…",
     "chipText": "Text: {value}",
     "chipUser": "User: {value}",
     "chipSince": "Since: {value}",

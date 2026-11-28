@@ -104,7 +104,7 @@ it("shows progress immediately and does not repeat slow recent-folder opens", as
   read.resolve(undefined);
   await flushPromises();
   expect(mocks.refresh).toHaveBeenCalledOnce();
-  expect(mocks.log).toHaveBeenCalledExactlyOnceWith(true);
+  expect(mocks.log).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
   expect(mocks.branches).toHaveBeenCalledOnce();
   expect(host.find('[role="status"]').exists()).toBe(false);
 });

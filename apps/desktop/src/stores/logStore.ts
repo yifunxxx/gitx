@@ -197,12 +197,16 @@ export const useLogStore = defineStore("log", () => {
     { flush: "sync", deep: true },
   );
 
-  async function load(reset = true, background = false) {
+  async function load(reset = true, background = false, options: { taskOwned?: boolean } = {}) {
     const label = reset ? (background ? "log.load:refresh" : "log.load:reset") : "log.loadMore";
-    return timedAsync(label, () => loadInner(reset, background), background || !reset ? 50 : 100);
+    return timedAsync(
+      label,
+      () => loadInner(reset, background, options.taskOwned ?? false),
+      background || !reset ? 50 : 100,
+    );
   }
 
-  async function loadInner(reset = true, background = false) {
+  async function loadInner(reset = true, background = false, taskOwned = false) {
     const isCurrentRepository = currentRepository();
     if (!workspace.repoPath || !workspace.repoId || !workspace.isRepo) {
       ++loadGen;
@@ -254,6 +258,13 @@ export const useLogStore = defineStore("log", () => {
       loadingMore.value = true;
     }
 
+    // Opening a workspace already owns the initial reads as one task. Later
+    // user queries must still register independently, even during that opening.
+    const jobs = background || taskOwned ? null : useJobsStore();
+    const job = jobs?.begin(
+      String(i18n.global.t(reset ? "log.loadingHistory" : "log.loadingMore")),
+      path,
+    );
     try {
       const backend = getBackend();
       let offset = reset ? 0 : nextOffset.value;
@@ -368,6 +379,7 @@ export const useLogStore = defineStore("log", () => {
         });
       }
     } finally {
+      if (job) jobs?.finished(job);
       if (gen === loadGen) {
         loading.value = false;
         loadingMore.value = false;

@@ -83,6 +83,7 @@ const {
 const captureAction = useRepositoryAction(cancelLoadMore);
 
 const ROW_H = 22;
+const textInput = ref<HTMLInputElement | null>(null);
 const textDraft = ref("");
 const authorDraft = ref("");
 const revDraft = ref("");
@@ -486,6 +487,13 @@ async function applySearch() {
   await reloadFilters();
 }
 
+function retrySearch() {
+  // The error panel disappears on retry. Keep keyboard focus in a stable
+  // input so the user can continue correcting the query while it is loading.
+  textInput.value?.focus({ preventScroll: true });
+  void applySearch();
+}
+
 async function reloadFilters() {
   const source = captureAction();
   await log.applyFilters();
@@ -549,11 +557,11 @@ function onCommitContext(sha: string, e: MouseEvent) {
       :title="t('log.noRepoTitle')"
       :description="t('log.noRepoHint')"
     />
-    <ErrorState v-else-if="log.error" :title="t('log.failed')" :message="log.error" />
     <template v-else>
       <div class="flex flex-wrap items-center gap-1 border-b bg-dbx-chrome px-2 py-1 text-[11px]">
         <Filter class="h-3.5 w-3.5 text-muted-foreground" />
         <input
+          ref="textInput"
           v-model="textDraft"
           class="h-6 w-36 rounded border bg-background px-1.5"
           :placeholder="t('log.searchPlaceholder')"
@@ -737,13 +745,27 @@ function onCommitContext(sha: string, e: MouseEvent) {
         </button>
       </div>
 
+      <div
+        v-if="log.loading"
+        role="status"
+        class="flex shrink-0 items-center gap-2 border-b px-2 py-1 text-xs text-muted-foreground"
+      >
+        <LoaderCircle class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        {{ t("log.loadingHistory") }}
+      </div>
+
       <Splitpanes class="min-h-0 flex-1">
         <Pane :size="18" min-size="12" max-size="36">
           <BranchesPane />
         </Pane>
-        <Pane :size="82" min-size="40">
+        <Pane :size="82" min-size="40" :aria-busy="log.loading">
+          <ErrorState v-if="log.error" role="alert" :title="t('log.failed')" :message="log.error">
+            <Button size="xs" variant="outline" @click="retrySearch">
+              {{ t("log.retryLoadMore") }}
+            </Button>
+          </ErrorState>
           <EmptyState
-            v-if="!log.loading && !log.commits.length"
+            v-else-if="!log.loading && !log.commits.length"
             :title="t('log.noMatchesTitle')"
             :description="t('log.noMatchesHint')"
           />

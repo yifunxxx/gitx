@@ -4,7 +4,7 @@
 
 Click **Show Log** in the toolbar or **Log** in the bottom panel. Graph lines show parent relationships; rows show messages, authors, dates, and branch/tag labels. Select a commit to read its full message, parents, and Changed Files. Open a changed file to inspect that commit's diff.
 
-While reading, the details area and task queue identify the revision being loaded. On failure, the details area keeps the error and a **Retry** button. Retrying preserves multiple selections and the Shift-range anchor. A successfully loaded empty commit explicitly shows that it has no changed files, distinguishing it from loading or failure.
+While reading, the details area and task queue identify the revision being loaded. On failure, the details area keeps the error and a **Retry** button. Retrying details preserves multiple selections and the Shift-range anchor. A successfully loaded empty commit explicitly shows that it has no changed files, distinguishing it from loading or failure.
 
 ![Example commit graph and branch list](/screenshots/history-en.jpg)
 
@@ -19,9 +19,11 @@ Ctrl-click selects multiple commits; Shift extends a range. The context menu can
 
 Scrolling to a boundary loads additional history; use Load more or newer-record controls when shown. Wide graphs can be inspected horizontally. The graph column is another presentation of the same commits.
 
+If the initial history query or a filter fails, the filter bar stays available so you can correct the condition, clear it, or use **Retry** in the error area. The failed view does not present old commits as current results. Retry uses the current input conditions and returns focus to the message filter.
+
 **Log list mode** selects a flat list or branch-oriented tree. **Rebuild index** rebuilds a local index used for filtering; it does not create or rewrite commits. If filters return nothing, Clear them and check the revision scope.
 
-While rebuilding, the button shows **Rebuilding…** and the bottom-left task queue identifies the repository's index task. You can keep filtering and browsing. Returning to the same repository does not start a duplicate rebuild. Completion updates the index status; after a failure, read the error and retry with the enabled button.
+While a history query is running, **Loading commit history…** appears and the bottom-left task queue identifies the repository. The task disappears only after the query settles; only a genuine empty response shows no matches. While rebuilding, the button shows **Rebuilding…** and the bottom-left task queue identifies the repository's index task. You can keep filtering and browsing. Returning to the same repository does not start a duplicate rebuild. Completion updates the index status; after a failure, read the error and retry with the enabled button.
 
 ## Compare commits or compare with local
 

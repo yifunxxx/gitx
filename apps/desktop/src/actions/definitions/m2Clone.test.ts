@@ -180,7 +180,7 @@ it("shares post-clone opening progress and starts all initial reads before relea
   expect(host.findComponent(WelcomeView).exists()).toBe(false);
   expect(entry.pending.value).toBe(true);
   expect(m.refresh).toHaveBeenCalledOnce();
-  expect(m.load).toHaveBeenCalledExactlyOnceWith(true);
+  expect(m.load).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
   expect(m.branches).toHaveBeenCalledOnce();
   reading.resolve();
   await task;

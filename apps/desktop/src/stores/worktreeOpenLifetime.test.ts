@@ -162,7 +162,7 @@ it.each(["success", "failure"])(
     expect(useWorkspaceStore().repoPath).toBe("B");
     expect(isWorkspaceOpening()).toBe(true);
     expect(useJobsStore().count).toBe(1);
-    expect(m.log).toHaveBeenCalledExactlyOnceWith(true);
+    expect(m.log).toHaveBeenCalledExactlyOnceWith(true, false, { taskOwned: true });
     expect(m.branches).toHaveBeenCalledOnce();
     if (outcome === "success") files.resolve(undefined);
     else files.reject(new Error("Initial status failed"));

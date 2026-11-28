@@ -232,6 +232,7 @@
     "clearAndGo": "清除筛选并跳转",
     "historyChanged": "加载期间提交历史发生变化，请刷新后重试。",
     "retryLoadMore": "重试",
+    "loadingHistory": "正在加载提交历史…",
     "chipText": "文本：{value}",
     "chipUser": "作者：{value}",
     "chipSince": "起始：{value}",
