@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bell, GitBranch, LoaderCircle } from "@lucide/vue";
+import { Bell, GitBranch, LoaderCircle, CircleAlert } from "@lucide/vue";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useJobsStore, type JobUi } from "@/stores/jobsStore";
@@ -22,7 +22,23 @@ const branchText = computed(() => {
 function jobTitle(job: JobUi) {
   return job.cancelling ? `${job.title} · ${t("status.jobCancelling")}` : job.title;
 }
-const busyText = computed(() => jobs.count ? jobTitle(jobs.running[0]!) : t("status.idle"));
+const busyText = computed(() =>
+  jobs.count
+    ? jobTitle(jobs.running[0]!)
+    : jobs.refreshing
+      ? t("status.jobsLoading")
+      : jobs.refreshError
+        ? t("status.jobsUnavailable")
+        : t("status.idle"),
+);
+const jobsTitle = computed(() => {
+  const titles = jobs.running.map(
+    (job) => jobTitle(job) + (job.message ? ` — ${job.message}` : ""),
+  );
+  if (jobs.refreshError) titles.push(`${t("status.jobsRefreshFailed")} ${jobs.refreshError}`);
+  if (jobs.refreshing) titles.push(t("status.jobsLoading"));
+  return titles.join("\n") || busyText.value;
+});
 
 function toggleJobsPopup(event: MouseEvent) {
   if (jobs.popupOpen) {
@@ -50,10 +66,19 @@ function toggleJobsPopup(event: MouseEvent) {
       :aria-expanded="jobs.popupOpen"
       aria-haspopup="dialog"
       :aria-label="t('status.jobsTitle')"
-      :title="jobs.running.map(job => jobTitle(job) + (job.message ? ` — ${job.message}` : '')).join('\n') || busyText"
+      :title="jobsTitle"
       @click="toggleJobsPopup"
     >
-      <LoaderCircle v-if="jobs.count" class="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none" />
+      <LoaderCircle
+        v-if="jobs.count || jobs.refreshing"
+        class="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
+      />
+      <CircleAlert
+        v-if="jobs.refreshError"
+        class="h-3 w-3 shrink-0 text-destructive"
+        :aria-label="t('status.jobsUnavailable')"
+        role="img"
+      />
       <span class="truncate" role="status" aria-live="polite">{{ busyText }}</span>
       <span v-if="jobs.count > 1" class="shrink-0">({{ jobs.count }})</span>
     </button>

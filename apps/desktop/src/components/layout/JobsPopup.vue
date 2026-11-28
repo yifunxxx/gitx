@@ -10,7 +10,18 @@ import { formatErrorMessage } from "@/lib/errors";
 const { t } = useI18n();
 const jobs = useJobsStore();
 
-const estimatedHeight = computed(() => Math.max(72, 28 + (jobs.running.length || 1) * 56));
+const estimatedHeight = computed(() =>
+  Math.max(
+    72,
+    28 + jobs.running.length * 56 + (jobs.refreshError ? 124 : 0) + (jobs.refreshing ? 32 : 0),
+  ),
+);
+
+function retryRefresh() {
+  void jobs.refresh().catch(() => {
+    // The store retains the failure in the panel, including background polls.
+  });
+}
 
 function detailFor(job: JobUi) {
   if (job.cancelling) return t("status.jobCancelling");
@@ -47,7 +58,36 @@ async function onCancel(id: string) {
     <div class="px-2 py-1 text-[11px] font-medium text-muted-foreground">
       {{ t("status.jobsTitle") }}
     </div>
-    <div v-if="!jobs.running.length" class="px-2 py-2 text-[12px] text-muted-foreground">
+    <div v-if="jobs.refreshError" class="px-2 py-2 text-xs">
+      <p
+        role="alert"
+        class="max-h-28 overflow-auto whitespace-pre-wrap break-words text-destructive"
+      >
+        {{ t("status.jobsRefreshFailed") }} {{ jobs.refreshError }}
+      </p>
+      <button
+        data-jobs-retry
+        type="button"
+        :disabled="jobs.refreshing"
+        :aria-busy="jobs.refreshing"
+        class="mt-1 rounded border px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+        @click="retryRefresh"
+      >
+        {{ t("common.retry") }}
+      </button>
+    </div>
+    <div
+      v-if="jobs.refreshing"
+      role="status"
+      class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
+    >
+      <LoaderCircle class="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />
+      {{ t("status.jobsLoading") }}
+    </div>
+    <div
+      v-if="!jobs.running.length && !jobs.refreshing && !jobs.refreshError"
+      class="px-2 py-2 text-[12px] text-muted-foreground"
+    >
       {{ t("status.jobsEmpty") }}
     </div>
     <div

@@ -40,6 +40,7 @@ Review paths, repository addresses, and personal information before sharing logs
 Click **Background processes** in the status bar to inspect unfinished operations. Clone, Fetch, Push, comparisons, updates, and file reads may appear here. Completed tasks are removed; this queue does not retain history.
 
 - Details show a phase message, progress, or **Running…**. Writes to the same repository may be waiting for another operation to finish.
+- Opening the queue checks running processes. If reading fails, known tasks remain visible with a warning that the list may be incomplete. Click **Retry** to read it again. The status bar also flags the failure; it does not confirm that no tasks are running.
 - **Cancel**, when available, requests cancellation. The queue shows **Cancelling…** and disables the button until task completion is confirmed. Closing and reopening the queue preserves that state.
 - A failed cancellation request reports an error and allows retry. Cancellation does not automatically roll back every effect. When a task fails, inspect its error notification and Console, and verify the actual state before retrying.
 
