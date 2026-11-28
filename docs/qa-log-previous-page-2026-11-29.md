@@ -48,3 +48,5 @@
 本地证据目录：`E:/IDEAproject/gitx/test-results/qa166-log-previous-20261129`。包括`before.log`、`targeted-final.log`、`full.log`、`build.log`、`docs-build.log`、`native-build.log`，准备/代理源码、实际`git-trace.log`、等待/放行记录、`native-identities.json`、`exit-verification.json`及`fixture-verification.json`；UI截图和AX保存在本次工具记录。
 
 提交前再次fetch并ff-only整合两分支，无新提交。新增并解决QA166一项，原9项及七项目标继续，用户安装版未更新。独立提交推送结果见统一台账及本地`delivery.json`。
+
+功能提交`435b37ae8002ef414afdbb7376f76eff49a09e9e`首次推送成功，远端完整SHA一致；提交后Git自动对象维护自然结束，没有凭据提示。该精确SHA的CI run `46179828047`全部成功：前端2631项/4既有skip、Linux应用lib73项及原工作区Rust、类型/Vite/bindings/fmt/Clippy/编译通过。echo占位job不计E2E；checkout action的Node旧版本提示未影响本次运行。CI JSON及两组日志已归档，补记前再次同步无新提交。
