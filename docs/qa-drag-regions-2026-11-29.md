@@ -83,3 +83,5 @@ https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/publi
 ## 交付状态
 
 本轮新增并解决QA164一项，原9项继续；QA008/034中的历史“尚未归因”由本项证据补充，不继续把已解决的CSS区域更新作为未知根因。后台负载、终端和长期资源边界仍待验。QA163反相与缓存此前已关闭，验收索引同步补后续证据。产品代码、自动检查和上述原生范围已验证，用户安装版未更新。提交前再次fetch并ff-only整合两分支成功，仍为上述基线，无新增产品修改；`node scripts/check-docs.mjs`通过（中英各22页、79命令、33设置、318链接及18图片），`git diff --check`通过。独立提交推送的完整SHA与精确CI结果随后补记。
+
+2026-11-29交付完成：功能`629b6bc1e404b64587b1f64f37f29b3c19bff6b6`首次推送成功，远端完整SHA与本地一致，无凭据提示。精确CI run `46168119163`成功，前端2610项/4既有skip、Linux应用lib72项及原工作区Rust、类型/Vite/bindings/fmt/Clippy/编译通过；echo占位job不计E2E。完整日志和提交身份保存在证据目录`ci.log`、`ci-result.json`及`delivery.json`。456处报告本地链接、两个程序/当前资源和四份trace共7个哈希核对通过。补记前再次同步两分支成功，无新提交；本次补记仅更新交付文档，不改已验证产品。
