@@ -41,22 +41,16 @@ impl GitRunner {
         .kind(OpKind::Read)
         .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
-        let text = String::from_utf8_lossy(&out.stdout);
-        let mut lines = text.lines();
-        let inside = lines.next().unwrap_or("false").trim() == "true";
-        if !inside {
+        let probe = crate::parse_repository_probe(path, &out.stdout)?;
+        if !probe.inside_worktree {
             return Err(AppError::new(
                 ErrorCode::NotARepository,
                 format!("not a git repository: {}", path.display()),
             ));
         }
-        let toplevel = crate::resolve_git_path(path, lines.next().unwrap_or("").trim())
-            .to_string_lossy()
-            .into_owned();
-        let git_dir_raw = lines.next().unwrap_or("").trim().to_string();
-        let common_raw = lines.next().unwrap_or("").trim().to_string();
-        let git_dir = absolutize(path, &git_dir_raw);
-        let common_dir = absolutize(path, &common_raw);
+        let toplevel = probe.toplevel.to_string_lossy().into_owned();
+        let git_dir = probe.git_dir.to_string_lossy().into_owned();
+        let common_dir = probe.common_dir.to_string_lossy().into_owned();
         let is_worktree = git_dir != common_dir;
         let display_name = Path::new(&toplevel)
             .file_name()
@@ -134,12 +128,4 @@ impl GitRunner {
         }
         Ok(roots)
     }
-}
-
-fn absolutize(cwd: &Path, raw: &str) -> String {
-    let path = crate::resolve_git_path(cwd, raw);
-    path.canonicalize()
-        .unwrap_or(path)
-        .to_string_lossy()
-        .into_owned()
 }

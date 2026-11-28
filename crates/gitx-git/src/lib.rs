@@ -45,7 +45,7 @@ pub use detect::{
 };
 pub use jobs::{JobEvent, JobManager, JobProgress, JobState};
 pub use ops::RawLogCommit;
-pub use paths::{resolve_git_path, resolve_worktree_file};
+pub use paths::{parse_repository_probe, resolve_git_path, resolve_worktree_file, RepositoryProbe};
 pub use progress::ProgressParser;
 pub use runner::{helper_bin, GitInvocation, GitOutput, GitRunner, OpKind};
 pub use scheduler::RepoScheduler;

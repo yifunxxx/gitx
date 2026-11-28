@@ -23,7 +23,7 @@ where
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         if arg.as_ref() == "--open" {
-            let path = args.next()?.as_ref().trim().to_string();
+            let path = args.next()?.as_ref().to_string();
             return (!path.is_empty()).then_some(path);
         }
     }
@@ -693,6 +693,16 @@ mod tests {
             parse_startup_open_path(["gitx", "--flag", "x", "--open", "/tmp/repo"]),
             Some("/tmp/repo".into())
         );
+    }
+
+    #[test]
+    fn startup_open_path_preserves_directory_whitespace() {
+        for path in ["D:\\work\\demo\u{3000}", "/tmp/demo ", "/tmp/demo\n"] {
+            assert_eq!(
+                parse_startup_open_path(["gitx", "--open", path]),
+                Some(path.into())
+            );
+        }
     }
 
     #[test]

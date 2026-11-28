@@ -946,13 +946,7 @@ impl GitRunner {
             .kind(OpKind::Read)
             .git_bin(self.git_bin.clone());
         let out = self.run(inv, cancel).await?;
-        let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        let path = PathBuf::from(&p);
-        if path.is_absolute() {
-            Ok(path)
-        } else {
-            Ok(cwd.join(path))
-        }
+        crate::paths::parse_git_path_output(cwd, &out.stdout)
     }
 
     pub(crate) async fn unmerged_paths(

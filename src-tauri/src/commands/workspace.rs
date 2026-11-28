@@ -92,29 +92,12 @@ pub async fn workspace_open(
 
     let res = match git.run(inv, &cancel).await {
         Ok(out) => {
-            let text = String::from_utf8_lossy(&out.stdout);
-            let mut lines = text.lines();
-            let inside = lines.next().unwrap_or("false").trim() == "true";
-            let toplevel = lines.next().map(|s| {
-                gitx_git::resolve_git_path(&path, s.trim())
-                    .to_string_lossy()
-                    .into_owned()
-            });
-            let git_dir_raw = lines.next().map(|s| s.trim().to_string());
-            let common_raw = lines.next().map(|s| s.trim().to_string());
-            let (git_dir, common_dir, is_worktree) = match (&toplevel, &git_dir_raw, &common_raw) {
-                (Some(_), Some(gd), Some(cd)) => {
-                    let abs = |raw: &str| {
-                        let absolute = gitx_git::resolve_git_path(&path, raw);
-                        absolute.canonicalize().unwrap_or(absolute)
-                    };
-                    let g = abs(gd).to_string_lossy().into_owned();
-                    let c = abs(cd).to_string_lossy().into_owned();
-                    let is_wt = g != c;
-                    (Some(g), Some(c), Some(is_wt))
-                }
-                _ => (git_dir_raw, common_raw, None),
-            };
+            let probe = gitx_git::parse_repository_probe(&path, &out.stdout)?;
+            let inside = probe.inside_worktree;
+            let is_worktree = Some(probe.git_dir != probe.common_dir);
+            let toplevel = Some(probe.toplevel.to_string_lossy().into_owned());
+            let git_dir = Some(probe.git_dir.to_string_lossy().into_owned());
+            let common_dir = Some(probe.common_dir.to_string_lossy().into_owned());
             let roots = if inside {
                 git.discover_repo_roots(
                     PathBuf::from(toplevel.as_deref().unwrap_or(&req.path)).as_path(),
