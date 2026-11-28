@@ -21,6 +21,8 @@ macOS uses Cmd; Replace in File uses `Cmd+Option+F`. These actions, plus Replace
 
 Content search has no file-size, total-volume, elapsed-time or match-count cutoff. A background worker reads lines and spools results to temporary disk storage; the UI reads only the current page. Memory depends mainly on the longest line, and result storage needs free disk space. Cancel, change the query, close the dialog, or switch projects to stop scanning. The task queue shows scan progress.
 
+When an exclude pattern matches a directory, search skips that directory and its descendants to avoid traversing dependencies or build output. Excluding `node_modules` skips that name at any depth; `build/**` only covers build output under the workspace root. Include patterns still traverse parents to find matching files. Exclusions take precedence over inclusions and remain active when hidden or ignored files are enabled.
+
 Click **Cancel** beside the scan progress to stop scanning. Once it settles, results from fully scanned files remain available for paging. Provisional matches from an unfinished file are removed, so the total may decrease. Stopped results cannot be replaced: choose **Search again** and wait for completion first. Changing conditions, closing the dialog, or switching projects releases the old results.
 
 While a page loads, the current page number and rows remain visible with a loading indicator; opening rows and paging are temporarily disabled. A successful read switches to the requested page. A failed read keeps the current page and offers **Retry**, which reads the failed target page without rescanning.

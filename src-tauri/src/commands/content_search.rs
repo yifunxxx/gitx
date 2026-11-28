@@ -351,26 +351,47 @@ fn read_line(
         }
     }
 }
+fn search_entries(root: &Path, req: &ContentSearchReq, exclude: GlobSet) -> ignore::Walk {
+    let base = root.to_path_buf();
+    ignore::WalkBuilder::new(root)
+        .hidden(!req.show_hidden)
+        .ignore(!req.show_ignored)
+        .git_ignore(!req.show_ignored)
+        .git_global(!req.show_ignored)
+        .git_exclude(!req.show_ignored)
+        .follow_links(false)
+        .filter_entry(move |entry| {
+            let name = entry.file_name().to_string_lossy();
+            if name.eq_ignore_ascii_case(".git")
+                || name.starts_with(".gitx-copy-")
+                || name.starts_with(".gitx-replace-")
+            {
+                return false;
+            }
+            // Excluded directories include their descendants (see globs).
+            // Filter them before descent; include globs must not prune parents
+            // that do not match yet, since matching files can be below them.
+            if exclude.is_empty()
+                || entry.depth() == 0
+                || !entry.file_type().is_some_and(|kind| kind.is_dir())
+            {
+                return true;
+            }
+            entry
+                .path()
+                .strip_prefix(&base)
+                .ok()
+                .and_then(Path::to_str)
+                .is_none_or(|path| !exclude.is_match(path.replace('\\', "/")))
+        })
+        .build()
+}
 fn scan(job: &Search) -> Result<(), AppError> {
     let regex = pattern(&job.req)?;
     let include = globs(&job.req.include)?;
     let exclude = globs(&job.req.exclude)?;
     let root = resolve_entry(&job.req.folder_path, "", true)?;
-    let walker = ignore::WalkBuilder::new(&root)
-        .hidden(!job.req.show_hidden)
-        .ignore(!job.req.show_ignored)
-        .git_ignore(!job.req.show_ignored)
-        .git_global(!job.req.show_ignored)
-        .git_exclude(!job.req.show_ignored)
-        .follow_links(false)
-        .filter_entry(|entry| {
-            let name = entry.file_name().to_string_lossy();
-            !name.eq_ignore_ascii_case(".git")
-                && !name.starts_with(".gitx-copy-")
-                && !name.starts_with(".gitx-replace-")
-        })
-        .build();
-    for entry in walker {
+    for entry in search_entries(&root, &job.req, exclude.clone()) {
         check(&job.cancel)?;
         let entry = match entry {
             Ok(e) => e,
@@ -1067,6 +1088,160 @@ mod tests {
         let p = job.progress.lock().unwrap();
         assert_eq!(p.skipped, 2);
         assert_eq!(p.hashes.len(), 1);
+    }
+
+    fn visited(req: &ContentSearchReq) -> Vec<String> {
+        let root = Path::new(&req.folder_path);
+        search_entries(root, req, globs(&req.exclude).unwrap())
+            .map(|entry| {
+                entry
+                    .unwrap()
+                    .path()
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .replace('\\', "/")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn excluded_directory_names_are_pruned_before_visiting_their_children() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            "node_modules/pkg/deep/a.ts",
+            "nested/node_modules/pkg/b.ts",
+            "src/a.ts",
+            "nested/src/b.ts",
+            "node_modules-extra/c.ts",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        let mut req = request(root.path(), "hit");
+        req.exclude = "node_modules".into();
+        req.include = "*.ts".into();
+        let entries = visited(&req);
+        assert!(
+            entries
+                .iter()
+                .all(|path| !path.split('/').any(|part| part == "node_modules")),
+            "{entries:?}"
+        );
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(
+            paths,
+            HashSet::from([
+                "src/a.ts".into(),
+                "nested/src/b.ts".into(),
+                "node_modules-extra/c.ts".into(),
+            ])
+        );
+    }
+
+    #[test]
+    fn excluded_directory_globs_prune_only_the_matching_scope() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            "build/a/deep/a.txt",
+            "nested/build/b.txt",
+            "src/x/a.txt",
+            "src/y/b.txt",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        let mut req = request(root.path(), "hit");
+        req.include = "**/*.txt".into();
+        req.exclude = "build/**,src/{x}".into();
+        let entries = visited(&req);
+        assert!(
+            !entries
+                .iter()
+                .any(|path| path.starts_with("build/a") || path.starts_with("src/x")),
+            "{entries:?}"
+        );
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(
+            paths,
+            HashSet::from(["nested/build/b.txt".into(), "src/y/b.txt".into()])
+        );
+    }
+
+    #[test]
+    fn include_patterns_keep_parent_traversal_and_exclusion_wins_over_inclusion() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            "parent/child/keep.rs",
+            "parent/cache/skip.rs",
+            "parent/child/skip.log",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        let mut req = request(root.path(), "hit");
+        req.include = "**/*.rs".into();
+        req.exclude = "cache".into();
+        let paths: HashSet<_> = matches(&run(req.clone()))
+            .into_iter()
+            .map(|m| m.path)
+            .collect();
+        assert_eq!(paths, HashSet::from(["parent/child/keep.rs".into()]));
+        req.exclude = "**".into();
+        assert_eq!(visited(&req), vec![String::new()]);
+        assert!(matches(&run(req)).is_empty());
+    }
+
+    #[test]
+    fn explicit_directory_exclusions_still_apply_when_hidden_and_ignored_are_enabled() {
+        let root = tempfile::tempdir().unwrap();
+        for path in [
+            ".git/config",
+            ".gitx-copy-stage/a.txt",
+            ".gitx-replace-stage/a.txt",
+            ".cache/deep/a.txt",
+            "ignored/deep/a.txt",
+            "src/vendor/deep/a.txt",
+            "src/keep.lock",
+            "src/keep.txt",
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hit").unwrap();
+        }
+        std::fs::write(root.path().join(".gitignore"), "ignored/\n").unwrap();
+        let mut req = request(root.path(), "hit");
+        req.show_hidden = true;
+        req.show_ignored = true;
+        req.exclude = ".cache,ignored,src\\vendor/,*.lock".into();
+        let entries = visited(&req);
+        assert!(
+            entries.iter().all(|path| !path.starts_with(".cache")
+                && !path.starts_with("ignored/")
+                && !path.starts_with("src/vendor/")
+                && !path.starts_with(".git/")
+                && !path.starts_with(".gitx-")),
+            "{entries:?}"
+        );
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(paths, HashSet::from(["src/keep.txt".into()]));
+    }
+
+    #[test]
+    fn exclusion_matches_relative_paths_not_the_workspace_root_name() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("cache");
+        std::fs::create_dir_all(root.join("cache")).unwrap();
+        std::fs::write(root.join("keep.txt"), "hit").unwrap();
+        std::fs::write(root.join("cache/skip.txt"), "hit").unwrap();
+        let mut req = request(&root, "hit");
+        req.exclude = "cache".into();
+        let paths: HashSet<_> = matches(&run(req)).into_iter().map(|m| m.path).collect();
+        assert_eq!(paths, HashSet::from(["keep.txt".into()]));
     }
     #[test]
     fn regex_captures_replace_all_occurrences_and_preserve_crlf_and_bom() {
