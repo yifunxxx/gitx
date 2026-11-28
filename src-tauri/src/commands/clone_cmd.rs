@@ -75,10 +75,7 @@ pub async fn clone_run(
             false,
         )
         .await?;
-    let _ = app.emit(
-        "job://started",
-        serde_json::json!({ "id": job.info.id, "title": job.info.title }),
-    );
+    let _ = app.emit("job://started", &job.info);
     let result = async {
         let git = tokio::select! {
             _ = job.cancel.cancelled() => {

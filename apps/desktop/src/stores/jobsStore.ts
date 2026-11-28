@@ -16,6 +16,7 @@ export type JobUi = {
 };
 
 export type JobStartSource = "ui" | "native";
+export type JobStart = Pick<JobUi, "id"> & Partial<Omit<JobUi, "id" | "cancelling">>;
 
 export const useJobsStore = defineStore("jobs", () => {
   const running = ref<JobUi[]>([]);
@@ -50,17 +51,24 @@ export const useJobsStore = defineStore("jobs", () => {
     return id;
   }
 
-  function started(
-    job: Omit<JobUi, "startedAt"> & { startedAt?: number },
-    source: JobStartSource = "ui",
-  ) {
+  function started(job: JobStart, source: JobStartSource = "ui") {
     ++eventVersion;
     const previous = running.value.find((entry) => entry.id === job.id);
     if (source === "native") knownNativeIds.add(job.id);
-    running.value = [
-      ...running.value.filter((j) => j.id !== job.id),
-      { ...job, startedAt: job.startedAt ?? Date.now(), cancelling: previous?.cancelling },
-    ];
+    // A native start can arrive after a list response or a UI observation.
+    // Missing fields must not erase known progress or move its cancel button.
+    const next: JobUi = {
+      id: job.id,
+      title: job.title ?? previous?.title ?? "job",
+      startedAt: job.startedAt ?? previous?.startedAt ?? Date.now(),
+      cancellable: job.cancellable ?? previous?.cancellable,
+      percent: job.percent ?? previous?.percent,
+      message: job.message ?? previous?.message,
+      cancelling: previous?.cancelling,
+    };
+    running.value = previous
+      ? running.value.map((entry) => (entry.id === job.id ? next : entry))
+      : [...running.value, next];
   }
 
   function progress(id: string, patch: Partial<JobUi>) {

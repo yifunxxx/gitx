@@ -1,6 +1,6 @@
 import { onMounted, onUnmounted } from "vue";
 import { isTauri } from "@/lib/utils";
-import { useJobsStore } from "@/stores/jobsStore";
+import { useJobsStore, type JobStart } from "@/stores/jobsStore";
 import { useConsoleStore } from "@/stores/consoleStore";
 import { formatErrorMessage } from "@/lib/errors";
 
@@ -36,13 +36,14 @@ export function useAppEvents() {
         listen<{ stream: string; line: string }>("console://line", (e) => onLine(e.payload))
           .then(keep)
           .catch(report),
-        listen<{ id: string; title?: string; cancellable?: boolean }>("job://started", (e) => {
+        listen<JobStart>("job://started", (e) => {
           if (!disposed)
             jobs.started(
               {
                 id: e.payload.id,
-                title: e.payload.title ?? "job",
+                title: e.payload.title,
                 cancellable: e.payload.cancellable,
+                startedAt: e.payload.startedAt,
               },
               "native",
             );

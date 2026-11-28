@@ -92,12 +92,7 @@ pub async fn fetch_run(
                 true,
             )
             .await;
-        let _ = app.emit(
-            "job://started",
-            serde_json::json!({
-                "id": job.info.id, "title": job.info.title, "cancellable": true,
-            }),
-        );
+        let _ = app.emit("job://started", &job.info);
         let result = state
             .scheduler
             .with_background_repo_write(
