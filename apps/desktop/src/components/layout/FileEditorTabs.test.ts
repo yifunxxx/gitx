@@ -230,6 +230,31 @@ it("retains the original editor while another file is still loading", async () =
   expect(editor().state.doc.toString()).toBe("one\ntwo\nthree\n");
 });
 
+it("captures scroll while the old editor is attached before a loading tab removes its host", async () => {
+  const { files, a, wrapper, editor, activate } = await setup();
+  const first = editor();
+  first.dispatch({ changes: { from: 0, insert: "draft " }, selection: { anchor: 2, head: 5 } });
+  const selection = first.state.selection;
+  const captures: boolean[] = [];
+  const snapshot = first.scrollSnapshot.bind(first);
+  vi.spyOn(first, "scrollSnapshot").mockImplementation(() => {
+    captures.push(first.dom.isConnected);
+    return snapshot();
+  });
+  let finish!: (value: string) => void;
+  m.fsReadFile.mockReturnValueOnce(new Promise<string>((resolve) => (finish = resolve)));
+  const opening = files.open("loading.txt");
+  await flushPromises();
+  expect(wrapper.findAll(".cm-editor")).toHaveLength(0);
+  expect(captures).toEqual([true]);
+  finish("loaded\n");
+  await opening;
+  await activate("file", a.id);
+  expect(editor().state.selection.eq(selection)).toBe(true);
+  expect(undo(editor())).toBe(true);
+  expect(a.dirty).toBe(false);
+});
+
 it("keeps undo relative to the completed save when saving finishes in a hidden tab", async () => {
   const { files, a, editor, activate } = await setup();
   editor().dispatch({ changes: { from: 0, insert: "saved " } });

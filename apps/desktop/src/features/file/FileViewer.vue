@@ -313,6 +313,19 @@ watch(
   { flush: "sync" },
 );
 
+// A loading tab replaces the host during render. Capture geometry before Vue
+// detaches the old editor; the post-render watcher mounts its replacement.
+watch(
+  [
+    () => tab.value,
+    () => tab.value?.loading,
+    () => tab.value?.editable,
+    () => tab.value?.loadGeneration,
+  ],
+  release,
+  { flush: "pre" },
+);
+
 onBeforeUnmount(() => {
   closeMenu();
   release();
